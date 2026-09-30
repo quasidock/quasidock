@@ -1,0 +1,33 @@
+# Keep LF line endings on checkout, whatever core.autocrlf says: bash can't
+# run scripts with CRLF, and gofmt writes LF.
+*.go  text eol=lf
+*.sh  text eol=lf
+*.json text eol=lf
+*.patch text eol=lf
+*.md  text eol=lf
+*.txt text eol=lf
+*.yml text eol=lf
+
+# Test fixtures are compared byte for byte.
+internal/**/testdata/** binary
+tests/osm2pgsql/*.pbf binary
+
+# Batch files need CRLF line endings: cmd.exe misreads labels without them.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Hashed for releases (SHA256SUMS), so the same bytes on every checkout. LICENSE
+# is in the zip: a runner's checkout made it CRLF up to v0.72.0.
+*.ps1 text eol=lf
+LICENSE text eol=lf
+
+# Built into quasidock's programs: without this, a runner's checkout
+# (core.autocrlf=true) could alter line endings if checked out as text.
+internal/winres/testdata/* text eol=lf
+
+# Every file a recipe carries (patches, headers, scripts, a ._pth): an image
+# records each one's hash, so it must have the same bytes on every checkout,
+# a runner's (core.autocrlf=true) too. Rnote's and Text Editor's lacked this
+# until iteration 36, so CI's builds of them had other configs. text=auto
+# leaves a binary file alone.
+recipes/** text=auto eol=lf

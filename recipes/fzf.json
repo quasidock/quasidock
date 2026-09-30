@@ -1,0 +1,38 @@
+{
+  "id": "com.github.junegunn.fzf",
+  "version": "0.74.5",
+  "name": "fzf",
+  "summary": "A command-line fuzzy finder",
+  "homepage": "https://github.com/junegunn/fzf",
+  "license": "MIT",
+  "command": "fzf.exe",
+  "permissions": { "filesystem": ["cwd:ro"] },
+  "sdk": {
+    "go": "org.golang.go:1.27.3@sha256:fb6554b0d89f578112c72b92c87a05583980578328180762571770884b3bc162",
+    "busybox": "net.frippery.busybox:FRP-6075-g169694ebd@sha256:db9d39727bfdd4d176b5878c0a125daa8a2396ea21e0f01a6a372f53d9d97e5d"
+  },
+  "modules": [
+    {
+      "name": "fzf",
+      "sources": [
+        {
+          "url": "https://proxy.golang.org/github.com/junegunn/fzf/@v/v0.74.5.zip",
+          "sha256": "ad7f421151af7dd0f1cc02b792151865c659beec36586f37edd3ca90ec2b4749",
+          "strip": 3
+        }
+      ],
+      "env": { "CGO_ENABLED": "0" },
+      "vendor": {
+        "commands": ["go mod vendor"],
+        "dir": "vendor",
+        "sha256": "5e19fc4cf2eef390f12b899b795b7e495b4df00dfd0127f3c4436dfebcfe28b8"
+      },
+      "build": [
+        "go build -mod=vendor -ldflags '-s -w -X main.version=0.74.5 -X main.revision=c0a193e0' -o \"$PREFIX/fzf.exe\" .",
+        "mkdir -p \"$PREFIX/man/man1\"",
+        "cp LICENSE README.md \"$PREFIX/\"",
+        "cp man/man1/fzf.1 \"$PREFIX/man/man1/\""
+      ]
+    }
+  ]
+}

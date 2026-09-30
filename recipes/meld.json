@@ -1,0 +1,93 @@
+{
+  "id": "org.gnome.Meld",
+  "version": "3.24.1",
+  "name": "Meld",
+  "summary": "Compare and merge files and folders, two or three at a time, in Python on GTK 3",
+  "homepage": "https://meld.app/",
+  "license": "GPL-2.0-or-later",
+  "command": "${pygobject}\\pythonw.exe",
+  "args": ["${app}\\bin\\meld"],
+  "path": ["bin"],
+  "env": {
+    "PYTHONPATH": "${app}\\Lib\\site-packages",
+    "GI_TYPELIB_PATH": "${app}\\lib\\girepository-1.0;${gtk3}\\lib\\girepository-1.0;${gtk}\\lib\\girepository-1.0",
+    "PYGI_DLL_PATH": "${app}\\bin;${gtk3}\\bin;${gtk}\\bin",
+    "PANGOCAIRO_BACKEND": "win32",
+    "XDG_DATA_DIRS": "${app}\\share"
+  },
+  "permissions": { "filesystem": ["cwd", "desktop", "documents", "downloads"] },
+  "exports": {
+    "meld": { "command": "${pygobject}\\pythonw.exe", "args": ["${app}\\bin\\meld"] }
+  },
+  "shortcuts": {
+    "Meld": { "command": "meld", "description": "Compare and merge files and folders", "icon": "share/icons/org.gnome.Meld.ico" }
+  },
+  "runtimes": {
+    "gtk": "org.gtk.Gtk4:4.24.1@sha256:e61173f2deba589f1f1b40a38e5a4d6584c8efbbff1f40be5c173ccee5b27c49",
+    "gtk3": "org.gtk.Gtk3:3.24.52@sha256:fc4deee61a122ee76c7ea15a5745b52247357d8ae4044cd39e411d99645a45e9",
+    "pygobject": "org.gnome.PyGObject:3.58.1@sha256:a4bf172f6bc255b664efe11f1dfe8aee226333650b5cd2f607bb4c6d05551493",
+    "git": "org.git_scm.MinGit:2.56.0.windows.1@sha256:c6457f01e7e3a4c92a77c31d0c63c5ea72c4ce082123d3dfb11fdb1ef3796ec9"
+  },
+  "sdk": {
+    "gtksdk": "org.gtk.Gtk4.Sdk:4.24.1@sha256:31b88a3d1d0a4530f3a31cf558d7c6c6c58e04a42ced0d7aeb28d0cf501de104",
+    "gtk3sdk": "org.gtk.Gtk3.Sdk:3.24.52@sha256:100f44c0111f325b3289c380071f2c6039908f70b34c7ef3ec469fe69312773c",
+    "pygobjectsdk": "org.gnome.PyGObject.Sdk:3.58.1@sha256:7e122384cf9a04c7f4f1d3b09cd6aaa0bd95a0ef96121249672ecda232a91210"
+  },
+  "cleanup": [
+    "/include",
+    "/lib/pkgconfig",
+    "/share/gir-1.0",
+    "/share/gtksourceview-4/language-specs/check.sh",
+    "/share/gtksourceview-4/language-specs/convert.py",
+    "/share/gtksourceview-4/styles/check.sh",
+    "/Lib/site-packages/meld/share/applications",
+    "/Lib/site-packages/meld/share/metainfo",
+    "/Lib/site-packages/meld/share/mime",
+    "*.a",
+    "*.lib",
+    "__pycache__"
+  ],
+  "modules": [
+    {
+      "name": "gtksourceview",
+      "sources": [
+        {
+          "url": "https://download.gnome.org/sources/gtksourceview/4.8/gtksourceview-4.8.4.tar.xz",
+          "sha256": "7ec9d18fb283d1f84a3a3eff3b7a72b09a10c9c006597b3fbabbb5958420a87d",
+          "strip": 1
+        }
+      ],
+      "build": [
+        "meson setup out --prefix=\"$PREFIX\" --buildtype=release -Dgir=true -Dvapi=false -Dgtk_doc=false -Dinstall_tests=false -Dglade_catalog=false",
+        "meson install -C out",
+        "ls \"$PREFIX/lib/girepository-1.0/GtkSource-4.typelib\""
+      ]
+    },
+    {
+      "name": "meld",
+      "sources": [
+        {
+          "url": "https://download.gnome.org/sources/meld/3.24/meld-3.24.1.tar.xz",
+          "sha256": "29dfee0d857b89c2fa4dad7c9fb9e48506d8bde3f71b6634798659e6697c6b1e",
+          "strip": 1
+        }
+      ],
+      "build": [
+        "sed -i 's/^        from ctypes import cdll$/        import gi  # adds PYGI_DLL_PATH to where DLLs load from, for libintl\\n        from ctypes import cdll/' bin/meld",
+        "grep -q '^        import gi  # adds PYGI_DLL_PATH' bin/meld",
+        "sed -i \"s/^                libintl = cdll\\['intl'\\]$/                libintl = cdll['libintl-8']/\" bin/meld",
+        "grep -q \"^                libintl = cdll\\['libintl-8'\\]$\" bin/meld && ! grep -q \"cdll\\['intl'\\]\" bin/meld",
+        "sed -i -e \"s/^        libintl.bindtextdomain(locale_domain, str(locale_dir))$/        libintl.libintl_wbindtextdomain(locale_domain.encode(), str(locale_dir))/\" -e \"s/^        libintl.bind_textdomain_codeset(locale_domain, 'UTF-8')$/        libintl.bind_textdomain_codeset(locale_domain.encode(), b'UTF-8')/\" -e \"s/^        libintl.textdomain(locale_domain)$/        libintl.textdomain(locale_domain.encode())/\" bin/meld",
+        "[ \"$(grep -c 'locale_domain.encode()' bin/meld)\" = 3 ]",
+        "sed -i 's/^        handler = logging.FileHandler(log_path)$/        os.makedirs(os.path.dirname(log_path), exist_ok=True)\\n        handler = logging.FileHandler(log_path)/' bin/meld",
+        "grep -q '^        os.makedirs(os.path.dirname(log_path), exist_ok=True)$' bin/meld",
+        "sed -i '/^gnome.post_install($/,/^)$/d' meson.build",
+        "! grep -q post_install meson.build",
+        "meson setup out --prefix=\"$PREFIX\" --buildtype=release -Dis_wheel=true",
+        "meson install -C out",
+        "mkdir -p \"$PREFIX/share/icons\" && cp data/icons/org.gnome.meld.ico \"$PREFIX/share/icons/org.gnome.Meld.ico\"",
+        "ls \"$PREFIX/bin/meld\" \"$PREFIX/Lib/site-packages/meld/conf.py\" \"$PREFIX/Lib/site-packages/meld/share/meld/gschemas.compiled\""
+      ]
+    }
+  ]
+}

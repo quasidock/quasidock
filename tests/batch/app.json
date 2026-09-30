@@ -1,0 +1,22 @@
+{
+  "id": "test.batch.args",
+  "version": "1",
+  "command": "echo-args.cmd",
+  "path": ["."],
+  "env": {},
+  "permissions": { "sandbox": "soft", "network": false, "filesystem": [] },
+  "exports": {
+    "echo-args": { "command": "echo-args.cmd" },
+    "echo-args-pre": { "command": "echo-args.cmd", "args": ["${app}", "a b", "%PATH%"] }
+  },
+  "modules": [
+    {
+      "name": "scripts",
+      "sources": [
+        { "path": "echo-args.cmd" },
+        { "path": "exit-code.cmd" },
+        { "path": "../../out/test/quasidock-argv.exe", "dest": "argv.exe" }
+      ]
+    }
+  ]
+}

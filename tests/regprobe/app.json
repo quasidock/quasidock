@@ -1,0 +1,13 @@
+{
+  "id": "test.regprobe",
+  "version": "1",
+  "command": "regprobe.exe",
+  "modules": [
+    {
+      "name": "probe",
+      "sources": [
+        { "path": "../../out/test/quasidock-regprobe.exe", "dest": "regprobe.exe" }
+      ]
+    }
+  ]
+}

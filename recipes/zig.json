@@ -1,0 +1,40 @@
+{
+  "id": "org.ziglang.zig",
+  "version": "0.17.0",
+  "command": "zig.exe",
+  "env": {
+    "ZIG_GLOBAL_CACHE_DIR": "${cache}",
+    "CC": "cc",
+    "CXX": "c++",
+    "RC": "rc",
+    "LDFLAGS": "-s -Wl,-Brepro",
+    "CGO_LDFLAGS": "-s -Wl,-Brepro",
+    "CC_x86_64_pc_windows_gnu": "cc",
+    "CXX_x86_64_pc_windows_gnu": "c++",
+    "AR_x86_64_pc_windows_gnu": "ar",
+    "CRATE_CC_NO_DEFAULTS": "1",
+    "CFLAGS_x86_64_pc_windows_gnu": "-O3 -ffunction-sections -fdata-sections",
+    "CXXFLAGS_x86_64_pc_windows_gnu": "-O3 -ffunction-sections -fdata-sections"
+  },
+  "aliases": {
+    "cc": { "command": "zig.exe", "args": ["cc", "-target", "x86_64-windows-gnu"] },
+    "c++": { "command": "zig.exe", "args": ["c++", "-target", "x86_64-windows-gnu"] },
+    "ar": { "command": "zig.exe", "args": ["ar"] },
+    "ranlib": { "command": "zig.exe", "args": ["ranlib"] },
+    "rc": { "command": "zig.exe", "args": ["rc"] },
+    "as": { "command": "zig.exe", "args": ["cc", "-target", "x86_64-windows-gnu", "-c", "-x", "assembler"], "drop": ["--64"] }
+  },
+  "permissions": { "sandbox": "soft", "filesystem": ["cwd"] },
+  "modules": [
+    {
+      "name": "zig",
+      "sources": [
+        {
+          "url": "https://ziglang.org/download/0.17.0/zig-x86_64-windows-0.17.0.zip",
+          "sha256": "b5663f69581dcf391293fbf16c06cb80d81d806545ce618b4d0bab7f0eb8c428",
+          "strip": 1
+        }
+      ]
+    }
+  ]
+}
