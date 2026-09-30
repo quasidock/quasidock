@@ -1,0 +1,67 @@
+{
+  "id": "org.gnu.gettext",
+  "version": "1.0",
+  "command": "bin/gettext.exe",
+  "path": ["bin"],
+  "permissions": { "filesystem": ["cwd"] },
+  "exports": {
+    "gettext": { "command": "bin/gettext.exe" },
+    "ngettext": { "command": "bin/ngettext.exe" },
+    "msgfmt": { "command": "bin/msgfmt.exe" },
+    "msgmerge": { "command": "bin/msgmerge.exe" },
+    "msginit": { "command": "bin/msginit.exe" },
+    "msgcat": { "command": "bin/msgcat.exe" },
+    "msgunfmt": { "command": "bin/msgunfmt.exe" },
+    "xgettext": { "command": "bin/xgettext.exe" },
+    "iconv": { "command": "bin/iconv.exe" }
+  },
+  "sdk": {
+    "llvm": "com.github.mstorsjo.llvm-mingw:20261020@sha256:115b5e484a219e75e899eedcb456cfc3d7177859e704937f13db301b49fc9f64",
+    "busybox": "net.frippery.busybox:FRP-6075-g169694ebd@sha256:db9d39727bfdd4d176b5878c0a125daa8a2396ea21e0f01a6a372f53d9d97e5d"
+  },
+  "cleanup": ["/share/doc/gettext/examples", "/share/info", "/share/gettext/archive.dir.tar.gz", "/share/gettext/javaversion.class", "*.la"],
+  "modules": [
+    {
+      "name": "pmake",
+      "build": [
+        "printf '%s\\n' '# $(MAKE) for the modules below: BusyBox make runs one command at a time (no -j). In a' '# directory at all-am, once its BUILT_SOURCES (gnulib headers) are made, or at an all that' '# is all-am alone, the compiles make would run first run $(nproc) at a time, after the' '# .dirstamp files that objects in subdirectories depend on (made later, they are newer).' 'case ${MAKEFLAGS%% *} in -*n*) exec make \"$@\" ;; esac' 'case \" $* \" in' '*\" all-am \"*) ;;' '*\" all \"*) grep -qx \"all: all-am\" Makefile || exec make \"$@\" ;;' '*) exec make \"$@\" ;;' 'esac' 'n=$(make -n \"$@\")' 'printf \"%s\\n\" \"$n\" | grep -o \"[^ >]*/[.]dirstamp\" | sort -u | while read -r f; do mkdir -p \"${f%/*}\" && : >>\"$f\"; done' 'printf \"%s\\n\" \"$n\" | grep -e \" -c -o \" | tr \"\\n\" \"\\0\" | xargs -0 -r -P \"$(nproc)\" -n 1 sh -c || :' 'exec make \"$@\"' > pmake.sh"
+      ]
+    },
+    {
+      "name": "libiconv",
+      "env": { "SED": "sed", "GREP": "grep", "EGREP": "grep -E", "FGREP": "grep -F", "EGREP_TRADITIONAL": "grep -E", "AWK": "awk", "AR": "ar", "RANLIB": "ranlib", "RM": "rm -f", "CFLAGS": "-O2", "WINDRES": "windres" },
+      "sources": [
+        {
+          "url": "https://ftp.gnu.org/gnu/libiconv/libiconv-1.19.tar.gz",
+          "sha256": "88dd96a8c0464eca144fc791ae60cd31cd8ee78321e67397e25fc095c4a19aa6",
+          "strip": 1
+        },
+        { "path": "gtk4-sdk/autotools-mtimes.sh", "dest": "zigsaw/mtimes.sh" }
+      ],
+      "build": [
+        "sh zigsaw/mtimes.sh",
+        "sh ./configure --disable-dependency-tracking --build=x86_64-w64-mingw32 --host=x86_64-w64-mingw32 --prefix=\"$PREFIX\" --disable-static --enable-relocatable --disable-nls lt_cv_deplibs_check_method=pass_all gl_cv_cc_visibility=no > configure.log 2>&1 || { tail -60 config.log; exit 1; }",
+        "make MAKE=\"sh B:/src/pmake/pmake.sh\" > make.log 2>&1 || { tail -80 make.log; exit 1; }",
+        "make install > install.log 2>&1 || { tail -60 install.log; exit 1; }"
+      ]
+    },
+    {
+      "name": "gettext",
+      "env": { "SED": "sed", "GREP": "grep", "EGREP": "grep -E", "FGREP": "grep -F", "EGREP_TRADITIONAL": "grep -E", "AWK": "awk", "AR": "ar", "RANLIB": "ranlib", "RM": "rm -f", "CFLAGS": "-O2", "CXXFLAGS": "-O2", "CPPFLAGS": "-IB:/prefix/include", "LDFLAGS": "-s -LB:/prefix/lib", "PKG_CONFIG": "pkg-config", "WINDRES": "windres" },
+      "sources": [
+        {
+          "url": "https://ftp.gnu.org/gnu/gettext/gettext-1.0.tar.xz",
+          "sha256": "71132a3fb71e68245b8f2ac4e9e97137d3e5c02f415636eb508ae607bc01add7",
+          "strip": 1
+        },
+        { "path": "gtk4-sdk/autotools-mtimes.sh", "dest": "zigsaw/mtimes.sh" }
+      ],
+      "build": [
+        "sh zigsaw/mtimes.sh",
+        "sh ./configure -C --disable-dependency-tracking --build=x86_64-w64-mingw32 --host=x86_64-w64-mingw32 --prefix=\"$PREFIX\" --disable-static --enable-relocatable --disable-java --disable-csharp --disable-openmp --disable-curses --disable-libasprintf --without-emacs --without-git --without-cvs --without-bzip2 --without-xz --enable-threads=windows --with-libiconv-prefix=B:/prefix lt_cv_deplibs_check_method=pass_all gl_cv_cc_visibility=no > configure.log 2>&1 || { tail -40 configure.log; for f in config.log */config.log; do echo \"== $f\"; tail -60 $f; done; exit 1; }",
+        "make MAKE=\"sh B:/src/pmake/pmake.sh\" MAKEINFO=true HELP2MAN=true > make.log 2>&1 || { tail -80 make.log; exit 1; }",
+        "make install INSTALL=\"install -c\" MAKEINFO=true HELP2MAN=true > install.log 2>&1 || { tail -60 install.log; exit 1; }"
+      ]
+    }
+  ]
+}

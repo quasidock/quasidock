@@ -1,0 +1,59 @@
+{
+  "id": "org.postgresql.PostgreSQL",
+  "version": "18.6",
+  "name": "PostgreSQL",
+  "summary": "The PostgreSQL database server and its client programs, built with Clang (llvm-mingw), with PL/Perl and PL/Python",
+  "homepage": "https://www.postgresql.org/",
+  "license": "PostgreSQL",
+  "command": "bin/pg-server.exe",
+  "path": ["bin"],
+  "env": {
+    "PGDATA": "${data}\\data",
+    "PGPASSFILE": "${data}\\pgpass.conf",
+    "PGUSER": "postgres",
+    "PGHOST": "localhost",
+    "PGPORT": "${listen:postgresql}",
+    "SSL_CERT_FILE": "${roots}"
+  },
+  "permissions": {
+    "network": true,
+    "services": [{ "name": "postgresql", "port": 5432, "command": "postgresql" }]
+  },
+  "extensions": {
+    "org.postgresql.PostgreSQL": { "version": "18", "join": ["PG_EXTENSION_DIRS", "PG_PRELOAD_LIBRARIES"] }
+  },
+  "exports": {
+    "postgresql": { "command": "bin/pg-server.exe" },
+    "postgres": { "command": "bin/postgres.exe" },
+    "initdb": { "command": "bin/initdb.exe" },
+    "pg_ctl": { "command": "bin/pg_ctl.exe" },
+    "psql": { "command": "bin/psql.exe" },
+    "pg_dump": { "command": "bin/pg_dump.exe" },
+    "pg_dumpall": { "command": "bin/pg_dumpall.exe" },
+    "pg_restore": { "command": "bin/pg_restore.exe" },
+    "pg_basebackup": { "command": "bin/pg_basebackup.exe" },
+    "pg_isready": { "command": "bin/pg_isready.exe" },
+    "createdb": { "command": "bin/createdb.exe" },
+    "dropdb": { "command": "bin/dropdb.exe" },
+    "createuser": { "command": "bin/createuser.exe" },
+    "dropuser": { "command": "bin/dropuser.exe" },
+    "vacuumdb": { "command": "bin/vacuumdb.exe" },
+    "reindexdb": { "command": "bin/reindexdb.exe" },
+    "clusterdb": { "command": "bin/clusterdb.exe" },
+    "pgbench": { "command": "bin/pgbench.exe" }
+  },
+  "sdk": {
+    "pgsdk": "org.postgresql.PostgreSQL.Sdk:18.6@sha256:1026b6edae04ffd2eaed19bdd96933db131857bd3fd5843c5d3735a41160b646"
+  },
+  "runtimes": {
+    "perl": "org.perl.perl:5.42.3.1@sha256:4bf63dc4d73c1094335f85767629736c3d01276dc3e46be04bfba985b70e25df",
+    "python": "org.python.python:3.14.10@sha256:ccd0d0e3ef77fd28cfa787f19405ffe747d47f1483312df00819dce1a356c5b4"
+  },
+  "cleanup": ["/include", "/lib/cmake", "/lib/pkgconfig", "*.a", "/share/doc", "/share/man", "/bin/xml2-config", "/bin/xmllint.exe", "/bin/xmlcatalog.exe", "/bin/test_cloexec.exe", "/lib/postgresql/pgxs"],
+  "modules": [
+    {
+      "name": "postgresql",
+      "sources": [{ "image": "org.postgresql.PostgreSQL.Sdk:18.6@sha256:1026b6edae04ffd2eaed19bdd96933db131857bd3fd5843c5d3735a41160b646" }]
+    }
+  ]
+}

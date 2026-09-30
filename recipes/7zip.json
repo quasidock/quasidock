@@ -1,0 +1,48 @@
+{
+  "id": "org.7_zip.7zip",
+  "version": "26.05",
+  "name": "7-Zip",
+  "summary": "A file archiver with a high compression ratio",
+  "homepage": "https://7-zip.org/",
+  "license": "LGPL-2.1-or-later AND BSD-3-Clause AND LicenseRef-unRAR",
+  "command": "7z.exe",
+  "permissions": { "filesystem": ["cwd", "desktop", "documents", "downloads"] },
+  "exports": {
+    "7z": { "command": "7z.exe" },
+    "7zfm": { "command": "7zFM.exe" },
+    "7zg": { "command": "7zG.exe" }
+  },
+  "shortcuts": {
+    "7-Zip File Manager": { "command": "7zfm", "description": "Browse, pack and unpack archives" }
+  },
+  "associations": {
+    ".7z": { "command": "7zfm", "description": "7-Zip archive" },
+    ".zip": { "command": "7zfm", "description": "Zip archive" },
+    ".tar": { "command": "7zfm", "description": "Tar archive" },
+    ".gz": { "command": "7zfm", "description": "Gzip archive" },
+    ".xz": { "command": "7zfm", "description": "XZ archive" }
+  },
+  "registry": ["Software\\7-Zip"],
+  "sdk": {
+    "busybox": "net.frippery.busybox:FRP-6075-g169694ebd@sha256:db9d39727bfdd4d176b5878c0a125daa8a2396ea21e0f01a6a372f53d9d97e5d"
+  },
+  "cleanup": ["/Uninstall.exe", "/7-zip.dll", "/7-zip32.dll"],
+  "modules": [
+    {
+      "name": "7zip",
+      "sources": [
+        {
+          "url": "https://github.com/ip7z/7zip/releases/download/26.05/7zr.exe",
+          "sha256": "9bf582b894dfa665f852d7e9112b02290a1c303c2d95a21fcdc41ffcb03143b7"
+        },
+        {
+          "url": "https://github.com/ip7z/7zip/releases/download/26.05/7z2605-x64.exe",
+          "sha256": "fd99e86f57d8f429ef5ed045bf98315af962e2309b0f1ba87a147a44c71647d0"
+        }
+      ],
+      "build": [
+        "./7zr.exe x -y -bd -o\"$PREFIX\" 7z2605-x64.exe"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,34 @@
+{
+  "id": "org.golang.go",
+  "version": "1.27.3",
+  "name": "Go",
+  "summary": "The Go programming language: its compiler, tools and standard library",
+  "homepage": "https://go.dev/",
+  "license": "BSD-3-Clause",
+  "command": "bin/go.exe",
+  "path": ["bin", "${data}\\go\\bin"],
+  "env": {
+    "GOPATH": "${data}\\go",
+    "GOCACHE": "${cache}",
+    "GOTOOLCHAIN": "local",
+    "GOFLAGS": "-trimpath -modcacherw"
+  },
+  "permissions": { "sandbox": "soft", "network": true, "filesystem": ["cwd"] },
+  "exports": {
+    "go": { "command": "bin/go.exe" },
+    "gofmt": { "command": "bin/gofmt.exe" }
+  },
+  "cleanup": ["/test"],
+  "modules": [
+    {
+      "name": "go",
+      "sources": [
+        {
+          "url": "https://go.dev/dl/go1.27.3.windows-amd64.zip",
+          "sha256": "f26081f438319757f8a1b46d7d0b2c5ec7583d4038e485e0aa725cfde7885fff",
+          "strip": 1
+        }
+      ]
+    }
+  ]
+}

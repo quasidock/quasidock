@@ -1,0 +1,40 @@
+{
+  "id": "com.github.BurntSushi.ripgrep",
+  "version": "15.2.0",
+  "name": "ripgrep",
+  "summary": "Searches files for a regular expression, recursively and fast, respecting .gitignore",
+  "homepage": "https://github.com/BurntSushi/ripgrep",
+  "license": "Unlicense OR MIT",
+  "command": "rg.exe",
+  "permissions": { "filesystem": ["cwd:ro"] },
+  "sdk": {
+    "rust": "org.rust-lang.rust:1.99.0@sha256:e7e9706485bba88759915d9509993d0e41d340d7d8dfec6426fce1feda9a10e2",
+    "zig": "org.ziglang.zig:0.17.0@sha256:93ec2b6b36708ae80ffac87872e70dafaee350cd2d49a95dd2fa5847d0a10449",
+    "busybox": "net.frippery.busybox:FRP-6075-g169694ebd@sha256:db9d39727bfdd4d176b5878c0a125daa8a2396ea21e0f01a6a372f53d9d97e5d"
+  },
+  "modules": [
+    {
+      "name": "ripgrep",
+      "sources": [
+        {
+          "url": "https://static.crates.io/crates/ripgrep/ripgrep-15.2.0.crate",
+          "sha256": "a30750b6d0743bfdd2656ebbaf4555aa278c43144b84bc389bcbfa399485ec71",
+          "strip": 1
+        }
+      ],
+      "vendor": {
+        "commands": ["cargo vendor --locked vendor >/dev/null"],
+        "dir": "vendor",
+        "sha256": "c58cbe1a06b9fa521863672c130f963b90db1322e0173f3559af3ec5fb9eb80a"
+      },
+      "build": [
+        "cargo build --offline --locked --profile release-lto --config 'source.crates-io.replace-with=\"vendored\"' --config 'source.vendored.directory=\"vendor\"'",
+        "mkdir -p \"$PREFIX/doc\" \"$PREFIX/complete\"",
+        "cp target/release-lto/rg.exe README.md COPYING LICENSE-MIT UNLICENSE \"$PREFIX/\"",
+        "cp CHANGELOG.md FAQ.md GUIDE.md \"$PREFIX/doc/\"",
+        "target/release-lto/rg.exe --generate man > \"$PREFIX/doc/rg.1\"",
+        "for shell in bash:rg.bash fish:rg.fish zsh:_rg powershell:_rg.ps1; do target/release-lto/rg.exe --generate complete-${shell%%:*} > \"$PREFIX/complete/${shell#*:}\" || exit 1; done"
+      ]
+    }
+  ]
+}

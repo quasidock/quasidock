@@ -1,0 +1,63 @@
+{
+  "id": "org.flameshot.Flameshot",
+  "version": "14.0.0",
+  "name": "Flameshot",
+  "summary": "Takes screenshots, annotates them and saves or copies them, from its tray icon or the command line",
+  "homepage": "https://flameshot.org/",
+  "license": "GPL-3.0-or-later",
+  "command": "bin/flameshot.exe",
+  "path": ["bin"],
+  "permissions": { "filesystem": ["pictures"] },
+  "exports": {
+    "flameshot": { "command": "bin/flameshot.exe" }
+  },
+  "shortcuts": {
+    "Flameshot": { "command": "flameshot", "description": "Take and annotate screenshots" }
+  },
+  "cleanup": ["/bin/flameshot-cli.exe"],
+  "runtimes": {
+    "qt": "io.qt.Qt6:6.12.0@sha256:4a6ae197bfabbc24239ac6c946e38a6e8f665dae5f5eb60c297ace8a93c4dcc3"
+  },
+  "sdk": {
+    "qtsdk": "io.qt.Qt6.Sdk:6.12.0@sha256:965dba80c2f86cd874d5603658b48ed0d0c8f01d1204aba2cb1c077fb7ba0128"
+  },
+  "modules": [
+    {
+      "name": "flameshot",
+      "sources": [
+        {
+          "url": "https://github.com/flameshot-org/flameshot/archive/refs/tags/v14.0.0.tar.gz",
+          "sha256": "810c399f3b9fbfd72e24e61417ede24243925f9c0d03040a8aba0d4866676d93",
+          "strip": 1
+        },
+        {
+          "url": "https://gitlab.com/mattbas/Qt-Color-Widgets/-/archive/5d52e907e50dc88cf969b41cea44665ff6c475b1/Qt-Color-Widgets-5d52e907e50dc88cf969b41cea44665ff6c475b1.tar.gz",
+          "sha256": "99edd39dca0367b1cfd388bf031c4915137580bd73f87c65f7720b8a4af14efa",
+          "strip": 1,
+          "dest": "external/Qt-Color-Widgets"
+        },
+        {
+          "url": "https://github.com/KDAB/KDSingleApplication/archive/refs/tags/v1.2.0.tar.gz",
+          "sha256": "ff4ae6a4620beed1cdb3e6a9b78a17d7d1dae7139c3d4746d4856b7547d42c38",
+          "strip": 1,
+          "dest": "external/KDSingleApplication"
+        },
+        {
+          "url": "https://github.com/flameshot-org/QHotkey/archive/d7063877c14d5ae2b489dc70bbe02e76a43bf38b.tar.gz",
+          "sha256": "d98521898cbb19b50a7281a7443ca77f6570f7ddd993a2962cb5c6bdf08fe29c",
+          "strip": 1,
+          "dest": "zigsaw/qhotkey"
+        }
+      ],
+      "build": [
+        "sed -i 's|^#include <algorithm>$|&\\n#include <iterator>|' src/utils/strfparse.cpp && grep -q '^#include <iterator>$' src/utils/strfparse.cpp",
+        "sed -i 's|target_link_options(flameshot-cli PRIVATE /SUBSYSTEM:CONSOLE)|target_link_options(flameshot-cli PRIVATE -municode)|' src/CMakeLists.txt",
+        "grep -q 'target_link_options(flameshot-cli PRIVATE -municode)' src/CMakeLists.txt",
+        "cmake -S . -B out -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=\"$PREFIX\" -DFETCHCONTENT_FULLY_DISCONNECTED=ON -DFETCHCONTENT_SOURCE_DIR_QHOTKEY=B:/src/flameshot/zigsaw/qhotkey -DDISABLE_UPDATE_CHECKER=ON -DENABLE_IMGUR=OFF -DWINDEPLOYQT_EXE=OFF",
+        "cmake --build out",
+        "cmake --install out",
+        "mkdir -p \"$PREFIX/bin/translations\" && cp out/src/*.qm \"$PREFIX/bin/translations/\""
+      ]
+    }
+  ]
+}
