@@ -1,29 +1,42 @@
 //! `zigsaw run`: starts an installed app in a clean environment.
 //!
 //! Every run gets:
-//! - an environment built from scratch: PATH is the app's directories plus the
-//!   system directories, and the user profile folders (USERPROFILE, APPDATA,
-//!   LOCALAPPDATA, TEMP) point into the app's data directory;
+//! - an environment built from scratch: PATH is the app's directories, then
+//!   its runtimes', then the system directories; the runtimes' variables and
+//!   then the app's are set; and the user profile folders (USERPROFILE,
+//!   APPDATA, LOCALAPPDATA, TEMP) point into the app's data directory;
 //! - the data directory as its working directory, unless the app has the
 //!   "cwd" filesystem permission;
+//! - the user's folders it may use, such as Documents, linked into that
+//!   profile (see folders.zig);
 //! - a job object, so the whole process tree ends when the run ends.
 //!
 //! The `appcontainer` sandbox additionally runs the app under its AppContainer
-//! identity, which enforces the filesystem and network permissions. The `soft`
-//! sandbox only shapes what the app sees; it enforces nothing.
+//! identity, which enforces the filesystem and network permissions. The `low`
+//! sandbox runs it at low integrity, with its data directory and the paths it
+//! may write labelled low, which keeps it from writing anywhere else; reading
+//! and the network stay open. The `soft` sandbox only shapes what the app
+//! sees; it enforces nothing.
 
 const std = @import("std");
 const Io = std.Io;
 const Allocator = std.mem.Allocator;
 const win32 = @import("win32.zig");
+const acl = @import("acl.zig");
+const aliases = @import("aliases.zig");
 const appcontainer = @import("appcontainer.zig");
 const oci = @import("oci.zig");
 const Context = @import("Context.zig");
 const Store = @import("Store.zig");
+const environment = @import("environment.zig");
+const exports = @import("exports.zig");
+const extensions = @import("extensions.zig");
+const folders = @import("folders.zig");
+const hkcu = @import("hkcu.zig");
+const override = @import("override.zig");
+const process = @import("process.zig");
 const fail = Context.fail;
 const note = Context.note;
-
-pub const Sandbox = enum { soft, appcontainer };
 
 pub const Options = struct {
     id: []const u8,
@@ -31,139 +44,313 @@ pub const Options = struct {
     /// Runs this executable instead of the app's command. Looked up in the
     /// app's PATH directories, then in System32.
     command: ?[]const u8 = null,
-    sandbox: Sandbox = .soft,
-    /// Uses a fresh data directory that is deleted after the run.
-    ephemeral: bool = false,
-    /// Filesystem permissions granted on top of the app's own.
-    filesystem: []const []const u8 = &.{},
-    /// Overrides the app's network permission.
-    network: ?bool = null,
-    /// Extra "NAME=VALUE" environment variables, applied last.
-    env: []const []const u8 = &.{},
-};
-
-/// Host variables passed through unchanged. Everything else from the host
-/// environment is dropped.
-const passthrough_env = [_][]const u8{
-    "SystemRoot",           "windir",                 "SystemDrive",
-    "ComSpec",              "PATHEXT",                "OS",
-    "NUMBER_OF_PROCESSORS", "PROCESSOR_ARCHITECTURE", "PROCESSOR_IDENTIFIER",
-    "PROCESSOR_LEVEL",      "PROCESSOR_REVISION",     "USERNAME",
+    /// Host files for the app to open (`--file`): each is granted to it as
+    /// that one file, to read and write, and goes after `args` as an
+    /// absolute path. What opening a file from Explorer comes to.
+    files: []const []const u8 = &.{},
+    /// From the command line. They go over the app's saved overrides.
+    settings: override.Settings = .{},
 };
 
 /// Runs the app and returns its exit code.
 pub fn run(ctx: *Context, opts: Options) !u32 {
     const io = ctx.io;
     const arena = ctx.arena;
+    // Held while preparing the run, not while the app runs. The deployment
+    // and any ephemeral data directory stay locked as in use until the end.
+    // (On errors, zigsaw exits and that releases every lock.)
+    const store_lock = try ctx.store.lock(arena, .shared);
     const image = try ctx.store.loadImage(arena, opts.id);
     const cfg = image.config;
 
-    // Effective permissions: the app's own plus command-line grants.
-    const network = opts.network orelse cfg.permissions.network;
-    var grants: std.ArrayList(oci.FsGrant) = .empty;
-    for ([_][]const []const u8{ cfg.permissions.filesystem, opts.filesystem }) |specs| {
-        for (specs) |spec| try grants.append(arena, oci.parseFsGrant(spec) orelse
-            return fail("invalid filesystem permission \"{s}\"", .{spec}));
-    }
+    // Effective settings: the command line over the app's overrides, over the
+    // app's own permissions.
+    const saved = try override.load(ctx.store, arena, cfg.id);
+    const settings = try override.Settings.merge(arena, saved, opts.settings);
+    const sandbox = settings.sandbox orelse .soft;
+    const network = settings.network orelse cfg.permissions.network;
+    var grants: std.ArrayList(HostGrant) = .empty;
+    var folder_grants: std.ArrayList(folders.Grant) = .empty;
     var cwd_granted = false;
-    for (grants.items) |g| {
-        if (g.path == null) cwd_granted = true;
+    for (try settings.filesystemFor(arena, cfg.permissions.filesystem)) |spec| {
+        const g = oci.parseFsGrant(spec) orelse return fail("invalid filesystem permission \"{s}\"", .{spec});
+        switch (g.where) {
+            .cwd => {
+                cwd_granted = true;
+                try grants.append(arena, .{ .path = null, .read_only = g.read_only });
+            },
+            .path => |p| try grants.append(arena, .{ .path = p, .read_only = g.read_only }),
+            .folder => |f| try folder_grants.append(arena, .{ .folder = f, .read_only = g.read_only }),
+            .unknown => note("warning: {s} asks for the filesystem permission \"{s}\", which this zigsaw doesn't know, and leaves out; a newer zigsaw may", .{ cfg.id, spec }),
+        }
     }
+    const host_cwd = try std.process.currentPathAlloc(io, arena);
+    const files = try openedFiles(io, arena, host_cwd, opts.files);
+    for (files) |f| try grants.append(arena, .{ .path = f, .read_only = false });
 
     // Per-app writable state, laid out like a Windows user profile.
-    const data_dir = if (opts.ephemeral)
-        try ctx.store.makeTmpDir(arena, "run")
-    else
-        try ctx.store.path(arena, &.{ "data", cfg.id });
-    defer if (opts.ephemeral) Io.Dir.cwd().deleteTree(io, data_dir) catch {};
-    const profile: Profile = try .init(arena, data_dir);
-    for ([_][]const u8{ profile.roaming, profile.temp }) |dir| try Io.Dir.cwd().createDirPath(io, dir);
+    const run_dir: ?Store.RunDir = if (settings.ephemeral orelse false) try ctx.store.makeRunDir(arena) else null;
+    defer if (run_dir) |d| d.delete(ctx.store, arena);
+    const app_aliases = try syncAliases(ctx, image);
+    // Installed images that plug into the app or its runtimes join the run
+    // (see extensions.zig).
+    const found = try extensions.find(ctx.store, arena, cfg, settings.noextension);
+    for (found.skipped) |s| if (s.warn or ctx.verbose) note("note: {s} doesn't join this run: {s}", .{ s.id, s.reason });
+    store_lock.release(io);
+    const data_dir = if (run_dir) |d| d.path else try ctx.store.path(arena, &.{ "data", cfg.id });
+    const profile: environment.Profile = try .init(arena, data_dir);
+    // Where file dialogs keep Quick access: only if it exists do they make
+    // it, with the user's folders pinned (docs/findings.md).
+    const quick_access = try std.fs.path.join(arena, &.{ profile.roaming, "Microsoft", "Windows", "Recent", "AutomaticDestinations" });
+    for ([_][]const u8{ quick_access, profile.temp }) |dir| try Io.Dir.cwd().createDirPath(io, dir);
 
-    const host_cwd = try std.process.currentPathAlloc(io, arena);
     const cwd = if (cwd_granted) host_cwd else profile.home;
 
+    const cache_dir = try std.fs.path.join(arena, &.{ data_dir, "cache" });
+    if (usesCache(cfg, found.loaded)) try Io.Dir.cwd().createDirPath(io, cache_dir);
+
     const system_root = ctx.env.get("SystemRoot") orelse "C:\\Windows";
-    const app_path = try appPathDirs(arena, image.deploy_dir, cfg.path);
-    const exe = try resolveCommand(io, arena, image.deploy_dir, cfg.command, opts.command, app_path, system_root);
-    const command_line = try buildCommandLine(arena, exe, opts.args);
-    const env = try buildEnv(arena, ctx.env, .{
+    const runtimes = try runtimeDirs(arena, cfg, image.runtime_dirs, data_dir, cache_dir);
+    const placeholders: oci.Placeholders = .{ .app = image.deploy_dir, .data = data_dir, .cache = cache_dir, .runtimes = runtimes.dirs };
+    // The aliases first, as in builds, then the app's directories, then each
+    // runtime's.
+    var app_path: std.ArrayList([]const u8) = .empty;
+    if (app_aliases) |a| try app_path.append(arena, a.dir);
+    try app_path.appendSlice(arena, try environment.pathDirs(arena, placeholders, cfg.path));
+    for (runtimes.own, cfg.runtimes.map.values()) |p, r| try app_path.appendSlice(arena, try environment.pathDirs(arena, p, r.path));
+    // Then the extensions', as runtimes the app didn't list; in them, ${app}
+    // is the extension's directory.
+    const ext_own = try arena.alloc(oci.Placeholders, found.loaded.len);
+    for (ext_own, found.loaded) |*p, e| p.* = .{ .app = e.dir, .data = data_dir, .cache = cache_dir };
+    for (ext_own, found.loaded) |p, e| try app_path.appendSlice(arena, try environment.pathDirs(arena, p, e.config.path));
+    const command = try resolveCommand(io, arena, placeholders, cfg, opts.command, app_path.items, system_root);
+    const args = try std.mem.concat(arena, []const u8, &.{ command.args, opts.args, files });
+    // Batch files run through cmd.exe; System32's, not ComSpec's.
+    const exe = if (command.batch) try std.fmt.allocPrint(arena, "{s}\\System32\\cmd.exe", .{system_root}) else command.exe;
+    const command_line = if (command.batch)
+        process.buildBatchCommandLine(arena, exe, command.exe, args) catch |err| switch (err) {
+            error.InvalidBatchArgument => return fail("{s} is a batch file, and cmd.exe can't pass it an argument with a line break or a NUL character", .{command.exe}),
+            error.InvalidBatchScript => return fail("{s} can't be run as a batch file", .{command.exe}),
+            error.OutOfMemory => |e| return e,
+        }
+    else
+        try process.buildCommandLine(arena, exe, args);
+    // The runtimes' variables first, then the extensions', so the app's win;
+    // those the extension points join add up instead.
+    const joined = try extensions.joined(arena, found.points);
+    var app_env: std.ArrayList(environment.Var) = .empty;
+    for (runtimes.own, cfg.runtimes.map.values()) |p, r| try environment.expand(arena, &app_env, p, r.env, joined);
+    for (ext_own, found.loaded) |p, e| try environment.expand(arena, &app_env, p, e.config.env, joined);
+    try environment.expand(arena, &app_env, placeholders, cfg.env, joined);
+    if (app_aliases) |a| try environment.set(arena, &app_env, "BB_OVERRIDE_APPLETS", a.names);
+    const env = try environment.build(arena, ctx.env, .{
         .id = cfg.id,
         .profile = profile,
-        .app_path = app_path,
+        .path = app_path.items,
         .system_root = system_root,
-        .app_env = cfg.env,
-        .overrides = opts.env,
+        .vars = app_env.items,
+        .extra = settings.env,
     });
+    // The user's folders, where the app's environment says it looks for them.
+    for (try folders.apply(ctx, data_dir, env.items, folder_grants.items)) |f|
+        try grants.append(arena, .{ .path = f.path, .read_only = f.read_only });
 
     if (ctx.verbose) {
         note("app      {s} {s} ({s})", .{ cfg.id, cfg.version, image.ref.manifest });
-        note("sandbox  {t}, network {s}", .{ opts.sandbox, if (network) "on" else "off" });
+        for (cfg.runtimes.map.keys(), cfg.runtimes.map.values(), image.runtime_dirs) |alias, r, dir|
+            note("runtime  {s}: {s} {s} ({s})", .{ alias, r.id, r.version, dir });
+        for (found.loaded) |e| note("extension {s} {s} ({s})", .{ e.id, e.version, e.dir });
+        if (app_aliases) |a| note("aliases  {s} ({s})", .{ a.names, a.dir });
+        if (!saved.isEmpty()) note("override {f}", .{saved});
+        note("sandbox  {t}, network {s}", .{ sandbox, if (network) "on" else "off" });
         note("exe      {s}", .{exe});
+        if (command.batch) note("script   {s}", .{command.exe});
         note("cmdline  {s}", .{command_line});
         note("cwd      {s}", .{cwd});
         for (env.items) |kv| note("env      {s}={s}", .{ kv.name, kv.value });
     }
 
     var security: ?win32.SECURITY_CAPABILITIES = null;
-    switch (opts.sandbox) {
+    var token: ?win32.HANDLE = null;
+    switch (sandbox) {
         .soft => if (ctx.verbose) {
             for (grants.items) |g| if (g.path) |p|
                 note("note: soft sandbox doesn't enforce filesystem permissions; {s} is as reachable as any other path", .{p});
         },
+        .low => token = try setUpLow(ctx, cfg.id, .{
+            .data_dir = data_dir,
+            .host_cwd = host_cwd,
+            .grants = grants.items,
+            .network = network,
+        }),
         .appcontainer => security = try setUpAppContainer(ctx, cfg.id, .{
             .deploy_dir = image.deploy_dir,
+            .runtime_dirs = try std.mem.concat(arena, []const u8, &.{ image.runtime_dirs, try extensionDirs(arena, found.loaded) }),
+            .alias_dir = if (app_aliases) |a| a.dir else null,
             .data_dir = data_dir,
+            .local_app_data = profile.local,
             .host_cwd = host_cwd,
             .grants = grants.items,
             .network = network,
         }),
     }
 
-    return spawn(arena, .{
+    // The keys the app keeps in HKCU, there for the run (see hkcu.zig), and
+    // taken back before an --ephemeral run's data directory goes.
+    const keys = try hkcu.enter(ctx, cfg.id, cfg.registry, data_dir, switch (sandbox) {
+        .soft => .none,
+        .low => .low,
+        .appcontainer => .{ .capability = try appcontainer.appCapability(arena, cfg.id) },
+    }, run_dir == null);
+    defer if (keys) |k| hkcu.leave(ctx, k);
+    if (ctx.verbose) if (cfg.registry) |r| note("registry {s} (kept in {s}\\registry)", .{ try std.mem.join(arena, ", ", r), data_dir });
+
+    const code = try process.spawn(arena, .{
         .exe = exe,
         .command_line = command_line,
-        .env_block = try encodeEnvBlock(arena, env.items),
+        .env_block = try environment.encodeBlock(arena, env.items),
         .cwd = cwd,
         .security = if (security) |*s| s else null,
+        .token = token,
+        // Set by a shim that a shortcut started (see shim.zig).
+        .shortcut = ctx.env.get("ZIGSAW_SHORTCUT"),
     });
+    // Commands the run installed, as `npm install -g` does, get shims. An
+    // --ephemeral run's are gone with its data directory.
+    if (run_dir == null and exports.hasCommandDirs(cfg)) exports.syncAfterRun(ctx, cfg.id);
+    return code;
 }
 
-const Profile = struct {
-    home: []const u8,
-    roaming: []const u8,
-    local: []const u8,
-    temp: []const u8,
+/// A host path the run may use, which the enforcing sandboxes grant: null
+/// for the working directory zigsaw was started from.
+const HostGrant = struct { path: ?[]const u8, read_only: bool };
 
-    fn init(arena: Allocator, data_dir: []const u8) !Profile {
-        const home = try std.fs.path.join(arena, &.{ data_dir, "home" });
-        const local = try std.fs.path.join(arena, &.{ home, "AppData", "Local" });
-        return .{
-            .home = home,
-            .roaming = try std.fs.path.join(arena, &.{ home, "AppData", "Roaming" }),
-            .local = local,
-            .temp = try std.fs.path.join(arena, &.{ local, "Temp" }),
+/// The absolute paths of the files `--file` names, which may be relative to
+/// the directory zigsaw was started from; the app's own working directory
+/// may be another. Each has to be a file that exists: there's nothing to
+/// grant otherwise, and a directory is `--filesystem`'s to give.
+fn openedFiles(io: Io, arena: Allocator, host_cwd: []const u8, named: []const []const u8) ![]const []const u8 {
+    const files = try arena.alloc([]const u8, named.len);
+    for (files, named) |*file, name| {
+        const p = try std.fs.path.resolve(arena, &.{ host_cwd, name });
+        const stat = Io.Dir.cwd().statFile(io, p, .{}) catch |err| switch (err) {
+            error.FileNotFound => return fail("--file={s}: there's no such file", .{name}),
+            else => return fail("--file={s}: {t}", .{ name, err }),
         };
+        if (stat.kind == .directory)
+            return fail("--file={s} is a directory; --filesystem={s} grants one", .{ name, p });
+        file.* = p;
     }
+    return files;
+}
+
+// ---------------------------------------------------------------------------
+// Aliases
+
+const AppAliases = struct {
+    /// The store's aliases\<id>\, first on the run's PATH.
+    dir: []const u8,
+    /// For BB_OVERRIDE_APPLETS.
+    names: []const u8,
 };
+
+/// Brings the shims of the app's aliases, and its runtimes', up to date in
+/// the store (see aliases.zig); null if it has none. Runs with the store
+/// lock held, so prune doesn't delete them meanwhile.
+fn syncAliases(ctx: *Context, image: Store.Image) !?AppAliases {
+    const arena = ctx.arena;
+    const cfg = image.config;
+    const dir = try ctx.store.aliasDir(arena, cfg.id);
+    const resolved = try aliases.resolve(ctx, try aliasProviders(arena, image), .skip);
+    if (resolved.len == 0) {
+        // Left by a version of the app that had some.
+        if (try Store.exists(ctx.io, dir)) {
+            const l = try ctx.store.lockAliases(arena, cfg.id);
+            defer l.release(ctx.io);
+            Store.deleteTree(ctx.io, arena, dir) catch {};
+        }
+        return null;
+    }
+    const l = try ctx.store.lockAliases(arena, cfg.id);
+    defer l.release(ctx.io);
+    const start = ctx.now();
+    const written = try aliases.sync(ctx, dir, resolved);
+    if (written > 0) ctx.timed(start, "update {d} alias file(s)", .{written});
+    return .{ .dir = dir, .names = try aliases.names(arena, resolved) };
+}
+
+/// The app first, then its runtimes in order: the first to have an alias
+/// of a name wins it. The app's aliases may run its runtimes' files.
+fn aliasProviders(arena: Allocator, image: Store.Image) ![]const aliases.Provider {
+    const cfg = image.config;
+    const runtimes = try arena.alloc(oci.Placeholders.Dir, image.runtime_dirs.len);
+    for (runtimes, cfg.runtimes.map.keys(), image.runtime_dirs) |*r, alias, dir| r.* = .{ .alias = alias, .path = dir };
+    var out: std.ArrayList(aliases.Provider) = .empty;
+    try out.append(arena, .{ .id = cfg.id, .dir = image.deploy_dir, .aliases = cfg.aliases, .runtimes = runtimes });
+    for (cfg.runtimes.map.values(), image.runtime_dirs) |r, dir| try out.append(arena, .{ .id = r.id, .dir = dir, .aliases = r.aliases });
+    return out.items;
+}
+
+test aliasProviders {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const digest = "sha256:" ++ "a" ** 64;
+    var cfg: oci.AppConfig = .{ .id = "app", .version = "1", .command = "x.exe" };
+    try cfg.runtimes.map.put(arena, "b", .{ .id = "rt.b", .version = "1", .image = digest, .layer = digest });
+    try cfg.runtimes.map.put(arena, "a", .{ .id = "rt.a", .version = "1", .image = digest, .layer = digest });
+    const image: Store.Image = .{
+        .ref = .{ .id = "app", .version = "1", .manifest = digest },
+        .manifest = .{ .config = .{ .mediaType = "", .digest = digest, .size = 0 }, .layers = &.{} },
+        .config = cfg,
+        .deploy_dir = "D:\\app",
+        .runtime_dirs = &.{ "D:\\b", "D:\\a" },
+    };
+    const p = try aliasProviders(arena, image);
+    try std.testing.expectEqual(3, p.len);
+    for ([_][]const u8{ "app", "rt.b", "rt.a" }, [_][]const u8{ "D:\\app", "D:\\b", "D:\\a" }, p) |id, dir, got| {
+        try std.testing.expectEqualStrings(id, got.id);
+        try std.testing.expectEqualStrings(dir, got.dir);
+    }
+    // The app's aliases may name its runtimes; theirs have only themselves.
+    try std.testing.expectEqual(2, p[0].runtimes.len);
+    try std.testing.expectEqualStrings("b", p[0].runtimes[0].alias);
+    try std.testing.expectEqualStrings("D:\\b", p[0].runtimes[0].path);
+    try std.testing.expectEqualStrings("a", p[0].runtimes[1].alias);
+    try std.testing.expectEqualStrings("D:\\a", p[0].runtimes[1].path);
+    try std.testing.expectEqual(0, p[1].runtimes.len);
+}
 
 // ---------------------------------------------------------------------------
 // AppContainer
 
 const AppContainerSetup = struct {
     deploy_dir: []const u8,
+    runtime_dirs: []const []const u8,
+    /// The app's alias shims, if it has aliases.
+    alias_dir: ?[]const u8,
     data_dir: []const u8,
+    /// The run's LOCALAPPDATA, in its data directory.
+    local_app_data: []const u8,
     host_cwd: []const u8,
-    grants: []const oci.FsGrant,
+    grants: []const HostGrant,
     network: bool,
 };
 
 fn setUpAppContainer(ctx: *Context, id: []const u8, setup: AppContainerSetup) !win32.SECURITY_CAPABILITIES {
     const arena = ctx.arena;
     const profile = try appcontainer.Profile.ensure(arena, id);
+    // In an AppContainer, Windows' temporary directory isn't TEMP but the
+    // container's own, under LOCALAPPDATA, which is in the data directory
+    // here. Programs that ask Windows for it (GetTempPath2), as Go's and
+    // Rust's standard libraries do, need it to exist.
+    try Io.Dir.cwd().createDirPath(ctx.io, try std.fs.path.join(arena, &.{ setup.local_app_data, "Packages", profile.name, "AC", "Temp" }));
 
-    const Grant = struct { path: []const u8, access: appcontainer.Access, host: bool };
+    const Grant = struct { path: []const u8, access: acl.Access, host: bool };
     var wanted: std.ArrayList(Grant) = .empty;
     try wanted.append(arena, .{ .path = setup.deploy_dir, .access = .read_execute, .host = false });
+    for (setup.runtime_dirs) |dir| try wanted.append(arena, .{ .path = dir, .access = .read_execute, .host = false });
+    if (setup.alias_dir) |dir| try wanted.append(arena, .{ .path = dir, .access = .read_execute, .host = false });
     try wanted.append(arena, .{ .path = setup.data_dir, .access = .full, .host = false });
     for (setup.grants) |g| try wanted.append(arena, .{
         .path = g.path orelse setup.host_cwd,
@@ -174,9 +361,13 @@ fn setUpAppContainer(ctx: *Context, id: []const u8, setup: AppContainerSetup) !w
     for (wanted.items) |w| {
         // Record host grants before changing anything, so `zigsaw rm` can undo
         // them even if a later step fails.
-        if (w.host) try ctx.store.recordGrant(arena, id, w.path);
+        if (w.host) try ctx.store.recordGrant(arena, id, .{ .kind = .appcontainer, .path = w.path });
+        // Access goes to the app's capability. What zigsaw granted the
+        // profile's package SID before goes in the same change: on the host,
+        // the app's own; in the store, any app's.
+        const old: acl.Revoke = if (w.host) .{ .sids = &.{profile.sid} } else .package_sids;
         const start = Io.Timestamp.now(ctx.io, .awake);
-        const changed = try appcontainer.grant(arena, w.path, profile.sid, w.access);
+        const changed = try acl.grant(arena, w.path, profile.capability, w.access, old);
         if (changed and (w.host or ctx.verbose)) {
             note("granted {s} {t} access to {s} ({d} ms)", .{
                 profile.name, w.access, w.path, start.untilNow(ctx.io, .awake).toMilliseconds(),
@@ -185,6 +376,7 @@ fn setUpAppContainer(ctx: *Context, id: []const u8, setup: AppContainerSetup) !w
     }
 
     var caps: std.ArrayList(win32.SID_AND_ATTRIBUTES) = .empty;
+    try caps.append(arena, .{ .Sid = profile.capability, .Attributes = win32.SE_GROUP_ENABLED });
     if (setup.network) {
         for ([_][]const u8{ appcontainer.capability.internet_client, appcontainer.capability.private_network_client_server }) |s| {
             try caps.append(arena, .{ .Sid = try appcontainer.sidFromString(arena, s), .Attributes = win32.SE_GROUP_ENABLED });
@@ -192,48 +384,191 @@ fn setUpAppContainer(ctx: *Context, id: []const u8, setup: AppContainerSetup) !w
     }
     return .{
         .AppContainerSid = profile.sid,
-        .Capabilities = if (caps.items.len > 0) caps.items.ptr else null,
+        .Capabilities = caps.items.ptr,
         .CapabilityCount = @intCast(caps.items.len),
     };
 }
 
 // ---------------------------------------------------------------------------
-// Command resolution and command lines
+// Low integrity
 
-fn appPathDirs(arena: Allocator, deploy_dir: []const u8, entries: []const []const u8) ![]const []const u8 {
-    var dirs: std.ArrayList([]const u8) = .empty;
-    for (entries) |entry| {
-        const dir = if (std.mem.eql(u8, entry, "."))
-            try arena.dupe(u8, deploy_dir)
-        else
-            try std.fs.path.join(arena, &.{ deploy_dir, entry });
-        std.mem.replaceScalar(u8, dir, '/', '\\');
-        try dirs.append(arena, dir);
+const LowSetup = struct {
+    data_dir: []const u8,
+    host_cwd: []const u8,
+    grants: []const HostGrant,
+    network: bool,
+};
+
+/// Labels the data directory and the host paths the app may write low
+/// integrity, and returns the token the app runs with.
+fn setUpLow(ctx: *Context, id: []const u8, setup: LowSetup) !win32.HANDLE {
+    const arena = ctx.arena;
+    // Before iteration 9, AppContainer runs granted the app's package SID
+    // access, which keeps low-integrity processes out (see appcontainer.zig).
+    // The app's next AppContainer run grants its capability instead.
+    const package = try appcontainer.packageSid(arena, id);
+    _ = try acl.revoke(arena, setup.data_dir, .package_sids);
+    _ = try acl.labelLow(arena, setup.data_dir);
+
+    for (setup.grants) |g| {
+        const p = g.path orelse setup.host_cwd;
+        _ = try acl.revoke(arena, p, .{ .sids = &.{package} });
+        // Low integrity reads what the user can.
+        if (g.read_only) continue;
+        if (labelRefusal(p, ctx.env.get("USERPROFILE"))) |why| {
+            // The app's own permissions can't be taken back, only added to.
+            const instead = if (g.path == null) "run it from a directory inside it" else "grant a directory inside it, or read-only access (:ro)";
+            return fail("--sandbox=low won't label {s} low integrity: {s}, and every low-integrity process could then write anywhere in it; {s}", .{ p, why, instead });
+        }
+        const label: Store.Grant = .{ .kind = .low, .path = p };
+        if (try acl.ownLabel(arena, p)) |rid| if (rid <= win32.SECURITY_MANDATORY_LOW_RID) {
+            // Labelled for another app's runs: this app's need it too, so
+            // removing that app keeps it. A label that zigsaw didn't give
+            // stays when the app goes.
+            if (try ctx.store.grantedToOthers(arena, id, label)) try ctx.store.recordGrant(arena, id, label);
+            continue;
+        };
+        // Recorded first, so `zigsaw rm` can undo it even if a later step fails.
+        try ctx.store.recordGrant(arena, id, label);
+        const start = Io.Timestamp.now(ctx.io, .awake);
+        if (try acl.labelLow(arena, p))
+            note("labelled {s} low integrity ({d} ms)", .{ p, start.untilNow(ctx.io, .awake).toMilliseconds() });
     }
-    return dirs.items;
+    if (ctx.verbose) {
+        note("note: low sandbox doesn't keep the app from reading what you can", .{});
+        if (!setup.network) note("note: low sandbox doesn't enforce network permissions", .{});
+    }
+    try acl.letChildrenQueryUs(arena);
+    return process.lowIntegrityToken(arena);
 }
 
+/// Why zigsaw won't label `path` low for a run, if it won't: it's a drive's
+/// root, the user's profile, or a directory the profile is in.
+fn labelRefusal(path: []const u8, user_profile: ?[]const u8) ?[]const u8 {
+    const p = trimSeparators(path);
+    if (std.fs.path.dirnameWindows(p) == null) return "it's the root of a drive";
+    const profile = trimSeparators(user_profile orelse return null);
+    if (profile.len < p.len or !eqlPathPrefix(profile[0..p.len], p)) return null;
+    if (profile.len == p.len) return "it's your user profile";
+    if (profile[p.len] == '\\' or profile[p.len] == '/') return "your user profile is in it";
+    return null;
+}
+
+fn trimSeparators(path: []const u8) []const u8 {
+    return std.mem.trimEnd(u8, path, "\\/");
+}
+
+/// Equal ignoring ASCII case, with '/' and '\' alike.
+fn eqlPathPrefix(a: []const u8, b: []const u8) bool {
+    for (a, b) |x, y| {
+        const sx = x == '/' or x == '\\';
+        const sy = y == '/' or y == '\\';
+        if (sx and sy) continue;
+        if (std.ascii.toLower(x) != std.ascii.toLower(y)) return false;
+    }
+    return true;
+}
+
+test labelRefusal {
+    const home = "C:\\Users\\Ann";
+    for ([_][]const u8{ "C:\\", "C:", "D:\\", "d:/", "\\\\server\\share\\" }) |root|
+        try std.testing.expectEqualStrings("it's the root of a drive", labelRefusal(root, home).?);
+    try std.testing.expectEqualStrings("it's your user profile", labelRefusal("c:\\users\\ann\\", home).?);
+    try std.testing.expectEqualStrings("it's your user profile", labelRefusal("C:/Users/Ann", home ++ "\\").?);
+    try std.testing.expectEqualStrings("your user profile is in it", labelRefusal("C:\\Users", home).?);
+    for ([_][]const u8{ "C:\\Users\\Ann\\src", "C:\\Users\\Anna", "C:\\Users\\An", "D:\\src", "\\\\server\\share\\dir" }) |ok|
+        try std.testing.expectEqual(null, labelRefusal(ok, home));
+    try std.testing.expectEqual(null, labelRefusal("C:\\Users", null));
+}
+
+// ---------------------------------------------------------------------------
+// Command resolution and command lines
+
+const Runtimes = struct {
+    /// Each runtime's directory, by alias, for the app's placeholders.
+    dirs: []const oci.Placeholders.Dir,
+    /// The placeholders of each runtime's own entries: ${app} is the
+    /// runtime's directory, and ${data} and ${cache} are the app's.
+    own: []const oci.Placeholders,
+};
+
+fn runtimeDirs(arena: Allocator, cfg: oci.AppConfig, dirs: []const []const u8, data_dir: []const u8, cache_dir: []const u8) !Runtimes {
+    const named = try arena.alloc(oci.Placeholders.Dir, dirs.len);
+    const own = try arena.alloc(oci.Placeholders, dirs.len);
+    for (cfg.runtimes.map.keys(), dirs, named, own) |alias, dir, *n, *o| {
+        n.* = .{ .alias = alias, .path = dir };
+        o.* = .{ .app = dir, .data = data_dir, .cache = cache_dir };
+    }
+    return .{ .dirs = named, .own = own };
+}
+
+/// Whether the app's entries or its runtimes' use ${cache}, which is then
+/// created before the run.
+fn usesCache(cfg: oci.AppConfig, exts: []const extensions.Extension) bool {
+    if (oci.usesCache(cfg.path, cfg.env)) return true;
+    for (cfg.runtimes.map.values()) |r| if (oci.usesCache(r.path, r.env)) return true;
+    for (exts) |e| if (oci.usesCache(e.config.path, e.config.env)) return true;
+    return false;
+}
+
+fn extensionDirs(arena: Allocator, exts: []const extensions.Extension) ![]const []const u8 {
+    const dirs = try arena.alloc([]const u8, exts.len);
+    for (dirs, exts) |*d, e| d.* = e.dir;
+    return dirs;
+}
+
+const Command = struct {
+    /// The executable, or the batch file.
+    exe: []const u8,
+    /// Arguments that go before the caller's.
+    args: []const []const u8 = &.{},
+    /// A .bat or .cmd file, which runs through cmd.exe.
+    batch: bool = false,
+
+    fn init(exe: []const u8, args: []const []const u8) Command {
+        const ext = std.fs.path.extension(exe);
+        return .{
+            .exe = exe,
+            .args = args,
+            .batch = std.ascii.eqlIgnoreCase(ext, ".bat") or std.ascii.eqlIgnoreCase(ext, ".cmd"),
+        };
+    }
+};
+
+/// What to run: the app's command, or with `--command`, one of the app's
+/// exports or an executable from the app or System32.
 fn resolveCommand(
     io: Io,
     arena: Allocator,
-    deploy_dir: []const u8,
-    app_command: []const u8,
-    override: ?[]const u8,
+    placeholders: oci.Placeholders,
+    config: oci.AppConfig,
+    requested: ?[]const u8,
     app_path: []const []const u8,
     system_root: []const u8,
-) ![]const u8 {
-    const name = override orelse {
-        const exe = try std.fs.path.join(arena, &.{ deploy_dir, app_command });
-        std.mem.replaceScalar(u8, exe, '/', '\\');
-        return exe;
-    };
-    const resolved = try findCommand(io, arena, deploy_dir, name, app_path, system_root) orelse
-        return fail("command \"{s}\" not found in the app or in System32", .{name});
+) !Command {
+    const deploy_dir = placeholders.app;
+    const name = requested orelse
+        return .init(try placeholders.commandPath(arena, config.command), try expandAll(arena, placeholders, config.args));
 
-    const ext = std.fs.path.extension(resolved);
-    if (std.ascii.eqlIgnoreCase(ext, ".bat") or std.ascii.eqlIgnoreCase(ext, ".cmd"))
-        return fail("{s} is a batch file, which zigsaw can't start directly yet; run it through cmd instead: --command=cmd <app> /c {s} ...", .{ resolved, name });
-    return resolved;
+    var exported = config.exports.map.iterator();
+    while (exported.next()) |e| {
+        if (!std.ascii.eqlIgnoreCase(e.key_ptr.*, name)) continue;
+        return .init(try placeholders.commandPath(arena, e.value_ptr.command), try expandAll(arena, placeholders, e.value_ptr.args));
+    }
+
+    const resolved = try findCommand(io, arena, deploy_dir, name, app_path, system_root) orelse {
+        // A relative path is the app's; one of yours is absolute.
+        if (std.mem.indexOfAny(u8, name, "/\\") != null and !std.fs.path.isAbsolute(name))
+            return fail("command \"{s}\" is not a file in the app; for a program of yours, give its absolute path (e.g. --command=%CD%\\{s})", .{ name, std.fs.path.basename(name) });
+        return fail("command \"{s}\" is not an export of the app, or an executable or batch file in it or in System32", .{name});
+    };
+    return .init(resolved, &.{});
+}
+
+fn expandAll(arena: Allocator, placeholders: oci.Placeholders, templates: []const []const u8) ![]const []const u8 {
+    const out = try arena.alloc([]const u8, templates.len);
+    for (out, templates) |*arg, template| arg.* = try placeholders.expand(arena, template);
+    return out;
 }
 
 fn findCommand(
@@ -262,247 +597,4 @@ fn findCommand(
         if (try Store.exists(io, p)) return p;
     };
     return null;
-}
-
-/// Quotes arguments the way the Microsoft C runtime (and CommandLineToArgvW)
-/// parses them back.
-fn buildCommandLine(arena: Allocator, exe: []const u8, args: []const []const u8) ![]u8 {
-    var out: std.ArrayList(u8) = .empty;
-    try appendQuoted(arena, &out, exe);
-    for (args) |arg| {
-        try out.append(arena, ' ');
-        try appendQuoted(arena, &out, arg);
-    }
-    return out.items;
-}
-
-fn appendQuoted(arena: Allocator, out: *std.ArrayList(u8), arg: []const u8) !void {
-    if (arg.len > 0 and std.mem.indexOfAny(u8, arg, " \t\n\x0b\"") == null) {
-        return out.appendSlice(arena, arg);
-    }
-    try out.append(arena, '"');
-    var backslashes: usize = 0;
-    for (arg) |c| {
-        switch (c) {
-            '\\' => backslashes += 1,
-            '"' => {
-                // Backslashes before a quote are escapes, and so is the quote.
-                try out.appendNTimes(arena, '\\', backslashes * 2 + 1);
-                try out.append(arena, '"');
-                backslashes = 0;
-            },
-            else => {
-                try out.appendNTimes(arena, '\\', backslashes);
-                try out.append(arena, c);
-                backslashes = 0;
-            },
-        }
-    }
-    // Backslashes before the closing quote must be doubled.
-    try out.appendNTimes(arena, '\\', backslashes * 2);
-    try out.append(arena, '"');
-}
-
-// ---------------------------------------------------------------------------
-// Environment
-
-const EnvVar = struct { name: []const u8, value: []const u8 };
-
-const EnvSpec = struct {
-    id: []const u8,
-    profile: Profile,
-    app_path: []const []const u8,
-    system_root: []const u8,
-    app_env: std.json.ArrayHashMap([]const u8),
-    overrides: []const []const u8,
-};
-
-fn buildEnv(arena: Allocator, host: *const std.process.Environ.Map, spec: EnvSpec) !std.ArrayList(EnvVar) {
-    var env: std.ArrayList(EnvVar) = .empty;
-    for (passthrough_env) |name| {
-        if (host.get(name)) |value| try setEnv(arena, &env, name, value);
-    }
-
-    var path: std.ArrayList(u8) = .empty;
-    for (spec.app_path) |dir| try path.print(arena, "{s};", .{dir});
-    try path.print(arena, "{0s}\\System32;{0s};{0s}\\System32\\Wbem", .{spec.system_root});
-    try setEnv(arena, &env, "PATH", path.items);
-
-    const p = spec.profile;
-    try setEnv(arena, &env, "USERPROFILE", p.home);
-    try setEnv(arena, &env, "HOME", p.home);
-    if (p.home.len > 2 and p.home[1] == ':') {
-        try setEnv(arena, &env, "HOMEDRIVE", p.home[0..2]);
-        try setEnv(arena, &env, "HOMEPATH", p.home[2..]);
-    }
-    try setEnv(arena, &env, "APPDATA", p.roaming);
-    try setEnv(arena, &env, "LOCALAPPDATA", p.local);
-    try setEnv(arena, &env, "TEMP", p.temp);
-    try setEnv(arena, &env, "TMP", p.temp);
-    try setEnv(arena, &env, "ZIGSAW_ID", spec.id);
-
-    var it = spec.app_env.map.iterator();
-    while (it.next()) |kv| try setEnv(arena, &env, kv.key_ptr.*, kv.value_ptr.*);
-    for (spec.overrides) |assignment| {
-        const eq = std.mem.indexOfScalar(u8, assignment, '=') orelse
-            return fail("--env expects NAME=VALUE, got \"{s}\"", .{assignment});
-        try setEnv(arena, &env, assignment[0..eq], assignment[eq + 1 ..]);
-    }
-    return env;
-}
-
-/// Sets a variable, replacing any existing one whose name matches
-/// case-insensitively, as Windows treats them.
-fn setEnv(arena: Allocator, env: *std.ArrayList(EnvVar), name: []const u8, value: []const u8) !void {
-    for (env.items) |*kv| {
-        if (std.os.windows.eqlIgnoreCaseWtf8(kv.name, name)) {
-            kv.value = value;
-            return;
-        }
-    }
-    try env.append(arena, .{ .name = name, .value = value });
-}
-
-/// Encodes "NAME=VALUE\0...\0\0" in UTF-16, sorted by name as Windows expects.
-fn encodeEnvBlock(arena: Allocator, vars: []EnvVar) ![]u16 {
-    std.mem.sort(EnvVar, vars, {}, struct {
-        fn lessThan(_: void, a: EnvVar, b: EnvVar) bool {
-            return std.ascii.lessThanIgnoreCase(a.name, b.name);
-        }
-    }.lessThan);
-    var block: std.ArrayList(u16) = .empty;
-    for (vars) |kv| {
-        const line = try std.fmt.allocPrint(arena, "{s}={s}", .{ kv.name, kv.value });
-        try block.appendSlice(arena, try std.unicode.wtf8ToWtf16LeAlloc(arena, line));
-        try block.append(arena, 0);
-    }
-    try block.append(arena, 0);
-    return block.items;
-}
-
-// ---------------------------------------------------------------------------
-// Process creation
-
-const SpawnSpec = struct {
-    exe: []const u8,
-    command_line: []const u8,
-    env_block: []const u16,
-    cwd: []const u8,
-    security: ?*const win32.SECURITY_CAPABILITIES,
-};
-
-fn spawn(arena: Allocator, spec: SpawnSpec) !u32 {
-    const job = win32.CreateJobObjectW(null, null) orelse return win32.lastErrorFail("CreateJobObjectW");
-    defer _ = win32.CloseHandle(job);
-    var limits: win32.JOBOBJECT_EXTENDED_LIMIT_INFORMATION = .{};
-    limits.BasicLimitInformation.LimitFlags = win32.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-    if (win32.SetInformationJobObject(job, win32.JobObjectExtendedLimitInformation, &limits, @sizeOf(@TypeOf(limits))) == 0)
-        return win32.lastErrorFail("SetInformationJobObject");
-
-    // Hand the app our stdio handles and nothing else.
-    var std_handles: [3]?win32.HANDLE = .{ null, null, null };
-    var inherit: [3]win32.HANDLE = undefined;
-    var inherit_count: usize = 0;
-    for ([_]win32.DWORD{ win32.STD_INPUT_HANDLE, win32.STD_OUTPUT_HANDLE, win32.STD_ERROR_HANDLE }, 0..) |which, i| {
-        const h = win32.GetStdHandle(which) orelse continue;
-        if (h == win32.INVALID_HANDLE_VALUE) continue;
-        if (win32.SetHandleInformation(h, win32.HANDLE_FLAG_INHERIT, win32.HANDLE_FLAG_INHERIT) == 0) continue;
-        std_handles[i] = h;
-        if (std.mem.indexOfScalar(win32.HANDLE, inherit[0..inherit_count], h) == null) {
-            inherit[inherit_count] = h;
-            inherit_count += 1;
-        }
-    }
-
-    const attr_count: win32.DWORD = 1 + @as(win32.DWORD, @intFromBool(inherit_count > 0)) + @intFromBool(spec.security != null);
-    var attr_size: usize = 0;
-    _ = win32.InitializeProcThreadAttributeList(null, attr_count, 0, &attr_size);
-    const attrs = try arena.alignedAlloc(u8, .of(usize), attr_size);
-    if (win32.InitializeProcThreadAttributeList(attrs.ptr, attr_count, 0, &attr_size) == 0)
-        return win32.lastErrorFail("InitializeProcThreadAttributeList");
-    defer win32.DeleteProcThreadAttributeList(attrs.ptr);
-
-    // Assigning the job at creation means no child process can start outside it.
-    const jobs = [1]win32.HANDLE{job};
-    if (win32.UpdateProcThreadAttribute(attrs.ptr, 0, win32.PROC_THREAD_ATTRIBUTE_JOB_LIST, &jobs, @sizeOf(win32.HANDLE), null, null) == 0)
-        return win32.lastErrorFail("UpdateProcThreadAttribute(JOB_LIST)");
-    if (inherit_count > 0) {
-        if (win32.UpdateProcThreadAttribute(attrs.ptr, 0, win32.PROC_THREAD_ATTRIBUTE_HANDLE_LIST, &inherit, inherit_count * @sizeOf(win32.HANDLE), null, null) == 0)
-            return win32.lastErrorFail("UpdateProcThreadAttribute(HANDLE_LIST)");
-    }
-    if (spec.security) |security| {
-        if (win32.UpdateProcThreadAttribute(attrs.ptr, 0, win32.PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES, security, @sizeOf(win32.SECURITY_CAPABILITIES), null, null) == 0)
-            return win32.lastErrorFail("UpdateProcThreadAttribute(SECURITY_CAPABILITIES)");
-    }
-
-    var startup: win32.STARTUPINFOEXW = .{
-        .StartupInfo = .{ .cb = @sizeOf(win32.STARTUPINFOEXW) },
-        .lpAttributeList = attrs.ptr,
-    };
-    if (inherit_count > 0) {
-        startup.StartupInfo.dwFlags = win32.STARTF_USESTDHANDLES;
-        startup.StartupInfo.hStdInput = std_handles[0];
-        startup.StartupInfo.hStdOutput = std_handles[1];
-        startup.StartupInfo.hStdError = std_handles[2];
-    }
-
-    var info: win32.PROCESS_INFORMATION = undefined;
-    if (win32.CreateProcessW(
-        try win32.wide(arena, spec.exe),
-        try win32.wide(arena, spec.command_line),
-        null,
-        null,
-        @intFromBool(inherit_count > 0),
-        win32.EXTENDED_STARTUPINFO_PRESENT | win32.CREATE_UNICODE_ENVIRONMENT,
-        spec.env_block.ptr,
-        try win32.wide(arena, spec.cwd),
-        &startup.StartupInfo,
-        &info,
-    ) == 0) return win32.lastErrorFail("CreateProcessW");
-    _ = win32.CloseHandle(info.hThread);
-    defer _ = win32.CloseHandle(info.hProcess);
-
-    // The app shares our console, so it receives Ctrl+C too and decides what
-    // to do; we keep waiting so we can report its exit code.
-    _ = win32.SetConsoleCtrlHandler(&ignoreCtrlC, win32.TRUE);
-
-    if (win32.WaitForSingleObject(info.hProcess, win32.INFINITE) != win32.WAIT_OBJECT_0)
-        return win32.lastErrorFail("WaitForSingleObject");
-    var code: win32.DWORD = 0;
-    if (win32.GetExitCodeProcess(info.hProcess, &code) == 0)
-        return win32.lastErrorFail("GetExitCodeProcess");
-    return code;
-}
-
-fn ignoreCtrlC(event: win32.DWORD) callconv(.winapi) win32.BOOL {
-    return if (event == win32.CTRL_C_EVENT or event == win32.CTRL_BREAK_EVENT) win32.TRUE else win32.FALSE;
-}
-
-test buildCommandLine {
-    const cases = [_]struct { args: []const []const u8, want: []const u8 }{
-        .{ .args = &.{"plain"}, .want = "C:\\app\\x.exe plain" },
-        .{ .args = &.{"two words"}, .want = "C:\\app\\x.exe \"two words\"" },
-        .{ .args = &.{""}, .want = "C:\\app\\x.exe \"\"" },
-        .{ .args = &.{"say \"hi\""}, .want = "C:\\app\\x.exe \"say \\\"hi\\\"\"" },
-        .{ .args = &.{"C:\\dir with space\\"}, .want = "C:\\app\\x.exe \"C:\\dir with space\\\\\"" },
-        .{ .args = &.{"a\\\\b"}, .want = "C:\\app\\x.exe a\\\\b" },
-    };
-    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
-    defer arena_state.deinit();
-    for (cases) |c| {
-        try std.testing.expectEqualStrings(c.want, try buildCommandLine(arena_state.allocator(), "C:\\app\\x.exe", c.args));
-    }
-}
-
-test encodeEnvBlock {
-    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
-    defer arena_state.deinit();
-    const arena = arena_state.allocator();
-    var vars: std.ArrayList(EnvVar) = .empty;
-    try setEnv(arena, &vars, "Path", "x");
-    try setEnv(arena, &vars, "ComSpec", "cmd");
-    try setEnv(arena, &vars, "PATH", "y");
-    const block = try encodeEnvBlock(arena, vars.items);
-    const want = std.unicode.utf8ToUtf16LeStringLiteral("ComSpec=cmd\x00Path=y\x00\x00");
-    try std.testing.expectEqualSlices(u16, want, block);
 }

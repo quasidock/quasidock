@@ -1,0 +1,118 @@
+{
+  "id": "org.gnome.TextEditor",
+  "version": "51.0",
+  "name": "GNOME Text Editor",
+  "summary": "A simple text editor that remembers your open documents",
+  "homepage": "https://apps.gnome.org/TextEditor/",
+  "license": "GPL-3.0-or-later",
+  "command": "bin/gnome-text-editor.exe",
+  "path": ["bin"],
+  "env": { "XDG_DATA_DIRS": "${app}\\share" },
+  "permissions": { "filesystem": ["cwd", "desktop", "documents", "downloads"] },
+  "exports": {
+    "gnome-text-editor": { "command": "bin/gnome-text-editor.exe" }
+  },
+  "shortcuts": {
+    "Text Editor": { "command": "gnome-text-editor", "description": "View and edit text files", "icon": "share/icons/org.gnome.TextEditor.ico" }
+  },
+  "associations": {
+    ".txt": { "command": "gnome-text-editor", "description": "Text document", "icon": "share/icons/org.gnome.TextEditor.ico" },
+    ".md": { "command": "gnome-text-editor", "description": "Markdown document", "icon": "share/icons/org.gnome.TextEditor.ico" },
+    ".log": { "command": "gnome-text-editor", "description": "Log file", "icon": "share/icons/org.gnome.TextEditor.ico" }
+  },
+  "runtimes": {
+    "gtk": "org.gtk.Gtk4:4.24.1@sha256:9a18362a2f85bc8852bdd1f71a8777d4afb981c93ebfb89f37ecebbffc878a4d"
+  },
+  "sdk": {
+    "gtksdk": "org.gtk.Gtk4.Sdk:4.24.1@sha256:eed28b79b96fafb2edddc8d49cca89d3c63e578cc726af08dd1a5abf753d05d2",
+    "cmake": "org.cmake.cmake:4.4.4@sha256:fdc6a6bb933b2d7994fba0ccdb07a2a91a02012a6e4879cf67ad451e53e6f53d"
+  },
+  "cleanup": [
+    "/include",
+    "/lib",
+    "/share/doc",
+    "/share/gtk-doc",
+    "/share/man",
+    "/share/aclocal",
+    "/bin/editorconfig.exe",
+    "/bin/editorconfig-*.exe",
+    "*-config"
+  ],
+  "modules": [
+    {
+      "name": "crt-noexport",
+      "build": [
+        "printf '%s\\n' '.section .drectve' '.ascii \" -exclude-symbols:atexit,_CRT_INIT,__mingw_module_is_dll\"' > noexport.s",
+        "cc -c noexport.s -o noexport.o"
+      ]
+    },
+    {
+      "name": "gtksourceview",
+      "env": { "LDFLAGS": "-s -Wl,-Brepro B:/src/crt-noexport/noexport.o", "RC": "rc /:auto-includes gnu" },
+      "sources": [
+        {
+          "url": "https://download.gnome.org/sources/gtksourceview/5.22/gtksourceview-5.22.0.tar.xz",
+          "sha256": "3ebce33c781e65590a450ecd3ffade480d8e3135b52ee996f1620d6c7dffbbff",
+          "strip": 1
+        }
+      ],
+      "build": [
+        "meson setup out --prefix=\"$PREFIX\" --buildtype=release -Dbuild-testsuite=false -Dintrospection=disabled -Dvapi=false -Ddocumentation=false -Dsysprof=false",
+        "meson install -C out"
+      ]
+    },
+    {
+      "name": "libspelling",
+      "env": { "LDFLAGS": "-s -Wl,-Brepro B:/src/crt-noexport/noexport.o", "RC": "rc /:auto-includes gnu", "CFLAGS": "-IB:/src/libspelling/zigsaw" },
+      "sources": [
+        {
+          "url": "https://download.gnome.org/sources/libspelling/0.4/libspelling-0.4.10.tar.xz",
+          "sha256": "56e3f01a3a18b575beea4c34349f99cdaba316e1f7c271b1231f7bcf5d9af73b",
+          "strip": 1
+        },
+        { "path": "gnome-text-editor/icu-uloc.h", "dest": "zigsaw/unicode/uloc.h" }
+      ],
+      "build": [
+        "sed -i \"s/^libicu_dep = dependency('icu-uc')$/libicu_dep = declare_dependency(link_args: ['-licu'])/\" lib/enchant/meson.build",
+        "grep -q \"^libicu_dep = declare_dependency(link_args: \\['-licu'\\])$\" lib/enchant/meson.build",
+        "meson setup out --prefix=\"$PREFIX\" --buildtype=release -Denchant=enabled -Ddocs=false -Dintrospection=disabled -Dvapi=false -Dsysprof=false",
+        "meson install -C out"
+      ]
+    },
+    {
+      "name": "editorconfig",
+      "env": { "LDFLAGS": "-s -Wl,-Brepro B:/src/crt-noexport/noexport.o" },
+      "sources": [
+        {
+          "url": "https://github.com/editorconfig/editorconfig-core-c/archive/refs/tags/v0.12.11.tar.gz",
+          "sha256": "9d8b420b56a969ea3cf784861c72d26fa0e158fa1494d732df2c8a1480d36a5c",
+          "strip": 1
+        }
+      ],
+      "build": [
+        "cmake -S . -B out -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=\"$PREFIX\" \"-DCMAKE_RC_FLAGS=/:auto-includes gnu\" -DBUILD_DOCUMENTATION=OFF",
+        "cmake --build out",
+        "cmake --install out"
+      ]
+    },
+    {
+      "name": "gnome-text-editor",
+      "env": { "LDFLAGS": "-s -Wl,-Brepro B:/src/crt-noexport/noexport.o", "RC": "rc /:auto-includes gnu" },
+      "sources": [
+        {
+          "url": "https://download.gnome.org/sources/gnome-text-editor/51/gnome-text-editor-51.0.tar.xz",
+          "sha256": "2b76e6da1506346c54b36ba1a3aeedcd28f4cb7d6a8793d217f209456c92dd4c",
+          "strip": 1
+        },
+        { "path": "gtk4-sdk/svg2ico.sh", "dest": "zigsaw/svg2ico.sh" }
+      ],
+      "build": [
+        "sed -i \"/^subdir('help')$/d\" meson.build",
+        "! grep -q \"subdir('help')\" meson.build",
+        "meson setup out --prefix=\"$PREFIX\" --buildtype=release",
+        "meson install -C out",
+        "sh zigsaw/svg2ico.sh \"$PREFIX/share/icons/hicolor/scalable/apps/org.gnome.TextEditor.svg\" \"$PREFIX/share/icons/org.gnome.TextEditor.ico\""
+      ]
+    }
+  ]
+}

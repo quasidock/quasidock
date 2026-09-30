@@ -1,5 +1,9 @@
 //! Build recipes: JSON files describing how to assemble an app from pinned
 //! sources, the zigsaw equivalent of a flatpak-builder manifest.
+//!
+//! A recipe is a list of modules, built in order into one prefix that becomes
+//! the app's own layer. It names the images it builds with (`sdk`) and the
+//! images the app runs with (`runtimes`), each pinned by manifest digest.
 
 const std = @import("std");
 const oci = @import("oci.zig");
@@ -8,19 +12,38 @@ const fail = Context.fail;
 
 pub const Source = struct {
     url: ?[]const u8 = null,
-    /// Local file, relative to the recipe.
+    /// Local file or directory, relative to the recipe. A directory gives
+    /// the files git would commit in it, such as a project's own, with "."
+    /// in the recipe at its root (see project.zig).
     path: ?[]const u8 = null,
+    /// Another image's own files, by reference pinned with "@sha256:...",
+    /// as an SDK is: how a runtime is made from its SDK without building
+    /// again.
+    image: ?[]const u8 = null,
     /// Required for URLs. A URL without one fails the build and reports the hash to pin.
     sha256: ?[]const u8 = null,
     /// Inferred from the file name when omitted.
     type: ?Kind = null,
-    /// For `file`: destination path in the app tree (default: the source's file name).
-    /// For `zip`: directory to extract into (default: the app root).
+    /// For `file`: destination path (default: the source's file name).
+    /// For archives and images: directory to put their files in (default: the top).
     dest: ?[]const u8 = null,
-    /// For `zip`: leading directory levels to drop, like `tar --strip-components`.
+    /// For archives: leading directory levels to drop, like `tar --strip-components`.
     strip: u32 = 0,
+    /// For a directory: what to leave out besides what git ignores, as
+    /// cleanup patterns ("/docs" from the directory, "*.log" anywhere).
+    skip: []const []const u8 = &.{},
 
-    pub const Kind = enum { file, zip };
+    pub const Kind = enum {
+        file,
+        zip,
+        tar,
+        @"tar.gz",
+        @"tar.xz",
+
+        pub fn isArchive(k: Kind) bool {
+            return k != .file;
+        }
+    };
 
     pub fn location(s: Source) []const u8 {
         return s.url orelse s.path.?;
@@ -37,28 +60,140 @@ pub const Source = struct {
 
     pub fn kind(s: Source) Kind {
         if (s.type) |k| return k;
-        return if (std.ascii.endsWithIgnoreCase(s.fileName(), ".zip")) .zip else .file;
+        const name = s.fileName();
+        const suffixes = [_]struct { []const u8, Kind }{
+            .{ ".zip", .zip },
+            .{ ".tar", .tar },
+            .{ ".tar.gz", .@"tar.gz" },
+            .{ ".tgz", .@"tar.gz" },
+            .{ ".tar.xz", .@"tar.xz" },
+            .{ ".txz", .@"tar.xz" },
+            // Rust packages from crates.io.
+            .{ ".crate", .@"tar.gz" },
+        };
+        for (suffixes) |entry| if (std.ascii.endsWithIgnoreCase(name, entry[0])) return entry[1];
+        return .file;
     }
+};
+
+pub const Module = struct {
+    /// Names the module in messages and its source directory while building.
+    name: []const u8,
+    sources: []const Source = &.{},
+    /// Commands that build and install the module into $PREFIX, run in order
+    /// in its source directory. Without them, the sources go straight into the
+    /// prefix.
+    build: []const []const u8 = &.{},
+    shell: Shell = .sh,
+    /// Extra variables for the build commands.
+    env: std.json.ArrayHashMap([]const u8) = .{},
+    /// Lets the build commands use the network, which the image records.
+    network: bool = false,
+    /// Fetches what the build needs besides the sources, such as a Rust
+    /// project's crates, pinned by hash so the build itself stays offline.
+    vendor: ?Vendor = null,
+
+    pub const Shell = enum { sh, cmd };
+};
+
+/// A module's vendor step: commands that run with network access before
+/// anything builds, and leave what the build needs in `dir`. A hash of what
+/// they leave pins it, as a source's sha256 pins a download, so the image
+/// still depends only on pinned inputs.
+pub const Vendor = struct {
+    /// Run in the module's directory, with its shell and variables.
+    commands: []const []const u8,
+    /// Where the commands leave what they fetch, inside the module's directory.
+    dir: []const u8,
+    /// Of the tar zigsaw makes from `dir`, in the layer format, so it
+    /// depends only on the files' paths and contents. Required: a build
+    /// without it fails and reports the hash to pin.
+    sha256: ?[]const u8 = null,
 };
 
 pub const Recipe = struct {
     id: []const u8,
     version: []const u8,
+    /// The app's name, a line about it, its homepage and licence (see
+    /// oci.AppConfig).
+    name: ?[]const u8 = null,
+    summary: ?[]const u8 = null,
+    homepage: ?[]const u8 = null,
+    license: ?[]const u8 = null,
     command: []const u8,
+    args: []const []const u8 = &.{},
     path: []const []const u8 = &.{"."},
     env: std.json.ArrayHashMap([]const u8) = .{},
     permissions: oci.Permissions = .{},
-    sources: []const Source,
+    /// Commands to put on PATH. Without this, the app exports its command
+    /// under its file name (e.g. "rg" for rg.exe); `{}` exports nothing.
+    exports: ?std.json.ArrayHashMap(oci.Export) = null,
+    /// Commands the image gives builds that use it (see oci.AppConfig).
+    aliases: ?std.json.ArrayHashMap(oci.Export) = null,
+    /// Start menu shortcuts to exports (see oci.AppConfig).
+    shortcuts: ?std.json.ArrayHashMap(oci.Shortcut) = null,
+    /// The kinds of file the app opens, by extension (see oci.AppConfig).
+    associations: ?std.json.ArrayHashMap(oci.Association) = null,
+    /// Keys in HKEY_CURRENT_USER kept with the app's data (see oci.AppConfig).
+    registry: ?[]const []const u8 = null,
+    /// Extension points, and the one the image plugs into (see
+    /// oci.ExtensionPoint).
+    extensions: ?std.json.ArrayHashMap(oci.ExtensionPoint) = null,
+    extends: ?oci.Extends = null,
+    /// Images the build uses, by alias: references pinned with "@sha256:...".
+    sdk: std.json.ArrayHashMap([]const u8) = .{},
+    /// Images the app runs with, by alias, pinned the same way. Their
+    /// directories are ${<alias>} in the app's config.
+    runtimes: std.json.ArrayHashMap([]const u8) = .{},
+    /// What to leave out of the app's layer: "/path" from the top of the
+    /// prefix, or a file name pattern ("*.pdb") that matches anywhere.
+    cleanup: []const []const u8 = &.{},
+    /// Toolchains of the machine the build uses: only "msvc" (see msvc.zig).
+    /// The image records their versions, and isn't expected to reproduce on
+    /// other machines.
+    host: []const []const u8 = &.{},
+    modules: []const Module,
 
-    pub fn appConfig(r: Recipe) oci.AppConfig {
+    /// The app's config, given its resolved runtimes and how it was built.
+    pub fn appConfig(
+        r: Recipe,
+        arena: std.mem.Allocator,
+        runtimes: std.json.ArrayHashMap(oci.Runtime),
+        build: oci.Build,
+    ) !oci.AppConfig {
+        var exports: std.json.ArrayHashMap(oci.Export) = .{};
+        if (r.exports) |e| {
+            exports = e;
+        } else {
+            try exports.map.put(arena, oci.commandStem(r.command), .{ .command = r.command, .args = r.args });
+        }
         return .{
             .id = r.id,
             .version = r.version,
+            .name = r.name,
+            .summary = r.summary,
+            .homepage = r.homepage,
+            .license = r.license,
             .command = r.command,
+            .args = r.args,
             .path = r.path,
             .env = r.env,
             .permissions = r.permissions,
+            .exports = exports,
+            .aliases = r.aliases,
+            .shortcuts = r.shortcuts,
+            .associations = r.associations,
+            .registry = r.registry,
+            .runtimes = runtimes,
+            .extensions = r.extensions,
+            .extends = r.extends,
+            .build = build,
         };
+    }
+
+    pub fn hasBuildCommands(r: Recipe) bool {
+        for (r.modules) |m| if (m.build.len > 0) return true;
+        return false;
     }
 };
 
@@ -70,36 +205,152 @@ pub fn parse(arena: std.mem.Allocator, file_name: []const u8, bytes: []const u8)
     const r = std.json.parseFromTokenSourceLeaky(Recipe, arena, &scanner, .{}) catch |err| {
         return fail("{s}:{d}:{d}: {t}", .{ file_name, diagnostics.getLine(), diagnostics.getColumn(), err });
     };
-    try validate(file_name, r);
+    try validateDependencies(file_name, r);
+    // The default export is named after the command's file, which for a
+    // runtime's command (node.exe) isn't the app's name.
+    if (r.exports == null and oci.isPlaceholderPath(r.command) and !std.mem.startsWith(u8, r.command, "${app}"))
+        return fail("{s}: the command \"{s}\" is in a runtime, so the recipe must list its \"exports\"", .{ file_name, r.command });
+    // The same checks an image pulled from a registry gets, apart from those
+    // that need the runtimes resolved.
+    try oci.validateEntryPoints(file_name, try r.appConfig(arena, .{}, .{}), r.runtimes.map.keys());
+    try validateModules(file_name, r.modules);
+    for (r.cleanup) |pattern| if (!isValidCleanupPattern(pattern))
+        return fail("{s}: cleanup pattern \"{s}\" must be \"/<path>\" inside the app, or a file name pattern without '/' or '\\'", .{ file_name, pattern });
+    for (r.host) |toolchain| if (!std.mem.eql(u8, toolchain, "msvc"))
+        return fail("{s}: host toolchain \"{s}\" isn't one zigsaw knows; only \"msvc\" is", .{ file_name, toolchain });
+    if (r.host.len > 0 and !r.hasBuildCommands())
+        return fail("{s}: \"host\" toolchains are for build commands, and no module has any", .{file_name});
     return r;
 }
 
-fn validate(file_name: []const u8, r: Recipe) error{Failed}!void {
-    if (!oci.isValidId(r.id))
-        return fail("{s}: id \"{s}\" must be 1-57 characters of letters, digits, '.', '-', '_'", .{ file_name, r.id });
-    if (r.version.len == 0)
-        return fail("{s}: version must not be empty", .{file_name});
-    if (!oci.isSafeRelPath(r.command))
-        return fail("{s}: command \"{s}\" must be a relative path inside the app", .{ file_name, r.command });
-    for (r.path) |p| if (!oci.isSafeRelPath(p))
-        return fail("{s}: path entry \"{s}\" must be a relative path inside the app", .{ file_name, p });
-    for (r.permissions.filesystem) |spec| if (oci.parseFsGrant(spec) == null)
-        return fail("{s}: filesystem permission \"{s}\" must be \"cwd\" or an absolute path, optionally with \":ro\"", .{ file_name, spec });
-    if (r.sources.len == 0)
-        return fail("{s}: at least one source is required", .{file_name});
-
-    for (r.sources, 1..) |s, n| {
-        if ((s.url == null) == (s.path == null))
-            return fail("{s}: source {d} needs exactly one of \"url\" or \"path\"", .{ file_name, n });
-        if (s.sha256) |h| if (!oci.isSha256Hex(h))
-            return fail("{s}: source {d} sha256 must be 64 lowercase hex characters", .{ file_name, n });
-        if (s.dest) |d| if (!oci.isSafeRelPath(d))
-            return fail("{s}: source {d} dest \"{s}\" must be a relative path inside the app", .{ file_name, n, d });
-        if (s.strip != 0 and s.kind() != .zip)
-            return fail("{s}: source {d} uses \"strip\", which only applies to zip sources", .{ file_name, n });
-        if (s.kind() == .file and s.dest == null and s.fileName().len == 0)
-            return fail("{s}: source {d} has no file name; set \"dest\"", .{ file_name, n });
+fn validateDependencies(file_name: []const u8, r: Recipe) error{Failed}!void {
+    for ([_]struct { []const u8, std.json.ArrayHashMap([]const u8) }{ .{ "sdk", r.sdk }, .{ "runtimes", r.runtimes } }) |group| {
+        const what, const deps = group;
+        for (deps.map.keys()) |alias| {
+            if (!oci.isValidAlias(alias))
+                return fail("{s}: {s} alias \"{s}\" must be lowercase letters, digits, '-' or '_', start with a letter, and not be app, data or cache", .{ file_name, what, alias });
+        }
     }
+    // Both kinds are on PATH while building, so one alias means one image.
+    for (r.sdk.map.keys()) |alias| if (r.runtimes.map.contains(alias))
+        return fail("{s}: \"{s}\" is both an sdk and a runtime alias", .{ file_name, alias });
+    if (r.extends != null and r.runtimes.map.count() > 0)
+        return fail("{s}: an extension can't have runtimes, which the runs it joins wouldn't have; its point's image has them", .{file_name});
+}
+
+fn validateModules(file_name: []const u8, modules: []const Module) error{Failed}!void {
+    if (modules.len == 0)
+        return fail("{s}: at least one module is required", .{file_name});
+    for (modules, 0..) |m, i| {
+        if (!oci.isValidId(m.name))
+            return fail("{s}: module name \"{s}\" must be 1-57 characters of letters, digits, '.', '-', '_'", .{ file_name, m.name });
+        for (modules[0..i]) |earlier| if (std.ascii.eqlIgnoreCase(earlier.name, m.name))
+            return fail("{s}: there are two modules named {s}", .{ file_name, m.name });
+        if (m.sources.len == 0 and m.build.len == 0)
+            return fail("{s}: module {s} has neither sources nor build commands", .{ file_name, m.name });
+        if (m.build.len == 0 and (m.network or m.env.map.count() > 0))
+            return fail("{s}: module {s} sets \"network\" or \"env\", which only apply to build commands", .{ file_name, m.name });
+        if (m.vendor) |v| try validateVendor(file_name, m, v);
+        for (m.sources, 1..) |s, n| try validateSource(file_name, m.name, n, s);
+    }
+}
+
+fn validateVendor(file_name: []const u8, m: Module, v: Vendor) error{Failed}!void {
+    if (m.build.len == 0)
+        return fail("{s}: module {s} has a \"vendor\" step, but no build commands to use what it fetches", .{ file_name, m.name });
+    if (v.commands.len == 0)
+        return fail("{s}: module {s}'s \"vendor\" step has no commands", .{ file_name, m.name });
+    if (!oci.isSafeRelPath(v.dir) or std.mem.trim(u8, v.dir, "./\\").len == 0)
+        return fail("{s}: module {s}'s vendor dir \"{s}\" must be a directory inside the module's", .{ file_name, m.name, v.dir });
+    if (v.sha256) |h| if (!oci.isSha256Hex(h))
+        return fail("{s}: module {s}'s vendor sha256 must be 64 lowercase hex characters", .{ file_name, m.name });
+}
+
+fn validateSource(file_name: []const u8, module: []const u8, n: usize, s: Source) error{Failed}!void {
+    const given = @as(u8, @intFromBool(s.url != null)) + @intFromBool(s.path != null) + @intFromBool(s.image != null);
+    if (given != 1)
+        return fail("{s}: module {s} source {d} needs exactly one of \"url\", \"path\" or \"image\"", .{ file_name, module, n });
+    if (s.image != null) {
+        if (s.sha256 != null or s.type != null or s.strip != 0 or s.skip.len > 0)
+            return fail("{s}: module {s} source {d} is an image, pinned by its digest; \"sha256\", \"type\", \"strip\" and \"skip\" don't apply", .{ file_name, module, n });
+        if (s.dest) |d| if (!oci.isSafeRelPath(d))
+            return fail("{s}: module {s} source {d} dest \"{s}\" must be a relative path inside the app", .{ file_name, module, n, d });
+        return;
+    }
+    if (s.sha256) |h| if (!oci.isSha256Hex(h))
+        return fail("{s}: module {s} source {d} sha256 must be 64 lowercase hex characters", .{ file_name, module, n });
+    if (s.dest) |d| if (!oci.isSafeRelPath(d))
+        return fail("{s}: module {s} source {d} dest \"{s}\" must be a relative path inside the app", .{ file_name, module, n, d });
+    if (s.strip != 0 and !s.kind().isArchive())
+        return fail("{s}: module {s} source {d} uses \"strip\", which only applies to archives", .{ file_name, module, n });
+    // A path may be a directory, which needs no file name.
+    if (s.url != null and s.kind() == .file and s.dest == null and s.fileName().len == 0)
+        return fail("{s}: module {s} source {d} has no file name; set \"dest\"", .{ file_name, module, n });
+    if (s.skip.len > 0 and s.path == null)
+        return fail("{s}: module {s} source {d} uses \"skip\", which only applies to a directory \"path\"", .{ file_name, module, n });
+    for (s.skip) |pattern| if (!isValidCleanupPattern(pattern))
+        return fail("{s}: module {s} source {d} skip pattern \"{s}\" must be \"/<path>\" inside the directory, or a file name pattern without '/' or '\\'", .{ file_name, module, n, pattern });
+}
+
+fn isValidCleanupPattern(pattern: []const u8) bool {
+    if (pattern.len == 0) return false;
+    if (pattern[0] == '/') return oci.isSafeRelPath(pattern[1..]);
+    return std.mem.indexOfAny(u8, pattern, "/\\:") == null;
+}
+
+/// Whether `cleanup` removes the entry at `path` ('/'-separated, from the
+/// top of the prefix): a "/<path>" pattern names it or one of its parents,
+/// and a file name pattern matches one of its components.
+pub fn cleanupMatches(patterns: []const []const u8, path: []const u8) bool {
+    for (patterns) |pattern| {
+        if (pattern[0] == '/') {
+            const want = std.mem.trim(u8, pattern, "/");
+            if (startsWithComponents(path, want)) return true;
+        } else {
+            var parts = std.mem.splitScalar(u8, path, '/');
+            while (parts.next()) |part| if (globMatch(pattern, part)) return true;
+        }
+    }
+    return false;
+}
+
+/// Whether `path` is `prefix` or below it, case-insensitively, comparing
+/// whole components: "a/b" is below "a", and "ab" isn't.
+fn startsWithComponents(path: []const u8, prefix: []const u8) bool {
+    var want = std.mem.tokenizeAny(u8, prefix, "/\\");
+    var have = std.mem.splitScalar(u8, path, '/');
+    while (want.next()) |w| {
+        const h = have.next() orelse return false;
+        if (!std.ascii.eqlIgnoreCase(w, h)) return false;
+    }
+    return true;
+}
+
+/// Matches a file name against a pattern with `*` (any run of characters)
+/// and `?` (one character), ignoring case, as Windows file names do.
+fn globMatch(pattern: []const u8, name: []const u8) bool {
+    var p: usize = 0;
+    var n: usize = 0;
+    // Where to resume after the last '*': its position in the pattern, and
+    // how much of the name it covers so far.
+    var star: ?usize = null;
+    var star_n: usize = 0;
+    while (n < name.len) {
+        if (p < pattern.len and (pattern[p] == '?' or std.ascii.toLower(pattern[p]) == std.ascii.toLower(name[n]))) {
+            p += 1;
+            n += 1;
+        } else if (p < pattern.len and pattern[p] == '*') {
+            star = p;
+            star_n = n;
+            p += 1;
+        } else if (star) |s| {
+            p = s + 1;
+            star_n += 1;
+            n = star_n;
+        } else return false;
+    }
+    while (p < pattern.len and pattern[p] == '*') p += 1;
+    return p == pattern.len;
 }
 
 test "parse minimal recipe" {
@@ -110,16 +361,215 @@ test "parse minimal recipe" {
         \\  "id": "net.frippery.busybox",
         \\  "version": "1",
         \\  "command": "busybox.exe",
-        \\  "sources": [{ "url": "https://example.com/bb.exe?x=1", "dest": "busybox.exe" }]
+        \\  "modules": [{ "name": "busybox", "sources": [{ "url": "https://example.com/bb.exe?x=1", "dest": "busybox.exe" }] }]
         \\}
     );
     try std.testing.expectEqualStrings("busybox.exe", r.command);
-    try std.testing.expectEqual(Source.Kind.file, r.sources[0].kind());
-    try std.testing.expectEqualStrings("bb.exe", r.sources[0].fileName());
+    const src = r.modules[0].sources[0];
+    try std.testing.expectEqual(Source.Kind.file, src.kind());
+    try std.testing.expectEqualStrings("bb.exe", src.fileName());
     try std.testing.expectEqual(false, r.permissions.network);
+    try std.testing.expect(!r.hasBuildCommands());
+
+    const cfg = try r.appConfig(arena_state.allocator(), .{}, .{});
+    try std.testing.expectEqual(1, cfg.exports.map.count());
+    try std.testing.expectEqualStrings("busybox.exe", cfg.exports.map.get("busybox").?.command);
 }
 
-test "zip kind is inferred" {
-    const s: Source = .{ .url = "https://example.com/node-v22-win-x64.ZIP" };
-    try std.testing.expectEqual(Source.Kind.zip, s.kind());
+test "recipe checks" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const ok = try parse(arena, "t.json",
+        \\{ "id": "x.tsc", "version": "1", "command": "${node}\\node.exe", "args": ["${app}\\tsc.js"],
+        \\  "runtimes": { "node": "org.nodejs.node@sha256:0000000000000000000000000000000000000000000000000000000000000000" },
+        \\  "exports": { "tsc": { "command": "${node}\\node.exe", "args": ["${app}\\tsc.js"] } },
+        \\  "cleanup": ["/include", "*.pdb"],
+        \\  "modules": [{ "name": "tsc", "sources": [{ "path": "tsc.tgz", "strip": 1 }] }] }
+    );
+    try std.testing.expectEqual(Source.Kind.@"tar.gz", ok.modules[0].sources[0].kind());
+
+    const vendored = try parse(arena, "t.json",
+        \\{ "id": "x", "version": "1", "command": "a.exe",
+        \\  "modules": [{ "name": "m", "build": ["x"], "vendor": { "commands": ["cargo vendor"], "dir": "vendor/crates" } }] }
+    );
+    try std.testing.expectEqualStrings("vendor/crates", vendored.modules[0].vendor.?.dir);
+
+    const from_image = try parse(arena, "t.json",
+        \\{ "id": "x", "version": "1", "command": "bin/a.exe", "cleanup": ["/include", "*.a"],
+        \\  "modules": [{ "name": "m", "sources": [{ "image": "x.sdk@sha256:0000000000000000000000000000000000000000000000000000000000000000", "dest": "sdk" }] }] }
+    );
+    try std.testing.expectEqualStrings("sdk", from_image.modules[0].sources[0].dest.?);
+
+    // A project's own directory, as in the zigsaw.json at its root.
+    const project = try parse(arena, "zigsaw.json",
+        \\{ "id": "x", "version": "1", "command": "bin/a.exe", "exports": {},
+        \\  "modules": [{ "name": "m", "sources": [{ "path": ".", "skip": ["/docs", "*.log"] }, { "path": "src/" }], "build": ["x"] }] }
+    );
+    try std.testing.expectEqualStrings("/docs", project.modules[0].sources[0].skip[0]);
+
+    const bad = [_][]const u8{
+        // A command in a runtime needs exports.
+        \\{ "id": "x", "version": "1", "command": "${node}\\node.exe", "runtimes": { "node": "n" }, "modules": [{ "name": "m", "build": ["x"] }] }
+        ,
+        // An unknown alias.
+        \\{ "id": "x", "version": "1", "command": "${node}\\node.exe", "exports": {}, "modules": [{ "name": "m", "build": ["x"] }] }
+        ,
+        // A reserved alias.
+        \\{ "id": "x", "version": "1", "command": "a.exe", "runtimes": { "data": "d" }, "modules": [{ "name": "m", "build": ["x"] }] }
+        ,
+        // The same alias twice.
+        \\{ "id": "x", "version": "1", "command": "a.exe", "sdk": { "zig": "z" }, "runtimes": { "zig": "z" }, "modules": [{ "name": "m", "build": ["x"] }] }
+        ,
+        // No modules, or an empty one.
+        \\{ "id": "x", "version": "1", "command": "a.exe", "modules": [] }
+        ,
+        \\{ "id": "x", "version": "1", "command": "a.exe", "modules": [{ "name": "m" }] }
+        ,
+        // Two modules with one name.
+        \\{ "id": "x", "version": "1", "command": "a.exe", "modules": [{ "name": "m", "build": ["x"] }, { "name": "M", "build": ["y"] }] }
+        ,
+        // Network for a module that builds nothing.
+        \\{ "id": "x", "version": "1", "command": "a.exe", "modules": [{ "name": "m", "network": true, "sources": [{ "path": "a.exe" }] }] }
+        ,
+        // strip on a file.
+        \\{ "id": "x", "version": "1", "command": "a.exe", "modules": [{ "name": "m", "sources": [{ "path": "a.exe", "strip": 1 }] }] }
+        ,
+        // An image source: on its own, pinned by digest only, inside the app.
+        \\{ "id": "x", "version": "1", "command": "a.exe", "modules": [{ "name": "m", "sources": [{ "image": "x.sdk@sha256:00", "path": "a.exe" }] }] }
+        ,
+        \\{ "id": "x", "version": "1", "command": "a.exe", "modules": [{ "name": "m", "sources": [{ "image": "x.sdk@sha256:00", "sha256": "00" }] }] }
+        ,
+        \\{ "id": "x", "version": "1", "command": "a.exe", "modules": [{ "name": "m", "sources": [{ "image": "x.sdk@sha256:00", "strip": 1 }] }] }
+        ,
+        \\{ "id": "x", "version": "1", "command": "a.exe", "modules": [{ "name": "m", "sources": [{ "image": "x.sdk@sha256:00", "dest": "../up" }] }] }
+        ,
+        \\{ "id": "x", "version": "1", "command": "a.exe", "modules": [{ "name": "m", "sources": [{ "image": "x.sdk@sha256:00", "skip": ["/a"] }] }] }
+        ,
+        // skip: for a directory path, with cleanup's patterns.
+        \\{ "id": "x", "version": "1", "command": "a.exe", "modules": [{ "name": "m", "sources": [{ "url": "https://example.com/a.exe", "skip": ["/a"] }] }] }
+        ,
+        \\{ "id": "x", "version": "1", "command": "a.exe", "modules": [{ "name": "m", "sources": [{ "path": ".", "skip": ["docs/*.md"] }] }] }
+        ,
+        \\{ "id": "x", "version": "1", "command": "a.exe", "modules": [{ "name": "m", "sources": [{ "path": ".", "skip": ["/../x"] }] }] }
+        ,
+        // A URL with no file name, and none given.
+        \\{ "id": "x", "version": "1", "command": "a.exe", "modules": [{ "name": "m", "sources": [{ "url": "https://example.com/" }] }] }
+        ,
+        // Cleanup patterns.
+        \\{ "id": "x", "version": "1", "command": "a.exe", "cleanup": ["/../x"], "modules": [{ "name": "m", "build": ["x"] }] }
+        ,
+        \\{ "id": "x", "version": "1", "command": "a.exe", "cleanup": ["lib/*.a"], "modules": [{ "name": "m", "build": ["x"] }] }
+        ,
+        // Host toolchains: only msvc, and only for build commands.
+        \\{ "id": "x", "version": "1", "command": "a.exe", "host": ["gcc"], "modules": [{ "name": "m", "build": ["x"] }] }
+        ,
+        \\{ "id": "x", "version": "1", "command": "a.exe", "host": ["msvc"], "modules": [{ "name": "m", "sources": [{ "path": "a.exe" }] }] }
+        ,
+        // Aliases: plain names, for commands in the image itself or in one
+        // of its runtimes.
+        \\{ "id": "x", "version": "1", "command": "a.exe", "aliases": { "a/b": { "command": "a.exe" } }, "modules": [{ "name": "m", "build": ["x"] }] }
+        ,
+        \\{ "id": "x", "version": "1", "command": "a.exe", "aliases": { "ab": { "command": "${go}\\go.exe" } }, "runtimes": { "node": "n" }, "modules": [{ "name": "m", "build": ["x"] }] }
+        ,
+        // Dropped arguments: only for aliases, one trimmed line each.
+        \\{ "id": "x", "version": "1", "command": "a.exe", "exports": { "a": { "command": "a.exe", "drop": ["-x"] } }, "modules": [{ "name": "m", "build": ["x"] }] }
+        ,
+        \\{ "id": "x", "version": "1", "command": "a.exe", "aliases": { "a": { "command": "a.exe", "drop": [" -x"] } }, "modules": [{ "name": "m", "build": ["x"] }] }
+        ,
+        \\{ "id": "x", "version": "1", "command": "a.exe", "aliases": { "a": { "command": "a.exe", "drop": [""] } }, "modules": [{ "name": "m", "build": ["x"] }] }
+        ,
+        // Vendor steps: only with build commands, with commands, into a
+        // directory inside the module's, pinned by a well-formed hash.
+        \\{ "id": "x", "version": "1", "command": "a.exe", "modules": [{ "name": "m", "sources": [{ "path": "a.exe" }], "vendor": { "commands": ["x"], "dir": "v" } }] }
+        ,
+        \\{ "id": "x", "version": "1", "command": "a.exe", "modules": [{ "name": "m", "build": ["x"], "vendor": { "commands": [], "dir": "v" } }] }
+        ,
+        \\{ "id": "x", "version": "1", "command": "a.exe", "modules": [{ "name": "m", "build": ["x"], "vendor": { "commands": ["x"], "dir": "." } }] }
+        ,
+        \\{ "id": "x", "version": "1", "command": "a.exe", "modules": [{ "name": "m", "build": ["x"], "vendor": { "commands": ["x"], "dir": "../v" } }] }
+        ,
+        \\{ "id": "x", "version": "1", "command": "a.exe", "modules": [{ "name": "m", "build": ["x"], "vendor": { "commands": ["x"], "dir": "v", "sha256": "ABC" } }] }
+        ,
+        // Shortcuts: to an export, named so they can be file names, with an
+        // icon inside the app.
+        \\{ "id": "x", "version": "1", "command": "a.exe", "shortcuts": { "A": { "command": "b" } }, "modules": [{ "name": "m", "build": ["x"] }] }
+        ,
+        \\{ "id": "x", "version": "1", "command": "a.exe", "shortcuts": { "A/B": { "command": "a" } }, "modules": [{ "name": "m", "build": ["x"] }] }
+        ,
+        \\{ "id": "x", "version": "1", "command": "a.exe", "shortcuts": { "A": { "command": "a" }, "a": { "command": "a" } }, "modules": [{ "name": "m", "build": ["x"] }] }
+        ,
+        \\{ "id": "x", "version": "1", "command": "a.exe", "shortcuts": { "A": { "command": "a", "icon": "../a.ico" } }, "modules": [{ "name": "m", "build": ["x"] }] }
+        ,
+        // Associations: an extension, opened by an export, once, with an
+        // icon inside the app.
+        \\{ "id": "x", "version": "1", "command": "a.exe", "associations": { ".a": { "command": "b" } }, "modules": [{ "name": "m", "build": ["x"] }] }
+        ,
+        \\{ "id": "x", "version": "1", "command": "a.exe", "associations": { "a": { "command": "a" } }, "modules": [{ "name": "m", "build": ["x"] }] }
+        ,
+        \\{ "id": "x", "version": "1", "command": "a.exe", "associations": { ".a": { "command": "a" }, ".A": { "command": "a" } }, "modules": [{ "name": "m", "build": ["x"] }] }
+        ,
+        \\{ "id": "x", "version": "1", "command": "a.exe", "associations": { ".a": { "command": "a", "icon": "C:\\a.ico" } }, "modules": [{ "name": "m", "build": ["x"] }] }
+        ,
+    };
+    for (bad) |text| try std.testing.expectError(error.Failed, parse(arena, "t.json", text));
+
+    // Shortcuts reach the config; configs without them don't mention them,
+    // so their images keep their digests.
+    const with = try parse(arena, "t.json",
+        \\{ "id": "x", "version": "1", "command": "a.exe", "shortcuts": { "Text Editor": { "command": "a", "description": "Edit" } },
+        \\  "modules": [{ "name": "m", "build": ["x"] }] }
+    );
+    const with_json = try oci.toJson(arena, try with.appConfig(arena, .{}, .{}));
+    try std.testing.expect(std.mem.indexOf(u8, with_json, "\"Text Editor\"") != null);
+    const without_json = try oci.toJson(arena, try vendored.appConfig(arena, .{}, .{}));
+    try std.testing.expect(std.mem.indexOf(u8, without_json, "shortcuts") == null);
+
+    // And so with associations.
+    const opening = try parse(arena, "t.json",
+        \\{ "id": "x", "version": "1", "command": "a.exe", "associations": { ".note": { "command": "a", "description": "Note" } },
+        \\  "modules": [{ "name": "m", "build": ["x"] }] }
+    );
+    const opening_json = try oci.toJson(arena, try opening.appConfig(arena, .{}, .{}));
+    try std.testing.expect(std.mem.indexOf(u8, opening_json, "\".note\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, without_json, "associations") == null);
+}
+
+test "archive kinds are inferred" {
+    const cases = [_]struct { []const u8, Source.Kind }{
+        .{ "https://example.com/node-v22-win-x64.ZIP", .zip },
+        .{ "https://registry.npmjs.org/prettier/-/prettier-3.9.9.tgz", .@"tar.gz" },
+        .{ "zlib-1.3.1.tar.gz", .@"tar.gz" },
+        .{ "x.tar.xz", .@"tar.xz" },
+        .{ "x.tar", .tar },
+        .{ "https://static.crates.io/crates/ripgrep/ripgrep-15.2.0.crate", .@"tar.gz" },
+        .{ "tool.exe", .file },
+    };
+    for (cases) |c| {
+        const s: Source = .{ .url = c[0] };
+        try std.testing.expectEqual(c[1], s.kind());
+    }
+}
+
+test cleanupMatches {
+    const patterns: []const []const u8 = &.{ "/include", "/lib/pkgconfig", "*.pdb", "__pycache__" };
+    try std.testing.expect(cleanupMatches(patterns, "include"));
+    try std.testing.expect(cleanupMatches(patterns, "Include/zlib.h"));
+    try std.testing.expect(!cleanupMatches(patterns, "includes/x.h"));
+    try std.testing.expect(cleanupMatches(patterns, "lib/pkgconfig/zlib.pc"));
+    try std.testing.expect(!cleanupMatches(patterns, "lib/libz.a"));
+    try std.testing.expect(cleanupMatches(patterns, "bin/sqlite3.PDB"));
+    try std.testing.expect(cleanupMatches(patterns, "lib/x/__pycache__/a.pyc"));
+    try std.testing.expect(!cleanupMatches(patterns, "bin/sqlite3.exe"));
+}
+
+test globMatch {
+    try std.testing.expect(globMatch("*.a", "libz.a"));
+    try std.testing.expect(!globMatch("*.a", "libz.a.txt"));
+    try std.testing.expect(globMatch("lib*.dll", "LIBZ.DLL"));
+    try std.testing.expect(globMatch("a?c", "abc"));
+    try std.testing.expect(!globMatch("a?c", "ac"));
+    try std.testing.expect(globMatch("*", ""));
+    try std.testing.expect(globMatch("*x*y*", "axbyc"));
+    try std.testing.expect(!globMatch("*x*y", "axbyc"));
 }

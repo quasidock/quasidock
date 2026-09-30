@@ -1,0 +1,1073 @@
+# Findings
+
+## Does the no-admin stack hold up?
+
+Iteration 1 asked whether zigsaw can run real command-line tools reproducibly
+on Windows (Home edition included) without admin rights. We tested six tools
+in both sandboxes with [`tests/matrix.sh`](../tests/matrix.sh): busybox,
+ripgrep, MinGit, Node + npm, Python (embeddable) and the zig toolchain. Tested
+on Windows 11 Home 10.0.26300 with Defender real-time protection on.
+
+### Summary
+
+- **The `soft` sandbox works for every tool tested.** All 26 checks behave as
+  intended. Each app gets a hermetic environment, a data directory that
+  persists, and working-directory access. All six tools, including git, npm
+  and zig builds, keep their state in the data directory.
+- **The `appcontainer` sandbox only suits self-contained tools.** Busybox,
+  ripgrep and Python mostly work, and the permissions are enforced. Git, Node
+  scripts, npm and zig fail because of two Windows restrictions on
+  AppContainers that zigsaw can't lift without admin rights.
+- One reproducibility hole in `soft` mode was found and fixed: apps could
+  modify installed app files.
+- **Re-checked in iteration 8** (see [below](#re-checked-on-windows-11-263009550)):
+  on Windows 11 26300.9550, restriction 1 is gone, and git and Node work
+  under `appcontainer` in part. A low-integrity sandbox would suit every
+  tool tested.
+- **The `low` sandbox (iteration 9)** works for every tool the matrix runs,
+  and keeps them from writing outside their data directory and the paths
+  they may write (see [below](#the-low-sandbox)). It confines nothing else.
+- **Prebuilt GUI apps (iteration 17)** keep their settings in their data
+  directory in all three sandboxes, since Windows derives AppData from
+  `USERPROFILE`; the registry, `LocalLow` and the user's Documents and the
+  like don't follow (see [below](#prebuilt-gui-apps)).
+- **The registry (iteration 19)**: a key in HKCU labelled low, or granted
+  to an app's capability, is one the app can write at low integrity and in
+  an AppContainer, so zigsaw keeps an app's keys with its data and puts them
+  there for its runs (see [below](#the-registry)).
+
+### Matrix
+
+`ok` = exits 0, `fails` = exits non-zero. ✗ marks results that differ from
+the intended behaviour.
+
+| Tool | Check | soft | appcontainer |
+|---|---|---|---|
+| busybox | runs, exit codes, writes to data dir | ok | ok |
+| busybox | app files are read-only | fails (intended) | fails (intended) |
+| busybox | write to an ungranted host dir | ok (not enforced) | fails (intended) |
+| busybox | background children end with the run | ok | ok |
+| ripgrep | runs, searches the granted cwd | ok | ok |
+| ripgrep | read an ungranted host file | ok (not enforced) | fails (intended) |
+| git | `--version` | ok | ok |
+| git | `config --global`, `init`/`commit`, `ls-remote` over HTTPS | ok | ✗ fails |
+| node | `-e`, `fetch` over HTTPS | ok | ok |
+| node | script file, `fs.realpathSync`, `npm install` | ok | ✗ fails |
+| python | script file, HTTPS with system certificates | ok | ok |
+| python | `os.path.realpath` | ok | ✗ fails (returns unresolved path) |
+| python | network denied by `--unshare=network` | ok (not enforced) | fails (intended) |
+| python | write into its own app dir | fails (intended) | fails (intended) |
+| zig | `version` | ok | ok |
+| zig | `env`, `init` + `build run` | ok | ✗ fails |
+
+### Why the AppContainer failures happen
+
+**1. Converting a path to a drive letter is denied.**
+`GetFinalPathNameByHandleW` with `VOLUME_NAME_DOS` fails with
+`ERROR_ACCESS_DENIED`, while the same call with `VOLUME_NAME_NT`
+(`\Device\HarddiskVolume3\...`) succeeds. The failing step is mapping the
+volume device to `C:`, which goes through the Mount Manager, and
+AppContainers can't open it. Git calls this to get its working directory,
+Python and Node use it for `realpath`, and zig uses the same mapping to find
+its own executable. Rust's `std::fs::canonicalize` calls the same API, so
+Rust tools that canonicalize paths will likely fail the same way.
+
+**2. `C:\` itself grants nothing to AppContainers.** The drive root has no
+entry for `ALL APPLICATION PACKAGES`, so `lstat("C:\\")` fails with `EPERM`.
+Node's JavaScript `realpath` checks every parent folder of a path, so loading
+any script file fails, and npm with it.
+
+Neither can be fixed without admin. The root folder's permissions belong to
+SYSTEM/TrustedInstaller, and the Mount Manager's access rules are set by
+Windows. We tested this with a probe program that calls
+`GetFinalPathNameByHandleW` with each flag combination inside the
+AppContainer. The probe ruled out missing grants on parent folders as the
+cause.
+
+**3. On Windows Server 2025, `NUL` is denied too** (iteration 6, seen on
+GitHub's `windows-2025` runners). Git opens `/dev/null` as it starts, and
+fails ("could not open '/dev/null' for reading and writing: Permission
+denied"), so even `git --version` fails there. On Windows 11 it starts. Go's
+toolchain opens `NUL` too, while it builds ("error obtaining buildID for go
+tool compile: open NUL: Access is denied"), so Go builds that work under an
+AppContainer on Windows 11 fail there (iteration 7). The matrix marks these
+AppContainer failures as known gaps, so CI only fails when a result
+changes.
+
+## Re-checked on Windows 11 26300.9550
+
+Iteration 8, 2026-10-05. From iteration 7 on, several known AppContainer
+gaps passed on the development machine: `git --version`, `zig env`, zig's
+project, and Python's realpath. Three Windows updates (KB5124010, KB5121794,
+KB5124009) were installed on 2026-10-03, between iteration 6's matrix, where
+they failed, and iteration 7's.
+
+[`tests/acprobe.zig`](../tests/acprobe.zig) (`zig build acprobe`) checks the
+causes found above, from inside an AppContainer, on this machine:
+
+| Check | soft | appcontainer |
+|---|---|---|
+| `final-path-dos`: the working directory's path with its drive letter | ok | ok |
+| `self-path-dos`: the same for its own executable | ok | ok |
+| `final-path-nt`: the NT path, as a control | ok | ok |
+| `mount-manager`: opening the Mount Manager | ok | ok |
+| `drive-root`: the drive root's attributes | ok | denied |
+| `nul`: NUL, to read and write | ok | ok |
+
+- **Restriction 1 is gone here.** AppContainers can open the Mount Manager
+  now, so paths resolve to drive letters. Python's realpath, zig and CMake
+  work.
+- **Restriction 2 remains, and is wider than the drive root.** An
+  AppContainer can't read the attributes of any directory that doesn't
+  grant it access. Those are the drive root, `C:\Users`, and the parents of
+  the paths zigsaw grants.
+- **Windows Server 2025 isn't known.** CI's runners denied `NUL` in
+  iterations 6 and 7. The matrix now prints the probe's results, so the
+  Reproduce run's log shows them.
+
+What the remaining failures need:
+
+- **git** fails in repository discovery: it stats the working directory's
+  parent, to stop at a filesystem boundary, and dies when that's denied
+  ("failed to stat '...Temp'"). With `GIT_DISCOVERY_ACROSS_FILESYSTEM=1`,
+  which MinGit's recipe now sets, git skips that stat, and `config --global`
+  and `ls-remote` work. Creating files, git stats each directory of their
+  path from the drive root, so `init` and `commit` still fail.
+- **Node** resolves script and module paths with its JavaScript realpath,
+  which `lstat()`s each directory of the path, the drive root first. With
+  `NODE_OPTIONS=--preserve-symlinks --preserve-symlinks-main`, which Node's
+  recipe now sets, it doesn't, and scripts, `npm install` and npm's global
+  commands work. `fs.realpathSync` still fails, and so does `npm install -g`:
+  npm itself `lstat()`s `C:\Users`. `fs.realpathSync.native` works.
+
+[`tests/matrix.sh`](../tests/matrix.sh) runs the probe first, and expects each
+known gap whose causes the probe finds lifted to pass, so a regression
+fails it. Where the causes remain, the gap stays a known gap.
+
+### A low-integrity sandbox
+
+Option 2 below, tried by hand: `zigsaw-acprobe --low <command>` runs a
+command with a copy of the user's token labelled low integrity, which needs
+no privileges. The tools ran from their deployments, with their home and the
+working directory labelled low (`icacls <dir> /setintegritylevel low`):
+
+| | low integrity |
+|---|---|
+| The probe's six checks | all ok |
+| git: `--version`, `config --global`, `init` | ok |
+| Node: a script, `npm install`, `fetch` over HTTPS | ok |
+| Python: a script, `realpath` | ok |
+| zig: `env`, `cc` | ok |
+| Writing to a directory not labelled low, or into the store | denied |
+| Reading a file not labelled low | ok |
+
+- **Every tool tested works**, unlike under AppContainer: low integrity
+  restricts writing, not reading or path resolution.
+- **It confines writes only.** Reading and the network stay open, as in
+  `soft`.
+- **AppContainer grants break it.** A file whose ACL grants a particular
+  AppContainer access can't be read by a low-integrity process outside that
+  AppContainer, even though the user is granted full access. zigsaw grants
+  each app's AppContainer read access to its deployments the first time the
+  app runs under `--sandbox=appcontainer`. After that, zig at low integrity
+  can't find its own executable, and Python doesn't start. A low-integrity
+  sandbox would need deployments granted some other way, such as through
+  `ALL APPLICATION PACKAGES`. *Resolved in iteration 9; see below.*
+
+## The low sandbox
+
+Iteration 9, 2026-10-05, Windows 11 26300.9550.
+
+### Which grants keep low integrity out
+
+Python's deployment, copied without zigsaw's entries, then given one allow
+entry (read and execute, inherited) at a time, and run at low integrity
+(`zigsaw-acprobe --low`):
+
+| The entry's SID | At low integrity |
+|---|---|
+| none (the control) | runs |
+| an AppContainer's package SID, `S-1-15-2-` and seven numbers, as zigsaw granted until now | fails: every open is denied |
+| `ALL APPLICATION PACKAGES` (`S-1-15-2-1`) | runs |
+| `ALL RESTRICTED APPLICATION PACKAGES` (`S-1-15-2-2`) | runs |
+| a capability SID (`S-1-15-3-1024-` and eight numbers) | runs |
+
+- **Only package SIDs do it**, and they deny everything: reading a file,
+  listing the directory, and resolving the path (the probe's
+  `final-path-dos`, `self-path-dos` and `final-path-nt` all fail with
+  `ACCESS_DENIED`). The user's own full access doesn't help.
+- **Executables still start**, as the process that starts them maps the
+  file, which is why busybox seemed unaffected: it loads no DLL of its own.
+  Python fails loading its DLLs, and zig resolving its own path.
+- **zigsaw now grants a capability of each app's own** instead: a SID
+  derived from `zigsaw.<id>` (`DeriveCapabilitySidsFromName`), which only
+  that app's AppContainer runs hold. It isolates apps from each other as
+  the package SID did, and low integrity ignores it. Runs remove the old
+  entries from what they use: any package SID's from deployments and data
+  directories, which only zigsaw grants, and the app's own from host paths.
+
+### The matrix
+
+`tests/matrix.sh` runs each check in `soft`, then `appcontainer`, then
+`low`, so each low run reads files an AppContainer run has just been
+granted. Every check's low result is as intended, 0 mismatches:
+
+| Tool | Check | soft | appcontainer | low |
+|---|---|---|---|---|
+| busybox | write to an ungranted host dir | ok (not enforced) | fails (intended) | fails (intended) |
+| ripgrep, bat, zstd | read an ungranted host file | ok (not enforced) | fails (intended) | ok (not enforced) |
+| git | `init`/`commit` in cwd | ok | fails (known gap) | ok |
+| node | `fs.realpathSync`, `npm install -g` | ok | fails (known gap) | ok |
+| python | network denied by `--unshare` | ok (not enforced) | fails (intended) | ok (not enforced) |
+| all twelve tools | every other check | as in soft | | as in soft |
+
+- **Labels propagate.** zigsaw labels a directory with an inherited low
+  label (`(OI)(CI)(NW)`); the files already in it, and those the app
+  creates, inherit it, and removing the label removes theirs. 20,000 files
+  took 2.2 s to label, about what granting them to an AppContainer takes
+  (2.4 s).
+- **A low run's first label of its data directory** is the slow part, once:
+  zig's first low run took 9 s, with its cache.
+- **Windows Server 2025 isn't known.** CI runs the matrix there, as an
+  administrator; it wasn't seen from here.
+
+## Prebuilt GUI apps
+
+Iteration 17, 2026-10-14, Windows 11 26300. The tools above are
+command-line programs that read their folders from environment variables,
+and the GUI apps of iterations 10 to 16 were built here against GTK, with
+GLib's folders set by variables too. Most Windows programs are published
+built, and ask Windows instead.
+
+### Where Windows sends a program
+
+[`tests/hostprobe.zig`](../tests/hostprobe.zig) (`zig build hostprobe`) asks
+what a desktop program asks, run as an app
+([`tests/hostprobe/app.json`](../tests/hostprobe/app.json)): the paths
+`SHGetKnownFolderPath` gives, whether a file can be made there, and what the
+registry allows. "data" is the app's data directory, `home` the profile
+zigsaw makes in it:
+
+| | soft | low | appcontainer |
+|---|---|---|---|
+| RoamingAppData | data `home\AppData\Roaming` | the same | the same |
+| LocalAppData | data `home\AppData\Local` | the same | the container's folder in data (`...\Packages\zigsaw.<id>\AC`) |
+| LocalAppDataLow | real, writable | real, writable | the container's folder in data |
+| Documents, Downloads | data `home\Documents`..., missing | the same | the same |
+| Profile | real, writable | real, read-only | real, unreadable |
+| ProgramData | real, writable | real, read-only | real, unreadable |
+| `GetTempPath2` | data, as TEMP | the same | the container's Temp in data |
+| `GetUserProfileDirectory` | real | real | real |
+| write `HKCU\Software` | ok (the real registry) | denied | denied |
+| write `HKCU\Software\AppDataLow` | ok | ok | denied |
+| read `HKLM` | ok | ok | ok |
+| create the file dialog (COM) | ok | ok | ok |
+| open the clipboard, without a window | ok | ok | denied |
+
+- **AppData follows `USERPROFILE`.** Windows keeps the user's folders as
+  `%USERPROFILE%\AppData\Roaming` and so on, and expands that with the
+  program's own environment, so the redirect zigsaw sets for programs that
+  read variables steers those that ask Windows as well.
+- **What doesn't follow it**: LocalLow, which Windows derives from the
+  profile it knows from the token; the profile folder itself; ProgramData;
+  and the registry. Under `soft` a program can write all of them; at low
+  integrity only LocalLow and `HKCU\Software\AppDataLow`; in an AppContainer
+  none of them.
+- **Desktop, Documents, Downloads and Pictures** follow it too, into a home
+  that doesn't have them. In a file dialog they're gone: Notepad++'s Open
+  dialog showed This PC and the drives only.
+- Runs' environment has no `ProgramData`, `ProgramFiles`, `PUBLIC` or
+  `COMPUTERNAME`. None of the four apps below missed them, so they stay out
+  (builds share the environment, and CMake, for one, searches
+  `ProgramFiles`).
+
+### Four apps
+
+7-Zip 26.04 (its file manager), Notepad++ 8.9.8.1, SumatraPDF 3.6.1 and
+VLC 3.0.24, from upstream's archives
+([`tests/guiapps.sh`](../tests/guiapps.sh)). Each opened a file given with
+`--file`, named it in its title, and was closed as its close button would:
+
+| App | soft | appcontainer | low | Its settings |
+|---|---|---|---|---|
+| 7-Zip's file manager | ok | opens its root view instead (known gap) | ok | `HKCU\Software\7-Zip`: the real registry under soft; not saved otherwise. Since iteration 19, kept with its data, and saved in all three sandboxes ([the registry](#the-registry)) |
+| Notepad++ | ok | ok | ok | data, `AppData\Roaming\Notepad++` |
+| SumatraPDF | ok | ok | ok | data, `AppData\Local\SumatraPDF` (in an AppContainer, the container's folder) |
+| VLC | ok | ok | ok | data, `AppData\Roaming\vlc` |
+| VLC decoding a clip without a window | ok | ok | ok | |
+
+- **No app needed a change to zigsaw.** Their recipes leave out what makes
+  them write next to their executable (Notepad++'s portable marker,
+  `doLocalConf.xml`): SumatraPDF falls back to AppData by itself when it
+  can't write there.
+- **7-Zip's file manager in an AppContainer** starts, and shows its root
+  instead of the archive: it goes through the path from the drive root, and
+  the container can't read the folders above what it's granted, the
+  restriction that keeps Node's realpath from working there.
+- **VLC** asks about privacy on its first start, in a dialog that keeps its
+  window from closing, and checks for updates when it has no settings yet,
+  which held up its closing by more than ten seconds once. Its recipe passes
+  `--no-qt-privacy-ask --no-qt-updates-notif`.
+- **The taskbar**: at low integrity and in an AppContainer, VLC's calls to
+  add buttons to its taskbar button fail with `E_ACCESSDENIED`, as Explorer
+  runs at medium integrity.
+- Both upstream archives that publish hashes (Notepad++, VLC) had the hashes
+  pinned. The four images are the same from three stores.
+
+## The user's folders
+
+Iteration 18, 2026-10-14, Windows 11 26300. Before giving an app the
+user's Documents and the like as a directory junction in its home, the
+probes checked that nothing zigsaw does to a data directory reaches
+through one into the folder, and that the sandboxes treat a path through a
+junction as the folder's own:
+
+| Probe | Result |
+|---|---|
+| Zig 0.16's `Io.Dir.deleteTree` on a tree with a junction in it | removes the junction; the folder's files stay |
+| Zig 0.16's `Dir.walk` | reports the junction as a `sym_link`, and doesn't go into it |
+| Git Bash's `rm -rf` | removes the junction only |
+| A low integrity label on the data directory, and an AppContainer grant of it (`SetNamedSecurityInfoW`, inherited) | change the junction's own ACL, not the folder's |
+| Labelling, and granting, a folder with a junction in it that denies Everyone listing, as Windows' `Documents\My Music` | works; the junction's target is left alone; `zigsaw rm` puts both back |
+| A low-integrity process through the junction | reads; writes only once the folder is labelled |
+| An AppContainer process through the junction | neither reads nor writes until the folder is granted to its capability; then both |
+| `SHGetKnownFolderPath` for Documents, with `home\Documents` a junction | `home\Documents`, writable, in all three sandboxes |
+
+- `User Shell Folders` on this machine names all six folders as
+  `%USERPROFILE%\<name>` (`Personal` for Documents, `My Video` for Videos,
+  Downloads by its GUID), which is why a run's `USERPROFILE` moves them.
+- Creating a junction needs no privilege, unlike a symbolic link, which
+  needs Developer Mode or an administrator.
+- So zigsaw's own deletes (`zigsaw rm --delete-data`, `prune --data`,
+  `--ephemeral`) were safe as they were; `tests/sandbox.sh` now checks that
+  they leave a folder's files.
+
+In Notepad++'s Open dialog, with fake folders standing in for the user's:
+
+- Typing `shell:Personal` goes to **Documents**, which the dialog names
+  and shows as the known folder, with the fake folder's file in it, under
+  `soft`, `low` and `appcontainer` alike.
+- **Quick access**: the dialog's navigation pane had Home, Gallery,
+  OneDrive and the drives, but none of the user's folders pinned. Its pins
+  are kept in `%APPDATA%\Microsoft\Windows\Recent\AutomaticDestinations`,
+  in the app's profile in a run, and the dialog only makes its file there,
+  with the default pins, if the folder exists. Explorer would make the
+  folder in a real profile; nothing does in an app's. Once zigsaw made it,
+  the dialog pinned Downloads and Documents (the folders the app has), in
+  all three sandboxes. Desktop isn't among the pane's default pins.
+
+## The registry
+
+Iteration 19, 2026-10-15, Windows 11 26300. Before keeping an app's keys in
+`HKEY_CURRENT_USER` with its data, [`tests/regprobe.zig`](../tests/regprobe.zig)
+(`zig build regprobe`; [`tests/regprobe/app.json`](../tests/regprobe/app.json)
+makes an app of it) checked what that takes, without administrator rights.
+
+At medium integrity, as zigsaw:
+
+| Probe | Result |
+|---|---|
+| `RegLoadAppKey` on a file in a directory of the user's | loads it, creating `user.dat`, `.LOG1` and `.LOG2`; privately, only through the key it returns |
+| The same file loaded again while it's loaded | the same hive: what one handle wrote, the other sees |
+| `RegCopyTree` from an HKCU key into the hive | `ERROR_ACCESS_DENIED`, even for values alone |
+| `RegCopyTree` from the hive into HKCU | works |
+| Copying value by value (`RegEnumValue`, `RegSetValueEx`, subkeys through their handles), both ways | keeps every type (SZ, EXPAND_SZ, MULTI_SZ, DWORD, QWORD, BINARY), the default value and the subkeys; 2,000 values in 109 ms |
+| `RegRenameKey` in HKCU | works |
+
+In the sandboxes, a key in HKCU that zigsaw prepared, and one it didn't:
+
+| The app, in its run | soft | low, key labelled low (inheritable) | appcontainer, key granted to the app's capability (inheritable) |
+|---|---|---|---|
+| reads, sets and deletes values | ok | ok | ok |
+| makes a subkey (`RegCreateKeyEx` from HKCU with the whole path) | ok | ok | ok |
+| makes two missing levels at once that way | ok | ok | `ERROR_ACCESS_DENIED` |
+| makes two missing levels at once from a handle to the key | ok | ok | ok |
+| writes a sibling key zigsaw didn't prepare | ok | denied | denied |
+| reads a key zigsaw didn't prepare | ok | ok | denied |
+
+- So zigsaw copies an app's keys value by value, and a run labels or grants
+  them: in every sandbox the app can write them.
+- **7-Zip 26.04's file manager**, with `HKCU\Software\7-Zip` prepared, saved
+  the same settings on close in all three sandboxes: `FM` with its window's
+  position, panels, list mode and folder history, and `FM\Columns`. It makes
+  its keys one level at a time, so an AppContainer's limit doesn't reach it.
+
+## .NET
+
+Iteration 20, 2026-10-15, Windows 11 26300, with the .NET SDK 10.0.402 from
+Microsoft's zip, which also has the runtime 10.0.13. This machine has .NET
+SDK 10.0.303 installed too, in `C:\Program Files\dotnet`, and long paths
+turned on (`LongPathsEnabled=1`).
+
+**Licence.** Microsoft's .NET binaries for Windows come under the
+[.NET Library License](https://github.com/dotnet/core/blob/main/license-information.md)
+(`LICENSE.txt` in the zip), not MIT as on Linux and macOS. It allows using
+any number of copies to build and test programs, and shipping its files
+inside programs you develop, under conditions; but not to "publish the
+software for others to copy". An image of the SDK or the runtime on a
+registry would be that, so their recipes are in `recipes/no-publish/`, and
+each machine builds them from Microsoft's download.
+
+The SDK image's variables, each tried without:
+
+| Without | What happens |
+|---|---|
+| `ProgramFiles(x86)` (zigsaw's runs don't pass it) | every NuGet command fails: `Value cannot be null. (Parameter 'path1')`. NuGet on .NET takes the machine-wide settings' directory from the variable `PROGRAMFILES(X86)`, or `PROGRAMFILES` |
+| `DOTNET_CLI_HOME` | the CLI writes its first-use sentinel to the real `C:\Users\<you>\.dotnet` (at low integrity, refused, and the CLI stops with `UnauthorizedAccessException`), and NuGet's packages would go to the real `.nuget\packages`: both find the profile with `SHGetKnownFolderPath`, which the run's `USERPROFILE` doesn't move |
+| `DOTNET_ROOT` | a program the SDK built, run with `--command`, ran on the machine's .NET (`C:\Program Files\dotnet\shared\Microsoft.NETCore.App\10.0.11`) |
+| `DOTNET_SKIP_WORKLOAD_INTEGRITY_CHECK` | each first run in a fresh profile, so every build, prints "An issue was encountered verifying workloads" |
+
+`DOTNET_GENERATE_ASPNET_CERTIFICATE=false` and
+`DOTNET_ADD_GLOBAL_TOOLS_TO_PATH=false` weren't tried without, as that would
+change this machine (a certificate in the user's store, an entry in the
+user's PATH, which this machine's own .NET first runs left three times). With
+all of them, after runs under soft, low and appcontainer: the real profile's
+`.dotnet` unchanged, no `.nuget`, the user's PATH and certificate store
+unchanged.
+
+| Check | soft | low | appcontainer |
+|---|---|---|---|
+| `dotnet new console`, `build`, `run` in a granted working directory | ok | ok | ok |
+| the built program, with `--command` | ok | ok | ok |
+| `dotnet --info` | ok | ok | stops at the workloads: Visual Studio's setup COM server (`{177F0C4A-...}`) refuses the container |
+| a console program with a NuGet package, on the runtime image | ok | ok | ok |
+| a Windows Forms form and a WPF window, on the runtime image | ok | ok | ok |
+
+- **Builds reproduce.** The SDK, the runtime, the two programs and Pinta
+  made the same images in two stores, the NuGet packages vendored afresh in
+  each, PDBs included: the compiler is deterministic, and its paths are on
+  `B:`. The apphost the SDK writes resources into (Pinta's icon) is the same
+  too.
+- **Long paths.** The SDK's deepest file is 145 characters into it, so 252
+  in the default store of a user named `Test`. A store whose own path is 102
+  characters long worked throughout (deploying, building, running, `dotnet
+  user-jwts`), but with long paths turned on; with them off, not tried.
+- **Pinta 3.1.2** looks for its icons and translations in `..\share` from
+  its executable, unless it finds `Pinta.sln` two levels up (a development
+  build), as its Windows build lays it out; with them next to the executable
+  its own icons were all missing. Its release tarball lacks the Windows
+  installer's files, among them `bundle_gtk.targets`, which its project
+  imports on Windows, to copy GTK's DLLs from MSYS2. It saves an image given
+  with `--file` in place in every sandbox. NuGet's audit warns that its
+  Tmds.DBus 0.22.0 has a known vulnerability (GHSA-xrw6-gwf8-vvr9), in a
+  D-Bus library Windows has no session bus for.
+
+## Files
+
+Iteration 21, 2026-10-15: Files 4.3 (`cbfb4ba5`), WinUI 3 with the Windows
+App SDK 2.5.1, built with the .NET SDK 10.0.402.
+
+**What Files' repository builds with.** Visual Studio's MSBuild, for the
+solution: besides the C# projects, it has three C++ ones on Visual Studio's
+v145 toolset, a launcher (with C++/WinRT and WIL from NuGet) used when Files
+replaces Explorer, and COM servers replacing Windows' open and save dialogs
+(ATL, which only Visual Studio has, and MIDL). Release builds use NativeAOT,
+and CI makes MSIX packages. `dotnet build` of `Files.App.csproj` alone needs
+none of that: the XAML compiler, the resource index and the compiled XAML
+all work with the SDK image, and the C++ projects aren't references of it.
+
+**Without a package.** A build of Files run as a plain program stopped at
+each of these in turn; the recipe's patch deals with each:
+
+| What failed | How it showed | What the patch does |
+|---|---|---|
+| The Windows App SDK's initialization of a packaged app | `REGDB_E_CLASSNOTREG` in a static constructor, at once | builds Files unpackaged (`WindowsPackageType=None`), with the SDK in its directory |
+| `Package.Current`, `ApplicationData.Current` (about 80 uses) | they throw in a program without a package | classes of the same names in Files' namespace |
+| A launch's arguments start with `Files.exe`'s own path | Files exits with 0 at once: it takes the path for a program to start | treats that as a launch from the command line, as `MainWindow` already did |
+| `FileSystemWatcher` on the Libraries folder | the splash screen forever; nothing in the log | no watcher when there's no Libraries folder, as in a zigsaw run's profile |
+| The UWP `ResourceLoader` in a XAML markup extension | the splash screen forever (`XamlParseException` in `MainPage`) | the Windows App SDK's `ResourceLoader` |
+| `dotnet publish` leaves out `Assets` | a crash 2 s in, `0xC000027B` (only Windows Error Reporting's `Report.wer` names the error, `0x80070003`) | the recipe copies `Assets` |
+
+Files starts its window with `_ = ActivateAsync()`, so an exception there
+goes nowhere: two of the hangs above were found in a dump, with
+`dotnet-dump` run with the SDK image's `dnx` (`dumpasync` for what's still
+awaited, `dumpheap -type Exception` and `pe` for the exceptions). In an
+AppContainer, `dotnet-stack` and `dotnet-dump collect` hang: the process's
+diagnostics pipe can't be reached. A dump written from outside with
+`MiniDumpWriteDump` (full memory) can be read by `dotnet-dump analyze`.
+
+**WinRT's storage refuses an app without a package that isn't at medium
+integrity.** `StorageFolder.GetFolderFromPathAsync`, from PowerShell started
+at low integrity by `zigsaw-acprobe --low`:
+
+| Path | medium | low | .NET's `Directory.EnumerateFileSystemEntries` at low |
+|---|---|---|---|
+| `C:\` | ok | `E_ACCESSDENIED` | ok |
+| `C:\Windows` | ok | `E_ACCESSDENIED` | ok |
+| the app's data directory (labelled low) | ok | `E_ACCESSDENIED` | ok |
+
+The error says the item "is not in a location that the application has
+access to (including application data folders, folders that are accessible
+via capabilities, and persisted items in the StorageApplicationPermissions
+lists)": the rules for a packaged app in a sandbox, with no package to grant
+anything. In an AppContainer it's the same; Files' first patch, which made
+its data folders `StorageFolder`s at startup, hung there.
+
+| Files | soft | low | appcontainer |
+|---|---|---|---|
+| starts | ok | ok | ok |
+| the drives | ok | none, and a "Welcome to Files!" dialog asking to grant a permission in Settings | the same |
+| a folder given on its command line (`C:\Windows`) | ok | ok | ok |
+| its data | `home\AppData\Local\Files Community` in its data directory | the same | the container's Local AppData (`...\Packages\zigsaw.<id>\AC`) |
+
+Files lists folders with Win32, but makes each drive's entry from a
+`StorageFolder`, and shows the dialog when the system drive is missing.
+
+- **The XAML compiler crashes on an implicit conversion to a WinRT class.**
+  An `implicit operator StorageFolder` on a class of Files' made it stop with
+  `WMC9999: Object reference not set to an instance of an object`, followed
+  by `WMC0001: Unknown type` for most of Files' XAML types.
+- **Two generators aren't deterministic.** Two builds' `Files.dll` and
+  `Files.App.Controls.dll` had the same types and methods, but CsWinRT's AOT
+  optimizer wrote its `WinRT.*GenericHelpers` types in a different order,
+  which ReadyToRun's code followed; `Files.App.Server.winmd`, written by
+  CsWinRT for an authored component, had a new module ID and timestamp each
+  time. The vendor step reproduced.
+- **MSBuild's environment properties lose to a project's.** `env` set
+  `RuntimeIdentifiers`, `SelfContained` and `PublishAot` in vain: Files'
+  projects and publish profiles set them.
+- **Files keeps running when its window closes** (`LeaveAppRunning`, on by
+  default), and hands a new launch to the parked instance, which it finds by
+  a semaphore named for its flavour, `Files-Dev-Instance`, in the session.
+  Its open tabs are saved in its settings as they load
+  (`ContinueLastSessionOnStartUp`, also on).
+- **Ending `zigsaw run` rather than the app leaves the app's keys in
+  HKCU,** as designed (the next run settles them): a test that killed
+  `zigsaw.exe` with `timeout` left `HKCU\Software\Files Community` there.
+  `tests/files.sh` ends Files instead.
+- Its window was up 1.8-2.0 s after `zigsaw run`, ReadyToRun and on .NET's
+  runtime image; the self-contained Debug builds of the probes took 1.0-1.4
+  s. Not looked into.
+
+## PHP extensions without MSVC
+
+Iteration 23, 2026-10-16, Windows 11 26300, with php.net's PHP 8.5.11 x64
+builds (NTS and TS, "vs17": MSVC 14.44) and their devel packs, zig 0.16.0
+(clang 21.1), Visual Studio 18 Insiders (MSVC 14.44 and 14.51 side by side)
+and MSYS2's GCC 16.1 with binutils 2.46. The question was whether an
+extension for PHP's official Windows build can be built without MSVC.
+
+**With zig, yes**, with what [the recipes guide](recipes.md#php) lists:
+`-fms-extensions`, a header included first, one object, `-Wno-date-time`.
+Each was found by a build failing, or by a test, as follows:
+
+| Without | What happens |
+|---|---|
+| `-fms-extensions` | `zend_atomic.h` calls `_InterlockedExchange8`, undeclared; and `__declspec(thread)` (`TSRM_TLS`, thread-safe builds) isn't thread-local |
+| `_PID_T_` | `php.h`'s `typedef int pid_t` clashes with MinGW's 64-bit one |
+| `ZEND_FASTCALL` as `__vectorcall` | 340 of `php8.dll`'s exports are `__vectorcall` (`_emalloc@@8`); the link fails on all of them |
+| no `HAVE_BUILTIN_CONSTANT_P` | the link fails on `_emalloc_40@@0`: the size-class allocators exist only where PHP was built with `__builtin_constant_p` |
+| `_TIMEZONE_DEFINED` | `struct timezone` is defined twice (PHP's `win32/time.h`, MinGW's `time.h`); Xdebug doesn't compile |
+| `zig-php.c` | Xdebug's link fails on `zend_string_equal_val@@16`, which MSVC builds inline |
+| no `P_tmpdir` | Xdebug's default output directory is `\`, the current drive's root, not `C:\Windows\Temp` as in its MSVC build: 52 of its tests fail when run from `C:` (a user may write to `D:\`'s root here, so they passed there) |
+
+**Compared with MSVC 14.44**, building the same sources with the same flags
+as PHP's configure:
+
+| | zig | MSVC 14.44 |
+|---|---|---|
+| A test extension: classes and custom objects, callbacks, exceptions, streams, ini, `phpinfo()`, a fatal error unwinding through its `zend_try`; NTS and TS | all 24 checks pass | the same |
+| Sizes and offsets of 123 structs and fields (`zval`, `zend_class_entry`, executor globals, `php_stream`...) | | the same, but `long double`: 16 bytes, MSVC's 8, which only `zend_max_align_t` uses, to size a buffer the caller allocates |
+| APCu 5.1.28's tests | 56 pass | the same |
+| Xdebug 3.5.3's tests, with its own runner | 745 pass, 148 skipped | the same |
+| The extension's imports | UCRT (`api-ms-win-crt-*`), as `php8.dll`'s | UCRT and `VCRUNTIME140.dll` |
+
+Xdebug's `remote_log-win` test passes only when
+`C:\Windows\Temp\remote-log-win.txt` isn't there yet: it deletes its log
+while Xdebug has it open, so the file stays, and the next run finds it.
+
+**PHP checks the linker.** It refuses an extension whose PE header says a
+newer linker than its own: "Can't load module ... as it's linked with 14.51,
+but the core is linked with 14.44". MSVC builds of extensions need the
+Visual Studio PHP was built with, or an older one; Visual Studio 18's
+default toolset makes extensions PHP 8.5 refuses. lld writes 14.0, which
+passes.
+
+**GCC and GNU ld don't fit.** GCC has no `__vectorcall`; for PHP's
+`ZEND_FASTCALL` functions on x64 it's the plain Microsoft ABI with another
+name, so an import library mapping each name to `name@@bytes` links. Two more
+MSVC intrinsics need stand-ins (`__assume`, the 8-bit `_Interlocked*`). GNU
+ld writes linker version 2.46, which PHP refuses, and has no option to
+change it; with the two bytes patched to 14.0 the test extension passes.
+But GCC takes `__declspec(thread)` for an attribute it doesn't know, with a
+warning, so a thread-safe extension's `TSRMLS_CACHE` would be one variable
+for all threads.
+
+**Running PHP.** php.net's build reads the `php.ini` that `PHPRC` names,
+which PHP's documentation puts before those that keys under
+`HKLM\SOFTWARE\PHP` name, its own directory's and Windows' directory's (the
+keys weren't tried: writing them takes an administrator). Its default
+`extension_dir` is `C:\php\ext`. `${VAR}` in a
+`php.ini` value, quoted or not, is the environment variable, and
+`PHP_INI_SCAN_DIR` takes several directories, separated by `;`. HTTPS through
+streams checks with Windows' certificate stores; curl's OpenSSL has no
+certificates unless told (`curl.cainfo`), or per request
+(`CURLSSLOPT_NATIVE_CA`). PHP runs under the three sandboxes, finding the
+Visual C++ runtime in System32, and loads extensions from other images'
+directories. Xdebug's step debugger reaches a client on `127.0.0.1` under
+`soft` and `low`, not in an AppContainer.
+
+`run-tests.php` reads `TEST_PHP_ARGS` as options of its own as well as
+passing them on, so an extension given in both loads twice ("Module is
+already loaded"); and for a test path that doesn't exist it runs nothing,
+and passes.
+
+### With the libraries PHP ships
+
+Iteration 24, 2026-10-16, the same PHP, zig and Visual Studio. The question
+was how extensions that need PHP's third-party libraries can build.
+
+- **PHP ships its libraries two ways.** `php8.dll` has zlib, libxml2 and
+  libiconv linked in, and exports their functions (44 of zlib's, about
+  1440 `xml*`/`html*`, `libiconv*`), as PHP has zlib, libxml and iconv
+  built in. OpenSSL 3.5.8, libssh2 1.11.1, SQLite, libsodium 1.0.22,
+  nghttp2 1.70, libpq 16.15, ICU 77.1, brotli, GLib 2.88.3, enchant and
+  Cyrus SASL are DLLs beside `php.exe`.
+- **Their headers and import libraries are php.net's deps packages**
+  (`downloads.php.net/~windows/php-sdk/deps/vs17/x64/`), versioned zips
+  that stay up once replaced; the series file for 8.5 names exactly the
+  versions PHP 8.5.11 has. Every DLL in those packages that PHP's zip has
+  is the same file, byte for byte. Their static libraries are plain COFF
+  (no `/GL`). libxml2's headers include `iconv.h`.
+- **zig links with MSVC's import libraries** (`libssh2.lib`,
+  `libcrypto.lib`) as with its own, and with `php8.lib` for what
+  `php8.dll` exports, so `zlib_a.lib`, which PHP's build links into
+  extensions, isn't needed.
+- **Extensions built that way pass what their MSVC 14.44 builds pass**,
+  built from the same sources, run the same way:
+
+| | zig | MSVC 14.44 |
+|---|---|---|
+| Xdebug 3.5.3 with compression (zlib), its tests | 744 pass | the same |
+| igbinary 3.2.17RC1's tests | 134 pass, 17 skipped | the same |
+| ssh2 1.5.0's tests, against an SSH server in Go (`tests/php/servers`) | 14 of 15 (not `ssh2_send_signal`: bash and `SIGINT`) | the same |
+| PhpRedis 6.3.0 with igbinary, each of `Redis_Test`'s tests against miniredis | 108 pass, 46 fail, 98 skipped | the same, test by test |
+
+- **What `config.w32`s needed** beyond iteration 23's stand-ins:
+  `get_define("PHPDLL")` (igbinary picks its sources by it); configure's
+  `PHP_PHP_BUILD` search; the official `SETUP_OPENSSL`; and calls to
+  undeclared functions, which MSVC warns of (C4013) and clang makes an
+  error: redis calls PHP's `usleep` and `gettimeofday` without
+  `win32/time.h`. igbinary 3.2.16 includes `php_smart_string.h`, which PHP
+  8.5 removed; 3.2.17RC1, which PECL marks stable, is the one for 8.5. It
+  also tests `_MSC_VER` to mean Windows (its `stdint.h` branch and
+  byte swapping), which clang doesn't define; its recipe patches the two
+  tests.
+- **An extension that links with another extension's DLL** (redis with
+  igbinary's serializer imports `igbinary_serialize` from
+  `php_igbinary.dll`, as PHP's in-tree builds make it) loads only if PHP
+  loaded the other first: Windows matches the import to the loaded
+  module by name. Loaded the other way round, or without it, PHP says only
+  "The specified module could not be found".
+- **PHP's extension build id** is "API20250925,NTS,VS17" (`php -i`, "PHP
+  Extension Build"), which PHP checks extensions against, and which PHP's
+  extension point takes as its version.
+
+### With libraries PHP doesn't ship
+
+Iteration 25, 2026-10-16. The question was whether an extension's recipe
+can build the library it needs with zig, and get what php.net's own builds
+get.
+
+- **PhpRedis can't have zstd, lz4 or lzf on Windows**: its `config.w32`
+  has no option for them, only `config.m4`. So the proofs were PECL's yaml
+  2.3.0 (libyaml) and zstd 0.18.0 (libzstd, which it can also take from a
+  copy it bundles), which php.net builds for Windows too.
+- **libyaml 0.2.5's release tarball can't be built with CMake**: it has
+  the `CMakeLists.txt` but not the templates it reads
+  (`cmake/config.h.in`, `yamlConfig.cmake.in`). GitHub's archive of the tag
+  has them. CMake 4 also needs `-DCMAKE_POLICY_VERSION_MINIMUM=3.5`, as the
+  project asks for 3.0.
+- **configure's `CHECK_LIB` returns where it found the library**, not
+  true: yaml's `config.w32` reads the name to know whether it's static
+  (`_a.lib`), and so whether to define `YAML_DECLARE_STATIC`.
+- **Built with zig and linked in statically, they pass what php.net's DLLs
+  pass**, the same tests, run the same way with the SDK's PHP:
+
+| | zig, with the recipe's library | php.net's build |
+|---|---|---|
+| yaml 2.3.0, its tests | 76 pass | the same |
+| zstd 0.18.0, its tests | 61 pass, 5 skipped | the same |
+
+### PHP's `is_writable()` at low integrity
+
+At low integrity, `is_writable()` and `is_writeable()` are false for every
+file and directory, even those the process can write: those labelled low,
+as zigsaw labels a run's data and writable grants, and its `TEMP`. Writing
+to them works. PHP's Windows access check (`tsrm_win32_access` in
+`TSRM/tsrm_win32.c`) asks `GetFileSecurityW` for the owner, group and DACL,
+but not the integrity label (`LABEL_SECURITY_INFORMATION`), and
+`AccessCheck`, given a security descriptor without one, takes the object as
+medium integrity, which a low-integrity token may not write to. Asking for
+the label too would fix it. Code that checks before writing refuses:
+Kanboard won't start ("The directory ... must be writeable by your web
+server user"), and checks its files and plugins directories the same way.
+Composer, which doesn't, installs at low.
+
+### Composer and Kanboard
+
+- **Kanboard's release tarball leaves out `composer.json` and
+  `composer.lock`** (`export-ignore`), and has the dependencies installed in
+  `vendor\` instead. The recipe takes the two files from the tag's commit,
+  and its vendor step installs from the lock file: 18 packages in 30 s, 16 s
+  from Composer's cache, the same files both ways, and the same again in a
+  store that had none of it.
+- **Composer's install is the same code as Kanboard's own `vendor\`**: every
+  file both have is the same, byte for byte, but Composer's own (`autoload.php`
+  and `composer\`: the class name it gives the autoloader, and the class map,
+  which lists Kanboard's tests, which upstream installed from its full tree).
+  It keeps 41 files upstream's leaves out: each package's `composer.json`,
+  `README.md` and `.gitignore`, and a few tests.
+- **PHP's built-in web server ignores `.htaccess` and `web.config`**, which
+  keep Kanboard's `app\` and `data\` from the web; its recipe adds a router
+  that refuses `app\`, `libs\`, `vendor\` and `cli`. Its data isn't under
+  the served directory.
+- **A browser started from a run would be in the run's job**, and end with
+  the server: Explorer, given the address, has the shell's own process open
+  it, outside the run.
+- **Composer finds what's on the run's PATH**: `diagnose` reports "7-Zip
+  present (7z)" in a store where 7-Zip's image is installed, through its
+  export.
+
+## Projects with their own recipe
+
+- **zigsaw builds itself to the same bytes.** `zigsaw build` in this
+  checkout runs `zig build -Dstrip` in `B:\src\zigsaw`, with zig's image,
+  and its three programs are the same bytes as a `zig build -Dstrip` of the
+  checkout where it is, as `-Dstrip` leaves out the debug information that
+  would name the directory. So are the programs of the release package
+  that scripts/package.sh makes, when that package's own zigsaw builds the
+  checkout.
+- **It takes about 2.5 minutes in a fresh store, a minute after that**:
+  157 s for the build, plus 30 s to pull zig's image the first time; 67 s
+  once zig's `${cache}` has what zig builds once for the target, the rest
+  being zig compiling zigsaw, whose own cache (`.zig-cache`) is fresh in
+  each build. With nothing changed, `zigsaw build` takes the image built
+  before, in under a second.
+- **Taking the files is quick**: zigsaw's 52 files in 10 to 35 ms, read
+  and hashed, which every `zigsaw build` does, even when it then takes the
+  image built before.
+- **git agrees.** A fixture with nested `.gitignore` files, `!`, an
+  anchored pattern, `**`, an upper-case `X.LOG` that `*.log` ignores, a
+  file name with a space and an empty directory gives the same files as
+  `git ls-files -co --exclude-standard` in it, git ignoring case too, as a
+  repository it makes on Windows has `core.ignorecase`.
+- **Windows reports junctions and symbolic links alike**, as reparse
+  points, which Zig's directory iterator gives as links before it looks at
+  whether they're directories, so a walk doesn't enter a junction by
+  mistake.
+
+## GTK 3 and Gnumeric
+
+- **GTK 3 needs nothing GTK 4's SDK doesn't have, but ATK.** GTK 3.24.52
+  and ATK (at-spi2-core 2.60.7 with `-Datk_only=true`) build with Meson
+  and zig against GTK 4's SDK in about 3 minutes; GTK 3's runtime is 18 MB
+  compressed, besides GTK 4's 52 MB, which every GTK app shares.
+- **GTK 3 took a missing Desktop for a folder at the path NULL.** Windows
+  gives no Desktop to a run that isn't granted it, and
+  `g_get_user_special_dir()` returns NULL then; GTK 3's file chooser, places
+  sidebar and file button compared that with the home directory, found it
+  different, and went on to `g_file_new_for_path (NULL)`: critical warnings,
+  in the widget factory among others. GTK 4 checks.
+- **zig's `cc` ignores `-mwindows`** (it warns that the argument is
+  unused), so Gnumeric, which links with it, was a console program;
+  `-Wl,--subsystem,windows` works. It takes `-Wl,--export-all-symbols` and
+  ignores it too: a DLL exports what's marked `dllexport`, or everything
+  when nothing is, as with GNU ld's default, but not everything when
+  something is, as GNU ld does with the option.
+- **Autoconf's `configure` under BusyBox finds no program by name.** It
+  chose `:` to separate PATH, as BusyBox's sh doesn't show it `;` where it
+  looks, and split `D:\...` at the drive's colon; and it looks for
+  `pkg-config`, not `pkg-config.exe`, as `ac_executable_extensions` is
+  empty. enchant and gettext had been given every program by name
+  (`PKG_CONFIG` and the rest), which hid it. `PATH_SEPARATOR=;` and
+  `ac_executable_extensions=.exe` fix both.
+- **BusyBox's make (pdpmake)** expands GNU make's `$(shell ...)` to nothing
+  (POSIX 2024's `VAR != command` works, with `\#` in it), has no pattern
+  rules, and sets `$<` in a rule that isn't an inference rule to a
+  prerequisite that's out of date, which can be `Makefile`, where GNU make
+  gives the first. intltool's `po` Makefile lists its catalogs with
+  `$(shell ...)`: Gnumeric built and installed no translation at first, and
+  said nothing.
+- **BusyBox's sh runs `#!/usr/bin/perl` scripts** with the `perl` on PATH,
+  but not ones whose `#!` line names a drive (`Exec format error`), which
+  is what intltool's `configure` writes.
+- **Strawberry Perl reads files as text** unless a script says otherwise:
+  goffice's script that embeds images in its library dropped the carriage
+  returns from a PNG, which GdkPixbuf then couldn't load (a critical warning
+  in every run). `PERLIO=perlio` makes it read as Perl on Unix does.
+- **Perl's image couldn't load XML::Parser**, nor 39 other DLLs Strawberry
+  Perl's XS modules need (`c\bin\*__.dll`): its cleanup left out the whole
+  of `c`, Strawberry's GCC, where they are. They're now beside `perl.exe`
+  (29 MB more).
+- **Gnumeric 1.12.62's own build for Windows doesn't link as released.**
+  Its library exports what a script reads from a list of its headers,
+  which misses the analysis tools' new headers that `ssconvert` uses,
+  `complex.h`, and functions with an array parameter of a given size, which
+  the script's pattern doesn't read (`sheet_style_apply_border`, which the
+  Excel plugin calls): MSYS2's package leaves the Excel plugin out. Its
+  Applix plugin calls an exporter whose code isn't in the release, which
+  Linux's dynamic linking lets pass. It calls
+  `g_option_context_set_delocalize`, which GLib doesn't have. Without the
+  list, lld exports everything, which links everything.
+- **An SDK's headers can put the store's path into what's built.** GTK 3
+  built in a second store differed in one file, `libgtk-3-0.dll`: it holds
+  the path of a GLib header, `gobjectnotifyqueue.c`, which GTK includes and
+  whose `g_return_if_fail` names its own file with `__FILE__`, and GTK 4's
+  SDK, where the header is, is deployed under the store's path. GTK 4's SDK
+  didn't have it, as its own GLib was in `B:\prefix` while it built. GTK 3's
+  recipe maps the SDK's directory to a fixed name
+  (`-fmacro-prefix-map`); builds don't otherwise see their SDKs at fixed
+  paths, as they do their own sources and prefix.
+- **Building Gnumeric takes 16 to 24 minutes**, of which libtool's links
+  under BusyBox are much: its 37 plugins link one directory at a time.
+  Its image is 15 MB compressed, 8.6 MB of it translations.
+
+## Introspection, PyGObject and Meld
+
+- **gobject-introspection's scanner assumes MSVC or MSYS2 on Windows.**
+  With zig's `cc` it took distutils' default compiler, `msvc`; with
+  `MSYSTEM` set it chose MinGW, but linked its dumper through a temporary
+  shell script it runs with `which($SHELL or sh.exe)`, and a build's PATH
+  has no `sh.exe`. It looked for import libraries only where the compiler
+  searches by itself, which isn't the SDK's `lib` for zig, and linked them
+  as `-lfoo`, which zig's `cc` doesn't take for `libfoo.dll.a`. A patch to
+  `giscanner/ccompiler.py` fixes the four
+  ([`gobject-introspection.patch`](../recipes/gtk4-sdk/gobject-introspection.patch)).
+- **With LLVM's `dlltool`, the scanner finds the DLL behind an import
+  library with `nm`**, the archive's member names. zig has no `nm`;
+  [`nm.c`](../recipes/gtk4-sdk/nm.c) prints what GNU nm does for COFF
+  objects, archives and short import members (60 of 60 comparisons the same
+  under `LC_ALL=C`, besides the symbols bfd makes up when it turns short
+  import members into long ones). Within GTK's SDK's own build, Rust's
+  `dlltool` alias (GNU's) is on PATH, and the scanner uses
+  `dlltool --identify` there; both give the same names.
+- **On a subst drive, the scanner left out what generated headers
+  declare.** Its Python side resolves the files it scans with
+  `os.path.realpath`, which on Windows follows subst drives (`B:` to the
+  build directory); its lexer resolves the preprocessor's line markers with
+  `GetFullPathName`, which doesn't. A generated header the preprocessor
+  named relatively (`./gdk-pixbuf/gdk-pixbuf-enum-types.h`) then wasn't one
+  of the scanned files, and its declarations were dropped without a word:
+  no enum in Pango's, GdkPixbuf's, GDK's or GTK's GIRs had its GType, and
+  `Gtk.get_major_version` was missing. The lexer now resolves as `realpath`
+  does (`GetFinalPathNameByHandle`). The first GTK SDK of this iteration
+  was built without that, and showed it only in the GIRs' contents.
+- **GI's build needs flex and bison.** winflexbison's sources build with
+  MSVC only (its CMake refuses others, and its m4 and gnulib code assumes
+  MSVC's headers), so its release's programs are a pinned download, on
+  PATH for GI's build only.
+- **CPython extensions build with zig against python.org's Python**:
+  NuGet's `python` package is the embeddable zip's build with `include`
+  and `libs\python314.lib`, and `pyconfig.h` defines `MS_WIN64` for
+  `__MINGW32__`, which zig defines. pycairo and PyGObject build with Meson
+  given `-Dpython=` the NuGet `python.exe` (Meson's own Python, the
+  embeddable one, has no headers).
+- **Python since 3.8 doesn't load DLLs from PATH for extensions or ctypes**:
+  PyGObject adds the directories in `PYGI_DLL_PATH` with
+  `os.add_dll_directory()` when `gi` is imported. GLib still loads a
+  typelib's DLL with `LoadLibrary`, which searches PATH: Meld's own
+  GtkSourceView wasn't found until its `bin` was on its PATH.
+- **`ctypes.cdll[name]` raises `AttributeError`, not `OSError`, for a DLL
+  it can't load**, and passes a Python `str` as a `wchar_t *`. Meld's
+  Windows code expects `FileNotFoundError` from it and passes `str` to
+  libintl's `bindtextdomain`: its UI files weren't translated (libintl took
+  the path for `D`) though its Python strings were.
+- **In an AppContainer, Python's multiprocessing can't make its pipes**:
+  named pipes there must be under `\\.\pipe\LOCAL\`, and multiprocessing
+  names them `\\.\pipe\pyc-...` (`PermissionError`, and Meld compared
+  nothing). Under `LOCAL\` they work in every sandbox.
+- **Meld forces `PANGOCAIRO_BACKEND=fontconfig` on Windows**: GTK's Pango has
+  only its Win32 font map, logs a critical warning for the unknown backend
+  and gives no font map, and Meld never draws. Its image sets `win32`.
+- **gnome.post_install runs `update-desktop-database`**, which a Windows
+  build doesn't have, and fails the install.
+- **Times and sizes.** GTK's SDK takes 31 minutes with introspection (26
+  before): gobject-introspection, GLib's second build and each library's
+  scanner. Its layer is 94 MB compressed (73 before), with Python and the
+  GIRs; the typelibs add 1.2 MB to GTK's runtime (53.6 MB) and 0.3 MB to
+  GTK 3's (18.7 MB). PyGObject's runtime is 15 MB compressed, nearly all
+  Python's; Meld's own layer is 2.2 MB, GtkSourceView included, and builds
+  in about a minute.
+
+## GTK's extension point and Gaphor
+
+- **GLib reads `XDG_DATA_DIRS` on Windows too, and it replaces the
+  defaults.** Unset, a run's system data directories were `C:\ProgramData`,
+  `C:\Users\Public\Documents`, the program's `share` and GLib's (the
+  runtime's), and the `share` next to whichever DLL asks (GLib on Windows
+  passes the caller's address). Set to the runtime's `share` and an
+  extension's, they were exactly those two: GTK's icon theme searched both
+  (an SVG in the extension's `share\icons\hicolor` was found, Adwaita's
+  icons still were), the runtime's schemas were still found, and enchant's
+  hunspell provider found the extension's `share\hunspell` dictionaries,
+  with the runtime's en_US still from beside enchant (its relocatable
+  prefix). That's what the extension point joins.
+- **enchant takes a language-only dictionary for a region's tag**:
+  LibreOffice's French is `fr.aff`/`fr.dic`, and a request for `fr_FR`
+  gets it ("default fr: hunspell").
+- **Gaphor looks its settings schema up non-recursively** (`lookup(id,
+  False)`), in the first schema source only: GLib makes that
+  `GSETTINGS_SCHEMA_DIR`'s, else the user data directory's, else the first
+  system data directory's. With its `share` joined last, its settings
+  weren't saved, though its self-test, which looks recursively, passed.
+- **Under AppContainer, Python 3.13+ can't write in the directories
+  `tempfile` makes.** `os.mkdir(path, 0o700)` gives the directory a
+  protected ACL (SYSTEM, Administrators, OWNER RIGHTS), with no entry for
+  the container's capability SID, so the container makes it and then is
+  refused in it. pydot's vendored `tempfile` retries the name 10,000 times
+  on `PermissionError`, so Gaphor's auto layout hung rather than failing.
+  At low integrity it works (the owner has access, and the label is
+  inherited).
+- **pip in a vendor step**: PyGObject's SDK's Python (NuGet's package) has
+  pip 26.2.1. `pip download --only-binary=:all: --platform win_amd64
+  --python-version 3.14 --implementation cp --require-hashes` with every
+  package listed fetched the same 16 wheels again in a new store, to the
+  same hash. The first `python` on a build's PATH is Meson's, without pip;
+  the SDK's `python3.exe` is PyGObject's. `pip install --target` makes
+  launchers (`gaphor.exe`, `pybabel.exe`, dulwich's scripts) naming that
+  Python's path in the store, and lists their hashes in each package's
+  `RECORD`: removing the launchers wasn't enough for the image to be the
+  same in two stores; removing their `RECORD` lines was.
+- **`gi.events`, PyGObject's asyncio loop, works on Windows** (3.58.1), as
+  Gaphor's own Windows builds need: `GLibEventLoopPolicy` and asyncio's
+  `socketpair` work in every sandbox.
+- **Graphviz 16.1.0 builds with CMake and zig as it is**, statically
+  (`BUILD_SHARED_LIBS=OFF`, which links its plugins into `dot`, with no
+  plugin configuration file), in 261 steps, with flex and bison from
+  winflexbison. `dot.exe` imports only KERNEL32 and the UCRT; without git,
+  its build date is "0". Its release tarball has no CMake files; GitLab's
+  tarball of the tag has a link to a file that isn't in it.
+
+## One build of each runtime, and git for Meld
+
+- **A green Reproduce run doesn't mean every pin is published.** Iteration
+  29's run passed, but the PyGObject SDK it pinned (`3498644a`) had never
+  been pushed: ghcr.io still had iteration 28's. Gaphor, Meld and
+  PyGObject's runtime pin it, and CI skips all three. `scripts/check-pins.sh`
+  now looks every pin in the published recipes up on the registry.
+- **Python's embeddable distribution has the same AppContainer gaps as
+  PyGObject's Python**: `tempfile`'s directories (Permission denied on the
+  first file) and multiprocessing's pipes (`WinError 5` making a Queue).
+  Soft and low runs were fine.
+- **Embeddable Python runs `site`, and so `sitecustomize.py`, only with
+  `import site` in its `._pth`.** Turned on, `sys.path` stayed the same;
+  `site` also enables the user site directory (`%APPDATA%\Python\...`, in a
+  run the app's data), which is added only if it exists.
+- **One loader loads every module of a zipped standard library.** The pipe
+  fix replaced `exec_module` on `multiprocessing.connection`'s loader. With
+  the standard library as files (PyGObject's runtime) each module has its
+  own; with `python314.zip` it's the zip's one `zipimporter`, so every
+  module loaded after it ran the fix's code too and failed
+  (`multiprocessing.util` has no `arbitrary_address`): multiprocessing broke
+  in every sandbox. The fix now wraps the loader in an object of its own.
+- **A module without build commands may replace a file an earlier module
+  placed**: Python's `site` module puts its `python314._pth` over the zip's,
+  and the layer has the second.
+- **Meld starts git with its window hidden** (`STARTF_USESHOWWINDOW`, for
+  every version control call), so no console shows from `pythonw.exe`. With
+  MinGit's image as a runtime, Meld's git support found a repository and
+  its changed and new files in every sandbox, including git refreshing its
+  index in a repository labelled low.
+
+## Other findings
+
+- **Microsoft Defender quarantines zigsaw 0.19.0.** During a build of
+  Files, it reported `Trojan:Win32/Bearfoos.A!ml` for the running
+  `zigsaw.exe` (a copy in a scratch directory), ended it and quarantined the
+  file; five minutes later it quarantined two copies of the same build, the
+  one in `zig-out\bin` among them. `!ml` is its machine-learning detection,
+  not a signature. The same build had run on this machine all day,
+  including the .NET builds; what set it off isn't known. Restoring the file from quarantine
+  allowed it again.
+
+  Looked into in iteration 22. The flagged build was a development one, with
+  debug information (`b9b5923c…`, 2.7 MB), not a release: the programs of
+  every release from 0.18.0 to 0.21.0 scan clean (`MpCmdRun -Scan -ScanType
+  3 -File <exe> -DisableRemediation`, which works without admin rights), and
+  0.19.0's release was never flagged. Defender flagged the running process
+  first (`DidThreatExecute`), and then identical copies as they were opened,
+  so it judged what the program did and then spread that verdict to its
+  bytes. Restoring the file had also set `Bearfoos.A!ml` to "allow" on this
+  machine (`Get-MpPreference`, `ThreatIDDefaultAction_Ids`), so a local
+  scan can no longer say whether any build would be flagged: it reports
+  clean for that detection whatever the file. Undoing that needs admin
+  rights.
+
+  zigsaw's programs had neither version information nor an application
+  manifest, which machine-learning detectors weigh against unknown,
+  unsigned programs. From 0.22.0 they have both (`src/windows/`): the
+  version, the author and the licence, as Explorer's Properties show them,
+  and a manifest that runs them as the user who starts them. Task Manager
+  names a process by its description, so the descriptions are short:
+  "zigsaw", "zigsaw command shim". The programs stay the same bytes from any
+  checkout. Whether this keeps Defender quiet can't be shown from here.
+  Reporting the false positive to Microsoft, with the flagged file, is a
+  form only its author can send.
+
+- **v0.18.0's programs are built for the CPU of GitHub's runner.**
+  `build.zig` set only the target's OS, so Zig compiled for the CPU of the
+  machine that built them: the released `zigsaw.exe` has 18,697 AVX2
+  instructions, the SHA extensions' (`sha256rnds2`) and BMI2's. A build of
+  the tag here is deterministic, but differs (2,354,688 bytes released,
+  2,263,552 here), and no CPU model Zig names (`znver2`-`4`,
+  `skylake_avx512`, `icelake_server`, `sapphirerapids`, `x86_64_v3`) gives
+  the release's bytes: the runner's CPU, in a virtual machine, has some
+  features hidden. On a CPU without the SHA extensions, such as Intel's 6th
+  to 10th generation Core, it would stop at its first hash. From 0.19.0,
+  `build.zig` targets the x86-64 baseline: pulling zig takes about 3% longer
+  than with a build for this machine's CPU (32.4 and 33.5 s against 31.2 and
+  32.9 s).
+- **VLC sometimes starts playing 30 s late.** In one run of
+  `tests/guiapps.sh`, VLC's window was up at once, but named the clip only
+  30.7 s later, when it started playing it; the next 13 runs by hand and 5
+  suite runs took 0.7-1.2 s. Not found why. The suite waits for it.
+
+- **Fixed: `soft` runs could modify installed apps.** Python wrote a file into
+  its shared app folder, so the files no longer matched the image digest.
+  Each deployment now gets a "deny write and delete" entry for the current
+  user. That blocks every process running as the user, inside or outside
+  zigsaw. zigsaw lifts it when an app is removed.
+- **Apps don't expect the network to be denied.** Busybox `wget` crashes with
+  an access violation (`0xC0000005`) instead of reporting an error.
+- **Folder redirection held.** zig, Node, npm, Python and git all took their
+  cache and config locations from the redirected environment variables. No
+  tool in this set bypassed them with `SHGetKnownFolderPath`.
+- **Grants are fast.** Granting read access to zig's 19,546 files took 2.7 s,
+  once per app. Grants on project folders took milliseconds.
+- **Big builds are slow because of Defender.** Building zig (19.5k files,
+  378 MB) takes 60–175 s. zigsaw unpacks the zip to disk and then reads every
+  file back to write the layer. Defender scans each new file, so reading them
+  right after creation waits on the scans. By comparison, hashing the whole
+  layer takes 0.4 s in an optimized build. Streaming zip entries straight
+  into the layer would create each file only once.
+  *Fixed afterwards:* builds now stream sources into the layer, and
+  deployment extracts the layer with 4 parallel workers. zig installs in
+  about 16 s and rebuilds in 4 s, with byte-identical layers.
+- **All six recipes rebuild to identical digests**, including the 378 MB zig
+  layer.
+
+## Not yet tested
+
+- Ctrl+C during a run. It needs an interactive console.
+- Tools with fixed install paths, or installers.
+
+## Options for enforcement
+
+The `soft` sandbox covers the reproducibility goal. The open question is
+whether zigsaw also needs an enforcing sandbox that general toolchains can
+use:
+
+1. **Keep `appcontainer` opt-in for self-contained tools.** Document which
+   tools work. This needs no further work.
+2. **Try a low-integrity sandbox.** Running at low integrity blocks writes to
+   anything not labelled low, and zigsaw can label its data folder and granted
+   paths without admin rights. Reads and network access stay open.
+   Drive-letter conversion and `lstat("C:\\")` work at low integrity, and so
+   does every tool tested ([iteration 8](#a-low-integrity-sandbox)), as long
+   as the deployments' ACLs name no AppContainer. *Built in iteration 9 as
+   `--sandbox=low`* ([above](#the-low-sandbox)).
+3. **A one-time admin setup step.** Granting `ALL APPLICATION PACKAGES` read
+   access to `C:\`'s attributes would fix the Node failures (restriction 2).
+   Drive-letter conversion (restriction 1) would still fail, so this alone
+   doesn't make `appcontainer` general.

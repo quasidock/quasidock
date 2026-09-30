@@ -2,10 +2,25 @@ const std = @import("std");
 const Io = std.Io;
 const Context = @import("Context.zig");
 const Store = @import("Store.zig");
+const acl = @import("acl.zig");
 const appcontainer = @import("appcontainer.zig");
 const builder = @import("builder.zig");
+const catalog = @import("catalog.zig");
+const credentials = @import("credentials.zig");
+const exports = @import("exports.zig");
+const hkcu = @import("hkcu.zig");
+const info = @import("info.zig");
+const install = @import("install.zig");
+const oci = @import("oci.zig");
+const override = @import("override.zig");
+const prune = @import("prune.zig");
+const remote = @import("remote.zig");
 const runtime = @import("run.zig");
+const shortcuts = @import("shortcuts.zig");
+const associations = @import("associations.zig");
+const update = @import("update.zig");
 const win32 = @import("win32.zig");
+const options = @import("options");
 const fail = Context.fail;
 const note = Context.note;
 
@@ -13,19 +28,67 @@ const usage =
     \\usage: zigsaw [-v|--verbose] <command> [options]
     \\
     \\commands:
-    \\  build <recipe.json>             build an app from a recipe and install it
+    \\  build [--rebuild] [--keep-build-dir] [<recipe.json> | <dir>]
+    \\                                  build an app from a recipe, or from the zigsaw.json of a
+    \\                                  project's directory (by default the current one), and
+    \\                                  install it and its commands; --rebuild builds even if an
+    \\                                  earlier build had the same inputs
+    \\  search [<words>...]             find apps in the default registry's catalog
+    \\  info <image>                    show what an app in a registry is, needs and may reach
+    \\  pull <image>                    install an app and its commands from a registry
+    \\  push [--sources] <app-id> [<image>]
+    \\                                  publish an installed app to a registry; --sources also
+    \\                                  keeps the files it was built from next to it
+    \\  push --catalog <app-id>...      make the default registry's catalog list these apps,
+    \\                                  as it has them
+    \\  login [--username=<user>] [--password-stdin] <registry>
+    \\                                  check and save a login for a registry
+    \\  logout <registry>               delete a registry's saved login
     \\  run [options] <app-id> [args]   run an installed app
-    \\  list                            list installed apps
-    \\  rm [--delete-data] <app-id>     uninstall an app
+    \\  list                            list installed apps, their commands and shortcuts,
+    \\                                  and the kinds of file they open
+    \\  override [options] <app-id>     save run options that every run of the app gets;
+    \\                                  --show shows them, --reset removes them
+    \\  update [<app-id>...]            rebuild or re-pull apps from where they came from
+    \\  rm [--delete-data] <app-id>     uninstall an app and its commands
+    \\  prune [--dry-run] [--downloads] [--data]
+    \\                                  delete what no installed app needs; also cached
+    \\                                  downloads and tool caches, and the data of
+    \\                                  uninstalled apps
+    \\  repair                          write every app's commands, shortcuts and file
+    \\                                  associations again, as after installing a new zigsaw
+    \\  version                         print zigsaw's version
     \\
-    \\run options:
-    \\  --command=<exe>                 run another executable from the app, or from System32
-    \\  --sandbox=soft|appcontainer     soft (default) shapes the environment; appcontainer
-    \\                                  also enforces the app's permissions
-    \\  --filesystem=<cwd|path>[:ro]    grant access to a host location
+    \\An image is <registry>/<repository>[:tag][@digest], e.g. ghcr.io/owner/node:24.21.0,
+    \\or <app-id>[:tag][@digest] for the app's image in the default registry, e.g.
+    \\org.nodejs.node for ghcr.io/zigsaw-io/org.nodejs.node. ZIGSAW_REGISTRY changes the
+    \\default registry. push goes to the app's image there unless given one, and tags
+    \\with the app's version unless given a tag.
+    \\
+    \\Pushing, and pulling private images, needs a login. login saves one per registry in
+    \\Windows Credential Manager; --password-stdin reads the password from stdin. For CI
+    \\and scripts, ZIGSAW_REGISTRY_USERNAME and ZIGSAW_REGISTRY_PASSWORD are used instead,
+    \\but only for the default registry.
+    \\
+    \\run options (override takes them too, except --command and --file):
+    \\  --command=<name>                run one of the app's exported commands, or another
+    \\                                  executable or batch file from the app or System32
+    \\  --file=<path>                   have the app open a file of yours: grants it that
+    \\                                  file, and adds its path to the app's arguments
+    \\  --sandbox=soft|low|appcontainer soft (default) shapes the environment; low also keeps
+    \\                                  the app from writing anywhere but its data directory
+    \\                                  and the paths granted; appcontainer enforces all of
+    \\                                  the app's permissions
+    \\  --filesystem=<location>[:ro]    grant access to a host location: cwd, an absolute path,
+    \\                                  or one of your folders: desktop, documents, downloads,
+    \\                                  music, pictures, videos
+    \\  --nofilesystem=<location>       take away access the app or an override grants
     \\  --share=network                 allow network access
     \\  --unshare=network               deny network access
     \\  --env=NAME=VALUE                set an environment variable
+    \\  --noextension=<id>              leave out an installed extension, which otherwise
+    \\                                  joins the runs of what it extends
+    \\  --extension=<id>                have an extension an override leaves out join again
     \\  --ephemeral                     use a fresh data directory, deleted afterwards
     \\
     \\Data lives in %ZIGSAW_HOME%, or %LOCALAPPDATA%\zigsaw when that isn't set.
@@ -63,14 +126,86 @@ fn dispatch(ctx: *Context, all_args: []const [:0]const u8) !u32 {
     const command = args[0];
     const rest = args[1..];
     if (std.mem.eql(u8, command, "help") or isFlag(command, "help")) {
-        std.debug.print("{s}", .{usage});
+        Context.printStderr("{s}", .{usage});
+        return 0;
+    }
+    if (std.mem.eql(u8, command, "version") or isFlag(command, "version")) {
+        var buf: [64]u8 = undefined;
+        var stdout = Io.File.stdout().writerStreaming(ctx.io, &buf);
+        try stdout.interface.print("zigsaw {s}\n", .{options.version});
+        try stdout.interface.flush();
+        return 0;
+    }
+    // Logins don't touch the store.
+    if (std.mem.eql(u8, command, "login")) {
+        try credentials.login(ctx, try parseLoginOptions(rest));
+        return 0;
+    }
+    if (std.mem.eql(u8, command, "logout")) {
+        if (rest.len != 1 or std.mem.startsWith(u8, rest[0], "-")) return usageError();
+        try credentials.logout(ctx, rest[0]);
         return 0;
     }
 
     ctx.store = try .open(ctx.io, ctx.arena, ctx.env);
+    ctx.store.verbose = ctx.verbose;
+    // Commands hold the store lock shared, and prune exclusively; see Store.zig.
+    // `run` takes it itself, and `list` only reads.
     if (std.mem.eql(u8, command, "build")) {
+        var opts: builder.Options = .{};
+        var recipe_path: ?[]const u8 = null;
+        for (rest) |arg| {
+            if (isFlag(arg, "keep-build-dir")) {
+                opts.keep_build_dir = true;
+            } else if (isFlag(arg, "rebuild")) {
+                opts.rebuild = true;
+            } else if (recipe_path == null and !std.mem.startsWith(u8, arg, "-")) {
+                recipe_path = arg;
+            } else return usageError();
+        }
+        _ = try ctx.store.lock(ctx.arena, .shared);
+        try install.install(ctx, try builder.build(ctx, try builder.recipePath(ctx, recipe_path), opts));
+        return 0;
+    }
+    if (std.mem.eql(u8, command, "pull")) {
         if (rest.len != 1) return usageError();
-        try builder.build(ctx, rest[0]);
+        _ = try ctx.store.lock(ctx.arena, .shared);
+        try install.install(ctx, (try remote.fetch(ctx, rest[0], .{})).?);
+        return 0;
+    }
+    if (std.mem.eql(u8, command, "push")) {
+        var opts: remote.PushOptions = .{};
+        var make_catalog = false;
+        var names: std.ArrayList([]const u8) = .empty;
+        for (rest) |arg| {
+            if (isFlag(arg, "sources")) {
+                opts.sources = true;
+            } else if (isFlag(arg, "catalog")) {
+                make_catalog = true;
+            } else if (!std.mem.startsWith(u8, arg, "-")) {
+                try names.append(ctx.arena, arg);
+            } else return usageError();
+        }
+        if (make_catalog) {
+            if (opts.sources or names.items.len == 0) return usageError();
+            _ = try ctx.store.lock(ctx.arena, .shared);
+            try catalog.push(ctx, names.items);
+            return 0;
+        }
+        if (names.items.len != 1 and names.items.len != 2) return usageError();
+        _ = try ctx.store.lock(ctx.arena, .shared);
+        try remote.push(ctx, names.items[0], if (names.items.len == 2) names.items[1] else null, opts);
+        return 0;
+    }
+    if (std.mem.eql(u8, command, "search")) {
+        for (rest) |arg| if (std.mem.startsWith(u8, arg, "-")) return usageError();
+        _ = try ctx.store.lock(ctx.arena, .shared);
+        return catalog.search(ctx, @ptrCast(rest));
+    }
+    if (std.mem.eql(u8, command, "info")) {
+        if (rest.len != 1 or std.mem.startsWith(u8, rest[0], "-")) return usageError();
+        _ = try ctx.store.lock(ctx.arena, .shared);
+        try info.info(ctx, rest[0]);
         return 0;
     }
     if (std.mem.eql(u8, command, "run")) return runtime.run(ctx, try parseRunOptions(ctx, rest));
@@ -78,6 +213,16 @@ fn dispatch(ctx: *Context, all_args: []const [:0]const u8) !u32 {
         if (rest.len != 0) return usageError();
         try list(ctx);
         return 0;
+    }
+    if (std.mem.eql(u8, command, "override")) {
+        _ = try ctx.store.lock(ctx.arena, .shared);
+        try overrideApp(ctx, rest);
+        return 0;
+    }
+    if (std.mem.eql(u8, command, "update")) {
+        for (rest) |arg| if (std.mem.startsWith(u8, arg, "-")) return usageError();
+        _ = try ctx.store.lock(ctx.arena, .shared);
+        return update.update(ctx, @ptrCast(rest));
     }
     if (std.mem.eql(u8, command, "rm")) {
         var delete_data = false;
@@ -89,14 +234,38 @@ fn dispatch(ctx: *Context, all_args: []const [:0]const u8) !u32 {
                 id = arg;
             } else return usageError();
         }
+        _ = try ctx.store.lock(ctx.arena, .shared);
         try remove(ctx, id orelse return usageError(), delete_data);
         return 0;
+    }
+    if (std.mem.eql(u8, command, "prune")) {
+        var opts: prune.Options = .{};
+        for (rest) |arg| {
+            if (isFlag(arg, "dry-run")) {
+                opts.dry_run = true;
+            } else if (isFlag(arg, "downloads")) {
+                opts.downloads = true;
+            } else if (isFlag(arg, "data")) {
+                opts.data = true;
+            } else return usageError();
+        }
+        _ = try ctx.store.lock(ctx.arena, .exclusive);
+        try prune.prune(ctx, opts);
+        return 0;
+    }
+    if (std.mem.eql(u8, command, "repair")) {
+        if (rest.len != 0) return usageError();
+        _ = try ctx.store.lock(ctx.arena, .shared);
+        // What runs that didn't end left in HKCU first, as repair runs after
+        // installing a zigsaw, maybe over one that was killed.
+        try hkcu.settleLeftovers(ctx, null);
+        return exports.repair(ctx);
     }
     return usageError();
 }
 
 fn usageError() error{Failed} {
-    std.debug.print("{s}", .{usage});
+    Context.printStderr("{s}", .{usage});
     return error.Failed;
 }
 
@@ -105,74 +274,217 @@ fn isFlag(arg: []const u8, name: []const u8) bool {
     return arg.len == name.len + 2 and std.mem.startsWith(u8, arg, "--") and std.mem.eql(u8, arg[2..], name);
 }
 
+/// A "--name=value" option. "--name value" works too, except for flags,
+/// which never take a value.
+const Option = struct {
+    name: []const u8,
+    value: ?[]const u8,
+
+    /// Reads the option at `args[i.*]`, moving `i` past a separate value.
+    fn read(args: []const [:0]const u8, i: *usize, flags: []const []const u8) !Option {
+        const arg = args[i.*];
+        const eq = std.mem.indexOfScalar(u8, arg, '=');
+        const name = arg[2 .. eq orelse arg.len];
+        if (eq) |e| return .{ .name = name, .value = arg[e + 1 ..] };
+        for (flags) |flag| if (std.mem.eql(u8, name, flag)) return .{ .name = name, .value = null };
+        i.* += 1;
+        if (i.* == args.len) return fail("--{s} needs a value", .{name});
+        return .{ .name = name, .value = args[i.*] };
+    }
+};
+
+/// Collects the run options that `run` and `override` share.
+const SettingsParser = struct {
+    settings: override.Settings = .{},
+    filesystem: std.ArrayList([]const u8) = .empty,
+    nofilesystem: std.ArrayList([]const u8) = .empty,
+    env: std.ArrayList([]const u8) = .empty,
+    noextension: std.ArrayList([]const u8) = .empty,
+    extension: std.ArrayList([]const u8) = .empty,
+
+    const flags = [_][]const u8{"ephemeral"};
+
+    /// Applies `opt`, or returns false if it isn't one of these options.
+    fn apply(p: *SettingsParser, arena: std.mem.Allocator, opt: Option) !bool {
+        const name = opt.name;
+        if (std.mem.eql(u8, name, "ephemeral")) {
+            if (opt.value != null) return fail("--ephemeral takes no value", .{});
+            p.settings.ephemeral = true;
+            return true;
+        }
+        const value = opt.value orelse return false;
+        if (std.mem.eql(u8, name, "sandbox")) {
+            p.settings.sandbox = std.meta.stringToEnum(override.Sandbox, value) orelse
+                return fail("--sandbox must be soft, low or appcontainer", .{});
+        } else if (std.mem.eql(u8, name, "filesystem") or std.mem.eql(u8, name, "nofilesystem")) {
+            const g = oci.parseFsGrant(value);
+            if (g == null or g.?.where == .unknown)
+                return fail("--{s} must be cwd, one of your folders ({s}) or an absolute path; got \"{s}\"", .{ name, oci.UserFolder.list, value });
+            if (std.mem.eql(u8, name, "filesystem")) {
+                try p.filesystem.append(arena, value);
+            } else {
+                if (std.mem.endsWith(u8, value, ":ro") or std.mem.endsWith(u8, value, ":rw"))
+                    return fail("--nofilesystem takes away all access to a location; it takes no :ro or :rw", .{});
+                try p.nofilesystem.append(arena, value);
+            }
+        } else if (std.mem.eql(u8, name, "share") or std.mem.eql(u8, name, "unshare")) {
+            if (!std.mem.eql(u8, value, "network")) return fail("--{s} only supports network", .{name});
+            p.settings.network = std.mem.eql(u8, name, "share");
+        } else if (std.mem.eql(u8, name, "env")) {
+            if (std.mem.indexOfScalar(u8, value, '=') == null) return fail("--env expects NAME=VALUE, got \"{s}\"", .{value});
+            try p.env.append(arena, value);
+        } else if (std.mem.eql(u8, name, "noextension") or std.mem.eql(u8, name, "extension")) {
+            if (!oci.isValidId(value)) return fail("--{s} takes an extension's id; got \"{s}\"", .{ name, value });
+            try (if (name[0] == 'n') &p.noextension else &p.extension).append(arena, value);
+        } else return false;
+        return true;
+    }
+
+    fn finish(p: *const SettingsParser) override.Settings {
+        var s = p.settings;
+        s.filesystem = p.filesystem.items;
+        s.nofilesystem = p.nofilesystem.items;
+        s.env = p.env.items;
+        s.noextension = p.noextension.items;
+        s.extension = p.extension.items;
+        return s;
+    }
+};
+
 /// Options go before the app id, like `flatpak run`; everything after the id
 /// belongs to the app. "--" also ends zigsaw's options.
 fn parseRunOptions(ctx: *Context, args: []const [:0]const u8) !runtime.Options {
-    const arena = ctx.arena;
     var opts: runtime.Options = .{ .id = undefined };
-    var filesystem: std.ArrayList([]const u8) = .empty;
-    var env: std.ArrayList([]const u8) = .empty;
-
+    var settings: SettingsParser = .{};
+    var files: std.ArrayList([]const u8) = .empty;
     var i: usize = 0;
     while (i < args.len) : (i += 1) {
-        const arg = args[i];
-        if (std.mem.eql(u8, arg, "--")) {
+        if (std.mem.eql(u8, args[i], "--")) {
             i += 1;
             break;
         }
-        if (!std.mem.startsWith(u8, arg, "--")) break;
-
-        // Accept both "--name=value" and "--name value".
-        const eq = std.mem.indexOfScalar(u8, arg, '=');
-        const name = arg[2 .. eq orelse arg.len];
-        if (std.mem.eql(u8, name, "ephemeral") and eq == null) {
-            opts.ephemeral = true;
-            continue;
-        }
-        if (std.mem.eql(u8, name, "verbose") and eq == null) {
+        if (!std.mem.startsWith(u8, args[i], "--")) break;
+        const opt = try Option.read(args, &i, &(SettingsParser.flags ++ [_][]const u8{"verbose"}));
+        if (std.mem.eql(u8, opt.name, "verbose") and opt.value == null) {
             ctx.verbose = true;
-            continue;
-        }
-        const value = if (eq) |e| arg[e + 1 ..] else blk: {
-            i += 1;
-            if (i == args.len) return fail("--{s} needs a value", .{name});
-            break :blk args[i];
-        };
-
-        if (std.mem.eql(u8, name, "command")) {
-            opts.command = value;
-        } else if (std.mem.eql(u8, name, "sandbox")) {
-            opts.sandbox = std.meta.stringToEnum(runtime.Sandbox, value) orelse
-                return fail("--sandbox must be soft or appcontainer", .{});
-        } else if (std.mem.eql(u8, name, "filesystem")) {
-            try filesystem.append(arena, value);
-        } else if (std.mem.eql(u8, name, "share") or std.mem.eql(u8, name, "unshare")) {
-            if (!std.mem.eql(u8, value, "network")) return fail("--{s} only supports network", .{name});
-            opts.network = std.mem.eql(u8, name, "share");
-        } else if (std.mem.eql(u8, name, "env")) {
-            try env.append(arena, value);
-        } else {
-            return fail("unknown run option --{s}", .{name});
+            ctx.store.verbose = true;
+        } else if (std.mem.eql(u8, opt.name, "command") and opt.value != null) {
+            opts.command = opt.value;
+        } else if (std.mem.eql(u8, opt.name, "file") and opt.value != null) {
+            if (opt.value.?.len == 0) return fail("--file needs a file's path", .{});
+            try files.append(ctx.arena, opt.value.?);
+        } else if (!try settings.apply(ctx.arena, opt)) {
+            return fail("unknown run option --{s}", .{opt.name});
         }
     }
     if (i == args.len) return usageError();
 
     opts.id = args[i];
     opts.args = @ptrCast(args[i + 1 ..]);
-    opts.filesystem = filesystem.items;
-    opts.env = env.items;
+    opts.files = files.items;
+    opts.settings = settings.finish();
     return opts;
 }
 
+fn parseLoginOptions(args: []const [:0]const u8) !credentials.LoginOptions {
+    var opts: credentials.LoginOptions = .{ .registry = undefined };
+    var registry: ?[]const u8 = null;
+    var i: usize = 0;
+    while (i < args.len) : (i += 1) {
+        if (!std.mem.startsWith(u8, args[i], "--")) {
+            if (registry != null) return usageError();
+            registry = args[i];
+            continue;
+        }
+        const opt = try Option.read(args, &i, &.{"password-stdin"});
+        if (std.mem.eql(u8, opt.name, "password-stdin") and opt.value == null) {
+            opts.password_stdin = true;
+        } else if (std.mem.eql(u8, opt.name, "username") and opt.value != null) {
+            opts.username = opt.value;
+        } else {
+            return fail("unknown login option --{s}", .{opt.name});
+        }
+    }
+    opts.registry = registry orelse return usageError();
+    return opts;
+}
+
+/// `zigsaw override [options] <app-id>`: saves run options that every run of
+/// the app gets. New options are added to the saved ones; `--reset` removes
+/// them all. Without options, or with `--show`, prints what's saved.
+fn overrideApp(ctx: *Context, args: []const [:0]const u8) !void {
+    const arena = ctx.arena;
+    var settings: SettingsParser = .{};
+    var id: ?[]const u8 = null;
+    var reset = false;
+    var i: usize = 0;
+    while (i < args.len) : (i += 1) {
+        if (!std.mem.startsWith(u8, args[i], "--")) {
+            if (id != null) return usageError();
+            id = args[i];
+            continue;
+        }
+        const opt = try Option.read(args, &i, &(SettingsParser.flags ++ [_][]const u8{ "show", "reset" }));
+        if (opt.value == null and std.mem.eql(u8, opt.name, "reset")) {
+            reset = true;
+        } else if (opt.value == null and std.mem.eql(u8, opt.name, "show")) {
+            // Showing is what happens anyway.
+        } else if (!try settings.apply(arena, opt)) {
+            return fail("--{s} can't be saved as an override", .{opt.name});
+        }
+    }
+    const app = id orelse return usageError();
+    const new = settings.finish();
+
+    if (reset) {
+        if (!new.isEmpty()) return fail("--reset removes all of {s}'s overrides; add new ones separately", .{app});
+        try override.delete(ctx.store, arena, app);
+        note("{s} has no overrides now", .{app});
+        return;
+    }
+    const saved = try override.load(ctx.store, arena, app);
+    if (new.isEmpty()) {
+        if (saved.isEmpty()) {
+            note("{s} has no overrides", .{app});
+            return;
+        }
+        var buf: [4096]u8 = undefined;
+        var stdout = Io.File.stdout().writerStreaming(ctx.io, &buf);
+        try stdout.interface.print("{f}\n", .{saved});
+        try stdout.interface.flush();
+        return;
+    }
+    if (try ctx.store.readRef(arena, app) == null) return fail("{s} is not installed", .{app});
+    const merged = try override.Settings.merge(arena, saved, new);
+    try override.save(ctx.store, arena, app, merged);
+    if (merged.isEmpty()) {
+        note("{s} has no overrides now", .{app});
+    } else note("{s} now runs with {f}", .{ app, merged });
+}
+
 fn list(ctx: *Context) !void {
-    const refs = try ctx.store.listRefs(ctx.arena);
+    const arena = ctx.arena;
+    const refs = try ctx.store.listRefs(arena);
+    const shims = try exports.list(ctx);
     var buf: [4096]u8 = undefined;
-    var stdout = Io.File.stdout().writer(ctx.io, &buf);
+    var stdout = Io.File.stdout().writerStreaming(ctx.io, &buf);
     const w = &stdout.interface;
-    try w.print("{s:<32} {s:<20} {s}\n", .{ "ID", "VERSION", "MANIFEST" });
+    try w.print("{s:<32} {s:<20} {s:<20} {s}\n", .{ "ID", "VERSION", "MANIFEST", "EXPORTS" });
     for (refs) |ref| {
-        const short = ref.manifest[0..@min(ref.manifest.len, "sha256:".len + 12)];
-        try w.print("{s:<32} {s:<20} {s}\n", .{ ref.id, ref.version, short });
+        var names: std.ArrayList([]const u8) = .empty;
+        for (shims) |s| if (std.mem.eql(u8, s.sidecar.app, ref.id)) try names.append(arena, s.name);
+        try w.print("{s:<32} {s:<20} {s:<20} {s}", .{ ref.id, ref.version, oci.shortDigest(ref.manifest), try std.mem.join(arena, ", ", names.items) });
+        const image = try ctx.store.readImage(arena, ref.id, ref.manifest);
+        for (image.config.runtimes.map.values()) |r| try w.print("  (runtime {s} {s})", .{ r.id, r.version });
+        if (image.config.extensions) |e| for (e.map.keys()) |name| try w.print("  (extension point {s})", .{name});
+        if (image.config.extends) |x| try w.print("  (extends {s} {s})", .{ x.point, x.version });
+        for (try shortcuts.names(ctx, ref.id)) |name| try w.print("  (shortcut \"{s}\")", .{name});
+        const opens = try associations.names(ctx, ref.id);
+        if (opens.len > 0) try w.print("  (opens {s})", .{try std.mem.join(arena, ", ", opens)});
+        if (image.config.registry) |keys| for (keys) |k| try w.print("  (keeps HKCU\\{s})", .{k});
+        const saved = try override.load(ctx.store, arena, ref.id);
+        if (!saved.isEmpty()) try w.print("  (override {f})", .{saved});
+        try w.writeByte('\n');
     }
     try w.flush();
 }
@@ -183,36 +495,109 @@ fn remove(ctx: *Context, id: []const u8, delete_data: bool) !void {
     const store = ctx.store;
     const ref = try store.readRef(arena, id) orelse return fail("{s} is not installed", .{id});
 
-    // Undo ACL grants on host paths made for the app's AppContainer.
+    // Held until the ref is gone, so a run of the app that ends meanwhile
+    // can't give it shims again.
+    const shims_lock = try store.lockShims(arena);
+    defer shims_lock.release(io);
+    // Shortcuts first: the shims' sidecars say which app each one is for.
+    const removed_shortcuts = try shortcuts.removeAll(ctx, id);
+    if (removed_shortcuts.len > 0) note("removed shortcuts {s}", .{try std.mem.join(arena, ", ", removed_shortcuts)});
+    const removed_associations = try associations.removeAll(ctx, id);
+    if (removed_associations.len > 0) note("no longer opens {s}", .{try std.mem.join(arena, ", ", removed_associations)});
+    const removed_exports = try exports.removeAll(ctx, id);
+    if (removed_exports.len > 0) note("removed commands {s}", .{try std.mem.join(arena, ", ", removed_exports)});
+
+    // Undo what the app's runs changed on host paths: access granted to its
+    // AppContainer, and low integrity labels no other app's runs need.
     const host_grants = try store.readGrants(arena, id);
     if (host_grants.len > 0) {
         const profile = try appcontainer.Profile.ensure(arena, id);
-        for (host_grants) |p| {
-            appcontainer.revoke(arena, p, profile.sid) catch |err| switch (err) {
-                error.Failed => continue, // Logged; the path may be gone.
-                else => |e| return e,
-            };
-            note("revoked {s} access to {s}", .{ profile.name, p });
+        for (host_grants) |g| {
+            // A deleted path took its ACL with it.
+            if (!try Store.exists(io, g.path)) continue;
+            switch (g.kind) {
+                .appcontainer => {
+                    // The package SID is what zigsaw granted before capabilities.
+                    _ = acl.revoke(arena, g.path, .{ .sids = &.{ profile.capability, profile.sid } }) catch |err| switch (err) {
+                        error.Failed => continue, // Logged; keep undoing the rest.
+                        else => |e| return e,
+                    };
+                    note("revoked {s} access to {s}", .{ profile.name, g.path });
+                },
+                .low => {
+                    if (try store.grantedToOthers(arena, id, g)) {
+                        note("kept the low integrity label of {s}, which other apps' runs need", .{g.path});
+                        continue;
+                    }
+                    acl.unlabel(arena, g.path) catch |err| switch (err) {
+                        error.Failed => continue,
+                        else => |e| return e,
+                    };
+                    note("removed the low integrity label of {s}", .{g.path});
+                },
+            }
         }
         try store.deleteGrants(arena, id);
     }
     try appcontainer.deleteProfile(arena, id);
+    // The keys the app keeps, if a run that didn't end left them in HKCU:
+    // back into its data, before that goes too.
+    try hkcu.settleLeftovers(ctx, id);
 
     try store.deleteRef(arena, id);
-    // The deployment can be shared with another app built from identical inputs.
-    var shared = false;
-    for (try store.listRefs(arena)) |other| {
-        if (std.mem.eql(u8, other.manifest, ref.manifest)) shared = true;
+    {
+        const aliases_lock = try store.lockAliases(arena, id);
+        defer aliases_lock.release(io);
+        Store.deleteTree(io, arena, try store.aliasDir(arena, id)) catch
+            note("kept {s}'s alias shims, which are in use; `zigsaw prune` removes them later", .{id});
     }
-    if (!shared) try Io.Dir.cwd().deleteTree(io, try store.deployPath(arena, ref.manifest));
-    if (delete_data) try Io.Dir.cwd().deleteTree(io, try store.path(arena, &.{ "data", id }));
+    if (try store.deleteUnusedDeployments(arena, ref.manifest))
+        note("kept {s}'s files, which are still in use; `zigsaw prune` removes them later", .{id});
+    if (delete_data) {
+        try Store.deleteTree(io, arena, try store.path(arena, &.{ "data", id }));
+        try override.delete(store, arena, id);
+    }
 
     note("removed {s} {s}{s}", .{ id, ref.version, if (delete_data) " and its data" else "" });
 }
 
 test {
+    _ = @import("aliases.zig");
+    _ = @import("associations.zig");
+    _ = @import("builder.zig");
+    _ = @import("catalog.zig");
+    _ = @import("credentials.zig");
+    _ = @import("deps.zig");
+    _ = @import("drive.zig");
+    _ = @import("environment.zig");
+    _ = @import("exports.zig");
+    _ = @import("extensions.zig");
+    _ = @import("folders.zig");
+    _ = @import("gitignore.zig");
+    _ = @import("hkcu.zig");
+    _ = @import("info.zig");
+    _ = @import("msvc.zig");
     _ = @import("oci.zig");
+    _ = @import("override.zig");
+    _ = @import("pe.zig");
+    _ = @import("process.zig");
+    _ = @import("project.zig");
+    _ = @import("prune.zig");
     _ = @import("recipe.zig");
+    _ = @import("regkey.zig");
+    _ = @import("Registry.zig");
+    _ = @import("remote.zig");
     _ = @import("layer.zig");
     _ = @import("run.zig");
+    _ = @import("shortcuts.zig");
+    _ = @import("Sidecar.zig");
+    _ = @import("Store.zig");
+    _ = @import("Tree.zig");
+    _ = @import("zipfile.zig");
+}
+
+test "zigsaw is built for the x86-64 baseline, not for the CPU that builds it" {
+    // build.zig's default target: a release then runs on any x86-64 CPU, and
+    // builds the same on any machine.
+    try std.testing.expectEqualStrings("x86_64", @import("builtin").cpu.model.name);
 }

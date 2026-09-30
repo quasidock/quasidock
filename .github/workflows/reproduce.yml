@@ -1,0 +1,177 @@
+# Checks that the published recipes build the same images on a fresh machine,
+# and runs the end-to-end suites there, in two jobs that run side by side:
+# - published: each recipe in scripts/published-recipes.txt built and
+#   compared with the image published for the recipe's version
+#   (tests/published.sh), then the suites in tests/ that take what they'd
+#   download, and the apps they run, from that build's store;
+# - build: the unit tests, then tests/build.sh, which builds in stores of its
+#   own and downloads what it builds from.
+# And a third, quick one beside them:
+# - pins: every image the published recipes pin is on the registry, so a
+#   fresh store can build them, those published skips included
+#   (scripts/check-pins.sh).
+# It only verifies; scripts/publish.sh publishes.
+name: Reproduce
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A newer push to the same branch or pull request makes an older run moot.
+concurrency:
+  group: reproduce-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Requests to the registry, no building: Linux is enough.
+  pins:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: The published recipes' pins, on the registry
+        run: bash scripts/check-pins.sh
+
+  published:
+    runs-on: windows-2025
+    # One job took 31 minutes after iteration 8, zot's vendor step (561 Go
+    # modules) included, 68 with GTK's images in iteration 10, and 55 after
+    # iteration 23 with build.sh in it; build.sh has had its own job since.
+    # GTK's images, the Perl, cargo-c and gettext images only they build
+    # with, and Rnote, which builds with them, are left out until they're
+    # stable locally (see SKIP_RECIPES).
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        with:
+          version: 0.16.0
+
+      - name: Paths for the steps below
+        shell: bash
+        run: |
+          t=$RUNNER_TEMP
+          printf '%s\n' "TMP=$t" "TEMP=$t" "BUILD_HOME=$t\\store" "SEED_DOWNLOADS=$t\\store\\cache\\downloads" "LOG_DIR=$t\\logs" >>"$GITHUB_ENV"
+
+      - name: Build zigsaw
+        run: zig build
+
+      # Not GTK's: its SDK alone is a quarter of an hour of building. Meson's
+      # image stays, as tests/build.sh builds with it.
+      - name: Build the published recipes and compare them with the published images
+        shell: bash
+        env:
+          SKIP_RECIPES: perl.json cargo-c.json gettext.json gtk4-sdk.json gtk4.json gnome-text-editor.json rnote.json gtk3-sdk.json gtk3.json gtk3demo.json gnumeric.json pygobject-sdk.json pygobject.json meld.json gtk4-hunspell-vi.json gtk4-hunspell-fr.json gaphor.json
+        run: |
+          mkdir -p "$(cygpath -u "$LOG_DIR")"
+          bash tests/published.sh 2>&1 | tee "$(cygpath -u "$LOG_DIR")/published.txt"
+
+      # The suites run whether or not the steps before them passed.
+      - name: tests/store.sh
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: bash tests/store.sh 2>&1 | tee "$(cygpath -u "$LOG_DIR")/store.txt"
+
+      - name: tests/shims.sh
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: bash tests/shims.sh 2>&1 | tee "$(cygpath -u "$LOG_DIR")/shims.txt"
+
+      - name: tests/sandbox.sh
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: bash tests/sandbox.sh 2>&1 | tee "$(cygpath -u "$LOG_DIR")/sandbox.txt"
+
+      - name: tests/batch.sh
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: bash tests/batch.sh 2>&1 | tee "$(cygpath -u "$LOG_DIR")/batch.txt"
+
+      - name: tests/ctrlc.sh
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: bash tests/ctrlc.sh 2>&1 | tee "$(cygpath -u "$LOG_DIR")/ctrlc.txt"
+
+      # What the Release workflow publishes, and installing it.
+      - name: tests/install.sh
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: bash tests/install.sh 2>&1 | tee "$(cygpath -u "$LOG_DIR")/install.txt"
+
+      # zot is the app recipes/zot.json builds, which published.sh built in
+      # the build store; tests/zot.sh runs it with zigsaw.
+      - name: tests/registry.sh, against two local zot registries
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: bash tests/zot.sh bash tests/registry.sh 2>&1 | tee "$(cygpath -u "$LOG_DIR")/registry.txt"
+
+      # Last, in the build store, whose apps it runs: it changes their data.
+      - name: tests/matrix.sh
+        if: ${{ !cancelled() }}
+        shell: bash
+        env:
+          ZIGSAW_HOME: ${{ runner.temp }}\store
+          # zig's project check compiles zig's build runner with a cold cache.
+          MATRIX_TIMEOUT: 600
+          LOG_DIR: ${{ runner.temp }}\logs
+        run: bash tests/matrix.sh 2>&1 | tee "$(cygpath -u "$LOG_DIR")/matrix.txt"
+
+      - name: Upload the logs
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: logs-published
+          path: ${{ runner.temp }}\logs
+          if-no-files-found: ignore
+
+  build:
+    runs-on: windows-2025
+    # tests/build.sh took 19 minutes in iteration 23, with published.sh's
+    # downloads; here it downloads them itself (BusyBox's from the sources
+    # pushed next to its image, as frippery.org refuses runners).
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        with:
+          version: 0.16.0
+
+      - name: Paths for the steps below
+        shell: bash
+        run: |
+          t=$RUNNER_TEMP
+          printf '%s\n' "TMP=$t" "TEMP=$t" "LOG_DIR=$t\\logs" >>"$GITHUB_ENV"
+
+      - name: Unit tests
+        run: zig build test --summary all
+
+      - name: Build zigsaw
+        run: zig build
+
+      - name: tests/build.sh
+        shell: bash
+        run: |
+          mkdir -p "$(cygpath -u "$LOG_DIR")"
+          bash tests/build.sh 2>&1 | tee "$(cygpath -u "$LOG_DIR")/build.txt"
+
+      - name: Upload the logs
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: logs-build
+          path: ${{ runner.temp }}\logs
+          if-no-files-found: ignore

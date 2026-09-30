@@ -32,9 +32,13 @@ pub const CTRL_BREAK_EVENT: DWORD = 1;
 // ---------------------------------------------------------------------------
 // Processes
 
+/// The child gets no console, rather than ours or a new one.
+pub const DETACHED_PROCESS: DWORD = 0x00000008;
 pub const CREATE_UNICODE_ENVIRONMENT: DWORD = 0x00000400;
 pub const EXTENDED_STARTUPINFO_PRESENT: DWORD = 0x00080000;
 pub const STARTF_USESTDHANDLES: DWORD = 0x00000100;
+/// lpTitle is the path of the shortcut (.lnk) the process was started from.
+pub const STARTF_TITLEISLINKNAME: DWORD = 0x00000800;
 
 pub const PROC_THREAD_ATTRIBUTE_HANDLE_LIST: usize = 0x00020002;
 pub const PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES: usize = 0x00020009;
@@ -79,12 +83,70 @@ pub extern "kernel32" fn GetStdHandle(which: DWORD) callconv(.winapi) ?HANDLE;
 pub extern "kernel32" fn SetHandleInformation(h: HANDLE, mask: DWORD, flags: DWORD) callconv(.winapi) BOOL;
 pub extern "kernel32" fn LocalFree(mem: ?*anyopaque) callconv(.winapi) ?*anyopaque;
 pub extern "kernel32" fn ExitProcess(code: u32) callconv(.winapi) noreturn;
+pub extern "kernel32" fn GetCommandLineW() callconv(.winapi) LPWSTR;
+pub const GENERIC_READ: DWORD = 0x80000000;
+pub const FILE_SHARE_READ: DWORD = 0x1;
+pub const OPEN_EXISTING: DWORD = 3;
+pub extern "kernel32" fn CreateFileW(
+    name: LPCWSTR,
+    access: DWORD,
+    share: DWORD,
+    security: ?*anyopaque,
+    disposition: DWORD,
+    flags: DWORD,
+    template: ?HANDLE,
+) callconv(.winapi) HANDLE;
+pub extern "kernel32" fn WriteFile(file: HANDLE, buffer: [*]const u8, to_write: DWORD, written: ?*DWORD, overlapped: ?*anyopaque) callconv(.winapi) BOOL;
+pub extern "kernel32" fn ReadFile(file: HANDLE, buffer: [*]u8, to_read: DWORD, read: ?*DWORD, overlapped: ?*anyopaque) callconv(.winapi) BOOL;
+pub const SECURITY_ATTRIBUTES = extern struct {
+    nLength: DWORD = @sizeOf(SECURITY_ATTRIBUTES),
+    lpSecurityDescriptor: ?*anyopaque = null,
+    bInheritHandle: BOOL = FALSE,
+};
+pub extern "kernel32" fn CreatePipe(read: *HANDLE, write: *HANDLE, attributes: ?*const SECURITY_ATTRIBUTES, size: DWORD) callconv(.winapi) BOOL;
+pub const ERROR_BROKEN_PIPE: DWORD = 109;
+pub const FILE_TYPE_UNKNOWN: DWORD = 0;
+pub const FILE_TYPE_DISK: DWORD = 1;
+pub const FILE_TYPE_CHAR: DWORD = 2;
+pub const FILE_TYPE_PIPE: DWORD = 3;
+pub extern "kernel32" fn GetFileType(file: HANDLE) callconv(.winapi) DWORD;
+pub extern "kernel32" fn GetEnvironmentVariableW(name: LPCWSTR, buffer: ?[*]u16, size: DWORD) callconv(.winapi) DWORD;
+pub const CREATE_ALWAYS: DWORD = 2;
+pub const GENERIC_WRITE: DWORD = 0x40000000;
+pub const MB_OK: c_uint = 0x0;
+pub const MB_ICONERROR: c_uint = 0x10;
+pub extern "user32" fn MessageBoxW(window: ?HANDLE, text: LPCWSTR, caption: LPCWSTR, kind: c_uint) callconv(.winapi) c_int;
+pub extern "kernel32" fn GetModuleFileNameW(module: ?*anyopaque, file_name: [*]u16, size: DWORD) callconv(.winapi) DWORD;
+pub extern "kernel32" fn SetEnvironmentVariableW(name: LPCWSTR, value: ?LPCWSTR) callconv(.winapi) BOOL;
+pub extern "kernel32" fn GetStartupInfoW(info: *STARTUPINFOW) callconv(.winapi) void;
 pub extern "kernel32" fn SetConsoleCtrlHandler(
     handler: ?*const fn (DWORD) callconv(.winapi) BOOL,
     add: BOOL,
 ) callconv(.winapi) BOOL;
 
+pub const ENABLE_PROCESSED_INPUT: DWORD = 0x1;
+pub const ENABLE_LINE_INPUT: DWORD = 0x2;
+pub const ENABLE_ECHO_INPUT: DWORD = 0x4;
+pub extern "kernel32" fn GetConsoleMode(console: HANDLE, mode: *DWORD) callconv(.winapi) BOOL;
+pub extern "kernel32" fn SetConsoleMode(console: HANDLE, mode: DWORD) callconv(.winapi) BOOL;
+pub extern "kernel32" fn ReadConsoleW(console: HANDLE, buffer: [*]u16, to_read: DWORD, read: *DWORD, control: ?*anyopaque) callconv(.winapi) BOOL;
+
 pub extern "kernel32" fn CreateProcessW(
+    application_name: ?LPCWSTR,
+    command_line: ?LPWSTR,
+    process_attributes: ?*anyopaque,
+    thread_attributes: ?*anyopaque,
+    inherit_handles: BOOL,
+    creation_flags: DWORD,
+    environment: ?*const anyopaque,
+    current_directory: ?LPCWSTR,
+    startup_info: *STARTUPINFOW,
+    process_information: *PROCESS_INFORMATION,
+) callconv(.winapi) BOOL;
+/// CreateProcessW with another token: a copy of ours, here, which needs no
+/// privileges.
+pub extern "advapi32" fn CreateProcessAsUserW(
+    token: HANDLE,
     application_name: ?LPCWSTR,
     command_line: ?LPWSTR,
     process_attributes: ?*anyopaque,
@@ -115,6 +177,19 @@ pub extern "kernel32" fn UpdateProcThreadAttribute(
 pub extern "kernel32" fn DeleteProcThreadAttributeList(list: *anyopaque) callconv(.winapi) void;
 
 pub extern "kernel32" fn WaitForSingleObject(h: HANDLE, milliseconds: DWORD) callconv(.winapi) DWORD;
+pub const WAIT_ABANDONED: DWORD = 0x80;
+pub const WAIT_TIMEOUT: DWORD = 0x102;
+pub extern "kernel32" fn CreateMutexW(attributes: ?*anyopaque, initial_owner: BOOL, name: ?LPCWSTR) callconv(.winapi) ?HANDLE;
+pub extern "kernel32" fn ReleaseMutex(mutex: HANDLE) callconv(.winapi) BOOL;
+
+// DOS devices: drive letters mapped to directories, as `subst` makes.
+pub const DDD_RAW_TARGET_PATH: DWORD = 0x1;
+pub const DDD_REMOVE_DEFINITION: DWORD = 0x2;
+pub const DDD_EXACT_MATCH_ON_REMOVE: DWORD = 0x4;
+pub const DDD_NO_BROADCAST_SYSTEM: DWORD = 0x8;
+pub const ERROR_FILE_NOT_FOUND: DWORD = 2;
+pub extern "kernel32" fn DefineDosDeviceW(flags: DWORD, device: LPCWSTR, target: ?LPCWSTR) callconv(.winapi) BOOL;
+pub extern "kernel32" fn QueryDosDeviceW(device: ?LPCWSTR, target: [*]u16, max: DWORD) callconv(.winapi) DWORD;
 pub extern "kernel32" fn GetExitCodeProcess(h: HANDLE, exit_code: *DWORD) callconv(.winapi) BOOL;
 
 // ---------------------------------------------------------------------------
@@ -154,6 +229,28 @@ pub const JOBOBJECT_EXTENDED_LIMIT_INFORMATION = extern struct {
 };
 
 pub extern "kernel32" fn CreateJobObjectW(attributes: ?*anyopaque, name: ?LPCWSTR) callconv(.winapi) ?HANDLE;
+pub extern "kernel32" fn TerminateJobObject(job: HANDLE, exit_code: u32) callconv(.winapi) BOOL;
+pub const JobObjectBasicAccountingInformation: c_int = 1;
+pub const JOBOBJECT_BASIC_ACCOUNTING_INFORMATION = extern struct {
+    TotalUserTime: i64 = 0,
+    TotalKernelTime: i64 = 0,
+    ThisPeriodTotalUserTime: i64 = 0,
+    ThisPeriodTotalKernelTime: i64 = 0,
+    TotalPageFaultCount: DWORD = 0,
+    TotalProcesses: DWORD = 0,
+    ActiveProcesses: DWORD = 0,
+    TotalTerminatedProcesses: DWORD = 0,
+};
+pub extern "kernel32" fn QueryInformationJobObject(
+    job: HANDLE,
+    class: c_int,
+    info: *anyopaque,
+    length: DWORD,
+    return_length: ?*DWORD,
+) callconv(.winapi) BOOL;
+pub extern "kernel32" fn Sleep(milliseconds: DWORD) callconv(.winapi) void;
+/// Removes an empty directory, or a directory link itself (not its target).
+pub extern "kernel32" fn RemoveDirectoryW(path: LPCWSTR) callconv(.winapi) BOOL;
 pub extern "kernel32" fn SetInformationJobObject(
     job: HANDLE,
     class: c_int,
@@ -190,6 +287,53 @@ pub extern "userenv" fn CreateAppContainerProfile(
 ) callconv(.winapi) HRESULT;
 pub extern "userenv" fn DeriveAppContainerSidFromAppContainerName(name: LPCWSTR, sid: *?PSID) callconv(.winapi) HRESULT;
 pub extern "userenv" fn DeleteAppContainerProfile(name: LPCWSTR) callconv(.winapi) HRESULT;
+/// The capability SIDs for a capability name, as S-1-15-3-1024-..., and the
+/// group SIDs Windows also derives from it. The arrays and SIDs are LocalAlloc'd.
+pub extern "api-ms-win-security-base-l1-2-2" fn DeriveCapabilitySidsFromName(
+    name: LPCWSTR,
+    group_sids: *?[*]PSID,
+    group_sid_count: *DWORD,
+    sids: *?[*]PSID,
+    sid_count: *DWORD,
+) callconv(.winapi) BOOL;
+
+// ---------------------------------------------------------------------------
+// Integrity levels
+
+pub const TOKEN_ASSIGN_PRIMARY: DWORD = 0x0001;
+pub const TOKEN_DUPLICATE: DWORD = 0x0002;
+pub const TOKEN_ADJUST_DEFAULT: DWORD = 0x0080;
+pub const TokenIntegrityLevel: c_int = 25;
+pub const TokenIsAppContainer: c_int = 29;
+pub const SecurityImpersonation: c_int = 2;
+pub const TokenPrimary: c_int = 1;
+pub const SE_GROUP_INTEGRITY: DWORD = 0x00000020;
+/// The low integrity level's SID, and the RID that ends it.
+pub const low_integrity_sid = "S-1-16-4096";
+pub const SECURITY_MANDATORY_LOW_RID: DWORD = 0x1000;
+
+pub const TOKEN_MANDATORY_LABEL = extern struct {
+    Label: SID_AND_ATTRIBUTES,
+};
+
+pub const LABEL_SECURITY_INFORMATION: DWORD = 0x00000010;
+pub const SYSTEM_MANDATORY_LABEL_ACE_TYPE: u8 = 0x11;
+pub const SYSTEM_MANDATORY_LABEL_NO_WRITE_UP: DWORD = 0x1;
+pub const OBJECT_INHERIT_ACE: u8 = 0x1;
+pub const CONTAINER_INHERIT_ACE: u8 = 0x2;
+pub const ACL_REVISION: DWORD = 2;
+
+pub extern "advapi32" fn DuplicateTokenEx(
+    existing: HANDLE,
+    access: DWORD,
+    attributes: ?*anyopaque,
+    impersonation_level: c_int,
+    token_type: c_int,
+    new_token: *?HANDLE,
+) callconv(.winapi) BOOL;
+pub extern "advapi32" fn SetTokenInformation(token: HANDLE, class: c_int, info: *const anyopaque, length: DWORD) callconv(.winapi) BOOL;
+pub extern "advapi32" fn InitializeAcl(acl: *ACL, length: DWORD, revision: DWORD) callconv(.winapi) BOOL;
+pub extern "advapi32" fn AddMandatoryAce(acl: *ACL, revision: DWORD, flags: DWORD, policy: DWORD, label: PSID) callconv(.winapi) BOOL;
 
 // ---------------------------------------------------------------------------
 // Security descriptors and ACLs
@@ -243,8 +387,41 @@ pub const EXPLICIT_ACCESS_W = extern struct {
     Trustee: TRUSTEE_W,
 };
 
+pub const DENY_ACCESS: c_int = 3;
+pub const ACCESS_DENIED_ACE_TYPE: u8 = 1;
+pub const INHERITED_ACE: u8 = 0x10;
+/// FILE_WRITE_DATA | FILE_APPEND_DATA | FILE_WRITE_EA | FILE_DELETE_CHILD |
+/// FILE_WRITE_ATTRIBUTES | DELETE: everything that changes a file or a directory's entries.
+pub const FILE_MODIFY: DWORD = 0x00010156;
+pub const WRITE_OWNER: DWORD = 0x00080000;
+pub const ERROR_ACCESS_DENIED: DWORD = 5;
+
+pub const TOKEN_QUERY: DWORD = 0x0008;
+pub const TokenUser: c_int = 1;
+pub const TOKEN_USER = extern struct {
+    User: SID_AND_ATTRIBUTES,
+};
+
+pub extern "kernel32" fn GetCurrentProcess() callconv(.winapi) HANDLE;
+pub extern "advapi32" fn OpenProcessToken(process: HANDLE, access: DWORD, token: *?HANDLE) callconv(.winapi) BOOL;
+pub extern "advapi32" fn GetTokenInformation(
+    token: HANDLE,
+    class: c_int,
+    info: ?*anyopaque,
+    length: DWORD,
+    return_length: *DWORD,
+) callconv(.winapi) BOOL;
+pub extern "advapi32" fn DeleteAce(acl: *ACL, index: DWORD) callconv(.winapi) BOOL;
+
 pub extern "advapi32" fn FreeSid(sid: PSID) callconv(.winapi) ?*anyopaque;
 pub extern "advapi32" fn EqualSid(a: PSID, b: PSID) callconv(.winapi) BOOL;
+pub extern "advapi32" fn GetLengthSid(sid: PSID) callconv(.winapi) DWORD;
+pub const SID_IDENTIFIER_AUTHORITY = extern struct {
+    Value: [6]u8,
+};
+pub extern "advapi32" fn GetSidIdentifierAuthority(sid: PSID) callconv(.winapi) *SID_IDENTIFIER_AUTHORITY;
+pub extern "advapi32" fn GetSidSubAuthorityCount(sid: PSID) callconv(.winapi) *u8;
+pub extern "advapi32" fn GetSidSubAuthority(sid: PSID, index: DWORD) callconv(.winapi) *DWORD;
 pub extern "advapi32" fn ConvertStringSidToSidW(string_sid: LPCWSTR, sid: *?PSID) callconv(.winapi) BOOL;
 pub extern "advapi32" fn GetAce(acl: *ACL, index: DWORD, ace: *?*anyopaque) callconv(.winapi) BOOL;
 pub extern "advapi32" fn GetNamedSecurityInfoW(
@@ -266,12 +443,212 @@ pub extern "advapi32" fn SetNamedSecurityInfoW(
     dacl: ?*ACL,
     sacl: ?*ACL,
 ) callconv(.winapi) DWORD;
+pub const SE_KERNEL_OBJECT: c_int = 6;
+/// The medium integrity level's SID, every process's of a standard user.
+pub const medium_integrity_sid = "S-1-16-8192";
+pub extern "advapi32" fn SetSecurityInfo(
+    handle: HANDLE,
+    object_type: c_int,
+    security_info: DWORD,
+    owner: ?PSID,
+    group: ?PSID,
+    dacl: ?*ACL,
+    sacl: ?*ACL,
+) callconv(.winapi) DWORD;
 pub extern "advapi32" fn SetEntriesInAclW(
     count: u32,
     entries: [*]EXPLICIT_ACCESS_W,
     old_acl: ?*ACL,
     new_acl: *?*ACL,
 ) callconv(.winapi) DWORD;
+
+// ---------------------------------------------------------------------------
+// Credential Manager
+
+pub const CRED_TYPE_GENERIC: DWORD = 1;
+pub const CRED_PERSIST_LOCAL_MACHINE: DWORD = 2;
+pub const CRED_MAX_CREDENTIAL_BLOB_SIZE: usize = 5 * 512;
+pub const ERROR_NOT_FOUND: DWORD = 1168;
+
+pub const FILETIME = extern struct {
+    dwLowDateTime: DWORD = 0,
+    dwHighDateTime: DWORD = 0,
+};
+
+pub const CREDENTIALW = extern struct {
+    Flags: DWORD = 0,
+    Type: DWORD,
+    TargetName: LPWSTR,
+    Comment: ?LPWSTR = null,
+    LastWritten: FILETIME = .{},
+    CredentialBlobSize: DWORD = 0,
+    CredentialBlob: ?[*]u8 = null,
+    Persist: DWORD = 0,
+    AttributeCount: DWORD = 0,
+    Attributes: ?*anyopaque = null,
+    TargetAlias: ?LPWSTR = null,
+    UserName: ?LPWSTR = null,
+};
+
+pub extern "advapi32" fn CredReadW(target: LPCWSTR, type: DWORD, flags: DWORD, credential: *?*CREDENTIALW) callconv(.winapi) BOOL;
+pub extern "advapi32" fn CredWriteW(credential: *const CREDENTIALW, flags: DWORD) callconv(.winapi) BOOL;
+pub extern "advapi32" fn CredDeleteW(target: LPCWSTR, type: DWORD, flags: DWORD) callconv(.winapi) BOOL;
+pub extern "advapi32" fn CredFree(buffer: ?*anyopaque) callconv(.winapi) void;
+
+// ---------------------------------------------------------------------------
+// COM and the shell: shortcuts (.lnk files) and known folders
+
+pub const GUID = extern struct {
+    Data1: u32,
+    Data2: u16,
+    Data3: u16,
+    Data4: [8]u8,
+};
+
+pub const S_OK: HRESULT = 0;
+pub const S_FALSE: HRESULT = 1;
+pub const COINIT_APARTMENTTHREADED: DWORD = 0x2;
+pub const CLSCTX_INPROC_SERVER: DWORD = 0x1;
+pub const STGM_READ: DWORD = 0x0;
+/// IShellLinkW.GetPath: the path as stored, without expanding variables.
+pub const SLGP_RAWPATH: DWORD = 0x4;
+pub const MAX_PATH = 260;
+pub const INFOTIPSIZE = 1024;
+
+pub const CLSID_ShellLink: GUID = .{ .Data1 = 0x00021401, .Data2 = 0, .Data3 = 0, .Data4 = .{ 0xC0, 0, 0, 0, 0, 0, 0, 0x46 } };
+pub const IID_IShellLinkW: GUID = .{ .Data1 = 0x000214F9, .Data2 = 0, .Data3 = 0, .Data4 = .{ 0xC0, 0, 0, 0, 0, 0, 0, 0x46 } };
+pub const IID_IPersistFile: GUID = .{ .Data1 = 0x0000010B, .Data2 = 0, .Data3 = 0, .Data4 = .{ 0xC0, 0, 0, 0, 0, 0, 0, 0x46 } };
+/// The user's Start menu Programs folder.
+pub const FOLDERID_Programs: GUID = .{ .Data1 = 0xA77F5D77, .Data2 = 0x2E2B, .Data3 = 0x44C3, .Data4 = .{ 0xA6, 0xA2, 0xAB, 0xA6, 0x01, 0x05, 0x4A, 0x51 } };
+
+/// IShellLinkW's methods, in vtable order. Only those zigsaw calls are typed.
+pub const IShellLinkW = extern struct {
+    vtable: *const extern struct {
+        QueryInterface: *const fn (*IShellLinkW, *const GUID, *?*anyopaque) callconv(.winapi) HRESULT,
+        AddRef: *const fn (*IShellLinkW) callconv(.winapi) u32,
+        Release: *const fn (*IShellLinkW) callconv(.winapi) u32,
+        GetPath: *const fn (*IShellLinkW, [*]u16, c_int, ?*anyopaque, DWORD) callconv(.winapi) HRESULT,
+        GetIDList: *const anyopaque,
+        SetIDList: *const anyopaque,
+        GetDescription: *const anyopaque,
+        SetDescription: *const fn (*IShellLinkW, LPCWSTR) callconv(.winapi) HRESULT,
+        GetWorkingDirectory: *const anyopaque,
+        SetWorkingDirectory: *const fn (*IShellLinkW, LPCWSTR) callconv(.winapi) HRESULT,
+        GetArguments: *const anyopaque,
+        SetArguments: *const anyopaque,
+        GetHotkey: *const anyopaque,
+        SetHotkey: *const anyopaque,
+        GetShowCmd: *const anyopaque,
+        SetShowCmd: *const anyopaque,
+        GetIconLocation: *const anyopaque,
+        SetIconLocation: *const fn (*IShellLinkW, LPCWSTR, c_int) callconv(.winapi) HRESULT,
+        SetRelativePath: *const anyopaque,
+        Resolve: *const anyopaque,
+        SetPath: *const fn (*IShellLinkW, LPCWSTR) callconv(.winapi) HRESULT,
+    },
+};
+
+/// IPersistFile's methods, in vtable order.
+pub const IPersistFile = extern struct {
+    vtable: *const extern struct {
+        QueryInterface: *const anyopaque,
+        AddRef: *const anyopaque,
+        Release: *const fn (*IPersistFile) callconv(.winapi) u32,
+        GetClassID: *const anyopaque,
+        IsDirty: *const anyopaque,
+        Load: *const fn (*IPersistFile, LPCWSTR, DWORD) callconv(.winapi) HRESULT,
+        Save: *const fn (*IPersistFile, ?LPCWSTR, BOOL) callconv(.winapi) HRESULT,
+        SaveCompleted: *const anyopaque,
+        GetCurFile: *const anyopaque,
+    },
+};
+
+pub extern "ole32" fn CoInitializeEx(reserved: ?*anyopaque, flags: DWORD) callconv(.winapi) HRESULT;
+pub extern "ole32" fn CoUninitialize() callconv(.winapi) void;
+pub extern "ole32" fn CoCreateInstance(clsid: *const GUID, outer: ?*anyopaque, context: DWORD, iid: *const GUID, object: *?*anyopaque) callconv(.winapi) HRESULT;
+pub extern "ole32" fn CoTaskMemFree(mem: ?*anyopaque) callconv(.winapi) void;
+pub extern "shell32" fn SHGetKnownFolderPath(id: *const GUID, flags: DWORD, token: ?HANDLE, path: *?LPWSTR) callconv(.winapi) HRESULT;
+/// Tells the shell that file associations changed.
+pub const SHCNE_ASSOCCHANGED: i32 = 0x08000000;
+pub const SHCNF_IDLIST: u32 = 0;
+pub extern "shell32" fn SHChangeNotify(event: i32, flags: u32, item1: ?*const anyopaque, item2: ?*const anyopaque) callconv(.winapi) void;
+
+// ---------------------------------------------------------------------------
+// The registry: file associations (associations.zig)
+
+pub const HKEY = *anyopaque;
+/// Registry functions return a Win32 error code rather than set the last error.
+pub const LSTATUS = DWORD;
+pub const HKEY_CURRENT_USER: HKEY = @ptrFromInt(0x80000001);
+pub const ERROR_SUCCESS: LSTATUS = 0;
+pub const ERROR_NO_MORE_ITEMS: LSTATUS = 259;
+pub const KEY_READ: DWORD = 0x20019;
+pub const KEY_WRITE: DWORD = 0x20006;
+pub const REG_SZ: DWORD = 1;
+
+pub extern "advapi32" fn RegCreateKeyExW(key: HKEY, sub_key: LPCWSTR, reserved: DWORD, class: ?LPCWSTR, options: DWORD, access: DWORD, security: ?*anyopaque, result: *HKEY, disposition: ?*DWORD) callconv(.winapi) LSTATUS;
+pub extern "advapi32" fn RegOpenKeyExW(key: HKEY, sub_key: ?LPCWSTR, options: DWORD, access: DWORD, result: *HKEY) callconv(.winapi) LSTATUS;
+pub extern "advapi32" fn RegCloseKey(key: HKEY) callconv(.winapi) LSTATUS;
+pub extern "advapi32" fn RegSetValueExW(key: HKEY, name: ?LPCWSTR, reserved: DWORD, type: DWORD, data: ?[*]const u8, size: DWORD) callconv(.winapi) LSTATUS;
+pub extern "advapi32" fn RegQueryValueExW(key: HKEY, name: ?LPCWSTR, reserved: ?*DWORD, type: ?*DWORD, data: ?[*]u8, size: ?*DWORD) callconv(.winapi) LSTATUS;
+pub extern "advapi32" fn RegEnumKeyExW(key: HKEY, index: DWORD, name: [*]u16, name_len: *DWORD, reserved: ?*DWORD, class: ?[*]u16, class_len: ?*DWORD, last_write: ?*anyopaque) callconv(.winapi) LSTATUS;
+pub extern "advapi32" fn RegQueryInfoKeyW(key: HKEY, class: ?[*]u16, class_len: ?*DWORD, reserved: ?*DWORD, sub_keys: ?*DWORD, max_sub_key_len: ?*DWORD, max_class_len: ?*DWORD, values: ?*DWORD, max_value_name_len: ?*DWORD, max_value_len: ?*DWORD, security_descriptor: ?*DWORD, last_write: ?*anyopaque) callconv(.winapi) LSTATUS;
+pub extern "advapi32" fn RegDeleteTreeW(key: HKEY, sub_key: ?LPCWSTR) callconv(.winapi) LSTATUS;
+pub extern "advapi32" fn RegDeleteKeyW(key: HKEY, sub_key: LPCWSTR) callconv(.winapi) LSTATUS;
+pub extern "advapi32" fn RegDeleteValueW(key: HKEY, name: ?LPCWSTR) callconv(.winapi) LSTATUS;
+pub extern "advapi32" fn RegEnumValueW(key: HKEY, index: DWORD, name: [*]u16, name_len: *DWORD, reserved: ?*DWORD, type: ?*DWORD, data: ?[*]u8, data_len: ?*DWORD) callconv(.winapi) LSTATUS;
+/// Loads a hive file, creating it if there is none, privately: only through
+/// the key returned. It's unloaded when the last handle to it closes.
+pub extern "advapi32" fn RegLoadAppKeyW(file: LPCWSTR, result: *HKEY, access: DWORD, options: DWORD, reserved: DWORD) callconv(.winapi) LSTATUS;
+pub const KEY_ALL_ACCESS: DWORD = 0xF003F;
+/// For GetNamedSecurityInfoW and the like: "CURRENT_USER\\Software\\...".
+pub const SE_REGISTRY_KEY: c_int = 4;
+
+// ---------------------------------------------------------------------------
+// Directory junctions: the user's folders in an app's home (folders.zig)
+
+pub const INVALID_FILE_ATTRIBUTES: DWORD = 0xFFFFFFFF;
+pub const FILE_ATTRIBUTE_DIRECTORY: DWORD = 0x10;
+pub const FILE_ATTRIBUTE_REPARSE_POINT: DWORD = 0x400;
+pub const ERROR_PATH_NOT_FOUND: DWORD = 3;
+pub const FILE_READ_ATTRIBUTES: DWORD = 0x80;
+pub const FILE_SHARE_WRITE: DWORD = 0x2;
+pub const FILE_SHARE_DELETE: DWORD = 0x4;
+pub const FILE_FLAG_BACKUP_SEMANTICS: DWORD = 0x02000000;
+/// Opens a link itself rather than what it points to.
+pub const FILE_FLAG_OPEN_REPARSE_POINT: DWORD = 0x00200000;
+pub const FSCTL_SET_REPARSE_POINT: DWORD = 0x000900A4;
+pub const FSCTL_GET_REPARSE_POINT: DWORD = 0x000900A8;
+/// A directory junction's reparse tag.
+pub const IO_REPARSE_TAG_MOUNT_POINT: DWORD = 0xA0000003;
+pub const MAXIMUM_REPARSE_DATA_BUFFER_SIZE = 16 * 1024;
+
+/// REPARSE_DATA_BUFFER's header and its MountPointReparseBuffer, which the
+/// path buffer follows: the substitute name (`\??\C:\...`) and the print
+/// name, each NUL-terminated, at the offsets given in bytes.
+pub const MOUNT_POINT_REPARSE_HEADER = extern struct {
+    ReparseTag: DWORD,
+    /// The bytes after `Reserved`.
+    ReparseDataLength: u16,
+    Reserved: u16 = 0,
+    SubstituteNameOffset: u16,
+    SubstituteNameLength: u16,
+    PrintNameOffset: u16,
+    PrintNameLength: u16,
+};
+
+pub extern "kernel32" fn GetFileAttributesW(name: LPCWSTR) callconv(.winapi) DWORD;
+pub extern "kernel32" fn CreateDirectoryW(name: LPCWSTR, security: ?*anyopaque) callconv(.winapi) BOOL;
+pub extern "kernel32" fn DeviceIoControl(
+    device: HANDLE,
+    code: DWORD,
+    in: ?*const anyopaque,
+    in_size: DWORD,
+    out: ?*anyopaque,
+    out_size: DWORD,
+    returned: ?*DWORD,
+    overlapped: ?*anyopaque,
+) callconv(.winapi) BOOL;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -282,12 +659,19 @@ pub fn wide(gpa: std.mem.Allocator, s: []const u8) ![:0]u16 {
     return std.unicode.wtf8ToWtf16LeAllocZ(gpa, s);
 }
 
+/// The full path of the running executable, as WTF-8.
+pub fn selfExePath(gpa: std.mem.Allocator) ![]u8 {
+    var buf: [32 * 1024]u16 = undefined;
+    const len = GetModuleFileNameW(null, &buf, buf.len);
+    if (len == 0 or len >= buf.len) return lastErrorFail("GetModuleFileNameW");
+    return std.unicode.wtf16LeToWtf8Alloc(gpa, buf[0..len]);
+}
+
 /// Logs the calling thread's last Win32 error and returns `error.Failed`
 /// (see `Context.fail`).
 pub fn lastErrorFail(what: []const u8) error{Failed} {
     const code = GetLastError();
-    std.log.err("{s} failed: error {d} ({s})", .{ what, code, errorName(code) });
-    return error.Failed;
+    return @import("Context.zig").fail("{s} failed: error {d} ({s})", .{ what, code, errorName(code) });
 }
 
 /// Formats a Win32 error code with its symbolic name when std knows it.

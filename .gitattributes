@@ -1,0 +1,30 @@
+# Keep LF line endings on checkout, whatever core.autocrlf says: bash can't
+# run scripts with CRLF, and zig fmt writes (and checks for) LF.
+*.sh  text eol=lf
+*.zig text eol=lf
+*.zon text eol=lf
+*.json text eol=lf
+*.md  text eol=lf
+
+# Test fixtures are compared byte for byte.
+src/testdata/** binary
+
+# Batch files need CRLF line endings: cmd.exe misreads labels without them.
+tests/batch/*.cmd text eol=crlf
+tests/install/*.cmd text eol=crlf
+
+# Hashed for releases (SHA256SUMS), so the same bytes on every checkout.
+*.ps1 text eol=lf
+
+# Files PHP's SDK image and Kanboard's carry, so they have the same digest on
+# every checkout.
+recipes/php-sdk/* text eol=lf
+recipes/kanboard/* text eol=lf
+
+# Likewise for GTK's SDK, Gnumeric, PyGObject's SDK, Gaphor and Python (windres.c,
+# nm.c, patches, a header, sitecustomize.py, pip's requirements files, a ._pth).
+recipes/gtk4-sdk/* text eol=lf
+recipes/gnumeric/* text eol=lf
+recipes/pygobject/* text eol=lf
+recipes/gaphor/* text eol=lf
+recipes/python/* text eol=lf
