@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zigsaw-io/zigsaw/internal/estargz"
-	"github.com/zigsaw-io/zigsaw/internal/oci"
+	"github.com/quasidock/quasidock/internal/estargz"
+	"github.com/quasidock/quasidock/internal/oci"
 )
 
 func TestFormatOfDescriptor(t *testing.T) {

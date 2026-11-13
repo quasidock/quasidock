@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/zigsaw-io/zigsaw/internal/store"
-	"github.com/zigsaw-io/zigsaw/internal/win32"
+	"github.com/quasidock/quasidock/internal/store"
+	"github.com/quasidock/quasidock/internal/win32"
 )
 
 func TestEntryParseAndName(t *testing.T) {
@@ -45,10 +45,10 @@ func TestEntryParseAndName(t *testing.T) {
 }
 
 func TestSyncListStateOfAndRemove(t *testing.T) {
-	testKey := fmt.Sprintf(`Software\ZigsawTest\ledger-%d`, os.Getpid())
+	testKey := fmt.Sprintf(`Software\QuasidockTest\ledger-%d`, os.Getpid())
 	defer func() {
 		win32.RegDeleteTree(win32.HKEY_CURRENT_USER, testKey)
-		win32.RegDeleteKey(win32.HKEY_CURRENT_USER, `Software\ZigsawTest`)
+		win32.RegDeleteKey(win32.HKEY_CURRENT_USER, `Software\QuasidockTest`)
 	}()
 
 	entries, err := List(testKey)

@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/zigsaw-io/zigsaw/internal/net"
-	"github.com/zigsaw-io/zigsaw/internal/win32"
+	"github.com/quasidock/quasidock/internal/net"
+	"github.com/quasidock/quasidock/internal/win32"
 )
 
 func TestAddressLoopback(t *testing.T) {

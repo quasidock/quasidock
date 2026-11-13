@@ -9,17 +9,15 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/zigsaw-io/zigsaw/internal/aliases"
-	"github.com/zigsaw-io/zigsaw/internal/context"
-	"github.com/zigsaw-io/zigsaw/internal/environment"
-	"github.com/zigsaw-io/zigsaw/internal/format"
-	"github.com/zigsaw-io/zigsaw/internal/oci"
-	"github.com/zigsaw-io/zigsaw/internal/process"
-	"github.com/zigsaw-io/zigsaw/internal/recipe"
-	"github.com/zigsaw-io/zigsaw/internal/roots"
-	"github.com/zigsaw-io/zigsaw/internal/sidecar"
-	"github.com/zigsaw-io/zigsaw/internal/store"
-	"github.com/zigsaw-io/zigsaw/internal/tree"
+	"github.com/quasidock/quasidock/internal/context"
+	"github.com/quasidock/quasidock/internal/environment"
+	"github.com/quasidock/quasidock/internal/format"
+	"github.com/quasidock/quasidock/internal/oci"
+	"github.com/quasidock/quasidock/internal/process"
+	"github.com/quasidock/quasidock/internal/recipe"
+	"github.com/quasidock/quasidock/internal/roots"
+	"github.com/quasidock/quasidock/internal/store"
+	"github.com/quasidock/quasidock/internal/tree"
 )
 
 type Options struct {
@@ -127,9 +125,9 @@ func Build(ctx *context.Context, recipePath string, opts Options) (*oci.Image, e
 func inputHash(ctx *context.Context, r *recipe.Recipe, bytesRead []byte, recipePath string, projects *Snapshots, withProjects bool) (string, error) {
 	h := sha256.New()
 	if withProjects {
-		h.Write([]byte("zigsaw build inputs\n"))
+		h.Write([]byte("quasidock build inputs\n"))
 	} else {
-		h.Write([]byte("zigsaw work inputs\n"))
+		h.Write([]byte("quasidock work inputs\n"))
 	}
 
 	selfExe, err := os.Executable()
@@ -178,7 +176,6 @@ type Tool struct {
 	Dir      string
 	Path     []string
 	Env      map[string]string
-	Aliases  map[string]oci.Export
 	Runtimes []oci.DirPlaceholder
 	Brings   int
 }
@@ -255,7 +252,6 @@ func buildImage(ctx *context.Context, r *recipe.Recipe, recipePath, source strin
 			Dir:      dirs[len(dirs)-1],
 			Path:     dep.Config.Path,
 			Env:      dep.Config.Env,
-			Aliases:  dep.Config.Aliases,
 			Runtimes: ownRuntimes,
 		})
 		if err != nil {
@@ -276,7 +272,6 @@ func buildImage(ctx *context.Context, r *recipe.Recipe, recipePath, source strin
 				Dir:     rtDirs[rtIdx],
 				Path:    rt.Path,
 				Env:     rt.Env,
-				Aliases: rt.Aliases,
 			})
 			if err != nil {
 				return nil, err
@@ -317,7 +312,6 @@ func buildImage(ctx *context.Context, r *recipe.Recipe, recipePath, source strin
 			Dir:     dirs[0],
 			Path:    dep.Config.Path,
 			Env:     dep.Config.Env,
-			Aliases: dep.Config.Aliases,
 		})
 	}
 
@@ -411,32 +405,6 @@ func buildImage(ctx *context.Context, r *recipe.Recipe, recipePath, source strin
 	for name, exp := range config.Exports {
 		if err := checkCommand(ctx, appTree, placeholders, fmt.Sprintf("export %s runs", name), exp.Command); err != nil {
 			return nil, err
-		}
-	}
-	for name, a := range config.Aliases {
-		if err := checkCommand(ctx, appTree, placeholders, fmt.Sprintf("alias %s runs", name), a.Command); err != nil {
-			return nil, err
-		}
-	}
-	for name, sc := range config.Shortcuts {
-		if sc.Icon != nil {
-			if err := checkCommand(ctx, appTree, placeholders, fmt.Sprintf("shortcut %q has the icon", name), *sc.Icon); err != nil {
-				return nil, err
-			}
-		}
-	}
-	for ext, as := range config.Associations {
-		if as.Icon != nil {
-			if err := checkCommand(ctx, appTree, placeholders, fmt.Sprintf("association %q has the icon", ext), *as.Icon); err != nil {
-				return nil, err
-			}
-		}
-	}
-	for name, sc := range config.Schemes {
-		if sc.Icon != nil {
-			if err := checkCommand(ctx, appTree, placeholders, fmt.Sprintf("scheme %q has the icon", name), *sc.Icon); err != nil {
-				return nil, err
-			}
 		}
 	}
 
@@ -603,7 +571,6 @@ func initBuildRoot(ctx *context.Context, r *recipe.Recipe, tools []Tool) (*Build
 	}
 
 	var caches []string
-	var providers []aliases.Provider
 	for _, t := range tools {
 		p := t.Placeholders(rootsFile)
 		if p.Cache != "" && !containsFold(caches, t.ID) {
@@ -613,34 +580,9 @@ func initBuildRoot(ctx *context.Context, r *recipe.Recipe, tools []Tool) (*Build
 		if err == nil {
 			pathDirs = append(pathDirs, pDirs...)
 		}
-		providers = append(providers, aliases.Provider{
-			ID:       t.ID,
-			Dir:      t.Dir,
-			Aliases:  t.Aliases,
-			Runtimes: t.Runtimes,
-		})
-	}
-
-	resolved, err := aliases.Resolve(ctx.Store, providers, aliases.MissingFail, false)
-	if err != nil {
-		_ = os.RemoveAll(path)
-		return nil, err
-	}
-
-	selfExe, _ := os.Executable()
-	shimBytes, _ := sidecar.ShimExe(selfExe, sidecar.ShimConsole)
-	binDir := filepath.Join(path, "bin")
-	_ = os.MkdirAll(binDir, 0755)
-	if err := aliases.WriteAll(binDir, resolved, shimBytes); err != nil {
-		_ = os.RemoveAll(path)
-		return nil, err
 	}
 
 	pathDirs = append([]string{DriveLetter + `\prefix\bin`}, pathDirs...)
-	if len(resolved) > 0 {
-		pathDirs = append([]string{DriveLetter + `\bin`}, pathDirs...)
-		environment.Set(&toolVars, "BB_OVERRIDE_APPLETS", aliases.Names(resolved))
-	}
 
 	setSearchPaths(&toolVars, tools)
 
@@ -924,7 +866,7 @@ func (b *BuildRoot) runCommands(ctx *context.Context, m recipe.Module, step stri
 	vars := append([]environment.Var(nil), b.toolVars...)
 	environment.Set(&vars, "PREFIX", DriveLetter+`\prefix`)
 	environment.Set(&vars, "SOURCE_DATE_EPOCH", sourceDateEpoch)
-	environment.Set(&vars, "ZIGSAW_BUILD", "1")
+	environment.Set(&vars, "QUASIDOCK_BUILD", "1")
 	environment.Set(&vars, "ZIG_LOCAL_CACHE_DIR", fmt.Sprintf(`%s\src\%s\.zig-cache`, DriveLetter, m.Name))
 	environment.Set(&vars, "ZIG_PROGRESS", "off")
 
@@ -1055,7 +997,7 @@ type Work struct {
 	taken []string
 }
 
-const stateHeader = "zigsaw work 1 "
+const stateHeader = "quasidock work 1 "
 
 func wantedWork(r *recipe.Recipe, projects *Snapshots) bool {
 	for _, m := range r.Modules {

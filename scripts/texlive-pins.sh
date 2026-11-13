@@ -18,7 +18,7 @@
 # MIRROR is the tlnet URL the recipe pins (default: MIT's CTAN mirror);
 # SCHEME the scheme (default scheme-small); TEXLIVE_PINS_CACHE keeps the
 # downloads between runs (default: texlive-pins in TMPDIR). Needs curl, xz
-# and Git Bash, not zigsaw.
+# and Git Bash, not quasidock.
 
 set -eu
 export MSYS_NO_PATHCONV=1

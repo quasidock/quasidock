@@ -12,7 +12,7 @@
 # AppContainer, what writes to a path (oras pull, skopeo's oci: and dir:)
 # fails, a known gap.
 #
-#   OCI_HOME=path\to\store bash tests/zot.sh bash tests/oci.sh [path\to\zigsaw.exe]
+#   OCI_HOME=path\to\store bash tests/zot.sh bash tests/oci.sh [path\to\quasidock.exe]
 #
 # The store (OCI_HOME, or BUILD_HOME as tests/published.sh leaves it, or a
 # temporary one) gets the three unless it has them (built in about 3
@@ -22,14 +22,14 @@ set -u
 export MSYS_NO_PATHCONV=1
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
-zigsaw=${1:-$root/zig-out/bin/zigsaw.exe}
+zigsaw=${1:-$root/zig-out/bin/quasidock.exe}
 temp_store=""
-ZIGSAW_HOME=${OCI_HOME:-${BUILD_HOME:-}}
-if [ -z "$ZIGSAW_HOME" ]; then
-    ZIGSAW_HOME=$(cygpath -w "$(mktemp -d)")
-    temp_store=$ZIGSAW_HOME
+QUASIDOCK_HOME=${OCI_HOME:-${BUILD_HOME:-}}
+if [ -z "$QUASIDOCK_HOME" ]; then
+    QUASIDOCK_HOME=$(cygpath -w "$(mktemp -d)")
+    temp_store=$QUASIDOCK_HOME
 fi
-export ZIGSAW_HOME
+export QUASIDOCK_HOME
 work=$(cygpath -w "$(mktemp -d)")
 ORAS=land.oras.oras
 SKOPEO=io.podman.skopeo
@@ -77,7 +77,7 @@ r() {
 installed_here=""
 for recipe in busybox go oras skopeo cosign; do
     id=$(grep -o '"id": *"[^"]*"' "$root\\recipes\\$recipe.json" | head -1 | cut -d'"' -f4)
-    [ -f "$ZIGSAW_HOME\\refs\\$id.json" ] && continue
+    [ -f "$QUASIDOCK_HOME\\refs\\$id.json" ] && continue
     installed_here="$installed_here $id"
     z build "$root\\recipes\\$recipe.json" >"$work\\build-$recipe.log" 2>&1 || echo "building $recipe.json failed: $(tail -1 "$work\\build-$recipe.log")"
 done
@@ -101,7 +101,7 @@ pulled() {
 check "  and pulls it into another folder, the same bytes" pulled
 oras_login() {
     printf '%s' "$AUTH_PASSWORD" | r $ORAS -- login --plain-http -u "$AUTH_USER" --password-stdin "$AUTH_REGISTRY" || return 1
-    find "$(cygpath -u "$ZIGSAW_HOME\\data\\$ORAS")" -name config.json -path '*.docker*' -exec grep -l "$AUTH_REGISTRY" {} + | grep -q . ||
+    find "$(cygpath -u "$QUASIDOCK_HOME\\data\\$ORAS")" -name config.json -path '*.docker*' -exec grep -l "$AUTH_REGISTRY" {} + | grep -q . ||
         { echo "no .docker\\config.json with the login in its data"; return 1; }
 }
 check "oras logs in to the registry that wants a login, in its own data" oras_login
@@ -153,12 +153,12 @@ other_key() {
     ! r $COSIGN "${offline[@]}" -- verify --key other/cosign.pub --insecure-ignore-tlog --allow-http-registry "$image:1"
 }
 check "  but not with another key" other_key
-check "zigsaw still pulls the signed image" env ZIGSAW_HOME="$work\\pulled" "$zigsaw" pull --yes "$image:1"
+check "zigsaw still pulls the signed image" env QUASIDOCK_HOME="$work\\pulled" "$zigsaw" pull --yes "$image:1"
 
 # zigsaw's signatures are cosign's: made by the real thing, and read by it.
 signed="$registry/oci/signed"
-cosign_program=$(find "$(cygpath -u "$ZIGSAW_HOME\\deploy")" -maxdepth 2 -iname cosign.exe | head -1)
-signing_env=(env COSIGN_KEY="$work\\cwd\\cosign.key" COSIGN_PASSWORD=zigsaw-test COSIGN="$cosign_program" ZIGSAW_REGISTRY="$registry/oci" ZIGSAW="$zigsaw")
+cosign_program=$(find "$(cygpath -u "$QUASIDOCK_HOME\\deploy")" -maxdepth 2 -iname cosign.exe | head -1)
+signing_env=(env COSIGN_KEY="$work\\cwd\\cosign.key" COSIGN_PASSWORD=zigsaw-test COSIGN="$cosign_program" QUASIDOCK_REGISTRY="$registry/oci" QUASIDOCK="$zigsaw")
 printf '{ "id": "signed", "version": "1" }\n' >signed-recipe.json
 signs_blob() {
     z push net.frippery.busybox "$signed:1" >/dev/null 2>&1 && z push net.frippery.busybox "$signed:latest" >/dev/null 2>&1 || return 1
@@ -169,19 +169,19 @@ cosign_reads() { r $COSIGN "${offline[@]}" -- verify --key cosign.pub --insecure
 check "  stock cosign verify reads what zigsaw pushed" cosign_reads
 zigsaw_reads() {
     local out
-    ZIGSAW_HOME="$work\\checks" "$zigsaw" trust add "$registry/oci" cosign.pub >/dev/null 2>&1 || return 1
-    out=$(ZIGSAW_HOME="$work\\checks" "$zigsaw" pull --yes "$signed:1" 2>&1) || { echo "$out"; return 1; }
+    QUASIDOCK_HOME="$work\\checks" "$zigsaw" trust add "$registry/oci" cosign.pub >/dev/null 2>&1 || return 1
+    out=$(QUASIDOCK_HOME="$work\\checks" "$zigsaw" pull --yes "$signed:1" 2>&1) || { echo "$out"; return 1; }
     grep -q 'signed, by key' <<<"$out" || { echo "$out"; return 1; }
 }
 check "  and zigsaw's own check passes it" zigsaw_reads
 other_refused() {
     local out
-    ZIGSAW_HOME="$work\\checks2" "$zigsaw" trust add "$registry/oci" other/cosign.pub >/dev/null 2>&1 || return 1
-    out=$(ZIGSAW_HOME="$work\\checks2" "$zigsaw" pull --yes "$signed:1" 2>&1) && { echo "it installed"; return 1; }
+    QUASIDOCK_HOME="$work\\checks2" "$zigsaw" trust add "$registry/oci" other/cosign.pub >/dev/null 2>&1 || return 1
+    out=$(QUASIDOCK_HOME="$work\\checks2" "$zigsaw" pull --yes "$signed:1" 2>&1) && { echo "it installed"; return 1; }
     grep -q 'not by any key that counts' <<<"$out"
 }
 check "  and with another cosign key, refuses it" other_refused
-again_leaves_it() { "${signing_env[@]}" ZIGSAW_HOME="$work\\checks" bash "$root\\scripts\\sign-images.sh" "$(cygpath -w "$work\\cwd\\signed-recipe.json")" | grep -q '^0 signed, 2 signed already'; }
+again_leaves_it() { "${signing_env[@]}" QUASIDOCK_HOME="$work\\checks" bash "$root\\scripts\\sign-images.sh" "$(cygpath -w "$work\\cwd\\signed-recipe.json")" | grep -q '^0 signed, 2 signed already'; }
 check "  a second run of the script leaves it alone" again_leaves_it
 key_named_wrongly() { # <what COSIGN_KEY is> <what the error should say>
     local out
@@ -197,16 +197,14 @@ wrong_passphrase() {
     grep -qF "COSIGN_PASSWORD doesn't open" <<<"$out" || { echo "$out"; return 1; }
 }
 check "  a passphrase that doesn't open the key says so, before signing anything" wrong_passphrase
-ZIGSAW_HOME="$work\\checks" "$zigsaw" rm --delete-data net.frippery.busybox >/dev/null 2>&1
+QUASIDOCK_HOME="$work\\checks" "$zigsaw" rm --delete-data net.frippery.busybox >/dev/null 2>&1
 
 # A release, with programs that only have to be the same bytes.
 fake_release() { # <dir> <what the programs hold>
     mkdir -p "$1/files"
-    for f in zigsaw.exe zigsaw-shim.exe zigsaw-shimw.exe zigsaw-relay.exe zigsaw-host.exe zigsaw-notify.exe; do printf '%s' "$2" >"$1/files/$f"; done
-    powershell -NoProfile -Command "Compress-Archive -Path '$(cygpath -w "$1/files")\\*' -DestinationPath '$(cygpath -w "$1")\\zigsaw-x86_64-windows.zip'" || return 1
-    printf '9.9.9\n' >"$1/VERSION"
-    { printf '%s  zigsaw-x86_64-windows.zip\n' "$(sha256sum <"$1/zigsaw-x86_64-windows.zip" | cut -d' ' -f1)"
-      printf '%s  VERSION\n' "$(sha256sum <"$1/VERSION" | cut -d' ' -f1)"; } >"$1/SHA256SUMS"
+    for f in quasidock.exe quasidock-relay.exe quasidock-host.exe; do printf '%s' "$2" >"$1/files/$f"; done
+    powershell -NoProfile -Command "Compress-Archive -Path '$(cygpath -w "$1/files")\\*' -DestinationPath '$(cygpath -w "$1")\\quasidock-x86_64-windows.zip'" || return 1
+    printf '%s  quasidock-x86_64-windows.zip\n' "$(sha256sum <"$1/quasidock-x86_64-windows.zip" | cut -d' ' -f1)" >"$1/SHA256SUMS"
 }
 # The key as Git Bash writes it, which cosign can't read by itself.
 sign_release() { env COSIGN_KEY="$(cygpath -u "$work\\cwd\\cosign.key")" COSIGN_PASSWORD=zigsaw-test COSIGN="$cosign_program" SIGN_RELEASE_FROM="$1" SIGN_RELEASE_REBUILT="$2" bash "$root\\scripts\\sign-release.sh" v9.9.9; }
@@ -223,13 +221,6 @@ release_differs() {
     grep -q "isn't what v9.9.9 builds here" <<<"$out" && [ ! -e rel/SHA256SUMS.sig ]
 }
 check "  and refuses one a build here doesn't" release_differs
-release_mislabelled() {
-    printf '9.9.8\n' >rel/VERSION
-    local out
-    out=$(sign_release rel rebuilt 2>&1) && { echo "it signed"; return 1; }
-    grep -q "VERSION says" <<<"$out" && [ ! -e rel/SHA256SUMS.sig ]
-}
-check "  or one whose VERSION isn't the tag's" release_mislabelled
 
 # --- In an AppContainer -----------------------------------------------------------
 
@@ -256,7 +247,7 @@ check_gap "  skopeo copies into an OCI layout there" sh -c "\"\$0\" run --sandbo
 check "no run labelled or granted the repository" sh -c "! icacls '$root' | grep -q -e 'Mandatory Label' -e 'S-1-15-'"
 
 cd "$root" || exit 1
-ZIGSAW_HOME="$work\\pulled" "$zigsaw" rm --delete-data net.frippery.busybox >/dev/null 2>&1
+QUASIDOCK_HOME="$work\\pulled" "$zigsaw" rm --delete-data net.frippery.busybox >/dev/null 2>&1
 for id in $installed_here; do z rm --delete-data "$id" >/dev/null 2>&1; done
 if [ -n "$temp_store" ]; then
     z prune --downloads --data >/dev/null 2>&1

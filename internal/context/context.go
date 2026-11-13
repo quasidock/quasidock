@@ -7,13 +7,13 @@ import (
 	"os"
 	"time"
 
-	"github.com/zigsaw-io/zigsaw/internal/store"
+	"github.com/quasidock/quasidock/internal/store"
 )
 
 // ErrFailed indicates an error that has already been reported to the user.
 var ErrFailed = errors.New("command failed")
 
-// FormatDuration formats a millisecond duration according to zigsaw rules.
+// FormatDuration formats a millisecond duration according to quasidock rules.
 func FormatDuration(ms uint64) string {
 	s := ms / 1000
 	if ms < 1000 {

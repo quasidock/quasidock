@@ -11,9 +11,9 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/zigsaw-io/zigsaw/internal/acl"
-	"github.com/zigsaw-io/zigsaw/internal/store"
-	"github.com/zigsaw-io/zigsaw/internal/win32"
+	"github.com/quasidock/quasidock/internal/acl"
+	"github.com/quasidock/quasidock/internal/store"
+	"github.com/quasidock/quasidock/internal/win32"
 )
 
 const walkLimit = 50000

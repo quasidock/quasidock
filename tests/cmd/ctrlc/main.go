@@ -12,7 +12,7 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/zigsaw-io/zigsaw/internal/win32"
+	"github.com/quasidock/quasidock/internal/win32"
 )
 
 func sendBreak(pid uint32) uint32 {
@@ -235,7 +235,7 @@ func main() {
 	}
 
 	if len(args) != 3 {
-		fmt.Fprintln(os.Stderr, "usage: zigsaw-ctrlc <zigsaw.exe> <store> <work-dir>")
+		fmt.Fprintln(os.Stderr, "usage: quasidock-ctrlc <quasidock.exe> <store> <work-dir>")
 		win32.ExitProcess(2)
 	}
 

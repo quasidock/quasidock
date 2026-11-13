@@ -27,7 +27,7 @@
 # installs again rather than building (GTK's SDK takes a quarter of an hour
 # to build, and Gnumeric 25 minutes).
 #
-#   GTK_HOME=path\to\store bash tests/gtk3.sh [path\to\zigsaw.exe]
+#   GTK_HOME=path\to\store bash tests/gtk3.sh [path\to\quasidock.exe]
 #
 # The store needs GTK 4's SDK and runtime (GTK_HOME, or BUILD_HOME as
 # tests/published.sh leaves it); GTK 3's images, the demos, Gnumeric,
@@ -38,28 +38,22 @@ set -u
 export MSYS_NO_PATHCONV=1
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
-zigsaw=${1:-$root/zig-out/bin/zigsaw.exe}
-ZIGSAW_HOME=${GTK_HOME:-${BUILD_HOME:-}}
-if [ -z "$ZIGSAW_HOME" ] || [ ! -f "$ZIGSAW_HOME\\refs\\org.gtk.Gtk4.json" ] || [ ! -f "$ZIGSAW_HOME\\refs\\org.gtk.Gtk4.Sdk.json" ]; then
+zigsaw=${1:-$root/zig-out/bin/quasidock.exe}
+QUASIDOCK_HOME=${GTK_HOME:-${BUILD_HOME:-}}
+if [ -z "$QUASIDOCK_HOME" ] || [ ! -f "$QUASIDOCK_HOME\\refs\\org.gtk.Gtk4.json" ] || [ ! -f "$QUASIDOCK_HOME\\refs\\org.gtk.Gtk4.Sdk.json" ]; then
     echo "tests/gtk3.sh needs a store with org.gtk.Gtk4 and org.gtk.Gtk4.Sdk in GTK_HOME or BUILD_HOME;"
     echo "build recipes\\gtk4-sdk.json and recipes\\gtk4.json into one first."
     exit 1
 fi
-export ZIGSAW_HOME
+export QUASIDOCK_HOME
 work=$(cygpath -w "$(mktemp -d)")
 APP=test.gtk.hello3
 DEMO=org.gtk.Gtk3demo
 GNUMERIC=org.gnome.Gnumeric
-# Start menu shortcuts go here rather than the user's Start menu.
-links="$work\\links"
-export ZIGSAW_SHORTCUTS_DIR="$links"
-# File associations go under this key of HKCU rather than Software\Classes.
-classes="Software\\ZigsawTest\\gtk3-$$"
-export ZIGSAW_CLASSES_KEY="$classes"
 # The user's folders the apps may use, such as Documents, are these, not
 # yours, which low and AppContainer runs would label and grant.
 for f in Desktop Documents Downloads; do mkdir -p "$work\\folders\\$f"; done
-export ZIGSAW_USER_FOLDERS="$work\\folders"
+export QUASIDOCK_USER_FOLDERS="$work\\folders"
 
 failures=0
 check() {
@@ -91,7 +85,7 @@ check_want() {
 }
 
 z() { "$zigsaw" "$@"; }
-manifest_of() { grep -o 'sha256:[0-9a-f]*' "$ZIGSAW_HOME\\refs\\$1.json"; }
+manifest_of() { grep -o 'sha256:[0-9a-f]*' "$QUASIDOCK_HOME\\refs\\$1.json"; }
 # install_again <id> <recipe>: installs an app the store has again, as the
 # store got it: from the build cache, if it built it, or the registry it was
 # pulled from (as the Reproduce workflow's store pulls the published
@@ -99,7 +93,7 @@ manifest_of() { grep -o 'sha256:[0-9a-f]*' "$ZIGSAW_HOME\\refs\\$1.json"; }
 # and registry key. Builds the recipe if the store hasn't the app.
 install_again() {
     local source=""
-    [ -f "$ZIGSAW_HOME\\refs\\$1.json" ] && source=$(grep -o '"source": *"[^"]*"' "$ZIGSAW_HOME\\refs\\$1.json" | cut -d'"' -f4)
+    [ -f "$QUASIDOCK_HOME\\refs\\$1.json" ] && source=$(grep -o '"source": *"[^"]*"' "$QUASIDOCK_HOME\\refs\\$1.json" | cut -d'"' -f4)
     case $source in
     "" | *.json) z build "$root\\recipes\\$2" ;;
     *) z pull --yes "$source" ;;
@@ -110,7 +104,7 @@ install_again() {
 # before (for removing what this installed at the end).
 installed_here=""
 build_image() {
-    [ -f "$ZIGSAW_HOME\\refs\\$1.json" ] || installed_here="$installed_here $1"
+    [ -f "$QUASIDOCK_HOME\\refs\\$1.json" ] || installed_here="$installed_here $1"
     install_again "$1" "$2" >"$work\\$2.log" 2>&1 || echo "installing $2 failed: $(tail -1 "$work\\$2.log")"
 }
 build_image org.gtk.Gtk3.Sdk gtk3-sdk.json
@@ -138,7 +132,7 @@ check "with --sandbox=soft" drew --sandbox=soft
 check "with --sandbox=appcontainer" drew --sandbox=appcontainer
 # GTK 4's runtime's variables, which GTK 3's apps have too.
 check "GLib keeps settings in a key file in the app's data" sh -c "timeout 60 \"\$0\" run $APP 2>&1 | grep -q '^settings in GKeyfileSettingsBackend'" "$zigsaw"
-runtime_dir="$ZIGSAW_HOME\\deploy\\$(grep -o 'sha256:[0-9a-f]*' "$ZIGSAW_HOME\\blobs\\sha256\\$(manifest_of org.gtk.Gtk3 | cut -d: -f2)" | tail -1 | cut -d: -f2)"
+runtime_dir="$QUASIDOCK_HOME\\deploy\\$(grep -o 'sha256:[0-9a-f]*' "$QUASIDOCK_HOME\\blobs\\sha256\\$(manifest_of org.gtk.Gtk3 | cut -d: -f2)" | tail -1 | cut -d: -f2)"
 runtime_files() {
     test -f "$runtime_dir\\bin\\libgtk-3-0.dll" -a -f "$runtime_dir\\bin\\libatk-1.0-0.dll" || return 1
     ! test -e "$runtime_dir\\include" && ! test -e "$runtime_dir\\lib\\pkgconfig" && ! test -e "$runtime_dir\\bin\\libglib-2.0-0.dll" || return 1
@@ -157,23 +151,6 @@ stays_up() {
     timeout "$seconds" "$zigsaw" run --env=G_DEBUG=fatal-criticals "$@" >/dev/null 2>&1
     [ $? -eq 124 ]
 }
-shim_dir=$(dirname "$zigsaw")
-shim_is() { cmp -s "$ZIGSAW_HOME\\bin\\$1.exe" "$shim_dir\\$2"; }
-check "the demos get the windowless shim" sh -c "cmp -s '$ZIGSAW_HOME\\bin\\gtk3-demo.exe' '$shim_dir\\zigsaw-shimw.exe' && cmp -s '$ZIGSAW_HOME\\bin\\gtk3-widget-factory.exe' '$shim_dir\\zigsaw-shimw.exe'"
-lnk_icon() { powershell -NoProfile -Command "(New-Object -ComObject WScript.Shell).CreateShortcut('$1').IconLocation" | tr -d '\r'; }
-# is_ico <file> <images>: an icon with that many images, the first a
-# 16-pixel PNG.
-is_ico() {
-    [ "$(od -A n -t u1 -N 8 "$1" | tr -s ' ' | sed 's/^ //')" = "0 0 1 0 $2 0 16 16" ] && tail -c +$((6 + 16 * $2 + 2)) "$1" | head -c 4 | grep -q PNG
-}
-demo_shortcuts() {
-    local name ico
-    for name in "GTK 3 Demo" "GTK 3 Widget Factory"; do
-        ico=$(lnk_icon "$links\\$name.lnk")
-        is_ico "${ico%,0}" 5 || { echo "$name: $ico"; return 1; }
-    done
-}
-check "they get shortcuts, with icons made from their PNGs" demo_shortcuts
 check "GTK 3's demo runs" stays_up 10 $DEMO
 check "its widget factory runs, without critical warnings for want of a Desktop" stays_up 10 --command=gtk3-widget-factory $DEMO
 check "with --sandbox=soft" stays_up 10 --sandbox=soft --command=gtk3-widget-factory $DEMO
@@ -182,7 +159,7 @@ check "with --sandbox=appcontainer" stays_up 10 --sandbox=appcontainer --command
 # Gnumeric, on both runtimes. Built here unless the store has it, which
 # takes about 25 minutes.
 build_image $GNUMERIC gnumeric.json
-gnumeric_dir="$ZIGSAW_HOME\\deploy\\$(grep -o 'sha256:[0-9a-f]*' "$ZIGSAW_HOME\\blobs\\sha256\\$(manifest_of $GNUMERIC | cut -d: -f2)" | tail -1 | cut -d: -f2)"
+gnumeric_dir="$QUASIDOCK_HOME\\deploy\\$(grep -o 'sha256:[0-9a-f]*' "$QUASIDOCK_HOME\\blobs\\sha256\\$(manifest_of $GNUMERIC | cut -d: -f2)" | tail -1 | cut -d: -f2)"
 check "Gnumeric 1.12.62 is installed" sh -c "timeout 60 \"\$0\" run --command=ssconvert $GNUMERIC --version | tr -d '\r' | grep -qx \"ssconvert version '1.12.62'\"" "$zigsaw"
 check "it has its translations, goffice's and libgsf's" test -f "$gnumeric_dir\\share\\locale\\de\\LC_MESSAGES\\gnumeric-1.12.62.mo" -a -f "$gnumeric_dir\\share\\locale\\de\\LC_MESSAGES\\goffice-0.10.62.mo" -a -f "$gnumeric_dir\\share\\locale\\de\\LC_MESSAGES\\libgsf.mo"
 # A CSV with a formula, to Excel, to OpenDocument and back, as ssconvert's
@@ -219,25 +196,6 @@ to_documents() {
         test -s "$work\\folders\\Documents\\sheet.xlsx"
 }
 check "at low integrity, it saves into the user's Documents, which it may use" to_documents
-gnumeric_shortcut() {
-    shim_is gnumeric zigsaw-shimw.exe || { echo "gnumeric.exe isn't the windowless shim"; return 1; }
-    case $(lnk_icon "$links\\Gnumeric.lnk") in "$gnumeric_dir\\share\\icons\\gnumeric.ico,0") ;; *) echo "icon: $(lnk_icon "$links\\Gnumeric.lnk")"; return 1 ;; esac
-    [ "$(od -A n -t u1 -N 4 "$gnumeric_dir\\share\\icons\\gnumeric.ico" | tr -s ' ' | sed 's/^ //')" = "0 0 1 0" ]
-}
-check "it gets the windowless shim and a shortcut, with Gnumeric's icon" gnumeric_shortcut
-reg_value() {
-    powershell -NoProfile -Command "(Get-ItemProperty -LiteralPath 'HKCU:\\$classes\\$1' -ErrorAction Stop).'(default)'" | tr -d '\r'
-}
-# opens_with <app id> <export> <extension> <icon's file name>: the extension
-# is registered for the app, to open with the export's shim in open\.
-opens_with() {
-    local prog="Zigsaw.$1.${3#.}"
-    [ "$(reg_value "$prog\\shell\\open\\command")" = "\"$ZIGSAW_HOME\\open\\$1\\$2.exe\" \"%1\"" ] || { echo "$3: $(reg_value "$prog\\shell\\open\\command")"; return 1; }
-    case $(reg_value "$prog\\DefaultIcon") in *"\\$4,0") ;; *) echo "$3: icon $(reg_value "$prog\\DefaultIcon")"; return 1 ;; esac
-    reg query "HKCU\\$classes\\$3\\OpenWithProgids" /v "$prog" >/dev/null 2>&1
-}
-gnumeric_opens() { for ext in .gnumeric .xlsx .xls .ods .csv; do opens_with $GNUMERIC gnumeric $ext gnumeric.ico || return 1; done; }
-check "it's registered to open .gnumeric, .xlsx, .xls, .ods and .csv files" gnumeric_opens
 # A directory of documents that no run has been granted, unlike the work
 # directory, which runs with the cwd permission are.
 docs=$(cygpath -w "$(mktemp -d)")
@@ -254,7 +212,7 @@ MELD=org.gnome.Meld
 build_image org.gnome.PyGObject.Sdk pygobject-sdk.json
 build_image org.gnome.PyGObject pygobject.json
 build_image $MELD meld.json
-pygobject_dir="$ZIGSAW_HOME\\deploy\\$(grep -o 'sha256:[0-9a-f]*' "$ZIGSAW_HOME\\blobs\\sha256\\$(manifest_of org.gnome.PyGObject | cut -d: -f2)" | tail -1 | cut -d: -f2)"
+pygobject_dir="$QUASIDOCK_HOME\\deploy\\$(grep -o 'sha256:[0-9a-f]*' "$QUASIDOCK_HOME\\blobs\\sha256\\$(manifest_of org.gnome.PyGObject | cut -d: -f2)" | tail -1 | cut -d: -f2)"
 printf '%s\n' 'import gi' 'gi.require_version("Gtk", "3.0")' 'gi.require_version("GtkSource", "4")' \
     'from gi.repository import Gtk, GtkSource, Pango' \
     'print("GTK", Gtk.get_major_version(), Gtk.get_minor_version(), Gtk.get_micro_version())' \
@@ -283,10 +241,10 @@ check "PyGObject loads GTK 3 and GtkSourceView 4 through their typelibs" python_
 check "and GTK 4 and libadwaita, with pycairo" python_says gi4.py 'GTK 4 24 1|libadwaita 1 10|pycairo 1.29.2'
 check "with --sandbox=soft" python_says gi3.py 'GTK 3 24 52|GtkSourceView Python|Pango 1.58.2' --sandbox=soft
 check "with --sandbox=appcontainer" python_says gi3.py 'GTK 3 24 52|GtkSourceView Python|Pango 1.58.2' --sandbox=appcontainer
-meld_dir="$ZIGSAW_HOME\\deploy\\$(grep -o 'sha256:[0-9a-f]*' "$ZIGSAW_HOME\\blobs\\sha256\\$(manifest_of $MELD | cut -d: -f2)" | tail -1 | cut -d: -f2)"
+meld_dir="$QUASIDOCK_HOME\\deploy\\$(grep -o 'sha256:[0-9a-f]*' "$QUASIDOCK_HOME\\blobs\\sha256\\$(manifest_of $MELD | cut -d: -f2)" | tail -1 | cut -d: -f2)"
 # Meld's command is pythonw.exe, which shows nothing: python.exe runs it here.
 check "Meld 3.24.1 is installed" sh -c "timeout 60 \"\$0\" run --command='$pygobject_dir\\python.exe' $MELD '$meld_dir\\bin\\meld' --version 2>&1 | tr -d '\r' | grep -qx 'meld 3.24.1'" "$zigsaw"
-rm -f "$ZIGSAW_HOME\\data\\$MELD\\share\\meld.log"
+rm -f "$QUASIDOCK_HOME\\data\\$MELD\\share\\meld.log"
 printf 'one\ntwo\nthree\n' >"$work\\left.txt"
 printf 'one\n2\nthree\nfour\n' >"$work\\right.txt"
 mkdir -p "$work\\left" "$work\\right"
@@ -311,7 +269,7 @@ meld_draws() {
 meld_logs() {
     [ -n "${LOG_DIR:-}" ] || return 0
     { echo "zigsaw run ${opts[*]} $MELD ${what[*]}"; cat "$work\\meld-run.txt"; } >"$LOG_DIR\\meld-$draws.txt"
-    cp "$ZIGSAW_HOME\\data\\$MELD\\share\\meld.log" "$LOG_DIR\\meld-$draws.log" 2>/dev/null
+    cp "$QUASIDOCK_HOME\\data\\$MELD\\share\\meld.log" "$LOG_DIR\\meld-$draws.log" 2>/dev/null
 }
 check "Meld compares two files and draws its window" meld_draws left.txt right.txt
 check "with --sandbox=soft" meld_draws left.txt right.txt -- --sandbox=soft
@@ -339,18 +297,13 @@ check "Meld's git support finds the repository, and what's changed in it" python
 check "with --sandbox=soft" python_says vc.py "$vc_says" --sandbox=soft
 check_want "$(ac_if nul)" "with --sandbox=appcontainer" python_says vc.py "$vc_says" --sandbox=appcontainer
 check "it shows the repository's changes in its window" meld_draws repo -- --sandbox=low
-check "its log has no Python traceback" sh -c "! grep -q Traceback '$ZIGSAW_HOME\\data\\$MELD\\share\\meld.log'"
-meld_shortcut() {
-    shim_is meld zigsaw-shimw.exe || { echo "meld.exe isn't the windowless shim"; return 1; }
-    case $(lnk_icon "$links\\Meld.lnk") in "$meld_dir\\share\\icons\\org.gnome.Meld.ico,0") ;; *) echo "icon: $(lnk_icon "$links\\Meld.lnk")"; return 1 ;; esac
-}
-check "it gets the windowless shim and a shortcut, with Meld's icon" meld_shortcut
+check "its log has no Python traceback" sh -c "! grep -q Traceback '$QUASIDOCK_HOME\\data\\$MELD\\share\\meld.log'"
 
 # The published apps in the store, GTK 4's included if they're there, are on
 # the same builds of GTK's runtimes: each has the installed runtime's layer
 # (a runtime has one) among its own, so a store with all of them deploys
 # each runtime once.
-layers_of() { grep -o '"digest": *"sha256:[0-9a-f]*"' "$ZIGSAW_HOME\\blobs\\sha256\\$(manifest_of "$1" | cut -d: -f2)" | tail -n +2 | grep -o 'sha256:[0-9a-f]*'; }
+layers_of() { grep -o '"digest": *"sha256:[0-9a-f]*"' "$QUASIDOCK_HOME\\blobs\\sha256\\$(manifest_of "$1" | cut -d: -f2)" | tail -n +2 | grep -o 'sha256:[0-9a-f]*'; }
 published_ids=$(for name in $(grep -v '^#' "$root\\scripts\\published-recipes.txt" | tr -d '\r'); do
     grep -o '"id": *"[^"]*"' "$root\\recipes\\$name" | head -1 | cut -d'"' -f4
 done)
@@ -370,9 +323,6 @@ one_build() {
 check "the published apps here are all on the same build of each GTK runtime" one_build
 
 cd "$root" || exit 1
-# The scratch key, and the one above it unless another run has one in it.
-reg delete "HKCU\\$classes" /f >/dev/null 2>&1
-reg query 'HKCU\Software\ZigsawTest' 2>/dev/null | grep -q . || reg delete 'HKCU\Software\ZigsawTest' /f >/dev/null 2>&1
 rm -rf "$docs"
 for id in $installed_here; do z rm --delete-data "$id" >/dev/null 2>&1; done
 z rm --delete-data $APP >/dev/null 2>&1

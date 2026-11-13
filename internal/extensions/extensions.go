@@ -5,8 +5,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/zigsaw-io/zigsaw/internal/oci"
-	"github.com/zigsaw-io/zigsaw/internal/store"
+	"github.com/quasidock/quasidock/internal/oci"
+	"github.com/quasidock/quasidock/internal/store"
 )
 
 type Point struct {

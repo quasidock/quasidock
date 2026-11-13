@@ -11,11 +11,11 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/zigsaw-io/zigsaw/internal/net"
-	"github.com/zigsaw-io/zigsaw/internal/oci"
-	"github.com/zigsaw-io/zigsaw/internal/override"
-	"github.com/zigsaw-io/zigsaw/internal/store"
-	"github.com/zigsaw-io/zigsaw/internal/win32"
+	"github.com/quasidock/quasidock/internal/net"
+	"github.com/quasidock/quasidock/internal/oci"
+	"github.com/quasidock/quasidock/internal/override"
+	"github.com/quasidock/quasidock/internal/store"
+	"github.com/quasidock/quasidock/internal/win32"
 )
 
 type Ports struct {
@@ -414,14 +414,14 @@ func RelayExe(st *store.Store) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	src := filepath.Join(filepath.Dir(self), "zigsaw-relay.exe")
+	src := filepath.Join(filepath.Dir(self), "quasidock-relay.exe")
 	bytes, err := os.ReadFile(src)
 	if err != nil {
 		return "", fmt.Errorf("reading %s: %w", src, err)
 	}
 
 	h := sha256.Sum256(bytes)
-	name := fmt.Sprintf("zigsaw-relay-%s.exe", hex.EncodeToString(h[:4]))
+	name := fmt.Sprintf("quasidock-relay-%s.exe", hex.EncodeToString(h[:4]))
 	dest := filepath.Join(st.Root, "relay", name)
 
 	if _, err := os.Stat(dest); err == nil {
@@ -447,10 +447,10 @@ func Prune(st *store.Store, installed []string) error {
 	self, _ := os.Executable()
 	var currentName string
 	if self != "" {
-		src := filepath.Join(filepath.Dir(self), "zigsaw-relay.exe")
+		src := filepath.Join(filepath.Dir(self), "quasidock-relay.exe")
 		if b, err := os.ReadFile(src); err == nil {
 			h := sha256.Sum256(b)
-			currentName = fmt.Sprintf("zigsaw-relay-%s.exe", hex.EncodeToString(h[:4]))
+			currentName = fmt.Sprintf("quasidock-relay-%s.exe", hex.EncodeToString(h[:4]))
 		}
 	}
 

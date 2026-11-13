@@ -6,11 +6,11 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/zigsaw-io/zigsaw/internal/format"
-	"github.com/zigsaw-io/zigsaw/internal/oci"
-	"github.com/zigsaw-io/zigsaw/internal/registry"
-	"github.com/zigsaw-io/zigsaw/internal/remote"
-	"github.com/zigsaw-io/zigsaw/internal/store"
+	"github.com/quasidock/quasidock/internal/format"
+	"github.com/quasidock/quasidock/internal/oci"
+	"github.com/quasidock/quasidock/internal/registry"
+	"github.com/quasidock/quasidock/internal/remote"
+	"github.com/quasidock/quasidock/internal/store"
 )
 
 func PrintInfo(st *store.Store, envRegistry, imageText string, verbose bool, w io.Writer) error {
@@ -146,25 +146,6 @@ func WriteContents(st *store.Store, w io.Writer, manifest oci.Manifest, cfg oci.
 	}
 	sort.Strings(cmds)
 	WriteLine(w, "commands", strings.Join(cmds, ", "))
-
-	if len(cfg.Shortcuts) > 0 {
-		var sNames []string
-		for k := range cfg.Shortcuts {
-			sNames = append(sNames, fmt.Sprintf("%q", k))
-		}
-		sort.Strings(sNames)
-		WriteLine(w, "shortcuts", strings.Join(sNames, ", "))
-	}
-
-	var opens []string
-	for k := range cfg.Associations {
-		opens = append(opens, k)
-	}
-	for k := range cfg.Schemes {
-		opens = append(opens, k+":")
-	}
-	sort.Strings(opens)
-	WriteLine(w, "opens", strings.Join(opens, ", "))
 
 	if len(cfg.Permissions.Services) > 0 {
 		WriteLine(w, "serves", oci.DescribeServices(cfg.Permissions.Services))

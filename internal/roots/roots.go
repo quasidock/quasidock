@@ -12,8 +12,8 @@ import (
 	"syscall"
 	"unsafe"
 
-	"github.com/zigsaw-io/zigsaw/internal/store"
-	"github.com/zigsaw-io/zigsaw/internal/win32"
+	"github.com/quasidock/quasidock/internal/store"
+	"github.com/quasidock/quasidock/internal/win32"
 )
 
 const serverAuth = "1.3.6.1.5.5.7.3.1"

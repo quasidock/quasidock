@@ -14,20 +14,20 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/zigsaw-io/zigsaw/internal/context"
-	"github.com/zigsaw-io/zigsaw/internal/estargz"
-	"github.com/zigsaw-io/zigsaw/internal/format"
-	"github.com/zigsaw-io/zigsaw/internal/oci"
-	"github.com/zigsaw-io/zigsaw/internal/prompt"
-	"github.com/zigsaw-io/zigsaw/internal/registry"
-	"github.com/zigsaw-io/zigsaw/internal/signature"
-	"github.com/zigsaw-io/zigsaw/internal/store"
-	"github.com/zigsaw-io/zigsaw/internal/trust"
+	"github.com/quasidock/quasidock/internal/context"
+	"github.com/quasidock/quasidock/internal/estargz"
+	"github.com/quasidock/quasidock/internal/format"
+	"github.com/quasidock/quasidock/internal/oci"
+	"github.com/quasidock/quasidock/internal/prompt"
+	"github.com/quasidock/quasidock/internal/registry"
+	"github.com/quasidock/quasidock/internal/signature"
+	"github.com/quasidock/quasidock/internal/store"
+	"github.com/quasidock/quasidock/internal/trust"
 )
 
 const (
 	DefaultRegistry = "ghcr.io/zigsaw-io"
-	RegistryVar     = "ZIGSAW_REGISTRY"
+	RegistryVar     = "QUASIDOCK_REGISTRY"
 	MaxBlobWorkers  = 4
 	MinReuseTenths  = 1
 )
@@ -135,7 +135,7 @@ func Classify(ref registry.Reference, data []byte) (*ClassifiedManifest, error) 
 			Manifests []IndexEntry `json:"manifests"`
 		}
 		if err := json.Unmarshal(data, &index); err != nil {
-			return nil, fmt.Errorf("%s returned an index zigsaw can't read: %w", ref, err)
+			return nil, fmt.Errorf("%s returned an index quasidock can't read: %w", ref, err)
 		}
 		return &ClassifiedManifest{
 			IsIndex:  true,
@@ -146,7 +146,7 @@ func Classify(ref registry.Reference, data []byte) (*ClassifiedManifest, error) 
 
 	var m oci.Manifest
 	if err := json.Unmarshal(data, &m); err != nil {
-		return nil, fmt.Errorf("%s returned a manifest zigsaw can't read: %w", ref, err)
+		return nil, fmt.Errorf("%s returned a manifest quasidock can't read: %w", ref, err)
 	}
 	return &ClassifiedManifest{
 		IsIndex:  false,
@@ -225,7 +225,7 @@ func ResolveImage(reg *registry.Registry, ref registry.Reference, unless string)
 
 	entry := PickPlatform(cls.Index)
 	if entry == nil {
-		return nil, fmt.Errorf("%s is a multi-platform index %s; none for windows/amd64, which zigsaw runs", ref, DescribePlatforms(cls.Index))
+		return nil, fmt.Errorf("%s is a multi-platform index %s; none for windows/amd64, which quasidock runs", ref, DescribePlatforms(cls.Index))
 	}
 	if unless != "" && unless == entry.Digest {
 		return nil, nil
@@ -244,7 +244,7 @@ func ResolveImage(reg *registry.Registry, ref registry.Reference, unless string)
 		return nil, err
 	}
 	if childCls.IsIndex {
-		return nil, fmt.Errorf("%s: its entry for windows/amd64 is an index too, which zigsaw doesn't follow", ref)
+		return nil, fmt.Errorf("%s: its entry for windows/amd64 is an index too, which quasidock doesn't follow", ref)
 	}
 
 	return &ResolvedImage{
@@ -546,7 +546,7 @@ func FetchInfo(st *store.Store, envRegistry, imageText string, verbose bool) (In
 	}
 
 	if !oci.IsConfigType(resolved.Manifest.Config.MediaType) {
-		return Info{}, fmt.Errorf("%s is not a zigsaw app (its config type is %s; it may be a container image)", target.Ref, resolved.Manifest.Config.MediaType)
+		return Info{}, fmt.Errorf("%s is not a quasidock app (its config type is %s; it may be a container image)", target.Ref, resolved.Manifest.Config.MediaType)
 	}
 
 	// Read or download config
@@ -558,7 +558,7 @@ func FetchInfo(st *store.Store, envRegistry, imageText string, verbose bool) (In
 		}
 	}
 	if cfgBytes == nil {
-		tmpPath := filepath.Join(os.TempDir(), "zigsaw-cfg-"+cfgHex+".json")
+		tmpPath := filepath.Join(os.TempDir(), "quasidock-cfg-"+cfgHex+".json")
 		h, err := reg.DownloadBlob(resolved.Manifest.Config, tmpPath)
 		if err != nil {
 			return Info{}, err
@@ -976,27 +976,6 @@ const (
 	ConsentGiven
 )
 
-// Change indicates the lifecycle change being confirmed.
-type Change int
-
-const (
-	KindInstall Change = iota
-	KindUpdate
-	KindRollback
-)
-
-type ToldAccess struct {
-	Version string
-	Access  oci.AccessInfo
-}
-
-type FetchOptions struct {
-	Unless    string
-	Installed *ToldAccess
-	Consent   Consent
-	Lazy      bool
-}
-
 func formatBytes(b uint64) string {
 	const unit = 1024
 	if b < unit {
@@ -1081,25 +1060,6 @@ func WriteContents(st *store.Store, w io.Writer, manifest oci.Manifest, cfg oci.
 	sort.Strings(cmds)
 	WriteLine(w, "commands", strings.Join(cmds, ", "))
 
-	if len(cfg.Shortcuts) > 0 {
-		var sNames []string
-		for k := range cfg.Shortcuts {
-			sNames = append(sNames, fmt.Sprintf("%q", k))
-		}
-		sort.Strings(sNames)
-		WriteLine(w, "shortcuts", strings.Join(sNames, ", "))
-	}
-
-	var opens []string
-	for k := range cfg.Associations {
-		opens = append(opens, k)
-	}
-	for k := range cfg.Schemes {
-		opens = append(opens, k+":")
-	}
-	sort.Strings(opens)
-	WriteLine(w, "opens", strings.Join(opens, ", "))
-
 	if len(cfg.Permissions.Services) > 0 {
 		WriteLine(w, "serves", oci.DescribeServices(cfg.Permissions.Services))
 	}
@@ -1131,52 +1091,16 @@ func WriteLine(w io.Writer, label, value string) {
 	}
 }
 
-func WriteAddedAccess(w io.Writer, added oci.AccessInfo) {
-	if added.Permissions.Sandbox != "" || added.Permissions.Network || len(added.Permissions.Filesystem) > 0 {
-		WriteLine(w, "permits", oci.DescribePermissions(added.Permissions))
-	}
-	if len(added.Uses) > 0 {
-		WriteLine(w, "uses", oci.DescribeUses(added.Uses))
-	}
-	if len(added.Registry) > 0 {
-		WriteLine(w, "keeps", fmt.Sprintf("%s with its data", oci.DescribeRegistry(added.Registry)))
-	}
-}
-
-func AgreeTo(ctx *context.Context, manifest oci.Manifest, cfg oci.AppConfig, installed *ToldAccess, consent Consent, change Change) error {
+func AgreeTo(ctx *context.Context, manifest oci.Manifest, cfg oci.AppConfig, consent Consent) error {
 	var sb strings.Builder
-	if installed != nil {
-		added := oci.AddedAccess(installed.Access, oci.AccessInfoOf(cfg))
-		if added.IsEmpty() {
-			permits := oci.DescribePermissions(cfg.Permissions)
-			was := oci.DescribePermissions(installed.Access.Permissions)
-			if permits != was {
-				context.Note("%s %s now permits %s; it permitted %s", cfg.ID, cfg.Version, permits, was)
-			}
-			return nil
-		}
-		fmt.Fprintf(&sb, "%s %s may reach more than %s:\n", cfg.ID, cfg.Version, installed.Version)
-		WriteAddedAccess(&sb, added)
-	} else {
-		WriteName(&sb, cfg)
-		WriteContents(ctx.Store, &sb, manifest, cfg)
-	}
+	WriteName(&sb, cfg)
+	WriteContents(ctx.Store, &sb, manifest, cfg)
 	context.PrintStderr("%s", sb.String())
 	if consent != ConsentAsk {
 		return nil
 	}
 
-	question := "Install it?"
-	switch change {
-	case KindInstall:
-		question = "Install it?"
-	case KindUpdate:
-		question = "Update it?"
-	case KindRollback:
-		question = "Go back to it?"
-	}
-
-	ans, err := prompt.AskYesNo(ctx, question)
+	ans, err := prompt.AskYesNo(ctx, "Install it?")
 	if err != nil {
 		return err
 	}
@@ -1187,22 +1111,13 @@ func AgreeTo(ctx *context.Context, manifest oci.Manifest, cfg oci.AppConfig, ins
 	if ans == prompt.AnswerNone {
 		why = ": nothing answered whether to go on. Run it at a console, or add --yes"
 	}
-	switch change {
-	case KindInstall:
-		return fmt.Errorf("%s %s wasn't installed%s", cfg.ID, cfg.Version, why)
-	case KindUpdate:
-		return fmt.Errorf("%s %s wasn't updated%s", cfg.ID, cfg.Version, why)
-	case KindRollback:
-		return fmt.Errorf("%s stays at %s%s", cfg.ID, installed.Version, why)
-	default:
-		return fmt.Errorf("operation cancelled%s", why)
-	}
+	return fmt.Errorf("%s %s wasn't installed%s", cfg.ID, cfg.Version, why)
 }
 
 func ManifestDigest(ctx *context.Context, imageText string) (string, error) {
 	envReg := ""
 	if ctx != nil && ctx.Env != nil {
-		envReg = ctx.Env["ZIGSAW_REGISTRY"]
+		envReg = ctx.Env["QUASIDOCK_REGISTRY"]
 	}
 	target, err := Resolve(envReg, imageText)
 	if err != nil {
@@ -1229,7 +1144,7 @@ func ManifestDigest(ctx *context.Context, imageText string) (string, error) {
 func SignaturePayload(ctx *context.Context, imageText string) ([]byte, error) {
 	envReg := ""
 	if ctx != nil && ctx.Env != nil {
-		envReg = ctx.Env["ZIGSAW_REGISTRY"]
+		envReg = ctx.Env["QUASIDOCK_REGISTRY"]
 	}
 	target, err := Resolve(envReg, imageText)
 	if err != nil {
@@ -1246,7 +1161,7 @@ func SignaturePayload(ctx *context.Context, imageText string) ([]byte, error) {
 func PushSignature(ctx *context.Context, imageText string, payload []byte, text []byte) error {
 	envReg := ""
 	if ctx != nil && ctx.Env != nil {
-		envReg = ctx.Env["ZIGSAW_REGISTRY"]
+		envReg = ctx.Env["QUASIDOCK_REGISTRY"]
 	}
 	target, err := Resolve(envReg, imageText)
 	if err != nil {
@@ -1254,7 +1169,7 @@ func PushSignature(ctx *context.Context, imageText string, payload []byte, text 
 	}
 	parsed, err := signature.ParsePayload(payload)
 	if err != nil {
-		return errors.New("that isn't what `zigsaw signature payload` prints")
+		return errors.New("that isn't what `quasidock signature payload` prints")
 	}
 	repo := fmt.Sprintf("%s/%s", target.Ref.Host, target.Ref.Repository)
 	if !strings.EqualFold(parsed.Repository, repo) {
@@ -1344,7 +1259,7 @@ func Push(ctx *context.Context, id string, imageText string, opts PushOptions) e
 	}
 	envReg := ""
 	if ctx != nil && ctx.Env != nil {
-		envReg = ctx.Env["ZIGSAW_REGISTRY"]
+		envReg = ctx.Env["QUASIDOCK_REGISTRY"]
 	}
 	target, err := Resolve(envReg, targetText)
 	if err != nil {
@@ -1377,7 +1292,7 @@ func Push(ctx *context.Context, id string, imageText string, opts PushOptions) e
 	for _, l := range image.Manifest.Layers {
 		hex := oci.DigestHex(l.Digest)
 		if ctx.Store.IsLazy(hex) && !store.Exists(ctx.Store.BlobPath(hex)) {
-			return fmt.Errorf("%s is still being downloaded (`zigsaw list` says how far): push it once it's in", id)
+			return fmt.Errorf("%s is still being downloaded (`quasidock list` says how far): push it once it's in", id)
 		}
 	}
 

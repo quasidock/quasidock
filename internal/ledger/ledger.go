@@ -5,13 +5,13 @@ import (
 	"os"
 	"strings"
 
-	"github.com/zigsaw-io/zigsaw/internal/acl"
-	"github.com/zigsaw-io/zigsaw/internal/regkey"
-	"github.com/zigsaw-io/zigsaw/internal/store"
-	"github.com/zigsaw-io/zigsaw/internal/win32"
+	"github.com/quasidock/quasidock/internal/acl"
+	"github.com/quasidock/quasidock/internal/regkey"
+	"github.com/quasidock/quasidock/internal/store"
+	"github.com/quasidock/quasidock/internal/win32"
 )
 
-const DefaultKey = `Software\Zigsaw\Grants`
+const DefaultKey = `Software\Quasidock\Grants`
 
 type State int
 

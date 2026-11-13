@@ -19,7 +19,7 @@ tests/install/*.cmd text eol=crlf
 *.ps1 text eol=lf
 LICENSE text eol=lf
 
-# Built into zigsaw's programs: without this, a runner's checkout
+# Built into quasidock's programs: without this, a runner's checkout
 # (core.autocrlf=true) gave releases up to v0.69.0 a CRLF manifest, and a build
 # of the tag on a checkout that keeps LF differed by it.
 src/windows/* text eol=lf

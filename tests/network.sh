@@ -11,11 +11,11 @@
 # leaves the service unpublished, and the app running. In an AppContainer, a
 # run with the network reaches a server on this machine, as its container is
 # exempt from loopback isolation while it goes; without the network, or with
-# ZIGSAW_LOOPBACK_EXEMPTION=0, it doesn't; `repair` takes back a killed
+# QUASIDOCK_LOOPBACK_EXEMPTION=0, it doesn't; `repair` takes back a killed
 # run's exemption, and one you made stays. Last, the probe's report: what
 # this Windows lets AppContainers do on the loopback, and over AF_UNIX.
 #
-#   bash tests/network.sh [path\to\zigsaw.exe]
+#   bash tests/network.sh [path\to\quasidock.exe]
 #
 # With LOG_DIR set, the report is also left there.
 
@@ -23,10 +23,10 @@ set -u
 export MSYS_NO_PATHCONV=1
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
-zigsaw=${1:-$root/zig-out/bin/zigsaw.exe}
+zigsaw=${1:-$root/zig-out/bin/quasidock.exe}
 work=$(cygpath -w "$(mktemp -d)")
-ZIGSAW_HOME="$work\\store"
-export ZIGSAW_HOME
+QUASIDOCK_HOME="$work\\store"
+export QUASIDOCK_HOME
 APP=test.netprobe
 RACE=test.netprobe.race
 
@@ -44,12 +44,12 @@ check() {
 }
 z() { timeout 120 "$zigsaw" "$@"; }
 
-(cd "$root" && zig build netprobe) || { echo "building the network probe failed"; exit 1; }
+(cd "$root" && go run ./scripts/build.go netprobe) || { echo "building the network probe failed"; exit 1; }
 probe_dir="$work\\netprobe"
-mkdir -p "$probe_dir" && cp "$root\\zig-out\\test\\zigsaw-netprobe.exe" "$probe_dir\\"
+mkdir -p "$probe_dir" && cp "$root\\zig-out\\test\\quasidock-netprobe.exe" "$probe_dir\\"
 # The report runs the probe in AppContainers of its own.
 icacls "$probe_dir" /grant '*S-1-15-2-1:(OI)(CI)RX' >/dev/null || { echo "granting the probe to AppContainers failed"; exit 1; }
-probe="$probe_dir\\zigsaw-netprobe.exe"
+probe="$probe_dir\\quasidock-netprobe.exe"
 
 # The ports the service is on: the app's config's, and two others. Then
 # the port of a server on this machine, outside zigsaw, which the app uses,
@@ -62,7 +62,7 @@ host_port2=$((declared + 1000))
 
 # recipe <id> <command args> <more>: the probe as an app.
 recipe() {
-    printf '{ "id": "%s", "version": "1", "command": "zigsaw-netprobe.exe", "args": [%s],%s\n  "modules": [{ "name": "probe", "sources": [{ "path": "zigsaw-netprobe.exe" }] }] }\n' \
+    printf '{ "id": "%s", "version": "1", "command": "quasidock-netprobe.exe", "args": [%s],%s\n  "modules": [{ "name": "probe", "sources": [{ "path": "quasidock-netprobe.exe" }] }] }\n' \
         "$1" "$2" "$3" >"$probe_dir\\$1.json"
     z build "$probe_dir\\$1.json" >/dev/null 2>&1 || { z build "$probe_dir\\$1.json"; exit 1; }
 }
@@ -73,12 +73,12 @@ recipe $APP '"serve", "${listen:echo}"' '
     "uses": [{ "name": "upstream", "port": '$host_port' }]
   },
   "exports": {
-    "netprobe-serve": { "command": "zigsaw-netprobe.exe", "args": ["serve", "${listen:echo}"] },
-    "netprobe-ping": { "command": "zigsaw-netprobe.exe", "args": ["ping", "${listen:echo}"] },
-    "netprobe-upstream": { "command": "zigsaw-netprobe.exe", "args": ["ping", "${uses:upstream}"] },
-    "netprobe-env": { "command": "zigsaw-netprobe.exe", "args": ["env"] }
+    "netprobe-serve": { "command": "quasidock-netprobe.exe", "args": ["serve", "${listen:echo}"] },
+    "netprobe-ping": { "command": "quasidock-netprobe.exe", "args": ["ping", "${listen:echo}"] },
+    "netprobe-upstream": { "command": "quasidock-netprobe.exe", "args": ["ping", "${uses:upstream}"] },
+    "netprobe-env": { "command": "quasidock-netprobe.exe", "args": ["env"] }
   },'
-recipe $RACE '"env", "ZIGSAW_ID"' ' "exports": {},'
+recipe $RACE '"env", "QUASIDOCK_ID"' ' "exports": {},'
 
 # --- Proxies -----------------------------------------------------------------
 
@@ -175,7 +175,7 @@ internal_port() {
         { echo "got $got"; return 1; }
     again=$(ports --sandbox=appcontainer)
     [ "$again" = "$got" ] || { echo "first $got, then $again"; return 1; }
-    grep -qx "echo $listen" "$ZIGSAW_HOME\\ports\\$APP.txt" || { echo "not kept: $(cat "$ZIGSAW_HOME\\ports\\$APP.txt")"; return 1; }
+    grep -qx "echo $listen" "$QUASIDOCK_HOME\\ports\\$APP.txt" || { echo "not kept: $(cat "$QUASIDOCK_HOME\\ports\\$APP.txt")"; return 1; }
 }
 
 for sandbox in soft low appcontainer; do
@@ -242,19 +242,19 @@ sleep 0.5
 
 # exempt: whether Windows lists the app's container as exempt from loopback
 # isolation.
-exempt() { CheckNetIsolation.exe LoopbackExempt -s | tr -d '\r' | grep -qx "    Name: zigsaw.$APP"; }
+exempt() { CheckNetIsolation.exe LoopbackExempt -s | tr -d '\r' | grep -qx "    Name: quasidock.$APP"; }
 # pings <expected> <run options...>: a run of the app pings the server, and
 # the probe says <expected>.
 pings() {
     local expected=$1 out
     shift
-    out=$(z run "$@" --command=zigsaw-netprobe.exe $APP ping $host_port 2>&1 | tr -d '\r')
+    out=$(z run "$@" --command=quasidock-netprobe.exe $APP ping $host_port 2>&1 | tr -d '\r')
     [ "$out" = "$expected" ] || { echo "got $out"; return 1; }
 }
 # waiting <run options...>: a run of the app that waits 3 s, in the
 # background; $waiter is its zigsaw.
 waiting() {
-    "$zigsaw" run "$@" --command=zigsaw-netprobe.exe $APP wait 3000 >/dev/null 2>&1 &
+    "$zigsaw" run "$@" --command=quasidock-netprobe.exe $APP wait 3000 >/dev/null 2>&1 &
     waiter=$!
 }
 # becomes <exempt|!exempt>: whether the container is (or isn't) exempt within 3 s.
@@ -288,12 +288,12 @@ without_network() {
 check "without the network, it doesn't, and isn't exempt" without_network
 switched_off() {
     (
-        export ZIGSAW_LOOPBACK_EXEMPTION=0
+        export QUASIDOCK_LOOPBACK_EXEMPTION=0
         pings dropped --sandbox=appcontainer --share=network
     ) || return 1
     ! exempt || { echo "exempt"; return 1; }
 }
-check "ZIGSAW_LOOPBACK_EXEMPTION=0: not even with the network" switched_off
+check "QUASIDOCK_LOOPBACK_EXEMPTION=0: not even with the network" switched_off
 # A zigsaw that's killed can't take the exemption back: `repair` does.
 killed() {
     waiting --sandbox=appcontainer --share=network
@@ -303,7 +303,7 @@ killed() {
     wait $waiter 2>/dev/null
     sleep 0.5
     exempt || { echo "not exempt after zigsaw was killed"; return 1; }
-    grep -qx loopback "$ZIGSAW_HOME\\grants\\$APP.txt" || { echo "not recorded"; return 1; }
+    grep -qx loopback "$QUASIDOCK_HOME\\grants\\$APP.txt" || { echo "not recorded"; return 1; }
     z repair >/dev/null 2>&1
     ! exempt || { echo "still exempt after repair"; return 1; }
 }
@@ -351,12 +351,12 @@ check "appcontainer, not exempt: it's a port of the relay's, from which zigsaw f
 check "  without the network, as the app has none, but not to the port itself" pings dropped --sandbox=appcontainer
 forwarded_switched_off() {
     (
-        export ZIGSAW_LOOPBACK_EXEMPTION=0
+        export QUASIDOCK_LOOPBACK_EXEMPTION=0
         reaches_upstream connects --sandbox=appcontainer --share=network
     ) || return 1
     ! exempt || { echo "exempt"; return 1; }
 }
-check "  and with the network, under ZIGSAW_LOOPBACK_EXEMPTION=0" forwarded_switched_off
+check "  and with the network, under QUASIDOCK_LOOPBACK_EXEMPTION=0" forwarded_switched_off
 
 kill $host_server 2>/dev/null
 wait $host_server 2>/dev/null

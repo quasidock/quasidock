@@ -9,10 +9,10 @@ import (
 	"strings"
 	"unicode/utf16"
 
-	"github.com/zigsaw-io/zigsaw/internal/context"
-	"github.com/zigsaw-io/zigsaw/internal/environment"
-	"github.com/zigsaw-io/zigsaw/internal/process"
-	"github.com/zigsaw-io/zigsaw/internal/store"
+	"github.com/quasidock/quasidock/internal/context"
+	"github.com/quasidock/quasidock/internal/environment"
+	"github.com/quasidock/quasidock/internal/process"
+	"github.com/quasidock/quasidock/internal/store"
 )
 
 type MSVCToolchain struct {

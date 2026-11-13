@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/zigsaw-io/zigsaw/internal/context"
-	"github.com/zigsaw-io/zigsaw/internal/lazy"
-	"github.com/zigsaw-io/zigsaw/internal/oci"
-	"github.com/zigsaw-io/zigsaw/internal/remote"
+	"github.com/quasidock/quasidock/internal/context"
+	"github.com/quasidock/quasidock/internal/lazy"
+	"github.com/quasidock/quasidock/internal/oci"
+	"github.com/quasidock/quasidock/internal/remote"
 )
 
 type DependencyKind string
@@ -55,7 +55,7 @@ func (d *Dependency) Runtime() oci.Runtime {
 func ResolveDependency(ctx *context.Context, recipePath string, kind DependencyKind, alias, reference string) (*Dependency, error) {
 	envRegistry := ""
 	if ctx != nil && ctx.Env != nil {
-		envRegistry = ctx.Env["ZIGSAW_REGISTRY"]
+		envRegistry = ctx.Env["QUASIDOCK_REGISTRY"]
 	}
 
 	target, err := remote.Resolve(envRegistry, reference)
@@ -98,7 +98,7 @@ func ResolveDependency(ctx *context.Context, recipePath string, kind DependencyK
 		return nil, fmt.Errorf("%s: %s %s: %s is %s, not %s", recipePath, kind, alias, digest, config.ID, *target.AppID)
 	}
 	if kind == DependencyRuntime && len(config.Runtimes) > 0 {
-		return nil, fmt.Errorf("%s: %s %s is %s, which has runtimes of its own; zigsaw doesn't support that", recipePath, kind, alias, config.ID)
+		return nil, fmt.Errorf("%s: %s %s is %s, which has runtimes of its own; quasidock doesn't support that", recipePath, kind, alias, config.ID)
 	}
 
 	_ = ctx.Store.MarkBuildImage(digest)
@@ -113,7 +113,7 @@ func ResolveDependency(ctx *context.Context, recipePath string, kind DependencyK
 func failUnpinned(ctx *context.Context, recipePath string, kind DependencyKind, alias, reference string, target remote.Target) error {
 	envRegistry := ""
 	if ctx != nil && ctx.Env != nil {
-		envRegistry = ctx.Env["ZIGSAW_REGISTRY"]
+		envRegistry = ctx.Env["QUASIDOCK_REGISTRY"]
 	}
 
 	digest := ""
@@ -136,7 +136,7 @@ func failUnpinned(ctx *context.Context, recipePath string, kind DependencyKind, 
 		key = "image"
 	}
 	if digest == "" {
-		return fmt.Errorf("%s: %s %s %q must be pinned with \"@sha256:...\", and zigsaw can't find the digest: build or pull the image first", recipePath, kind, alias, reference)
+		return fmt.Errorf("%s: %s %s %q must be pinned with \"@sha256:...\", and quasidock can't find the digest: build or pull the image first", recipePath, kind, alias, reference)
 	}
 	return fmt.Errorf("%s: %s %s isn't pinned to a digest. Pin it with:\n  %q: %q@%s", recipePath, kind, alias, key, reference, digest)
 }

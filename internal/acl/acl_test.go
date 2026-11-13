@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/zigsaw-io/zigsaw/internal/acl"
-	"github.com/zigsaw-io/zigsaw/internal/win32"
+	"github.com/quasidock/quasidock/internal/acl"
+	"github.com/quasidock/quasidock/internal/win32"
 )
 
 func TestCurrentUserSid(t *testing.T) {

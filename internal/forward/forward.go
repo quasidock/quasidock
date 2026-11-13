@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"unsafe"
 
-	"github.com/zigsaw-io/zigsaw/internal/net"
-	"github.com/zigsaw-io/zigsaw/internal/win32"
+	"github.com/quasidock/quasidock/internal/net"
+	"github.com/quasidock/quasidock/internal/win32"
 )
 
 type Forwards struct {

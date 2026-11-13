@@ -10,12 +10,12 @@ import (
 	"syscall"
 	"unsafe"
 
-	"github.com/zigsaw-io/zigsaw/internal/environment"
-	"github.com/zigsaw-io/zigsaw/internal/oci"
-	"github.com/zigsaw-io/zigsaw/internal/override"
-	"github.com/zigsaw-io/zigsaw/internal/regkey"
-	"github.com/zigsaw-io/zigsaw/internal/store"
-	"github.com/zigsaw-io/zigsaw/internal/win32"
+	"github.com/quasidock/quasidock/internal/environment"
+	"github.com/quasidock/quasidock/internal/oci"
+	"github.com/quasidock/quasidock/internal/override"
+	"github.com/quasidock/quasidock/internal/regkey"
+	"github.com/quasidock/quasidock/internal/store"
+	"github.com/quasidock/quasidock/internal/win32"
 )
 
 type Grant struct {
@@ -128,14 +128,14 @@ func Apply(st *store.Store, dataDir string, env []environment.Var, granted []Gra
 	}
 
 	if len(leftOut) > 0 {
-		fmt.Fprintf(os.Stderr, "note: left out your %s: this store, %s, isn't your default one, so its apps don't get your real folders. `zigsaw override --global --real-folders` lets them\n",
+		fmt.Fprintf(os.Stderr, "note: left out your %s: this store, %s, isn't your default one, so its apps don't get your real folders. `quasidock override --global --real-folders` lets them\n",
 			strings.Join(leftOut, ", "), st.Root)
 	}
 	return out, nil
 }
 
 func applyOne(st *store.Store, dataDir string, env []environment.Var, folder oci.UserFolder, granted []Grant, out *[]HostPath, leftOut *[]string, verbose bool) error {
-	hook := os.Getenv("ZIGSAW_USER_FOLDERS")
+	hook := os.Getenv("QUASIDOCK_USER_FOLDERS")
 	appP := AppPath(folder, env, hook)
 	inData := IsInside(appP, dataDir)
 
@@ -179,7 +179,7 @@ func applyOne(st *store.Store, dataDir string, env []environment.Var, folder oci
 	}
 
 	if IsInside(dataDir, host) {
-		fmt.Fprintf(os.Stderr, "note: the app's data directory is in your %s folder, %s, which zigsaw won't give it\n", folder, host)
+		fmt.Fprintf(os.Stderr, "note: the app's data directory is in your %s folder, %s, which quasidock won't give it\n", folder, host)
 		if inData {
 			_ = Unlink(appP)
 		}
@@ -195,11 +195,11 @@ func applyOne(st *store.Store, dataDir string, env []environment.Var, folder oci
 		return nil
 	}
 	if !inData {
-		fmt.Fprintf(os.Stderr, "note: the app looks for your %s folder at %s, which zigsaw can't link to %s\n", folder, appP, host)
+		fmt.Fprintf(os.Stderr, "note: the app looks for your %s folder at %s, which quasidock can't link to %s\n", folder, appP, host)
 		return nil
 	}
 	if strings.HasPrefix(host, `\\`) {
-		fmt.Fprintf(os.Stderr, "note: %s is on the network, and zigsaw can't link %s to it\n", host, appP)
+		fmt.Fprintf(os.Stderr, "note: %s is on the network, and quasidock can't link %s to it\n", host, appP)
 		return nil
 	}
 
@@ -211,12 +211,12 @@ func HostPathOf(st *store.Store, folder oci.UserFolder) (string, error) {
 	if err != nil || !allowed {
 		return "", err
 	}
-	return HostPathFrom(folder, os.Getenv("ZIGSAW_USER_FOLDERS"))
+	return HostPathFrom(folder, os.Getenv("QUASIDOCK_USER_FOLDERS"))
 }
 
 func AllHostPaths(st *store.Store) []string {
 	var out []string
-	hook := os.Getenv("ZIGSAW_USER_FOLDERS")
+	hook := os.Getenv("QUASIDOCK_USER_FOLDERS")
 	profile := hook
 	if profile == "" {
 		profile = os.Getenv("USERPROFILE")
@@ -233,7 +233,7 @@ func AllHostPaths(st *store.Store) []string {
 }
 
 func MayUseFolders(st *store.Store) (bool, error) {
-	if os.Getenv("ZIGSAW_USER_FOLDERS") != "" {
+	if os.Getenv("QUASIDOCK_USER_FOLDERS") != "" {
 		return true, nil
 	}
 	ov, err := override.Load(st, "")
@@ -255,7 +255,7 @@ func IsDefaultStore(st *store.Store) bool {
 	if local == "" {
 		return false
 	}
-	defaultDir := filepath.Join(local, "zigsaw")
+	defaultDir := filepath.Join(local, "quasidock")
 	if SamePath(st.Root, defaultDir) {
 		return true
 	}

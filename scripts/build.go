@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/zigsaw-io/zigsaw/internal/version"
-	"github.com/zigsaw-io/zigsaw/internal/winres"
+	"github.com/quasidock/quasidock/internal/version"
+	"github.com/quasidock/quasidock/internal/winres"
 )
 
 type binaryTarget struct {
@@ -19,31 +19,28 @@ type binaryTarget struct {
 }
 
 var productionTargets = []binaryTarget{
-	{pkg: "./cmd/zigsaw", exe: "zigsaw.exe", gui: false, desc: "zigsaw"},
-	{pkg: "./cmd/zigsaw-shim", exe: "zigsaw-shim.exe", gui: false, desc: "zigsaw command shim"},
-	{pkg: "./cmd/zigsaw-shimw", exe: "zigsaw-shimw.exe", gui: true, desc: "zigsaw GUI command shim"},
-	{pkg: "./cmd/zigsaw-relay", exe: "zigsaw-relay.exe", gui: false, desc: "zigsaw service relay"},
-	{pkg: "./cmd/zigsaw-host", exe: "zigsaw-host.exe", gui: false, desc: "zigsaw host command"},
-	{pkg: "./cmd/zigsaw-notify", exe: "zigsaw-notify.exe", gui: true, desc: "zigsaw"},
+	{pkg: "./cmd/quasidock", exe: "quasidock.exe", gui: false, desc: "quasidock"},
+	{pkg: "./cmd/quasidock-relay", exe: "quasidock-relay.exe", gui: false, desc: "quasidock service relay"},
+	{pkg: "./cmd/quasidock-host", exe: "quasidock-host.exe", gui: false, desc: "quasidock host command"},
 }
 
 var testTargetMap = map[string]binaryTarget{
-	"ctrlc-driver": {pkg: "./tests/cmd/ctrlc", exe: "zigsaw-ctrlc.exe", gui: false},
-	"argv-echo":    {pkg: "./tests/cmd/argv", exe: "zigsaw-argv.exe", gui: false},
-	"acprobe":      {pkg: "./tests/cmd/acprobe", exe: "zigsaw-acprobe.exe", gui: false},
-	"netprobe":     {pkg: "./tests/cmd/netprobe", exe: "zigsaw-netprobe.exe", gui: false},
-	"hostprobe":    {pkg: "./tests/cmd/hostprobe", exe: "zigsaw-hostprobe.exe", gui: false},
-	"regprobe":     {pkg: "./tests/cmd/regprobe", exe: "zigsaw-regprobe.exe", gui: false},
-	"resetproxy":   {pkg: "./tests/cmd/resetproxy", exe: "zigsaw-resetproxy.exe", gui: false},
-	"p256sign":     {pkg: "./tests/cmd/p256sign", exe: "zigsaw-p256sign.exe", gui: false},
-	"winwait":      {pkg: "./tests/cmd/winwait", exe: "zigsaw-winwait.exe", gui: false},
-	"procprobe":    {pkg: "./tests/cmd/procprobe", exe: "zigsaw-procprobe.exe", gui: false},
-	"jobprobe":     {pkg: "./tests/cmd/jobprobe", exe: "zigsaw-jobprobe.exe", gui: false},
-	"asuser":       {pkg: "./tests/cmd/asuser", exe: "zigsaw-asuser.exe", gui: false},
-	"gui-fixture":  {pkg: "./tests/cmd/gui", exe: "zigsaw-gui.exe", gui: true},
-	"imports":      {pkg: "./tests/cmd/imports", exe: "zigsaw-imports.exe", gui: false},
-	"cred-helper":  {pkg: "./tests/cmd/credhelper", exe: "docker-credential-zigsaw-test.exe", gui: false},
-	"htpasswd":     {pkg: "./tests/cmd/htpasswd", exe: "zigsaw-htpasswd.exe", gui: false},
+	"ctrlc-driver": {pkg: "./tests/cmd/ctrlc", exe: "quasidock-ctrlc.exe", gui: false},
+	"argv-echo":    {pkg: "./tests/cmd/argv", exe: "quasidock-argv.exe", gui: false},
+	"acprobe":      {pkg: "./tests/cmd/acprobe", exe: "quasidock-acprobe.exe", gui: false},
+	"netprobe":     {pkg: "./tests/cmd/netprobe", exe: "quasidock-netprobe.exe", gui: false},
+	"hostprobe":    {pkg: "./tests/cmd/hostprobe", exe: "quasidock-hostprobe.exe", gui: false},
+	"regprobe":     {pkg: "./tests/cmd/regprobe", exe: "quasidock-regprobe.exe", gui: false},
+	"resetproxy":   {pkg: "./tests/cmd/resetproxy", exe: "quasidock-resetproxy.exe", gui: false},
+	"p256sign":     {pkg: "./tests/cmd/p256sign", exe: "quasidock-p256sign.exe", gui: false},
+	"winwait":      {pkg: "./tests/cmd/winwait", exe: "quasidock-winwait.exe", gui: false},
+	"procprobe":    {pkg: "./tests/cmd/procprobe", exe: "quasidock-procprobe.exe", gui: false},
+	"jobprobe":     {pkg: "./tests/cmd/jobprobe", exe: "quasidock-jobprobe.exe", gui: false},
+	"asuser":       {pkg: "./tests/cmd/asuser", exe: "quasidock-asuser.exe", gui: false},
+	"gui-fixture":  {pkg: "./tests/cmd/gui", exe: "quasidock-gui.exe", gui: true},
+	"imports":      {pkg: "./tests/cmd/imports", exe: "quasidock-imports.exe", gui: false},
+	"cred-helper":  {pkg: "./tests/cmd/credhelper", exe: "docker-credential-quasidock-test.exe", gui: false},
+	"htpasswd":     {pkg: "./tests/cmd/htpasswd", exe: "quasidock-htpasswd.exe", gui: false},
 }
 
 const manifestXML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -106,11 +103,11 @@ func main() {
 
 	// If run target is requested
 	if isRun {
-		exePath := filepath.Join(binDir, "zigsaw.exe")
+		exePath := filepath.Join(binDir, "quasidock.exe")
 		if _, err := os.Stat(exePath); err != nil {
-			// Build zigsaw first
+			// Build quasidock first
 			if err := buildBinary(productionTargets[0], binDir, strip); err != nil {
-				fmt.Fprintf(os.Stderr, "failed to build zigsaw: %v\n", err)
+				fmt.Fprintf(os.Stderr, "failed to build quasidock: %v\n", err)
 				os.Exit(1)
 			}
 		}

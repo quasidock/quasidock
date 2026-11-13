@@ -3,8 +3,8 @@ package peek
 import (
 	"testing"
 
-	"github.com/zigsaw-io/zigsaw/internal/oci"
-	"github.com/zigsaw-io/zigsaw/internal/remote"
+	"github.com/quasidock/quasidock/internal/oci"
+	"github.com/quasidock/quasidock/internal/remote"
 )
 
 func TestGetLayers(t *testing.T) {

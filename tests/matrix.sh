@@ -2,9 +2,9 @@
 # Compatibility matrix: runs real tools through the three sandboxes and
 # reports where behaviour differs from what zigsaw intends.
 #
-#   tests/matrix.sh [path\to\zigsaw.exe]
+#   tests/matrix.sh [path\to\quasidock.exe]
 #
-# Needs Git Bash and network access. Uses the store in %ZIGSAW_HOME% if set;
+# Needs Git Bash and network access. Uses the store in %QUASIDOCK_HOME% if set;
 # otherwise creates a temporary store and removes it (and the AppContainer
 # profiles it created) afterwards. Missing apps are built from recipes/.
 #
@@ -22,7 +22,7 @@
 #
 # Most known gaps are AppContainer failures caused by what Windows denies
 # AppContainers, which differs between Windows versions. The probe
-# (tests/acprobe.zig, built with `zig build acprobe`) checks those causes
+# (tests/cmd/acprobe, built with `go run ./scripts/build.go`) checks those causes
 # from inside an AppContainer first, and checks whose causes it finds lifted
 # are expected to pass, so a regression fails the matrix.
 #
@@ -36,20 +36,20 @@ set -u
 export MSYS_NO_PATHCONV=1 # Keep arguments like "/c" from being rewritten into paths.
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
-zigsaw=${1:-$root/zig-out/bin/zigsaw.exe}
+zigsaw=${1:-$root/zig-out/bin/quasidock.exe}
 
 own_store=false
-if [ -z "${ZIGSAW_HOME:-}" ]; then
-    ZIGSAW_HOME=$(cygpath -w "$(mktemp -d)")
+if [ -z "${QUASIDOCK_HOME:-}" ]; then
+    QUASIDOCK_HOME=$(cygpath -w "$(mktemp -d)")
     own_store=true
 fi
-export ZIGSAW_HOME
+export QUASIDOCK_HOME
 work=$(cygpath -w "$(mktemp -d)")
 # The user's folders apps may use (PDFBox's and PlantUML's Desktop,
 # Documents and Downloads) are these, not yours, which low and AppContainer
 # runs would label and grant.
 for f in Desktop Documents Downloads; do mkdir -p "$work\\folders\\$f"; done
-export ZIGSAW_USER_FOLDERS="$work\\folders"
+export QUASIDOCK_USER_FOLDERS="$work\\folders"
 
 BB=net.frippery.busybox
 RG=com.github.BurntSushi.ripgrep
@@ -229,7 +229,7 @@ expect ok "$(ac_if final-path-dos self-path-dos nul)" ok "npm install" run --com
 npm_global() {
     run --command=npm $NODE install -g --no-audit --no-fund semver@7 &&
         run --command=npm $NODE ls -g | grep -q semver &&
-        [ -f "$ZIGSAW_HOME\\data\\$NODE\\npm\\node_modules\\semver\\package.json" ]
+        [ -f "$QUASIDOCK_HOME\\data\\$NODE\\npm\\node_modules\\semver\\package.json" ]
 }
 # npm itself lstat()s each directory of the data directory's path.
 expect ok gap ok "npm install -g into data dir" npm_global
@@ -340,7 +340,7 @@ echo "$mismatches result(s) differ from the intended behaviour, and $gaps known 
 acprobe_rm "$zigsaw"
 if $own_store; then
     for id in $BB $RG $BAT $GIT $NODE $PY $ZIG $GO $FZF $ZOT $CMAKE $ZSTD; do "$zigsaw" rm --delete-data "$id" >/dev/null 2>&1; done
-    rm -rf "$ZIGSAW_HOME"
+    rm -rf "$QUASIDOCK_HOME"
 fi
 rm -rf "$work"
 exit $((mismatches > 0))

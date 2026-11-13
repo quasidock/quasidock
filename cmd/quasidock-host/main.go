@@ -1,13 +1,14 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/zigsaw-io/zigsaw/internal/process"
-	"github.com/zigsaw-io/zigsaw/internal/win32"
+	"github.com/quasidock/quasidock/internal/process"
+	"github.com/quasidock/quasidock/internal/win32"
 )
 
 func isBatch(path string) bool {
@@ -107,10 +108,9 @@ func find(path, pathext, program string) string {
 }
 
 func host() uint32 {
-	rawLine := win32.UTF16PtrToString(win32.GetCommandLineW())
-	argv, err := win32.CommandLineToArgvW(rawLine)
-	if err != nil || len(argv) < 2 {
-		_, _ = fmt.Fprintln(os.Stderr, "zigsaw-host: usage: zigsaw-host <program> [arguments]: runs one of your programs in your real environment")
+	argv := os.Args
+	if len(argv) < 2 {
+		_, _ = fmt.Fprintln(os.Stderr, "quasidock-host: usage: quasidock-host <program> [arguments]: runs one of your programs in your real environment")
 		return 2
 	}
 
@@ -119,7 +119,7 @@ func host() uint32 {
 
 	block, err := process.UserEnvironmentBlock()
 	if err != nil {
-		_, _ = fmt.Fprintf(os.Stderr, "zigsaw-host: cannot get user environment block: %v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "quasidock-host: cannot get user environment block: %v\n", err)
 		return 1
 	}
 
@@ -131,7 +131,7 @@ func host() uint32 {
 
 	exe := find(path, pathext, program)
 	if exe == "" {
-		_, _ = fmt.Fprintf(os.Stderr, "zigsaw-host: %s isn't on your PATH\n", program)
+		_, _ = fmt.Fprintf(os.Stderr, "quasidock-host: %s isn't on your PATH\n", program)
 		return 127
 	}
 
@@ -143,7 +143,11 @@ func host() uint32 {
 		cmd := root + "\\System32\\cmd.exe"
 		commandLine, err := process.BuildBatchCommandLine(cmd, exe, args)
 		if err != nil {
-			_, _ = fmt.Fprintf(os.Stderr, "zigsaw-host: %s is a batch file: %v\n", exe, err)
+			if errors.Is(err, process.ErrInvalidBatchArgument) {
+				_, _ = fmt.Fprintf(os.Stderr, "quasidock-host: %s is a batch file, and cmd.exe can't pass it an argument with a line break or a NUL character\n", exe)
+			} else {
+				_, _ = fmt.Fprintf(os.Stderr, "quasidock-host: %s is a batch file: %v\n", exe, err)
+			}
 			return 1
 		}
 		code, err := process.Spawn(process.SpawnSpec{

@@ -11,9 +11,9 @@
 # sources by hand first: this doesn't look for new versions (scripts/check-upstream.sh
 # does) or edit a source's URL or hash.
 #
-# Building needs ZIGSAW_HOME, the store to build in, set, so a forgetful run can't
-# build into your own store, and ZIGSAW, the zigsaw to build with, which defaults to
-# zig-out/bin/zigsaw.exe. A frozen copy keeps the build cache valid while you work:
+# Building needs QUASIDOCK_HOME, the store to build in, set, so a forgetful run can't
+# build into your own store, and QUASIDOCK, the quasidock to build with, which defaults to
+# zig-out/bin/quasidock.exe. A frozen copy keeps the build cache valid while you work:
 # its keys include the program.
 #
 # After each build, every recipe that pins it gets "<id>:<built version>@sha256:<digest>",
@@ -158,9 +158,9 @@ if [ "$mode" = plan ]; then
     exit 0
 fi
 
-[ -n "${ZIGSAW_HOME:-}" ] || die "set ZIGSAW_HOME to the store to build in"
-zigsaw=${ZIGSAW:-$root/zig-out/bin/zigsaw.exe}
-store=$(cygpath -u "$ZIGSAW_HOME" 2>/dev/null || echo "$ZIGSAW_HOME")
+[ -n "${QUASIDOCK_HOME:-}" ] || die "set QUASIDOCK_HOME to the store to build in"
+quasidock=${QUASIDOCK:-$root/zig-out/bin/quasidock.exe}
+store=$(cygpath -u "$QUASIDOCK_HOME" 2>/dev/null || echo "$QUASIDOCK_HOME")
 logs=${REBUILD_LOGS:-$(mktemp -d)}
 mkdir -p "$logs"
 
@@ -172,11 +172,11 @@ built_digest() {
 for recipe in "${order[@]}"; do
     start=$SECONDS
     log="$logs/${recipe//\//-}.log"
-    # zigsaw's a native program, so a path it understands. And from the logs' directory,
+    # quasidock's a native program, so a path it understands. And from the logs' directory,
     # as nothing a build does should land among the recipes.
     file=$recipes_dir/$recipe.json
     if command -v cygpath >/dev/null; then file=$(cygpath -w "$file"); fi
-    if ! (cd "$logs" && "$zigsaw" build "$file") >"$log" 2>&1; then
+    if ! (cd "$logs" && "$quasidock" build "$file") >"$log" 2>&1; then
         echo "$recipe FAILED after $((SECONDS - start))s, in $log:"
         tail -15 "$log"
         exit 1
@@ -201,5 +201,5 @@ if [ "$mode" = build ]; then
     list=
     for recipe in "${order[@]}"; do list+=" $recipe.json"; done
     echo "to publish, in this order, before pushing:"
-    echo "  ZIGSAW_HOME='$ZIGSAW_HOME' ZIGSAW='$zigsaw' scripts/publish.sh$list"
+    echo "  QUASIDOCK_HOME='$QUASIDOCK_HOME' QUASIDOCK='$quasidock' scripts/publish.sh$list"
 fi

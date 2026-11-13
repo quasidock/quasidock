@@ -6,7 +6,7 @@ import (
 	"sync"
 	"unsafe"
 
-	"github.com/zigsaw-io/zigsaw/internal/win32"
+	"github.com/quasidock/quasidock/internal/win32"
 )
 
 type Access int
@@ -492,7 +492,7 @@ func Unlabel(path string) error {
 		return err
 	}
 	if bm {
-		return fmt.Errorf("zigsaw runs at low integrity here, and can't take back the label of %s", path)
+		return fmt.Errorf("quasidock runs at low integrity here, and can't take back the label of %s", path)
 	}
 	var empty win32.ACL
 	if err := win32.InitializeAcl(&empty, win32.DWORD(unsafe.Sizeof(empty)), win32.ACL_REVISION); err != nil {
@@ -509,7 +509,7 @@ func LabelProgram(path string, level IntegrityLevel) error {
 			return err
 		}
 		if bm {
-			return fmt.Errorf("zigsaw runs at low integrity here, and can't take the label off %s", path)
+			return fmt.Errorf("quasidock runs at low integrity here, and can't take the label off %s", path)
 		}
 	}
 	sidStr := win32.LowIntegritySidString
@@ -553,7 +553,7 @@ func LetChildrenQueryUs() error {
 		return fmt.Errorf("AddMandatoryAce: %w", err)
 	}
 	if err := win32.SetSecurityInfo(self, win32.SE_KERNEL_OBJECT, win32.LABEL_SECURITY_INFORMATION, 0, 0, nil, sacl); err != nil {
-		return fmt.Errorf("changing zigsaw's own integrity label: %w", err)
+		return fmt.Errorf("changing quasidock's own integrity label: %w", err)
 	}
 	return nil
 }

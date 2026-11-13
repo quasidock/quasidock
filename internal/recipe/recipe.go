@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/zigsaw-io/zigsaw/internal/format"
-	"github.com/zigsaw-io/zigsaw/internal/oci"
+	"github.com/quasidock/quasidock/internal/format"
+	"github.com/quasidock/quasidock/internal/oci"
 )
 
 type Kind string
@@ -253,7 +253,7 @@ func Parse(fileName string, bytes []byte) (*Recipe, error) {
 	}
 	for _, toolchain := range r.Host {
 		if toolchain != "msvc" {
-			return nil, fmt.Errorf("%s: host toolchain %q isn't one zigsaw knows; only \"msvc\" is", fileName, toolchain)
+			return nil, fmt.Errorf("%s: host toolchain %q isn't one quasidock knows; only \"msvc\" is", fileName, toolchain)
 		}
 	}
 	if len(r.Host) > 0 && !r.HasBuildCommands() {

@@ -15,7 +15,7 @@
 # HTTP::Tiny. The last four, and psql, read the file of Windows' roots
 # zigsaw writes (${roots}), which each sandbox's runs must be able to read.
 #
-#   CERTS_HOME=path\to\store bash tests/certs.sh [path\to\zigsaw.exe]
+#   CERTS_HOME=path\to\store bash tests/certs.sh [path\to\quasidock.exe]
 #
 # The store (CERTS_HOME, or BUILD_HOME) needs Python's image; each other
 # client is skipped, saying so, if the store hasn't its image (CI's suites
@@ -31,8 +31,8 @@ set -u
 export MSYS_NO_PATHCONV=1
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
-zigsaw=${1:-$root/zig-out/bin/zigsaw.exe}
-ZIGSAW_HOME=${CERTS_HOME:-${BUILD_HOME:-}}
+zigsaw=${1:-$root/zig-out/bin/quasidock.exe}
+QUASIDOCK_HOME=${CERTS_HOME:-${BUILD_HOME:-}}
 PY=org.python.python
 NODE=org.nodejs.node
 JDK=org.openjdk.java.Sdk
@@ -44,19 +44,19 @@ PG=org.postgresql.PostgreSQL
 PHP=net.php.php
 COMPOSER=org.getcomposer.composer
 PERL=org.perl.perl
-has() { [ -f "$ZIGSAW_HOME\\refs\\$1.json" ]; }
-if [ -z "$ZIGSAW_HOME" ] || ! has $PY; then
+has() { [ -f "$QUASIDOCK_HOME\\refs\\$1.json" ]; }
+if [ -z "$QUASIDOCK_HOME" ] || ! has $PY; then
     echo "tests/certs.sh needs a store with $PY in CERTS_HOME or BUILD_HOME"
     exit 1
 fi
-export ZIGSAW_HOME
+export QUASIDOCK_HOME
 command -v openssl >/dev/null || { echo "tests/certs.sh needs openssl (Git Bash has it)"; exit 1; }
 work=$(cygpath -w "$(mktemp -d)")
 port=$((47000 + RANDOM % 900))
 crlport=$((port + 900))
 pgport=$((port + 1000))
 url="https://localhost:$port"
-pgdata="$ZIGSAW_HOME\\data\\$PG"
+pgdata="$QUASIDOCK_HOME\\data\\$PG"
 
 . "$(dirname "$0")/acprobe.sh"
 
@@ -149,7 +149,7 @@ composer_get() {
 }
 # Perl's image has no network permission, which an AppContainer needs.
 # Perl's scripts are files (below): with -e, Perl opens nul, which an
-# AppContainer on Server 2025 can't (tests/acprobe.zig).
+# AppContainer on Server 2025 can't (tests/cmd/acprobe).
 perl_get() { says ok z "$1" --share=network $PERL get.pl "$url/ok"; }
 # The file of Windows' roots the images that take only a file are given
 # (SSL_CERT_FILE=${roots}): the run can read it, and it has some.
@@ -169,7 +169,7 @@ for c in "$PY python_get Python" "$NODE node_get Node" "$JDK jdk_get Java_on_the
 done
 # want <function> <sandbox>: what each client is meant to do once Windows
 # trusts the CA. In an AppContainer, the clients whose programs Server 2025
-# keeps from running there (tests/acprobe.zig) are known gaps there.
+# keeps from running there (tests/cmd/acprobe) are known gaps there.
 want() {
     case $1/$2 in
     zig_get/low) echo gap ;; # zig's std opens the store to write: CertificateBundleLoadFailure
@@ -281,7 +281,7 @@ if has $PERL; then
     # A file written after the app's AppContainer runs were granted the one
     # before, as when Windows' roots change: it comes from the store's tmp\
     # with the ACL it had there, so each run grants the file itself.
-    rm -f "$(cygpath -u "$ZIGSAW_HOME")"/certs/roots-*.pem
+    rm -f "$(cygpath -u "$QUASIDOCK_HOME")"/certs/roots-*.pem
     roots_read soft >/dev/null
     row "$(want roots_read appcontainer)" "appcontainer: reads it too when it's written after the app's grant" roots_read appcontainer
 fi

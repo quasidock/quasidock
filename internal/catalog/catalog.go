@@ -10,15 +10,16 @@ import (
 	"strings"
 	"time"
 
-	"github.com/zigsaw-io/zigsaw/internal/oci"
-	"github.com/zigsaw-io/zigsaw/internal/registry"
-	"github.com/zigsaw-io/zigsaw/internal/remote"
-	"github.com/zigsaw-io/zigsaw/internal/store"
+	"github.com/quasidock/quasidock/internal/oci"
+	"github.com/quasidock/quasidock/internal/registry"
+	"github.com/quasidock/quasidock/internal/remote"
+	"github.com/quasidock/quasidock/internal/store"
 )
 
 const (
-	MediaType = "application/vnd.zigsaw.catalog.v1+json"
-	Name      = "catalog"
+	MediaType       = "application/vnd.quasidock.catalog.v1+json"
+	LegacyMediaType = "application/vnd.zigsaw.catalog.v1+json"
+	Name            = "catalog"
 )
 
 type Catalog struct {
@@ -226,8 +227,8 @@ func Push(st *store.Store, envRegistry string, ids []string, verbose bool) error
 		Config: configDesc,
 		Layers: []oci.Descriptor{},
 		Annotations: map[string]string{
-			"org.opencontainers.image.title":       "zigsaw catalog",
-			"org.opencontainers.image.description": fmt.Sprintf("The %d apps in %s, for `zigsaw search`", len(entries), cat.Registry),
+			"org.opencontainers.image.title":       "quasidock catalog",
+			"org.opencontainers.image.description": fmt.Sprintf("The %d apps in %s, for `quasidock search`", len(entries), cat.Registry),
 		},
 	}
 	mBytes, err := json.Marshal(manifest)
@@ -297,7 +298,7 @@ func fetchCatalog(st *store.Store, target remote.Target, cachedDigest string, ca
 	m, err := reg.FetchManifest()
 	if err != nil {
 		if verbose {
-			fmt.Fprintf(os.Stderr, "%s has no catalog of its apps, or it can't be read; `zigsaw push --catalog` makes one\n", registryOf(target))
+			fmt.Fprintf(os.Stderr, "%s has no catalog of its apps, or it can't be read; `quasidock push --catalog` makes one\n", registryOf(target))
 		}
 		return nil, err
 	}
@@ -309,8 +310,8 @@ func fetchCatalog(st *store.Store, target remote.Target, cachedDigest string, ca
 	if cls.IsIndex || cls.Image == nil {
 		return nil, fmt.Errorf("%s is not a single image", target.Ref)
 	}
-	if cls.Image.Config.MediaType != MediaType {
-		return nil, fmt.Errorf("%s isn't a zigsaw catalog (its config type is %s)", target.Ref, cls.Image.Config.MediaType)
+	if cls.Image.Config.MediaType != MediaType && cls.Image.Config.MediaType != LegacyMediaType {
+		return nil, fmt.Errorf("%s isn't a quasidock catalog (its config type is %s)", target.Ref, cls.Image.Config.MediaType)
 	}
 
 	nowSec := time.Now().Unix()

@@ -14,14 +14,14 @@
 # and the runtime's other apps deploys the runtime twice. A pin whose image
 # differs only in its config doesn't warn. Older SDK pins don't warn.
 #
-# The registry is the default one (ghcr.io/zigsaw-io) or ZIGSAW_REGISTRY's,
-# read anonymously. Needs curl and Git Bash, not zigsaw.
+# The registry is the default one (ghcr.io/zigsaw-io) or QUASIDOCK_REGISTRY's,
+# read anonymously. Needs curl and Git Bash, not quasidock.
 
 set -eu
 export MSYS_NO_PATHCONV=1
 
 root=$(cd "$(dirname "$0")/.." && pwd)
-registry=${ZIGSAW_REGISTRY:-ghcr.io/zigsaw-io}
+registry=${QUASIDOCK_REGISTRY:-ghcr.io/zigsaw-io}
 registry=${registry%/}
 case $registry in
 http://*) scheme=http; registry=${registry#http://} ;;
@@ -31,7 +31,7 @@ esac
 host=${registry%%/*}
 namespace=
 case $registry in */*) namespace=${registry#*/}/ ;; esac
-# As zigsaw itself: plain HTTP for this machine only.
+# As quasidock itself: plain HTTP for this machine only.
 case $host in localhost | localhost:* | 127.0.0.1 | 127.0.0.1:* | "[::1]" | "[::1]:"*) scheme=http ;; esac
 
 if [ $# -eq 0 ]; then
@@ -177,8 +177,8 @@ for recipe in "$@"; do
 done
 
 # Each recipe's own version has its signature beside it (scripts/sign-images.sh): pull
-# warns about one that hasn't. Only here, where zigsaw knows a key, and only that one's
-# there: whether it's good is what `zigsaw signature check` and a pull are for.
+# warns about one that hasn't. Only here, where quasidock knows a key, and only that one's
+# there: whether it's good is what `quasidock signature check` and a pull are for.
 unsigned=0
 if [ "$registry" = ghcr.io/zigsaw-io ]; then
     while read -r tid ttag tdigest; do tag_digest[$tid:$ttag]=$tdigest; done < <(

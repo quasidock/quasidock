@@ -15,7 +15,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/zigsaw-io/zigsaw/internal/oci"
+	"github.com/quasidock/quasidock/internal/oci"
 )
 
 const (

@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -13,7 +14,13 @@ import (
 func buildSampleTar(files map[string]string) *bytes.Buffer {
 	var buf bytes.Buffer
 	tw := tar.NewWriter(&buf)
-	for name, content := range files {
+	names := make([]string, 0, len(files))
+	for name := range files {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		content := files[name]
 		clean := strings.TrimPrefix(name, "/")
 		if strings.HasSuffix(clean, "/") {
 			tw.WriteHeader(&tar.Header{
@@ -107,8 +114,14 @@ func TestConvertAndReadEstargz(t *testing.T) {
 }
 
 func TestPlanDeltaUpdate(t *testing.T) {
-	// A shared large file (> 64 KiB so it's not coalesced as a tiny gap)
-	largeContent := strings.Repeat("reusable-large-content-block ", 3000) // ~87 KiB
+	// A shared large file (> 64 KiB compressed so it's not coalesced as a tiny gap)
+	largeBytes := make([]byte, 80*1024)
+	state := uint32(1)
+	for i := range largeBytes {
+		state = state*1664525 + 1013904223
+		largeBytes[i] = byte(state >> 24)
+	}
+	largeContent := string(largeBytes)
 
 	oldFiles := map[string]string{
 		"bin/app.exe":     "old-app-binary",

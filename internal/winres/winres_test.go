@@ -9,7 +9,7 @@ import (
 )
 
 func TestWinres(t *testing.T) {
-	manifest, err := os.ReadFile(filepath.Join("..", "..", "src", "windows", "zigsaw.manifest"))
+	manifest, err := os.ReadFile(filepath.Join("..", "..", "src", "windows", "quasidock.manifest"))
 	if err != nil {
 		t.Fatalf("reading manifest: %v", err)
 	}
@@ -23,7 +23,7 @@ func TestWinres(t *testing.T) {
 	sysoPath := filepath.Join(tmpDir, "rsrc_windows_amd64.syso")
 	err = WriteSYSO(sysoPath, Params{
 		Version:     "0.78.0",
-		Description: "zigsaw test binary",
+		Description: "quasidock test binary",
 		FileName:    "testbin.exe",
 		ManifestXML: manifest,
 	})

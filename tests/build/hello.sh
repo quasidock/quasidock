@@ -1,2 +1,2 @@
-echo "hello from $ZIGSAW_ID"
+echo "hello from $QUASIDOCK_ID"
 echo "args: $*"

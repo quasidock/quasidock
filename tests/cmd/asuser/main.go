@@ -6,18 +6,18 @@ import (
 	"strings"
 	"unsafe"
 
-	"github.com/zigsaw-io/zigsaw/internal/win32"
+	"github.com/quasidock/quasidock/internal/win32"
 )
 
 func die(format string, args ...any) {
-	fmt.Fprintf(os.Stderr, "zigsaw-asuser: "+format+"\n", args...)
+	fmt.Fprintf(os.Stderr, "quasidock-asuser: "+format+"\n", args...)
 	win32.ExitProcess(125)
 }
 
 func main() {
 	args := os.Args
 	if len(args) != 4 {
-		die("usage: zigsaw-asuser <account file> <output file> <command line>")
+		die("usage: quasidock-asuser <account file> <output file> <command line>")
 	}
 
 	accountData, err := os.ReadFile(args[1])

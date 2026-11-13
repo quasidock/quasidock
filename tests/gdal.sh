@@ -9,7 +9,7 @@
 # at low integrity and in an AppContainer. Nothing is written in the store's
 # deployments.
 #
-#   GDAL_HOME=path\to\store bash tests/gdal.sh [path\to\zigsaw.exe]
+#   GDAL_HOME=path\to\store bash tests/gdal.sh [path\to\quasidock.exe]
 #
 # Building GDAL's SDK takes a while, so this uses a store that has the app
 # (GDAL_HOME, or BUILD_HOME as tests/published.sh leaves it), and says so and
@@ -19,15 +19,15 @@ set -u
 export MSYS_NO_PATHCONV=1
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
-zigsaw=${1:-$root/zig-out/bin/zigsaw.exe}
-ZIGSAW_HOME=${GDAL_HOME:-${BUILD_HOME:-}}
+zigsaw=${1:-$root/zig-out/bin/quasidock.exe}
+QUASIDOCK_HOME=${GDAL_HOME:-${BUILD_HOME:-}}
 APP=org.gdal.GDAL
-if [ -z "$ZIGSAW_HOME" ] || [ ! -f "$ZIGSAW_HOME\\refs\\$APP.json" ]; then
+if [ -z "$QUASIDOCK_HOME" ] || [ ! -f "$QUASIDOCK_HOME\\refs\\$APP.json" ]; then
     echo "tests/gdal.sh needs a store with $APP in GDAL_HOME or BUILD_HOME;"
     echo "build recipes\\gdal-sdk.json and recipes\\gdal.json into one first."
     exit 1
 fi
-export ZIGSAW_HOME
+export QUASIDOCK_HOME
 work=$(cygpath -w "$(mktemp -d)")
 
 failures=0
@@ -97,7 +97,7 @@ unset SANDBOX
 
 written() {
     local new
-    new=$(find "$(cygpath -u "$ZIGSAW_HOME")"/deploy/*/ -newer "$work\\start" -type f -print 2>/dev/null | head -3)
+    new=$(find "$(cygpath -u "$QUASIDOCK_HOME")"/deploy/*/ -newer "$work\\start" -type f -print 2>/dev/null | head -3)
     [ -z "$new" ] || { echo "written: $new"; return 1; }
 }
 check "nothing was written in the store's deployments" written

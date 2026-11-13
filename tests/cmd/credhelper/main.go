@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/zigsaw-io/zigsaw/internal/win32"
+	"github.com/quasidock/quasidock/internal/win32"
 )
 
 type CredResponse struct {
@@ -28,13 +28,13 @@ func main() {
 	}
 	server := strings.Trim(string(stdinBytes), " \r\n")
 
-	if askedPath := os.Getenv("ZIGSAW_TEST_HELPER_ASKED"); askedPath != "" {
+	if askedPath := os.Getenv("QUASIDOCK_TEST_HELPER_ASKED"); askedPath != "" {
 		_ = os.WriteFile(askedPath, []byte(server), 0644)
 	}
 
-	known := os.Getenv("ZIGSAW_TEST_HELPER_SERVER")
-	user := os.Getenv("ZIGSAW_TEST_HELPER_USER")
-	secret := os.Getenv("ZIGSAW_TEST_HELPER_SECRET")
+	known := os.Getenv("QUASIDOCK_TEST_HELPER_SERVER")
+	user := os.Getenv("QUASIDOCK_TEST_HELPER_USER")
+	secret := os.Getenv("QUASIDOCK_TEST_HELPER_SECRET")
 
 	if server == known && user != "" {
 		resp := CredResponse{

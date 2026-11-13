@@ -11,9 +11,9 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/zigsaw-io/zigsaw/internal/oci"
-	"github.com/zigsaw-io/zigsaw/internal/registry"
-	"github.com/zigsaw-io/zigsaw/internal/win32"
+	"github.com/quasidock/quasidock/internal/oci"
+	"github.com/quasidock/quasidock/internal/registry"
+	"github.com/quasidock/quasidock/internal/win32"
 )
 
 const (

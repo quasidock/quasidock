@@ -24,22 +24,20 @@
 set -u
 export MSYS_NO_PATHCONV=1
 
-default_suites="store shims sandbox batch ctrlc network reach updates install build-base"
+default_suites="store sandbox batch ctrlc network reach install build-base"
 
 if [ "${1:-}" != --inner ]; then
     [ $# -eq 1 ] && [ -f "$1" ] || { echo "usage: tests/standard-user.sh <account file>"; exit 2; }
     account=$(cygpath -aw "$1")
     user=$(head -1 "$1" | tr -d '\r')
     repo=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
-    (cd "$repo" && zig build && zig build asuser gui-fixture argv-echo hostprobe ctrlc-driver netprobe cred-helper imports acprobe procprobe p256sign) ||
-        { echo "building zigsaw failed"; exit 1; }
+    (cd "$repo" && go run ./scripts/build.go all asuser gui-fixture argv-echo hostprobe ctrlc-driver netprobe cred-helper imports acprobe procprobe p256sign) ||
+        { echo "building quasidock failed"; exit 1; }
     stage=$(cygpath -wl "$(mktemp -d)")
     icacls "$stage" /grant "$user:(OI)(CI)M" >/dev/null || { echo "$user can't be given $stage"; exit 1; }
     bash "$(cygpath -u "$repo")/scripts/package.sh" "$(cygpath -u "$stage\\package")" >"$stage\\package.log" 2>&1 ||
         { echo "packaging failed: $(tail -1 "$stage\\package.log")"; exit 1; }
-    # For tests/install.sh, as packaging needs git and Zig, which the account hasn't.
-    bash "$(cygpath -u "$repo")/tests/next-release.sh" "$stage\\next-package" || exit 1
-    for d in tests recipes scripts zigsaw.json go.mod; do cp -r "$(cygpath -u "$repo")/$d" "$(cygpath -u "$stage")/"; done
+    for d in tests recipes scripts go.mod; do cp -r "$(cygpath -u "$repo")/$d" "$(cygpath -u "$stage")/"; done
     mkdir -p "$stage\\zig-out" "$stage\\tmp" "$stage\\bin" "$stage\\seed"
     cp -r "$(cygpath -u "$repo")/zig-out/bin" "$(cygpath -u "$repo")/zig-out/test" "$(cygpath -u "$stage")/zig-out/"
     if [ -n "${SEED_DOWNLOADS:-}" ]; then
@@ -55,7 +53,7 @@ if [ "${1:-}" != --inner ]; then
     bash=$(cygpath -w "$(command -v bash)")
     out="$stage\\inner.txt"
     : >"$out"
-    "$repo\\zig-out\\test\\zigsaw-asuser.exe" "$account" "$out" "\"$bash\" --noprofile --norc \"$stage\\tests\\standard-user.sh\" --inner \"$stage\" \"${SUITES:-$default_suites}\"" &
+    "$repo\\zig-out\\test\\quasidock-asuser.exe" "$account" "$out" "\"$bash\" --noprofile --norc \"$stage\\tests\\standard-user.sh\" --inner \"$stage\" \"${SUITES:-$default_suites}\"" &
     runner=$!
     tail -f "$out" &
     tailer=$!
@@ -83,7 +81,7 @@ stage_u=$(cygpath -u "$stage")
 export PATH="$stage_u/bin:$PATH"
 export TMPDIR="$stage_u/tmp" TMP="$stage\\tmp" TEMP="$stage\\tmp"
 export SEED_DOWNLOADS="$stage\\seed"
-unset ZIGSAW_HOME ZIGSAW_USER_FOLDERS ZIGSAW_GRANTS_KEY
+unset QUASIDOCK_HOME QUASIDOCK_USER_FOLDERS QUASIDOCK_GRANTS_KEY
 work="$stage\\tmp\\first"
 mkdir -p "$work"
 cd "$work" || exit 1
@@ -118,8 +116,8 @@ check "this is $(whoami), a standard user: not in Administrators, at medium inte
 [ "$failures" -eq 0 ] || { echo "stopping: everything after this would mean nothing."; exit 2; }
 
 docs=$(powershell -NoProfile -Command "[Environment]::GetFolderPath('MyDocuments')" | tr -d '\r')
-store="$LOCALAPPDATA\\zigsaw"
-zigsaw="$store\\bin\\zigsaw.exe"
+store="$LOCALAPPDATA\\quasidock"
+zigsaw="$store\\bin\\quasidock.exe"
 BB=net.frippery.busybox
 z() { "$zigsaw" "$@" </dev/null; }
 sch="$(cygpath -u "$WINDIR")/System32/schtasks.exe"
@@ -143,20 +141,11 @@ check "Defender finds nothing in the package's programs" programs_clean
 
 installs() {
     powershell -NoProfile -ExecutionPolicy Bypass -File "$stage\\scripts\\install.ps1" -From "$stage\\package" &&
-        [ -f "$zigsaw" ] && "$zigsaw" version | grep -q '^zigsaw '
+        [ -f "$zigsaw" ] && "$zigsaw" version | grep -q '^quasidock '
 }
 check "install.ps1 installs it in the default store, with no administrator" installs
 on_path() { reg query 'HKCU\Environment' /v Path | grep -qF "$store\\bin"; }
 check "  and puts it on this user's PATH" on_path
-# What only a standard user's own account can show: whether Windows lets it have one.
-# (Nothing here has a desktop, so nothing starts it: see tests/updates.sh.)
-daily_check_on() {
-    local out
-    out=$(z grants) || { echo "$out"; return 1; }
-    grep -qF "scheduled task \"$task\", for " <<<"$out" || { echo "grants says: $out"; return 1; }
-    "$sch" /query /tn "$task" >/dev/null
-}
-check "  and starts its daily check, as a scheduled task of this user's" daily_check_on
 pulls() { z pull --yes $BB; }
 check "pull gets an app from ghcr.io" pulls
 for sb in soft low appcontainer; do
@@ -169,17 +158,6 @@ keeps_data() {
 }
 check "its data stays between runs" keeps_data
 
-links="$APPDATA\\Microsoft\\Windows\\Start Menu\\Programs\\Zigsaw"
-gets_shortcut() {
-    z build "$stage\\tests\\gui\\app.json" && [ -e "$links\\Zigsaw GUI Test.lnk" ] &&
-        reg query 'HKCU\Software\Classes\.zigsawtest\OpenWithProgids' | grep -q 'Zigsaw.test.shims.gui.zigsawtest'
-}
-check "an app from a recipe gets a Start menu shortcut and a kind of file" gets_shortcut
-loses_shortcut() {
-    z rm --delete-data test.shims.gui && [ ! -e "$links\\Zigsaw GUI Test.lnk" ] &&
-        ! reg query 'HKCU\Software\Classes\.zigsawtest\OpenWithProgids' 2>/dev/null | grep -q 'Zigsaw.test.shims.gui'
-}
-check "  and rm takes them away" loses_shortcut
 logs_in() {
     # Nothing answers there: the login fails, and Credential Manager has to be
     # reached to save or delete. logout needs nothing but it.
@@ -204,13 +182,13 @@ real_docs_kept() {
 check "with an override, the label stays" real_docs_kept
 listed() { z grants | grep -qF "low label on $docs: its permissions name it"; }
 check "  and grants says so, and why" listed
-in_the_record() { reg query 'HKCU\Software\Zigsaw\Grants' | grep -qF "|$BB|low $docs"; }
+in_the_record() { reg query 'HKCU\Software\Quasidock\Grants' | grep -qF "|$BB|low $docs"; }
 check "  and the record outside the store has it" in_the_record
 override_back() { z override --reset $BB && no_label "$docs"; }
 check "taking the override back takes the label back" override_back
 
 other="$stage\\tmp\\other-store"
-zo() { ZIGSAW_HOME="$other" "$zigsaw" "$@" </dev/null; }
+zo() { QUASIDOCK_HOME="$other" "$zigsaw" "$@" </dev/null; }
 guard_leaves_out() {
     zo pull --yes $BB >/dev/null 2>&1 || return 1
     local out
@@ -275,23 +253,20 @@ check "a recipe builds, on its own B:" builds
 
 removes() { z rm --delete-data $BB; }
 check "rm removes the app" removes
-# Only the daily check is left, which goes with zigsaw.
 real_clean() {
     no_label "$docs" || { echo "$docs is labelled"; return 1; }
     no_label "$USERPROFILE" || { echo "$USERPROFILE is labelled"; return 1; }
     local out
-    out=$(z grants | tr -d '\r' | grep -vE '^Daily checks for updates|^  scheduled task ')
+    out=$(z grants | tr -d '\r')
     [ -z "$out" ] || { echo "grants says: $out"; return 1; }
 }
 check "nothing it changed is left on your folders" real_clean
 uninstalls() {
     powershell -NoProfile -ExecutionPolicy Bypass -File "$stage\\scripts\\install.ps1" -Uninstall &&
         [ ! -e "$zigsaw" ] && ! reg query 'HKCU\Environment' /v Path 2>/dev/null | grep -qF "$store\\bin" &&
-        ! reg query 'HKCU\Software\Zigsaw\Grants' >/dev/null 2>&1
+        ! reg query 'HKCU\Software\Quasidock\Grants' >/dev/null 2>&1
 }
 check "the uninstaller removes it, from PATH too, and its record" uninstalls
-no_task_left() { ! "$sch" /query /tn "$task" >/dev/null 2>&1; }
-check "  and its daily check" no_task_left
 rm -f "$docs"/su-*.txt
 rm -rf "$store"
 

@@ -5,8 +5,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/zigsaw-io/zigsaw/internal/appcontainer"
-	"github.com/zigsaw-io/zigsaw/internal/win32"
+	"github.com/quasidock/quasidock/internal/appcontainer"
+	"github.com/quasidock/quasidock/internal/win32"
 )
 
 func TestAppContainer(t *testing.T) {

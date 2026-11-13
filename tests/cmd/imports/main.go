@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/zigsaw-io/zigsaw/internal/win32"
+	"github.com/quasidock/quasidock/internal/win32"
 )
 
 type Counts struct {
@@ -149,7 +149,7 @@ func count(data []byte) (Counts, error) {
 func main() {
 	args := os.Args[1:]
 	if len(args) < 1 {
-		fmt.Println("usage: zigsaw-imports FILE...")
+		fmt.Println("usage: quasidock-imports FILE...")
 		win32.ExitProcess(2)
 	}
 

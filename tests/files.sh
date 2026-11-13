@@ -14,7 +14,7 @@
 # Not in CI: .NET's images can't be published, so they're built from
 # Microsoft's download, and Files' first build takes about ten minutes.
 #
-#   FILES_HOME=path\to\store bash tests/files.sh [path\to\zigsaw.exe]
+#   FILES_HOME=path\to\store bash tests/files.sh [path\to\quasidock.exe]
 #
 # It builds .NET's images and Files into the store unless it has them (the
 # NuGet packages Files' vendor step fetches are kept in the store's
@@ -25,22 +25,19 @@ set -u
 export MSYS_NO_PATHCONV=1
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
-zigsaw=${1:-$root/zig-out/bin/zigsaw.exe}
-ZIGSAW_HOME=${FILES_HOME:-${BUILD_HOME:-}}
-if [ -z "$ZIGSAW_HOME" ]; then
+zigsaw=${1:-$root/zig-out/bin/quasidock.exe}
+QUASIDOCK_HOME=${FILES_HOME:-${BUILD_HOME:-}}
+if [ -z "$QUASIDOCK_HOME" ]; then
     echo "tests/files.sh needs a store in FILES_HOME or BUILD_HOME; it builds .NET's images and Files there"
     echo "unless it has them (about ten minutes the first time)."
     exit 1
 fi
-export ZIGSAW_HOME
+export QUASIDOCK_HOME
 work=$(cygpath -w "$(mktemp -d)")
 FILES=community.files.Files
-# Start menu shortcuts go here rather than the user's Start menu.
-links="$work\\links"
-export ZIGSAW_SHORTCUTS_DIR="$links"
 # The user's folders Files may use are these, not yours.
 for f in Desktop Documents Downloads Music Pictures Videos; do mkdir -p "$work\\folders\\$f"; done
-export ZIGSAW_USER_FOLDERS="$work\\folders"
+export QUASIDOCK_USER_FOLDERS="$work\\folders"
 
 failures=0
 check() {
@@ -56,16 +53,16 @@ check() {
 }
 
 z() { "$zigsaw" "$@"; }
-manifest_of() { grep -o 'sha256:[0-9a-f]*' "$ZIGSAW_HOME\\refs\\$1.json"; }
+manifest_of() { grep -o 'sha256:[0-9a-f]*' "$QUASIDOCK_HOME\\refs\\$1.json"; }
 
 installed_dotnet=false installed_files=false
-[ -f "$ZIGSAW_HOME\\refs\\com.microsoft.dotnet.Sdk.json" ] || installed_dotnet=true
-[ -f "$ZIGSAW_HOME\\refs\\$FILES.json" ] || installed_files=true
+[ -f "$QUASIDOCK_HOME\\refs\\com.microsoft.dotnet.Sdk.json" ] || installed_dotnet=true
+[ -f "$QUASIDOCK_HOME\\refs\\$FILES.json" ] || installed_files=true
 for r in dotnet-sdk dotnet; do
     z build "$root\\recipes\\no-publish\\$r.json" >"$work\\$r.log" 2>&1 || echo "building $r.json failed: $(tail -1 "$work\\$r.log")"
 done
 check "Files 4.3 builds from its release tarball, with its NuGet packages vendored" z build "$root\\recipes\\no-publish\\files.json"
-files_dir="$ZIGSAW_HOME\\deploy\\$(grep -o 'sha256:[0-9a-f]*' "$ZIGSAW_HOME\\blobs\\sha256\\$(manifest_of $FILES | cut -d: -f2)" | tail -1 | cut -d: -f2)"
+files_dir="$QUASIDOCK_HOME\\deploy\\$(grep -o 'sha256:[0-9a-f]*' "$QUASIDOCK_HOME\\blobs\\sha256\\$(manifest_of $FILES | cut -d: -f2)" | tail -1 | cut -d: -f2)"
 bin="$files_dir\\bin"
 
 # Without a package, Files reads its name and version from the manifest
@@ -87,24 +84,10 @@ on_runtime() {
 }
 check "it runs on .NET's runtime image rather than a runtime of its own" on_runtime
 
-shim_dir=$(dirname "$zigsaw")
-check "it gets the windowless shim and a shortcut" sh -c "cmp -s '$ZIGSAW_HOME\\bin\\files.exe' '$shim_dir\\zigsaw-shimw.exe' && test -f '$links\\Files - Zigsaw build.lnk'"
-lnk_icon() { powershell -NoProfile -Command "(New-Object -ComObject WScript.Shell).CreateShortcut('$1').IconLocation" | tr -d '\r'; }
-exe_icons() {
-    powershell -NoProfile -Command "Add-Type -Namespace Z -Name I -MemberDefinition '[DllImport(\"shell32.dll\", CharSet = CharSet.Unicode)] public static extern uint ExtractIconEx(string f, int i, IntPtr[] l, IntPtr[] s, uint n);'; [Z.I]::ExtractIconEx('$1', -1, \$null, \$null, 0)" | tr -d '\r'
-}
-files_icon() {
-    local ico
-    ico=$(lnk_icon "$links\\Files - Zigsaw build.lnk")
-    [ "$ico" = "$bin\\Files.exe,0" ] || { echo "Files: $ico"; return 1; }
-    [ "$(exe_icons "$bin\\Files.exe")" -ge 1 ] || { echo "no icon in Files.exe"; return 1; }
-}
-check "its shortcut shows the icon in its executable" files_icon
-
 # Files keeps running in the background when its window closes, and hands a
 # new launch to an instance that does: none of this store's may be left over.
 end_files() {
-    powershell -NoProfile -Command "Get-Process Files -ErrorAction SilentlyContinue | Where-Object { \$_.Path -like '$ZIGSAW_HOME\\*' } | Stop-Process -Force" >/dev/null 2>&1
+    powershell -NoProfile -Command "Get-Process Files -ErrorAction SilentlyContinue | Where-Object { \$_.Path -like '$QUASIDOCK_HOME\\*' } | Stop-Process -Force" >/dev/null 2>&1
 }
 # stays_up <seconds> <zigsaw run arguments...>: the app is still running
 # when the time is up, rather than having crashed or handed over. Then it
@@ -132,7 +115,7 @@ stays_up() {
     wait $run
     return 0
 }
-state="$ZIGSAW_HOME\\data\\$FILES\\home\\AppData\\Local\\Files Community\\FilesDev\\LocalState"
+state="$QUASIDOCK_HOME\\data\\$FILES\\home\\AppData\\Local\\Files Community\\FilesDev\\LocalState"
 launches() { grep -c '|Information|App launched' "$state\\debug.log" 2>/dev/null || echo 0; }
 # Startup ends with "App launched" in Files' log, and the drives it found.
 # Files catches what goes wrong at startup and carries on, so a run that
@@ -161,7 +144,7 @@ check "it opens a folder given on its command line" opens_folder
 # declares) are in a hive there, and not in the real registry between runs.
 kept() {
     test -f "$state\\settings\\user_settings.json" || { echo "no settings in its data directory"; return 1; }
-    grep -aq TotalLaunchCount "$ZIGSAW_HOME\\data\\$FILES\\registry\\user.dat" || { echo "no Files values in its hive"; return 1; }
+    grep -aq TotalLaunchCount "$QUASIDOCK_HOME\\data\\$FILES\\registry\\user.dat" || { echo "no Files values in its hive"; return 1; }
     ! reg query 'HKCU\Software\Files Community\FilesDev' >/dev/null 2>&1 || { echo "HKCU\\Software\\Files Community\\FilesDev is in the registry"; return 1; }
 }
 check "it keeps its settings in its data directory, and its registry values in a hive there" kept

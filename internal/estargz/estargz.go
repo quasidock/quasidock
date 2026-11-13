@@ -14,7 +14,7 @@ import (
 	"sync/atomic"
 
 	ce "github.com/containerd/stargz-snapshotter/estargz"
-	"github.com/zigsaw-io/zigsaw/internal/oci"
+	"github.com/quasidock/quasidock/internal/oci"
 )
 
 const (
@@ -59,7 +59,7 @@ func Convert(tarReader io.Reader, out io.Writer, prefetch []string) (map[string]
 		sr = io.NewSectionReader(f, 0, fi.Size())
 	} else {
 		var err error
-		tmpFile, err = os.CreateTemp("", "zigsaw-tar-convert-*")
+		tmpFile, err = os.CreateTemp("", "quasidock-tar-convert-*")
 		if err != nil {
 			return nil, err
 		}

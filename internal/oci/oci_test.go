@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zigsaw-io/zigsaw/internal/oci"
+	"github.com/quasidock/quasidock/internal/oci"
 )
 
 func TestValidID(t *testing.T) {

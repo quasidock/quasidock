@@ -13,7 +13,7 @@
 # its container is exempt from loopback isolation while it runs. Nothing is
 # written in the store's deployments.
 #
-#   OSM2PGSQL_HOME=path\to\store bash tests/osm2pgsql.sh [path\to\zigsaw.exe]
+#   OSM2PGSQL_HOME=path\to\store bash tests/osm2pgsql.sh [path\to\quasidock.exe]
 #
 # The store needs osm2pgsql, PostgreSQL and PostGIS (OSM2PGSQL_HOME, or
 # BUILD_HOME as tests/published.sh leaves it); this says so and stops if
@@ -25,20 +25,20 @@ set -u
 export MSYS_NO_PATHCONV=1
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
-zigsaw=${1:-$root/zig-out/bin/zigsaw.exe}
-ZIGSAW_HOME=${OSM2PGSQL_HOME:-${BUILD_HOME:-}}
+zigsaw=${1:-$root/zig-out/bin/quasidock.exe}
+QUASIDOCK_HOME=${OSM2PGSQL_HOME:-${BUILD_HOME:-}}
 APP=org.osm2pgsql.osm2pgsql
 PG=org.postgresql.PostgreSQL
 for id in $APP $PG $PG.PostGIS; do
-    if [ -z "$ZIGSAW_HOME" ] || [ ! -f "$ZIGSAW_HOME\\refs\\$id.json" ]; then
+    if [ -z "$QUASIDOCK_HOME" ] || [ ! -f "$QUASIDOCK_HOME\\refs\\$id.json" ]; then
         echo "tests/osm2pgsql.sh needs a store with $id in OSM2PGSQL_HOME or BUILD_HOME;"
         echo "build or pull osm2pgsql, PostgreSQL and PostGIS into one first."
         exit 1
     fi
 done
-export ZIGSAW_HOME
+export QUASIDOCK_HOME
 work=$(cygpath -w "$(mktemp -d)")
-data="$ZIGSAW_HOME\\data\\$PG"
+data="$QUASIDOCK_HOME\\data\\$PG"
 port=$((58000 + RANDOM % 900))
 
 failures=0
@@ -198,7 +198,7 @@ check "appcontainer: osm2pgsql reaches the server on 127.0.0.1" import osm_appco
 # zigsaw: PGPORT is ${uses:postgresql}, which --port moves to the server's.
 forwarded() {
     local out
-    out=$(ZIGSAW_LOOPBACK_EXEMPTION=0 timeout 120 "$zigsaw" run --sandbox=appcontainer --env="PGPASSWORD=$password" --env=PGCONNECT_TIMEOUT=5 \
+    out=$(QUASIDOCK_LOOPBACK_EXEMPTION=0 timeout 120 "$zigsaw" run --sandbox=appcontainer --env="PGPASSWORD=$password" --env=PGCONNECT_TIMEOUT=5 \
         --port=postgresql=$port --command=osm2pgsql $APP -U postgres -d osm_forwarded -O pgsql --slim tiny.osm 2>&1 | tr -d '\r'; exit "${PIPESTATUS[0]}") ||
         { echo "$out" | tail -5; return 1; }
 }
@@ -210,7 +210,7 @@ check "the server stops" stop
 
 written() {
     local new
-    new=$(find "$(cygpath -u "$ZIGSAW_HOME")"/deploy/*/ -newer "$work\\start" -type f -print 2>/dev/null | head -3)
+    new=$(find "$(cygpath -u "$QUASIDOCK_HOME")"/deploy/*/ -newer "$work\\start" -type f -print 2>/dev/null | head -3)
     [ -z "$new" ] || { echo "written: $new"; return 1; }
 }
 check "nothing was written in the store's deployments" written

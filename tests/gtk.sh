@@ -27,7 +27,7 @@
 # than building; the runner has no GPU, so the OpenGL check is a known gap
 # there.
 #
-#   GTK_HOME=path\to\store bash tests/gtk.sh [path\to\zigsaw.exe]
+#   GTK_HOME=path\to\store bash tests/gtk.sh [path\to\quasidock.exe]
 #
 # Building GTK's SDK takes about 15 minutes, so this uses a store that has
 # both GTK images and the SDK images the app builds with (GTK_HOME, or
@@ -41,28 +41,22 @@ set -u
 export MSYS_NO_PATHCONV=1
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
-zigsaw=${1:-$root/zig-out/bin/zigsaw.exe}
-ZIGSAW_HOME=${GTK_HOME:-${BUILD_HOME:-}}
-if [ -z "$ZIGSAW_HOME" ] || [ ! -f "$ZIGSAW_HOME\\refs\\org.gtk.Gtk4.json" ] || [ ! -f "$ZIGSAW_HOME\\refs\\org.gtk.Gtk4.Sdk.json" ]; then
+zigsaw=${1:-$root/zig-out/bin/quasidock.exe}
+QUASIDOCK_HOME=${GTK_HOME:-${BUILD_HOME:-}}
+if [ -z "$QUASIDOCK_HOME" ] || [ ! -f "$QUASIDOCK_HOME\\refs\\org.gtk.Gtk4.json" ] || [ ! -f "$QUASIDOCK_HOME\\refs\\org.gtk.Gtk4.Sdk.json" ]; then
     echo "tests/gtk.sh needs a store with org.gtk.Gtk4 and org.gtk.Gtk4.Sdk in GTK_HOME or BUILD_HOME;"
     echo "build recipes\\gtk4-sdk.json and recipes\\gtk4.json into one first."
     exit 1
 fi
-export ZIGSAW_HOME
+export QUASIDOCK_HOME
 work=$(cygpath -w "$(mktemp -d)")
 APP=test.gtk.hello
 EDITOR=org.gnome.TextEditor
 RNOTE=com.github.flxzt.rnote
-# Start menu shortcuts go here rather than the user's Start menu.
-links="$work\\links"
-export ZIGSAW_SHORTCUTS_DIR="$links"
-# File associations go under this key of HKCU rather than Software\Classes.
-classes="Software\\ZigsawTest\\gtk-$$"
-export ZIGSAW_CLASSES_KEY="$classes"
 # The user's folders the apps may use, such as Documents, are these, not
 # yours, which low and AppContainer runs would label and grant.
 for f in Desktop Documents Downloads Pictures; do mkdir -p "$work\\folders\\$f"; done
-export ZIGSAW_USER_FOLDERS="$work\\folders"
+export QUASIDOCK_USER_FOLDERS="$work\\folders"
 
 failures=0
 check() {
@@ -78,7 +72,7 @@ check() {
 }
 
 z() { "$zigsaw" "$@"; }
-manifest_of() { grep -o 'sha256:[0-9a-f]*' "$ZIGSAW_HOME\\refs\\$1.json"; }
+manifest_of() { grep -o 'sha256:[0-9a-f]*' "$QUASIDOCK_HOME\\refs\\$1.json"; }
 # install_again <id> <recipe>: installs an app the store has again, as the
 # store got it: from the build cache, if it built it, or the registry it was
 # pulled from (as the Reproduce workflow's store pulls the published
@@ -86,7 +80,7 @@ manifest_of() { grep -o 'sha256:[0-9a-f]*' "$ZIGSAW_HOME\\refs\\$1.json"; }
 # and registry key. Builds the recipe if the store hasn't the app.
 install_again() {
     local source=""
-    [ -f "$ZIGSAW_HOME\\refs\\$1.json" ] && source=$(grep -o '"source": *"[^"]*"' "$ZIGSAW_HOME\\refs\\$1.json" | cut -d'"' -f4)
+    [ -f "$QUASIDOCK_HOME\\refs\\$1.json" ] && source=$(grep -o '"source": *"[^"]*"' "$QUASIDOCK_HOME\\refs\\$1.json" | cut -d'"' -f4)
     case $source in
     "" | *.json) z build "$root\\recipes\\$2" ;;
     *) z pull --yes "$source" ;;
@@ -133,7 +127,7 @@ check "its gtk4-demo is GTK 4.24.1" sh -c "timeout 60 \"\$0\" run --command=gtk4
 xdg() {
     local out
     out=$(timeout 120 "$zigsaw" run $APP 2>&1 | tr -d '\r')
-    grep -qF "config in $ZIGSAW_HOME\\data\\$APP\\config" <<<"$out" || { echo "got: $out"; return 1; }
+    grep -qF "config in $QUASIDOCK_HOME\\data\\$APP\\config" <<<"$out" || { echo "got: $out"; return 1; }
     grep -q '^settings in GKeyfileSettingsBackend$' <<<"$out" || { echo "got: $out"; return 1; }
 }
 check "GLib keeps its files in the app's data directory, and settings in a key file there" xdg
@@ -176,12 +170,12 @@ check "libsoup knows the Public Suffix List (libpsl)" psl
 printf '%s\n' '<svg xmlns="http://www.w3.org/2000/svg" width="48" height="32"><rect width="48" height="32" fill="teal"/></svg>' >"$work\\t.svg"
 check "GdkPixbuf loads an SVG with librsvg's loader" sh -c "timeout 60 \"\$0\" run --command=bin/svg-size.exe $APP t.svg | grep -q '^loaded 48x32'" "$zigsaw"
 # The SDK's rsvg-convert, a Rust program GNU ld links: all its imports bound
-# (tests/imports.zig), it makes a PNG of the SVG.
-sdk_manifest="$ZIGSAW_HOME\\blobs\\sha256\\$(manifest_of org.gtk.Gtk4.Sdk | cut -d: -f2)"
-sdk="$ZIGSAW_HOME\\deploy\\$(grep -o 'sha256:[0-9a-f]*' "$sdk_manifest" | tail -1 | cut -d: -f2)"
+# (tests/cmd/imports), it makes a PNG of the SVG.
+sdk_manifest="$QUASIDOCK_HOME\\blobs\\sha256\\$(manifest_of org.gtk.Gtk4.Sdk | cut -d: -f2)"
+sdk="$QUASIDOCK_HOME\\deploy\\$(grep -o 'sha256:[0-9a-f]*' "$sdk_manifest" | tail -1 | cut -d: -f2)"
 rsvg_convert() {
-    (cd "$root" && zig build imports) >/dev/null || return 1
-    "$root\\zig-out\\test\\zigsaw-imports.exe" "$sdk\\bin\\rsvg-convert.exe" || return 1
+    (cd "$root" && go run ./scripts/build.go imports) >/dev/null || return 1
+    "$root\\zig-out\\test\\quasidock-imports.exe" "$sdk\\bin\\rsvg-convert.exe" || return 1
     # Piped: given a file as stdin, rsvg-convert reads only its first two
     # bytes, run by zigsaw or not.
     cat "$work\\t.svg" | timeout 60 "$zigsaw" run --command=bin/rsvg-convert.exe org.gtk.Gtk4.Sdk | head -c 8 | od -A n -t x1 | tr -d ' \n' | grep -qx '89504e470d0a1a0a'
@@ -189,8 +183,8 @@ rsvg_convert() {
 check "the SDK's rsvg-convert binds all its imports and converts an SVG to PNG" rsvg_convert
 # The runtime keeps GIO's modules and GdkPixbuf's loaders from the SDK's lib
 # directory, and none of its libraries for linking.
-runtime_manifest="$ZIGSAW_HOME\\blobs\\sha256\\$(manifest_of org.gtk.Gtk4 | cut -d: -f2)"
-runtime="$ZIGSAW_HOME\\deploy\\$(grep -o 'sha256:[0-9a-f]*' "$runtime_manifest" | tail -1 | cut -d: -f2)"
+runtime_manifest="$QUASIDOCK_HOME\\blobs\\sha256\\$(manifest_of org.gtk.Gtk4 | cut -d: -f2)"
+runtime="$QUASIDOCK_HOME\\deploy\\$(grep -o 'sha256:[0-9a-f]*' "$runtime_manifest" | tail -1 | cut -d: -f2)"
 runtime_lib() {
     test -f "$runtime\\lib\\gio\\modules\\libgioopenssl.dll" && test -f "$runtime\\lib\\gdk-pixbuf-2.0\\2.10.0\\loaders\\pixbufloader_svg.dll" || return 1
     [ -z "$(find "$(cygpath -u "$runtime")" -name '*.a' -o -name '*.pc' -o -name '*.h' | head -1)" ]
@@ -260,7 +254,7 @@ check "a language neither has has no dictionary (en_ZZ would fall back to Englis
 # (recipes/gtk4-hunspell-*.json) are such images, built here unless the
 # store has them (seconds), and removed afterwards; and so is an icon.
 installed_dicts=false
-if [ ! -f "$ZIGSAW_HOME\\refs\\org.gtk.Gtk4.Hunspell.fr_FR.json" ] || [ ! -f "$ZIGSAW_HOME\\refs\\org.gtk.Gtk4.Hunspell.vi_VN.json" ]; then
+if [ ! -f "$QUASIDOCK_HOME\\refs\\org.gtk.Gtk4.Hunspell.fr_FR.json" ] || [ ! -f "$QUASIDOCK_HOME\\refs\\org.gtk.Gtk4.Hunspell.vi_VN.json" ]; then
     installed_dicts=true
 fi
 for lang in fr vi; do
@@ -306,7 +300,7 @@ check "removed, it isn't" sh -c "timeout 60 \"\$0\" run --command=bin/icon.exe $
 # Building without a recipe: the SDK's exports, from the store's bin, as
 # cc, pkg-config and meson; the program then runs on the runtime.
 mkdir -p "$work\\loose" && for f in hello.c soup.c svg.c spell.c font.c icon.c meson.build; do cp "$work\\$f" "$work\\loose\\"; done
-bin="$ZIGSAW_HOME\\bin"
+bin="$QUASIDOCK_HOME\\bin"
 loose_cc() {
     (cd "$work\\loose" && "$bin\\cc.exe" hello.c -o hello.exe $("$bin\\pkg-config.exe" --cflags --libs gtk4 libadwaita-1 | tr -d '\r')) || return 1
     local out
@@ -354,43 +348,6 @@ loose_windres() {
 check "the SDK's windres compiles a resource script that cc links" loose_windres
 check "a relative --command says how to name a program of yours" sh -c "\"\$0\" run --command=loose\\\\hello.exe org.gtk.Gtk4 2>&1 | grep -qF 'give its absolute path'" "$zigsaw"
 
-# GUI programs get the shim that opens no console, and declared shortcuts.
-# Installing the runtime again puts its shortcuts in the test's folder.
-install_again org.gtk.Gtk4 gtk4.json >/dev/null 2>&1
-shim_dir=$(dirname "$zigsaw")
-shim_is() { cmp -s "$ZIGSAW_HOME\\bin\\$1.exe" "$shim_dir\\$2"; }
-gui_shims() { shim_is gtk4-demo zigsaw-shimw.exe && shim_is adwaita-1-demo zigsaw-shimw.exe && shim_is gtk4-query-settings zigsaw-shim.exe; }
-check "the demos get the windowless shim, gtk4-query-settings the console one" gui_shims
-check "the runtime's demos get shortcuts" test -f "$links\\GTK Demo.lnk" -a -f "$links\\Adwaita Demo.lnk"
-# Their icons are SVGs, which a shortcut can't show: the runtime's recipe
-# makes an .ico of each (recipes/gtk4-sdk/svg2ico.sh).
-lnk_icon() { powershell -NoProfile -Command "(New-Object -ComObject WScript.Shell).CreateShortcut('$1').IconLocation" | tr -d '\r'; }
-# is_ico <file>: an icon with six images, the first a 16-pixel PNG.
-is_ico() {
-    [ "$(od -A n -t u1 -N 8 "$1" | tr -s ' ' | sed 's/^ //')" = "0 0 1 0 6 0 16 16" ] && tail -c +103 "$1" | head -c 4 | grep -q PNG
-}
-# has_icon <shortcut name> <icon's name>: the shortcut shows that .ico of
-# share\icons, in whichever image has it.
-has_icon() {
-    local ico
-    ico=$(lnk_icon "$links\\$1.lnk")
-    case $ico in *"\\share\\icons\\$2.ico,0") ;; *) echo "$1: $ico"; return 1 ;; esac
-    is_ico "${ico%,0}" || { echo "${ico%,0} isn't an icon"; return 1; }
-}
-demo_icons() { has_icon "GTK Demo" org.gtk.Demo4 && has_icon "GTK Widget Factory" org.gtk.WidgetFactory4 && has_icon "Adwaita Demo" org.gnome.Adwaita1.Demo; }
-check "with icons made from the demos' SVGs" demo_icons
-# reg_value <key under the classes>: the key's default value.
-reg_value() {
-    powershell -NoProfile -Command "(Get-ItemProperty -LiteralPath 'HKCU:\\$classes\\$1' -ErrorAction Stop).'(default)'" | tr -d '\r'
-}
-# opens_with <app id> <export> <extension> <icon's file name>: the extension
-# is registered for the app, to open with the export's shim in open\.
-opens_with() {
-    local prog="Zigsaw.$1.${3#.}"
-    [ "$(reg_value "$prog\\shell\\open\\command")" = "\"$ZIGSAW_HOME\\open\\$1\\$2.exe\" \"%1\"" ] || { echo "$3: $(reg_value "$prog\\shell\\open\\command")"; return 1; }
-    case $(reg_value "$prog\\DefaultIcon") in *"\\$4,0") ;; *) echo "$3: icon $(reg_value "$prog\\DefaultIcon")"; return 1 ;; esac
-    reg query "HKCU\\$classes\\$3\\OpenWithProgids" /v "$prog" >/dev/null 2>&1
-}
 # A directory of documents that no run has been granted, unlike the work
 # directory, which runs with the cwd permission are.
 docs=$(cygpath -w "$(mktemp -d)")
@@ -405,12 +362,11 @@ stays_up() {
 check "the Adwaita demo runs" stays_up 15 --command=adwaita-1-demo org.gtk.Gtk4
 # It aborted at startup without an SVG loader (iteration 11).
 check "GTK's widget factory runs" stays_up 15 --command=gtk4-widget-factory org.gtk.Gtk4
-check "it gets the windowless shim and a shortcut" sh -c "cmp -s '$ZIGSAW_HOME\\bin\\gtk4-widget-factory.exe' '$shim_dir\\zigsaw-shimw.exe' && test -f '$links\\GTK Widget Factory.lnk'"
 
 # GNOME Text Editor, on the runtime. Built here unless the store has it,
 # which takes a few minutes.
 installed_editor=false
-if [ ! -f "$ZIGSAW_HOME\\refs\\$EDITOR.json" ]; then
+if [ ! -f "$QUASIDOCK_HOME\\refs\\$EDITOR.json" ]; then
     z build "$root\\recipes\\gnome-text-editor.json" >"$work\\editor.log" 2>&1 || echo "building $EDITOR failed: $(tail -1 "$work\\editor.log")"
     installed_editor=true
 else
@@ -418,14 +374,9 @@ else
 fi
 editor_version() { timeout 60 "$zigsaw" run $EDITOR --version | tr -d '\r' | grep -q '^Text Editor 51\.0 '; }
 check "Text Editor 51.0 is installed" editor_version
-check "it gets the windowless shim and a shortcut" sh -c "cmp -s '$ZIGSAW_HOME\\bin\\gnome-text-editor.exe' '$shim_dir\\zigsaw-shimw.exe' && test -f '$links\\Text Editor.lnk'"
 check "it runs" stays_up 15 $EDITOR --standalone
 check "with --sandbox=soft" stays_up 15 --sandbox=soft $EDITOR --standalone
 check "with --sandbox=appcontainer" stays_up 15 --sandbox=appcontainer $EDITOR --standalone
-check "its shortcut has an icon made from its SVG" has_icon "Text Editor" org.gnome.TextEditor
-editor_opens() { for ext in .txt .md .log; do opens_with $EDITOR gnome-text-editor $ext org.gnome.TextEditor.ico || return 1; done; }
-check "it's registered to open .txt, .md and .log files" editor_opens
-# As the shim of those does: the file granted, and nothing around it.
 echo "a note" >"$docs\\note.txt"
 check "it opens a file it's given with --file" stays_up 15 --command=gnome-text-editor --file="$docs\\note.txt" $EDITOR --standalone
 check "with --sandbox=soft" stays_up 15 --sandbox=soft --command=gnome-text-editor --file="$docs\\note.txt" $EDITOR --standalone
@@ -437,7 +388,7 @@ check "with --sandbox=appcontainer" stays_up 15 --sandbox=appcontainer --command
 # unless the store has it (a few minutes).
 GAPHOR=org.gaphor.Gaphor
 installed_gaphor=false
-if [ ! -f "$ZIGSAW_HOME\\refs\\$GAPHOR.json" ]; then
+if [ ! -f "$QUASIDOCK_HOME\\refs\\$GAPHOR.json" ]; then
     z build "$root\\recipes\\gaphor.json" >"$work\\gaphor.log" 2>&1 || echo "building $GAPHOR failed: $(tail -1 "$work\\gaphor.log")"
     installed_gaphor=true
 else
@@ -445,7 +396,7 @@ else
 fi
 # Gaphor's pythonw shows nothing: its console python.exe, from PyGObject's
 # runtime, runs it for these.
-pygobject_dir="$ZIGSAW_HOME\\deploy\\$(grep -o 'sha256:[0-9a-f]*' "$ZIGSAW_HOME\\blobs\\sha256\\$(manifest_of org.gnome.PyGObject | cut -d: -f2)" | tail -1 | cut -d: -f2)"
+pygobject_dir="$QUASIDOCK_HOME\\deploy\\$(grep -o 'sha256:[0-9a-f]*' "$QUASIDOCK_HOME\\blobs\\sha256\\$(manifest_of org.gnome.PyGObject | cut -d: -f2)" | tail -1 | cut -d: -f2)"
 gaphor_version() {
     local out
     out=$(timeout 60 "$zigsaw" run --command="$pygobject_dir\\python.exe" $GAPHOR -m gaphor --version 2>&1 | tr -d '\r')
@@ -466,29 +417,25 @@ check "with --sandbox=soft" gaphor_self_test --sandbox=soft
 # Python's tempfile makes its directories with mode 0o700, which an
 # AppContainer couldn't write in until PyGObject's sitecustomize.py.
 check "with --sandbox=appcontainer" gaphor_self_test --sandbox=appcontainer
-check "it gets the windowless shim and a shortcut" sh -c "cmp -s '$ZIGSAW_HOME\\bin\\gaphor.exe' '$shim_dir\\zigsaw-shimw.exe' && test -f '$links\\Gaphor.lnk'"
-check "its shortcut has an icon made from its SVG" has_icon "Gaphor" org.gaphor.Gaphor
-check "it's registered to open .gaphor files" opens_with $GAPHOR gaphor .gaphor org.gaphor.Gaphor.ico
 check "it runs" stays_up 20 $GAPHOR
 
 # Rnote (recipes/rnote.json), a Rust GTK app, on the runtime. Built here
 # unless the store has it, which takes about 20 minutes.
 installed_rnote=false
-if [ ! -f "$ZIGSAW_HOME\\refs\\$RNOTE.json" ]; then
+if [ ! -f "$QUASIDOCK_HOME\\refs\\$RNOTE.json" ]; then
     z build "$root\\recipes\\rnote.json" >"$work\\rnote.log" 2>&1 || echo "building $RNOTE failed: $(tail -1 "$work\\rnote.log")"
     installed_rnote=true
 else
     install_again $RNOTE rnote.json >/dev/null 2>&1
 fi
-rnote_manifest="$ZIGSAW_HOME\\blobs\\sha256\\$(manifest_of $RNOTE | cut -d: -f2)"
-rnote_dir="$ZIGSAW_HOME\\deploy\\$(grep -o 'sha256:[0-9a-f]*' "$rnote_manifest" | tail -1 | cut -d: -f2)"
+rnote_manifest="$QUASIDOCK_HOME\\blobs\\sha256\\$(manifest_of $RNOTE | cut -d: -f2)"
+rnote_dir="$QUASIDOCK_HOME\\deploy\\$(grep -o 'sha256:[0-9a-f]*' "$rnote_manifest" | tail -1 | cut -d: -f2)"
 rnote_imports() {
     timeout 60 "$zigsaw" run --command=rnote-cli $RNOTE --version | tr -d '\r' | grep -qx 'rnote-cli 0\.14\.2' || return 1
-    (cd "$root" && zig build imports) >/dev/null || return 1
-    "$root\\zig-out\\test\\zigsaw-imports.exe" "$rnote_dir\\bin\\rnote.exe" "$rnote_dir\\bin\\rnote-cli.exe"
+    (cd "$root" && go run ./scripts/build.go imports) >/dev/null || return 1
+    "$root\\zig-out\\test\\quasidock-imports.exe" "$rnote_dir\\bin\\rnote.exe" "$rnote_dir\\bin\\rnote-cli.exe"
 }
 check "Rnote 0.14.2 is installed, and its programs bind all their imports" rnote_imports
-check "it gets the windowless shim and a shortcut" sh -c "cmp -s '$ZIGSAW_HOME\\bin\\rnote.exe' '$shim_dir\\zigsaw-shimw.exe' && test -f '$links\\Rnote.lnk'"
 check "it has its translations" test -f "$rnote_dir\\share\\locale\\de\\LC_MESSAGES\\rnote.mo"
 # rnote-cli imports a Xournal++ document and exports it as a PDF, with
 # Virgil, one of Rnote's own fonts, which it adds to Pango itself (there's
@@ -522,8 +469,6 @@ check "it draws 40 pages of text on rayon's threads, three times over" rnote_pag
 check "Rnote runs" stays_up 15 $RNOTE
 check "with --sandbox=soft" stays_up 15 --sandbox=soft $RNOTE
 check "with --sandbox=appcontainer" stays_up 15 --sandbox=appcontainer $RNOTE
-rnote_opens() { opens_with $RNOTE rnote .rnote rnote.exe && opens_with $RNOTE rnote .xopp rnote.exe; }
-check "it's registered to open .rnote and .xopp files, which show its icon" rnote_opens
 cp "$work\\notes.rnote" "$docs\\notes.rnote"
 check "it opens a document it's given with --file" stays_up 20 --command=rnote --file="$docs\\notes.rnote" $RNOTE
 check "with --sandbox=soft" stays_up 20 --sandbox=soft --command=rnote --file="$docs\\notes.rnote" $RNOTE
@@ -535,34 +480,19 @@ check "with --sandbox=appcontainer" stays_up 20 --sandbox=appcontainer --command
 # store has them (300 MB, about a minute), and Pinta too (about a minute).
 PINTA=com.github.PintaProject.Pinta
 installed_dotnet=false installed_pinta=false
-[ -f "$ZIGSAW_HOME\\refs\\com.microsoft.dotnet.Sdk.json" ] || installed_dotnet=true
-[ -f "$ZIGSAW_HOME\\refs\\$PINTA.json" ] || installed_pinta=true
+[ -f "$QUASIDOCK_HOME\\refs\\com.microsoft.dotnet.Sdk.json" ] || installed_dotnet=true
+[ -f "$QUASIDOCK_HOME\\refs\\$PINTA.json" ] || installed_pinta=true
 for r in dotnet-sdk dotnet pinta; do
     z build "$root\\recipes\\no-publish\\$r.json" >"$work\\$r.log" 2>&1 || echo "building $r.json failed: $(tail -1 "$work\\$r.log")"
 done
-pinta_dir="$ZIGSAW_HOME\\deploy\\$(grep -o 'sha256:[0-9a-f]*' "$ZIGSAW_HOME\\blobs\\sha256\\$(manifest_of $PINTA | cut -d: -f2)" | tail -1 | cut -d: -f2)"
+pinta_dir="$QUASIDOCK_HOME\\deploy\\$(grep -o 'sha256:[0-9a-f]*' "$QUASIDOCK_HOME\\blobs\\sha256\\$(manifest_of $PINTA | cut -d: -f2)" | tail -1 | cut -d: -f2)"
 check "Pinta 3.1.2 is installed" sh -c "timeout 60 \"\$0\" run $PINTA --version | tr -d '\r' | grep -qx '3\\.1\\.2'" "$zigsaw"
-check "it gets the windowless shim and a shortcut" sh -c "cmp -s '$ZIGSAW_HOME\\bin\\pinta.exe' '$shim_dir\\zigsaw-shimw.exe' && test -f '$links\\Pinta.lnk'"
-# Its icon is in its executable, the apphost the .NET SDK makes for it, which
-# takes the project's icon.
-exe_icons() {
-    powershell -NoProfile -Command "Add-Type -Namespace Z -Name I -MemberDefinition '[DllImport(\"shell32.dll\", CharSet = CharSet.Unicode)] public static extern uint ExtractIconEx(string f, int i, IntPtr[] l, IntPtr[] s, uint n);'; [Z.I]::ExtractIconEx('$1', -1, \$null, \$null, 0)" | tr -d '\r'
-}
-pinta_icon() {
-    local ico
-    ico=$(lnk_icon "$links\\Pinta.lnk")
-    [ "$ico" = "$pinta_dir\\bin\\Pinta.exe,0" ] || { echo "Pinta: $ico"; return 1; }
-    [ "$(exe_icons "$pinta_dir\\bin\\Pinta.exe")" -ge 1 ] || { echo "no icon in Pinta.exe"; return 1; }
-}
-check "its shortcut shows the icon in its executable" pinta_icon
 # Pinta looks for its icons and translations in the share directory next to
 # its bin, as its own Windows build lays them out.
 check "it has its icons and translations in share" test -f "$pinta_dir\\share\\locale\\de\\LC_MESSAGES\\pinta.mo" -a -f "$pinta_dir\\share\\icons\\hicolor\\scalable\\actions\\tool-paintbrush-symbolic.svg"
 check "Pinta runs" stays_up 15 $PINTA
 check "with --sandbox=soft" stays_up 15 --sandbox=soft $PINTA
 check "with --sandbox=appcontainer" stays_up 15 --sandbox=appcontainer $PINTA
-pinta_opens() { for ext in .ora .png .jpg .jpeg .bmp .tif .tiff; do opens_with $PINTA pinta $ext Pinta.exe || return 1; done; }
-check "it's registered to open .ora, .png, .jpg, .jpeg, .bmp, .tif and .tiff files" pinta_opens
 # A 4x4 PNG.
 printf '%s' 'iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAIAAAAmkwkpAAAAEElEQVR42mM4EaABRwzEcQASUhQB/GAXigAAAABJRU5ErkJggg==' | base64 -d >"$docs\\picture.png"
 check "it opens an image it's given with --file" stays_up 20 --command=pinta --file="$docs\\picture.png" $PINTA
@@ -573,13 +503,13 @@ check "the documents' directory was granted to none of the apps" sh -c "! icacls
 # GTK built with the machine's MSVC (recipes/gtk4-msvc.json), if the store
 # has it: it isn't published, and needs Visual Studio to build.
 MSVC=org.gtk.Gtk4.Msvc
-if [ -f "$ZIGSAW_HOME\\refs\\$MSVC.json" ]; then
-    msvc_dir="$ZIGSAW_HOME\\deploy\\$(grep -o 'sha256:[0-9a-f]*' "$ZIGSAW_HOME\\blobs\\sha256\\$(manifest_of $MSVC | cut -d: -f2)" | tail -1 | cut -d: -f2)"
+if [ -f "$QUASIDOCK_HOME\\refs\\$MSVC.json" ]; then
+    msvc_dir="$QUASIDOCK_HOME\\deploy\\$(grep -o 'sha256:[0-9a-f]*' "$QUASIDOCK_HOME\\blobs\\sha256\\$(manifest_of $MSVC | cut -d: -f2)" | tail -1 | cut -d: -f2)"
     check "GTK built with MSVC: its gtk4-demo is GTK 4.24.1" sh -c "timeout 60 \"\$0\" run $MSVC --version | grep -q 'gtk4-demo.exe 4.24.1'" "$zigsaw"
     msvc_self_contained() {
         test -f "$msvc_dir\\bin\\vcruntime140.dll" || { echo "no vcruntime140.dll"; return 1; }
-        (cd "$root" && zig build imports) >/dev/null || return 1
-        "$root\\zig-out\\test\\zigsaw-imports.exe" "$msvc_dir\\bin\\gtk4-demo.exe" "$msvc_dir\\bin\\adwaita-1-demo.exe"
+        (cd "$root" && go run ./scripts/build.go imports) >/dev/null || return 1
+        "$root\\zig-out\\test\\quasidock-imports.exe" "$msvc_dir\\bin\\gtk4-demo.exe" "$msvc_dir\\bin\\adwaita-1-demo.exe"
     }
     check "it has the Visual C++ runtime with it, and its demos bind all their imports" msvc_self_contained
     check "its demo runs" stays_up 15 $MSVC
@@ -591,9 +521,6 @@ else
 fi
 
 cd "$root" || exit 1
-# The scratch key, and the one above it unless another run has one in it.
-reg delete "HKCU\\$classes" /f >/dev/null 2>&1
-reg query 'HKCU\Software\ZigsawTest' 2>/dev/null | grep -q . || reg delete 'HKCU\Software\ZigsawTest' /f >/dev/null 2>&1
 rm -rf "$docs"
 $installed_pinta && z rm --delete-data $PINTA >/dev/null 2>&1
 $installed_dotnet && { z rm --delete-data com.microsoft.dotnet >/dev/null 2>&1; z rm --delete-data com.microsoft.dotnet.Sdk >/dev/null 2>&1; }

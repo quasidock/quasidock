@@ -6,18 +6,18 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/zigsaw-io/zigsaw/internal/acl"
-	"github.com/zigsaw-io/zigsaw/internal/appcontainer"
-	"github.com/zigsaw-io/zigsaw/internal/regkey"
-	"github.com/zigsaw-io/zigsaw/internal/store"
-	"github.com/zigsaw-io/zigsaw/internal/win32"
+	"github.com/quasidock/quasidock/internal/acl"
+	"github.com/quasidock/quasidock/internal/appcontainer"
+	"github.com/quasidock/quasidock/internal/regkey"
+	"github.com/quasidock/quasidock/internal/store"
+	"github.com/quasidock/quasidock/internal/win32"
 )
 
 const (
 	hkcuRoot   = win32.HKEY_CURRENT_USER
-	recordsKey = `Software\zigsaw\keys`
-	asideKey   = `Software\zigsaw\aside`
-	mutexName  = `Local\zigsaw-hkcu`
+	recordsKey = `Software\quasidock\keys`
+	asideKey   = `Software\quasidock\aside`
+	mutexName  = `Local\quasidock-hkcu`
 )
 
 type AccessType int
@@ -328,7 +328,7 @@ func Leave(st *store.Store, s *Session) {
 		return
 	}
 	if err := leaveOrFail(st, s); err != nil {
-		fmt.Fprintf(os.Stderr, "warning: %s's registry keys stay in HKCU until its next run, `zigsaw repair` or `zigsaw rm`\n", s.ID)
+		fmt.Fprintf(os.Stderr, "warning: %s's registry keys stay in HKCU until its next run, `quasidock repair` or `quasidock rm`\n", s.ID)
 	}
 }
 
@@ -363,7 +363,7 @@ func leaveOrFail(st *store.Store, s *Session) error {
 }
 
 func Tidy() error {
-	for _, name := range []string{recordsKey, asideKey, `Software\zigsaw`} {
+	for _, name := range []string{recordsKey, asideKey, `Software\quasidock`} {
 		k, err := regkey.Open(hkcuRoot, name, win32.KEY_READ)
 		if err == nil && k != nil {
 			empty, _ := k.IsEmpty()

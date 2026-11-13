@@ -1,14 +1,13 @@
 #!/usr/bin/env bash
 # Makes a key pair for signing images and releases, with cosign, in a folder of your
 # choosing, which must not be in a repository: cosign.key, encrypted with a passphrase
-# you're asked for, and cosign.pub, which is what goes into src/trust.zig.
+# you're asked for, and cosign.pub, which is what goes into internal/trust/trust.go.
 #
 #   scripts/signing-key.sh <empty or new folder>
 #
-# zigsaw builds in two public keys: one that signs and one kept away from this machine,
+# quasidock builds in two public keys: one that signs and one kept away from this machine,
 # for the day the first is lost or stolen. Keep the second's cosign.key and passphrase
-# on something you can lock away, and copy the first's there too. If both keys are lost,
-# nobody can be sent an upgrade: every zigsaw would have to be installed again by hand.
+# on something you can lock away, and copy the first's there too.
 #
 # Needs Git Bash and cosign in the store (scripts/sign-lib.sh says how to name another).
 

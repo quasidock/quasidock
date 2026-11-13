@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/zigsaw-io/zigsaw/internal/environment"
+	"github.com/quasidock/quasidock/internal/environment"
 )
 
 func TestExpand(t *testing.T) {
@@ -77,7 +77,7 @@ func TestIsInside(t *testing.T) {
 }
 
 func TestJunctions(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "zigsaw-junction-test-*")
+	tmpDir, err := os.MkdirTemp("", "quasidock-junction-test-*")
 	if err != nil {
 		t.Fatal(err)
 	}

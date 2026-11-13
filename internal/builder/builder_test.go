@@ -4,14 +4,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zigsaw-io/zigsaw/internal/environment"
+	"github.com/quasidock/quasidock/internal/environment"
 )
 
 func TestIsBuildRoot(t *testing.T) {
-	if !IsBuildRoot(`\??\C:\Users\me\AppData\Local\zigsaw\tmp\zigsaw-build-0a1b2c3d4e5f6a7b`) {
+	if !IsBuildRoot(`\??\C:\Users\me\AppData\Local\quasidock\tmp\quasidock-build-0a1b2c3d4e5f6a7b`) {
 		t.Fatalf("expected isBuildRoot true")
 	}
-	if !IsBuildRoot(`\??\D:\z\tmp\zigsaw-build-0a1b\`) {
+	if !IsBuildRoot(`\??\D:\z\tmp\quasidock-build-0a1b\`) {
 		t.Fatalf("expected isBuildRoot true")
 	}
 	if IsBuildRoot(`\Device\HarddiskVolume3`) {

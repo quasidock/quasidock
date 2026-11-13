@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/zigsaw-io/zigsaw/internal/estargz"
-	"github.com/zigsaw-io/zigsaw/internal/oci"
+	"github.com/quasidock/quasidock/internal/estargz"
+	"github.com/quasidock/quasidock/internal/oci"
 )
 
 type countingWriter struct {

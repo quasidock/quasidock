@@ -6,13 +6,13 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/zigsaw-io/zigsaw/internal/context"
-	"github.com/zigsaw-io/zigsaw/internal/recipe"
-	"github.com/zigsaw-io/zigsaw/internal/store"
-	"github.com/zigsaw-io/zigsaw/internal/tree"
+	"github.com/quasidock/quasidock/internal/context"
+	"github.com/quasidock/quasidock/internal/recipe"
+	"github.com/quasidock/quasidock/internal/store"
+	"github.com/quasidock/quasidock/internal/tree"
 )
 
-const ManifestName = "zigsaw.json"
+const ManifestName = "quasidock.json"
 
 type Snapshot struct {
 	Dir   string
@@ -102,7 +102,7 @@ func (s *Snapshots) Recheck(ctx *context.Context, module string) error {
 		}
 		same, err := isSnapshotUnchanged(e.snapshot)
 		if err != nil || !same {
-			return fmt.Errorf("module %s: files in %s changed while zigsaw took them; build again", e.module, e.snapshot.Dir)
+			return fmt.Errorf("module %s: files in %s changed while quasidock took them; build again", e.module, e.snapshot.Dir)
 		}
 	}
 	return nil

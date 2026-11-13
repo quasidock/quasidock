@@ -6,12 +6,12 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/zigsaw-io/zigsaw/internal/estargz"
-	"github.com/zigsaw-io/zigsaw/internal/format"
-	"github.com/zigsaw-io/zigsaw/internal/oci"
-	"github.com/zigsaw-io/zigsaw/internal/registry"
-	"github.com/zigsaw-io/zigsaw/internal/remote"
-	"github.com/zigsaw-io/zigsaw/internal/store"
+	"github.com/quasidock/quasidock/internal/estargz"
+	"github.com/quasidock/quasidock/internal/format"
+	"github.com/quasidock/quasidock/internal/oci"
+	"github.com/quasidock/quasidock/internal/registry"
+	"github.com/quasidock/quasidock/internal/remote"
+	"github.com/quasidock/quasidock/internal/store"
 )
 
 type LayerInfo struct {
@@ -170,7 +170,7 @@ func Cat(st *store.Store, envRegistry, imageText, path string, verbose bool, w i
 	}
 
 	if len(skipped) > 0 {
-		return fmt.Errorf("%s has no %s in the layers zigsaw can read without pulling; %s can't be",
+		return fmt.Errorf("%s has no %s in the layers quasidock can read without pulling; %s can't be",
 			app.Target.Text, path, oci.JoinAnd(skipped))
 	}
 	return fmt.Errorf("%s has no file %s", app.Target.Text, path)

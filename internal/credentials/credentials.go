@@ -14,12 +14,12 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/zigsaw-io/zigsaw/internal/win32"
+	"github.com/quasidock/quasidock/internal/win32"
 )
 
 const (
-	UsernameVar     = "ZIGSAW_REGISTRY_USERNAME"
-	PasswordVar     = "ZIGSAW_REGISTRY_PASSWORD"
+	UsernameVar     = "QUASIDOCK_REGISTRY_USERNAME"
+	PasswordVar     = "QUASIDOCK_REGISTRY_PASSWORD"
 	DefaultRegistry = "ghcr.io"
 )
 
@@ -48,7 +48,7 @@ func (c Credential) Origin() string {
 	case SourceEnvironment:
 		return "in " + UsernameVar + " and " + PasswordVar
 	case SourceCredentialManager:
-		return "saved by `zigsaw login`"
+		return "saved by `quasidock login`"
 	case SourceDockerConfig:
 		return "in Docker's config.json"
 	case SourceDockerHelper:
@@ -126,7 +126,7 @@ func Lookup(host string) (*Credential, error) {
 	u := os.Getenv(UsernameVar)
 	p := os.Getenv(PasswordVar)
 	if u != "" && p != "" {
-		defReg := os.Getenv("ZIGSAW_REGISTRY")
+		defReg := os.Getenv("QUASIDOCK_REGISTRY")
 		if defReg == "" {
 			defReg = DefaultRegistry
 		}
@@ -149,7 +149,7 @@ func Lookup(host string) (*Credential, error) {
 }
 
 func targetName(host string) string {
-	return "zigsaw:" + host
+	return "quasidock:" + host
 }
 
 // Read reads a saved credential from Windows Credential Manager.
@@ -190,7 +190,7 @@ func Save(host, user, secret string) error {
 
 	tgtU16 := win32.UTF16Ptr(targetName(host))
 	usrU16 := win32.UTF16Ptr(user)
-	cmtU16 := win32.UTF16Ptr("Registry login saved by zigsaw login")
+	cmtU16 := win32.UTF16Ptr("Registry login saved by quasidock login")
 
 	var secretPtr *byte
 	if len(secret) > 0 {

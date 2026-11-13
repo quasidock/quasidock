@@ -12,9 +12,9 @@ import (
 
 // Params contains information to embed in the Windows resource.
 type Params struct {
-	Version     string // e.g. "0.78.0"
-	Description string // e.g. "zigsaw"
-	FileName    string // e.g. "zigsaw.exe"
+	Version     string // e.g. "0.2.0"
+	Description string // e.g. "quasidock"
+	FileName    string // e.g. "quasidock.exe"
 	ManifestXML []byte // raw XML bytes of manifest
 }
 
@@ -113,7 +113,7 @@ func buildVersionInfo(p Params) ([]byte, error) {
 		{"InternalName", p.FileName},
 		{"LegalCopyright", "Copyright (c) 2026, Bradley Tran. BSD 3-Clause License."},
 		{"OriginalFilename", p.FileName},
-		{"ProductName", "zigsaw"},
+		{"ProductName", "quasidock"},
 		{"ProductVersion", p.Version},
 	}
 

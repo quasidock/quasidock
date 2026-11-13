@@ -7,7 +7,7 @@ import (
 	"syscall"
 	"unsafe"
 
-	"github.com/zigsaw-io/zigsaw/internal/win32"
+	"github.com/quasidock/quasidock/internal/win32"
 )
 
 var (
@@ -280,7 +280,7 @@ func Register(root string, identity string, again bool) error {
 	}
 
 	rootW := win32.UTF16Ptr(root)
-	nameW := win32.UTF16Ptr("zigsaw")
+	nameW := win32.UTF16Ptr("quasidock")
 	verW := win32.UTF16Ptr("1")
 
 	idBytes := []byte(identity)

@@ -13,7 +13,7 @@
 # one, so ZLS finds neither zig's library nor the modules: those two checks
 # are known gaps there, as zig's are in tests/matrix.sh.
 #
-#   ZLS_HOME=path\to\store bash tests/zls.sh [path\to\zigsaw.exe]
+#   ZLS_HOME=path\to\store bash tests/zls.sh [path\to\quasidock.exe]
 #
 # The store (ZLS_HOME, or BUILD_HOME as tests/published.sh leaves it, or a
 # temporary one) gets ZLS unless it has it (built in about 2 minutes, with
@@ -24,14 +24,14 @@ export MSYS_NO_PATHCONV=1
 export LC_ALL=C
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
-zigsaw=${1:-$root/zig-out/bin/zigsaw.exe}
+zigsaw=${1:-$root/zig-out/bin/quasidock.exe}
 temp_store=""
-ZIGSAW_HOME=${ZLS_HOME:-${BUILD_HOME:-}}
-if [ -z "$ZIGSAW_HOME" ]; then
-    ZIGSAW_HOME=$(cygpath -w "$(mktemp -d)")
-    temp_store=$ZIGSAW_HOME
+QUASIDOCK_HOME=${ZLS_HOME:-${BUILD_HOME:-}}
+if [ -z "$QUASIDOCK_HOME" ]; then
+    QUASIDOCK_HOME=$(cygpath -w "$(mktemp -d)")
+    temp_store=$QUASIDOCK_HOME
 fi
-export ZIGSAW_HOME
+export QUASIDOCK_HOME
 work=$(cygpath -w "$(mktemp -d)")
 ZLS=org.zigtools.zls
 
@@ -66,7 +66,7 @@ check_want() {
 
 z() { "$zigsaw" "$@"; }
 installed_here=""
-if [ ! -f "$ZIGSAW_HOME\\refs\\$ZLS.json" ]; then
+if [ ! -f "$QUASIDOCK_HOME\\refs\\$ZLS.json" ]; then
     installed_here=$ZLS
     z build "$root\\recipes\\zls.json" >"$work\\build.log" 2>&1 || echo "building zls.json failed: $(tail -1 "$work\\build.log")"
 fi
@@ -81,7 +81,7 @@ check "zls --version says 0.17.0" sh -c "[ \"\$(\"\$0\" run $ZLS --version | tr 
 caches_in_data() {
     local dir
     dir=$(z run $ZLS env | tr -d '\r' | grep '"global_cache_dir"' | sed -e 's/.*: "//' -e 's/",*$//' -e 's/\\\\/\\/g')
-    [[ $dir == "$ZIGSAW_HOME\\data\\$ZLS\\"* ]] || { echo "global_cache_dir is $dir"; return 1; }
+    [[ $dir == "$QUASIDOCK_HOME\\data\\$ZLS\\"* ]] || { echo "global_cache_dir is $dir"; return 1; }
 }
 check "its caches and log are in its data" caches_in_data
 
@@ -166,7 +166,6 @@ for sb in soft low appcontainer; do
     check "  told to, it exits, with 0" test $? -eq 0
 done
 
-check "its shim runs it, as an editor would" sh -c "[ \"\$(\"$ZIGSAW_HOME\\\\bin\\\\zls.exe\" --version | tr -d '\r')\" = 0.17.0 ]"
 check "no run labelled or granted the repository" sh -c "! icacls '$root' | grep -q -e 'Mandatory Label' -e 'S-1-15-'"
 
 cd "$root" || exit 1

@@ -18,7 +18,7 @@
 #
 # Not in CI: tests/build.sh's PHP section is, with a small test extension.
 #
-#   PHP_HOME=path\to\store bash tests/php.sh [path\to\zigsaw.exe]
+#   PHP_HOME=path\to\store bash tests/php.sh [path\to\quasidock.exe]
 #
 # It builds the PHP images into the store unless it has them, and removes
 # what it installed afterwards. The extensions' tests come from their
@@ -30,14 +30,14 @@ set -u
 export MSYS_NO_PATHCONV=1
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
-zigsaw=${1:-$root/zig-out/bin/zigsaw.exe}
-ZIGSAW_HOME=${PHP_HOME:-${BUILD_HOME:-}}
-if [ -z "$ZIGSAW_HOME" ]; then
+zigsaw=${1:-$root/zig-out/bin/quasidock.exe}
+QUASIDOCK_HOME=${PHP_HOME:-${BUILD_HOME:-}}
+if [ -z "$QUASIDOCK_HOME" ]; then
     echo "tests/php.sh needs a store in PHP_HOME or BUILD_HOME; it builds PHP's images there unless it has them."
     exit 1
 fi
-export ZIGSAW_HOME
-case "$ZIGSAW_HOME" in *' '*) echo "PHP_HOME can't have a space: run-tests.php splits its options at spaces"; exit 1 ;; esac
+export QUASIDOCK_HOME
+case "$QUASIDOCK_HOME" in *' '*) echo "PHP_HOME can't have a space: run-tests.php splits its options at spaces"; exit 1 ;; esac
 work=$(cygpath -w "$(mktemp -d)")
 XDEBUG_TESTS_URL=https://github.com/xdebug/xdebug/archive/refs/tags/3.5.3.tar.gz
 XDEBUG_TESTS_SHA256=954e56021668121ecc50b92d2ad1ce945f22ecf81ffc5bb5835219485b12ef5f
@@ -56,9 +56,9 @@ check() {
 }
 
 z() { "$zigsaw" "$@"; }
-manifest_of() { grep -o 'sha256:[0-9a-f]*' "$ZIGSAW_HOME\\refs\\$1.json"; }
-own_layer() { grep -o 'sha256:[0-9a-f]*' "$ZIGSAW_HOME\\blobs\\sha256\\$(manifest_of "$1" | cut -d: -f2)" | tail -1 | cut -d: -f2; }
-deploy_of() { echo "$ZIGSAW_HOME\\deploy\\$(own_layer "$1")"; }
+manifest_of() { grep -o 'sha256:[0-9a-f]*' "$QUASIDOCK_HOME\\refs\\$1.json"; }
+own_layer() { grep -o 'sha256:[0-9a-f]*' "$QUASIDOCK_HOME\\blobs\\sha256\\$(manifest_of "$1" | cut -d: -f2)" | tail -1 | cut -d: -f2; }
+deploy_of() { echo "$QUASIDOCK_HOME\\deploy\\$(own_layer "$1")"; }
 recipe_sha256() { grep -o '"sha256": *"[0-9a-f]*"' "$root\\recipes\\$1" | head -1 | cut -d'"' -f4; }
 
 PHP=net.php.php SDK=net.php.php.Sdk APCU=net.php.php.APCu XDEBUG=net.php.php.Xdebug CONSUMER=test.php.consumer
@@ -66,7 +66,7 @@ IGBINARY=net.php.php.Igbinary REDIS=net.php.php.Redis SSH2=net.php.php.SSH2 SERV
 YAML=net.php.php.Yaml ZSTD=net.php.php.Zstd COMPOSER=org.getcomposer.composer KANBOARD=org.kanboard.Kanboard
 installed=()
 for id in $SDK $PHP $APCU $XDEBUG $IGBINARY $REDIS $SSH2 $YAML $ZSTD $SERVERS $COMPOSER $KANBOARD; do
-    [ -f "$ZIGSAW_HOME\\refs\\$id.json" ] || installed+=("$id")
+    [ -f "$QUASIDOCK_HOME\\refs\\$id.json" ] || installed+=("$id")
 done
 
 check "php-sdk.json builds PHP's SDK image" z build "$root\\recipes\\php-sdk.json"
@@ -196,7 +196,7 @@ check "Xdebug writes its traces to the run's TEMP, under soft, low and appcontai
 # APCu's tests, from its release tarball, which its build left in the
 # store's downloads.
 mkdir -p "$work\\apcu"
-tar -xzf "$(cygpath -u "$ZIGSAW_HOME\\cache\\downloads\\$(recipe_sha256 php-apcu.json)")" -C "$(cygpath -u "$work\\apcu")" --strip-components=1
+tar -xzf "$(cygpath -u "$QUASIDOCK_HOME\\cache\\downloads\\$(recipe_sha256 php-apcu.json)")" -C "$(cygpath -u "$work\\apcu")" --strip-components=1
 # php-ext test's output ends with how many failed; run-tests.php's summary
 # says how many passed, which mustn't be none.
 passed() {
@@ -214,7 +214,7 @@ check "APCu passes its test suite" apcu_suite
 # Xdebug's tests, from its GitHub tag, with its own copy of run-tests.php,
 # which knows the {TMPFILE:} placeholders and the AFTER section they use.
 xdebug_tgz=
-for d in "${SEED_DOWNLOADS:-}" "$ZIGSAW_HOME\\cache\\downloads"; do
+for d in "${SEED_DOWNLOADS:-}" "$QUASIDOCK_HOME\\cache\\downloads"; do
     [ -n "$d" ] && [ -f "$d\\$XDEBUG_TESTS_SHA256" ] && xdebug_tgz="$d\\$XDEBUG_TESTS_SHA256"
 done
 if [ -z "$xdebug_tgz" ]; then
@@ -246,7 +246,7 @@ rm -f "C:\\Windows\\Temp\\remote-log-win.txt"
 # igbinary's, ssh2's and redis's tests, from their release tarballs.
 for x in igbinary:php-igbinary.json ssh2:php-ssh2.json redis:php-redis.json; do
     mkdir -p "$work\\${x%%:*}"
-    tar -xzf "$(cygpath -u "$ZIGSAW_HOME\\cache\\downloads\\$(recipe_sha256 "${x#*:}")")" -C "$(cygpath -u "$work\\${x%%:*}")" --strip-components=1
+    tar -xzf "$(cygpath -u "$QUASIDOCK_HOME\\cache\\downloads\\$(recipe_sha256 "${x#*:}")")" -C "$(cygpath -u "$work\\${x%%:*}")" --strip-components=1
 done
 igbinary_suite() {
     local out
@@ -261,7 +261,7 @@ pecl_sha256() { grep -A1 'pecl.php.net/get' "$root\\recipes\\$1" | grep -o '"sha
 lib_suite() {
     local ext=$1 id=$2 out
     mkdir -p "$work\\$ext"
-    tar -xzf "$(cygpath -u "$ZIGSAW_HOME\\cache\\downloads\\$(pecl_sha256 php-$ext.json)")" -C "$(cygpath -u "$work\\$ext")" --strip-components=1
+    tar -xzf "$(cygpath -u "$QUASIDOCK_HOME\\cache\\downloads\\$(pecl_sha256 php-$ext.json)")" -C "$(cygpath -u "$work\\$ext")" --strip-components=1
     out=$(cd "$work\\$ext" && z run --command=php-ext $SDK test tests --ext "$(deploy_of $id)\\php_$ext.dll" 2>&1 | tr -d '\r')
     passed "$out"
 }
@@ -340,7 +340,7 @@ check "and under low" debugs low
 # The consumer has the network: its container is exempt from loopback
 # isolation while it runs. Without the exemption, zigsaw forwards the port.
 check "and under appcontainer" debugs appcontainer
-forwarded_debugs() { (export ZIGSAW_LOOPBACK_EXEMPTION=0 && debugs appcontainer); }
+forwarded_debugs() { (export QUASIDOCK_LOOPBACK_EXEMPTION=0 && debugs appcontainer); }
 check "and under appcontainer without the loopback exemption, through zigsaw" forwarded_debugs
 
 # --- Composer and Kanboard ----------------------------------------------------
@@ -404,7 +404,7 @@ kanboard_data() {
     local out
     out=$(z run --command=kanboard-cli $KANBOARD db:version 2>&1 | tr -d '\r')
     grep -qE '^Current version: [0-9]+' <<<"$out" || { echo "kanboard-cli: $out"; return 1; }
-    [ -f "$ZIGSAW_HOME\\data\\$KANBOARD\\db.sqlite" ] || { echo "no db.sqlite in its data"; return 1; }
+    [ -f "$QUASIDOCK_HOME\\data\\$KANBOARD\\db.sqlite" ] || { echo "no db.sqlite in its data"; return 1; }
 }
 check "kanboard-cli makes its database in the app's data" kanboard_data
 # PHP's is_writable() is false at low integrity, even for what the run may

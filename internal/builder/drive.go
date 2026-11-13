@@ -5,14 +5,14 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/zigsaw-io/zigsaw/internal/context"
-	"github.com/zigsaw-io/zigsaw/internal/win32"
+	"github.com/quasidock/quasidock/internal/context"
+	"github.com/quasidock/quasidock/internal/win32"
 )
 
 const (
 	DriveLetter = "B:"
-	DirPrefix   = "zigsaw-build-"
-	mutexName   = "Local\\zigsaw-build-drive"
+	DirPrefix   = "quasidock-build-"
+	mutexName   = "Local\\quasidock-build-drive"
 	removeFlags = win32.DDD_REMOVE_DEFINITION | win32.DDD_EXACT_MATCH_ON_REMOVE | win32.DDD_RAW_TARGET_PATH | win32.DDD_NO_BROADCAST_SYSTEM
 )
 
@@ -42,7 +42,7 @@ func AcquireDrive(ctx *context.Context, dir string) (*Drive, error) {
 	waitRes := win32.WaitForSingleObject(mutex, 0)
 	if waitRes == win32.WAIT_TIMEOUT {
 		if ctx != nil {
-			ctx.Note("waiting for another zigsaw build to finish with %s...", DriveLetter)
+			ctx.Note("waiting for another quasidock build to finish with %s...", DriveLetter)
 		}
 		waitRes = win32.WaitForSingleObject(mutex, win32.INFINITE)
 	}
@@ -56,7 +56,7 @@ func AcquireDrive(ctx *context.Context, dir string) (*Drive, error) {
 		if !IsBuildRoot(existing) {
 			_ = win32.ReleaseMutex(mutex)
 			_ = win32.CloseHandle(mutex)
-			return nil, fmt.Errorf("%s is in use (%s). zigsaw builds on %s, so that paths in what it builds are the same on every machine; free it to build", DriveLetter, existing, DriveLetter)
+			return nil, fmt.Errorf("%s is in use (%s). quasidock builds on %s, so that paths in what it builds are the same on every machine; free it to build", DriveLetter, existing, DriveLetter)
 		}
 		if err := win32.DefineDosDevice(removeFlags, DriveLetter, existing); err != nil {
 			_ = win32.ReleaseMutex(mutex)

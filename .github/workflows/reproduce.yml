@@ -139,8 +139,8 @@ jobs:
         with:
           go-version: '1.26'
 #      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
-        with:
-          version: 0.17.0
+#        with:
+#          version: 0.17.0
 
       - name: Paths for the steps below
         shell: bash
@@ -148,7 +148,7 @@ jobs:
           t=$RUNNER_TEMP
           printf '%s\n' "TMP=$t" "TEMP=$t" "BUILD_HOME=$t\\store" "LOG_DIR=$t\\logs" >>"$GITHUB_ENV"
 
-      - name: Build zigsaw
+      - name: Build quasidock
         run: go run ./scripts/build.go
 
       - name: Build the group's recipes and compare them with the published images
@@ -186,8 +186,8 @@ jobs:
         with:
           go-version: '1.26'
 #      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
-        with:
-          version: 0.17.0
+#        with:
+#          version: 0.17.0
 
       - name: Paths for the steps below
         shell: bash
@@ -195,7 +195,7 @@ jobs:
           t=$RUNNER_TEMP
           printf '%s\n' "TMP=$t" "TEMP=$t" "BUILD_HOME=$t\\store" "SEED_DOWNLOADS=$t\\store\\cache\\downloads" "LOG_DIR=$t\\logs" >>"$GITHUB_ENV"
 
-      - name: Build zigsaw
+      - name: Build quasidock
         run: go run ./scripts/build.go
 
       # The apps tests/matrix.sh runs, zot for tests/zot.sh and ZLS for
@@ -204,7 +204,7 @@ jobs:
       - name: The suites' apps, as published (built, if not published yet)
         shell: bash
         env:
-          ZIGSAW_HOME: ${{ runner.temp }}\store
+          QUASIDOCK_HOME: ${{ runner.temp }}\store
         run: |
           mkdir -p "$(cygpath -u "$LOG_DIR")"
           bash tests/seed-store.sh --build busybox node --pull zig rust ripgrep bat go fzf zot oras skopeo cosign cmake zstd mingit python java-sdk java maven gradle pdfbox plantuml zls texlive gdal postgresql postgresql-pgvector postgresql-pg-cron postgresql-postgis osm2pgsql perl php composer 2>&1 | tee "$(cygpath -u "$LOG_DIR")/seed.txt"
@@ -214,11 +214,6 @@ jobs:
         if: ${{ !cancelled() }}
         shell: bash
         run: bash tests/store.sh 2>&1 | tee "$(cygpath -u "$LOG_DIR")/store.txt"
-
-      - name: tests/shims.sh
-        if: ${{ !cancelled() }}
-        shell: bash
-        run: bash tests/shims.sh 2>&1 | tee "$(cygpath -u "$LOG_DIR")/shims.txt"
 
       - name: tests/sandbox.sh
         if: ${{ !cancelled() }}
@@ -235,7 +230,7 @@ jobs:
         shell: bash
         run: bash tests/ctrlc.sh 2>&1 | tee "$(cygpath -u "$LOG_DIR")/ctrlc.txt"
 
-      # Services, proxies and AppContainer profiles, with tests/netprobe.zig
+      # Services, proxies and AppContainer profiles, with tests/cmd/netprobe
       # as the app, in a store of its own; last, the probe's report of what
       # this Windows lets AppContainers do on the loopback.
       - name: tests/network.sh
@@ -243,8 +238,8 @@ jobs:
         shell: bash
         run: bash tests/network.sh 2>&1 | tee "$(cygpath -u "$LOG_DIR")/network.txt"
 
-      # What a run may reach of the rest of the machine: the store's commands,
-      # zigsaw-host, URL schemes and Default apps, with small test apps.
+      # What a run may reach of the rest of the machine: quasidock-host, with
+      # small test apps.
       - name: tests/reach.sh
         if: ${{ !cancelled() }}
         shell: bash
@@ -257,23 +252,11 @@ jobs:
         run: bash tests/install.sh 2>&1 | tee "$(cygpath -u "$LOG_DIR")/install.txt"
 
       # zot is the app recipes/zot.json builds, here as published (which a
-      # published job checks); tests/zot.sh runs it with zigsaw.
+      # published job checks); tests/zot.sh runs it with quasidock.
       - name: tests/registry.sh, against two local zot registries
         if: ${{ !cancelled() }}
         shell: bash
         run: bash tests/zot.sh bash tests/registry.sh 2>&1 | tee "$(cygpath -u "$LOG_DIR")/registry.txt"
-
-      # What's waiting, against a registry; its scheduled tasks are this run's own.
-      - name: tests/updates.sh, against a local zot registry
-        if: ${{ !cancelled() }}
-        shell: bash
-        run: bash tests/zot.sh bash tests/updates.sh 2>&1 | tee "$(cygpath -u "$LOG_DIR")/updates.txt"
-
-      # Going back to the version an update replaced, and holding, against a registry.
-      - name: tests/rollback.sh, against a local zot registry
-        if: ${{ !cancelled() }}
-        shell: bash
-        run: bash tests/zot.sh bash tests/rollback.sh 2>&1 | tee "$(cygpath -u "$LOG_DIR")/rollback.txt"
 
       # Lazy pulls: Cloud Files placeholders, their helper, and the swap, against a
       # registry. The runner's temporary directory is on NTFS, which can have them;
@@ -283,7 +266,7 @@ jobs:
         shell: bash
         run: bash tests/zot.sh bash tests/lazy.sh 2>&1 | tee "$(cygpath -u "$LOG_DIR")/lazy.txt"
 
-      # What pull and update do with images' signatures, against a registry.
+      # What pull does with images' signatures, against a registry.
       - name: tests/signing.sh, against a local zot registry
         if: ${{ !cancelled() }}
         shell: bash
@@ -360,7 +343,7 @@ jobs:
         if: ${{ !cancelled() }}
         shell: bash
         env:
-          ZIGSAW_HOME: ${{ runner.temp }}\store
+          QUASIDOCK_HOME: ${{ runner.temp }}\store
           # zig's project check compiles zig's build runner with a cold cache.
           MATRIX_TIMEOUT: 600
           LOG_DIR: ${{ runner.temp }}\logs
@@ -372,9 +355,9 @@ jobs:
         if: ${{ !cancelled() }}
         shell: bash
         env:
-          ZIGSAW_HOME: ${{ runner.temp }}\store
+          QUASIDOCK_HOME: ${{ runner.temp }}\store
         run: |
-          zig-out/bin/zigsaw.exe grants | tee "$(cygpath -u "$LOG_DIR")/grants.txt"
+          zig-out/bin/quasidock.exe grants | tee "$(cygpath -u "$LOG_DIR")/grants.txt"
           ! grep -q 'Not explained' "$(cygpath -u "$LOG_DIR")/grants.txt"
 
       - name: Upload the logs
@@ -400,8 +383,8 @@ jobs:
         with:
           go-version: '1.26'
 #      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
-        with:
-          version: 0.17.0
+#        with:
+#          version: 0.17.0
 
       - name: A throwaway standard user
         shell: bash
@@ -444,8 +427,8 @@ jobs:
         with:
           go-version: '1.26'
 #      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
-        with:
-          version: 0.17.0
+#        with:
+#          version: 0.17.0
 
       - name: Paths for the steps below
         shell: bash
@@ -453,7 +436,7 @@ jobs:
           t=$RUNNER_TEMP
           printf '%s\n' "TMP=$t" "TEMP=$t" "GTK_HOME=$t\\store" "LOG_DIR=$t\\logs" >>"$GITHUB_ENV"
 
-      - name: Build zigsaw
+      - name: Build quasidock
         run: go run ./scripts/build.go
 
       # GTK's images and the apps on them, as published; the suites install
@@ -462,7 +445,7 @@ jobs:
       - name: The GTK suites' images, as published (built, if not published yet)
         shell: bash
         env:
-          ZIGSAW_HOME: ${{ runner.temp }}\store
+          QUASIDOCK_HOME: ${{ runner.temp }}\store
         run: |
           mkdir -p "$(cygpath -u "$LOG_DIR")"
           bash tests/seed-store.sh --pull busybox llvm-mingw meson mingit gtk4-sdk gtk4 gtk4-hunspell-vi gtk4-hunspell-fr gnome-text-editor rnote gtk3-sdk gtk3 gtk3demo gnumeric pygobject-sdk pygobject meld gaphor 2>&1 | tee "$(cygpath -u "$LOG_DIR")/seed.txt"
@@ -500,8 +483,8 @@ jobs:
         with:
           go-version: '1.26'
 #      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
-        with:
-          version: 0.17.0
+#        with:
+#          version: 0.17.0
 
       - name: Paths for the steps below
         shell: bash
@@ -509,7 +492,7 @@ jobs:
           t=$RUNNER_TEMP
           printf '%s\n' "TMP=$t" "TEMP=$t" "QT_HOME=$t\\store" "LOG_DIR=$t\\logs" >>"$GITHUB_ENV"
 
-      - name: Build zigsaw
+      - name: Build quasidock
         run: go run ./scripts/build.go
 
       # Qt's images, Flameshot and Notes, as published; the suite installs them
@@ -519,7 +502,7 @@ jobs:
       - name: The Qt suite's images, as published (built, if not published yet)
         shell: bash
         env:
-          ZIGSAW_HOME: ${{ runner.temp }}\store
+          QUASIDOCK_HOME: ${{ runner.temp }}\store
         run: |
           mkdir -p "$(cygpath -u "$LOG_DIR")"
           bash tests/seed-store.sh --pull qt6-sdk qt6 flameshot notes 2>&1 | tee "$(cygpath -u "$LOG_DIR")/seed.txt"
@@ -560,8 +543,8 @@ jobs:
         with:
           go-version: '1.26'
 #      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
-        with:
-          version: 0.17.0
+#        with:
+#          version: 0.17.0
 
       - name: Paths for the steps below
         shell: bash
@@ -569,13 +552,13 @@ jobs:
           t=$RUNNER_TEMP
           printf '%s\n' "TMP=$t" "TEMP=$t" "LOG_DIR=$t\\logs" >>"$GITHUB_ENV"
 
-      - name: zigsaw.json has valid version
+      - name: internal/version/version.go has valid version
         if: matrix.group == 'base'
         shell: bash
         run: |
-          version=$(grep '"version":' zigsaw.json | head -1 | sed -E 's/.*"version": "([^"]+)".*/\1/')
-          if ! grep -q "^  \"version\": \"$version\",\$" zigsaw.json; then
-              echo "::error::zigsaw.json has no valid version, $version"
+          version=$(sed -n 's/.*const Version = "\([^"]*\)".*/\1/p' internal/version/version.go | head -1)
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "::error::internal/version/version.go has no valid version, $version"
               exit 1
           fi
 
@@ -583,7 +566,7 @@ jobs:
         if: matrix.group == 'base'
         run: go test ./...
 
-      - name: Build zigsaw
+      - name: Build quasidock
         run: go run ./scripts/build.go
 
       - name: tests/build.sh, the group's sections

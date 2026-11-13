@@ -18,8 +18,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/zigsaw-io/zigsaw/internal/credentials"
-	"github.com/zigsaw-io/zigsaw/internal/oci"
+	"github.com/quasidock/quasidock/internal/credentials"
+	"github.com/quasidock/quasidock/internal/oci"
 )
 
 var (
@@ -36,7 +36,7 @@ const (
 		"application/vnd.docker.distribution.manifest.list.v2+json"
 
 	DefaultChunkSize = 64 << 20 // 64 MiB
-	ChunkSizeVar     = "ZIGSAW_UPLOAD_CHUNK_SIZE"
+	ChunkSizeVar     = "QUASIDOCK_UPLOAD_CHUNK_SIZE"
 	MaxResumes       = 5
 )
 
@@ -535,7 +535,7 @@ func (c *countWriter) Write(p []byte) (int, error) {
 }
 
 func (r *Registry) testDownloadBreak(span Span) *uint64 {
-	val := os.Getenv("ZIGSAW_TEST_DOWNLOAD_BREAK")
+	val := os.Getenv("QUASIDOCK_TEST_DOWNLOAD_BREAK")
 	if val == "" {
 		return nil
 	}
@@ -721,9 +721,9 @@ func (r *Registry) putWhole(location string, desc oci.Descriptor, filePath strin
 }
 
 func (r *Registry) putChunks(location string, desc oci.Descriptor, filePath string, chunk uint64) (uint32, error) {
-	breakAt := testChunk("ZIGSAW_TEST_UPLOAD_BREAK")
-	skipAt := testChunk("ZIGSAW_TEST_UPLOAD_SKIP")
-	loseAt := testChunk("ZIGSAW_TEST_UPLOAD_LOSE")
+	breakAt := testChunk("QUASIDOCK_TEST_UPLOAD_BREAK")
+	skipAt := testChunk("QUASIDOCK_TEST_UPLOAD_SKIP")
+	loseAt := testChunk("QUASIDOCK_TEST_UPLOAD_LOSE")
 
 	at := location
 	var offset uint64
@@ -888,7 +888,7 @@ func (r *Registry) resumeUpload(at string, desc oci.Descriptor, offset *uint64, 
 	var res response
 	for {
 		asked := at
-		if os.Getenv("ZIGSAW_TEST_UPLOAD_LOST") != "" {
+		if os.Getenv("QUASIDOCK_TEST_UPLOAD_LOST") != "" {
 			asked = lostURL(at)
 		}
 		absURL, err := r.absoluteURL(asked)
@@ -1305,7 +1305,7 @@ func ParseChallenge(text string) *Challenge {
 func (r *Registry) authenticate(challengeText string) error {
 	ch := ParseChallenge(challengeText)
 	if ch == nil {
-		return fmt.Errorf("%s asked for authentication zigsaw doesn't support: %s", r.Ref.Host, challengeText)
+		return fmt.Errorf("%s asked for authentication quasidock doesn't support: %s", r.Ref.Host, challengeText)
 	}
 
 	cred, err := r.findCredential()
@@ -1378,7 +1378,7 @@ func (r *Registry) fetchToken(ch Challenge, basic string, scopes []string) (stri
 		return "", fmt.Errorf("%s asked for a token without saying where to get one", r.Ref.Host)
 	}
 	if basic != "" && !MayReceiveCredentials(ch.Realm, r.Ref.IsLocal()) {
-		return "", fmt.Errorf("%s asked for its credentials to be sent to %s over plain HTTP; zigsaw won't send them", r.Ref.Host, ch.Realm)
+		return "", fmt.Errorf("%s asked for its credentials to be sent to %s over plain HTTP; quasidock won't send them", r.Ref.Host, ch.Realm)
 	}
 
 	tokURL := TokenURL(ch.Realm, ch.Service, scopes)
@@ -1399,7 +1399,7 @@ func (r *Registry) fetchToken(ch Challenge, basic string, scopes []string) (stri
 		AccessToken string `json:"access_token"`
 	}
 	if err := json.Unmarshal(res.Body, &parsed); err != nil {
-		return "", fmt.Errorf("%s returned a token response zigsaw can't read: %w", ch.Realm, err)
+		return "", fmt.Errorf("%s returned a token response quasidock can't read: %w", ch.Realm, err)
 	}
 	t := parsed.Token
 	if t == "" {
@@ -1451,7 +1451,7 @@ func (r *Registry) findCredential() (*credentials.Credential, error) {
 		if c != nil {
 			fmt.Fprintf(os.Stderr, "  credentials for %s: %s, %s\n", r.Host, c.User, c.Origin())
 		} else {
-			defReg := os.Getenv("ZIGSAW_REGISTRY")
+			defReg := os.Getenv("QUASIDOCK_REGISTRY")
 			if defReg == "" {
 				defReg = credentials.DefaultRegistry
 			}
@@ -1474,7 +1474,7 @@ func (r *Registry) failNeedsLogin() error {
 	if r.Host == "ghcr.io" {
 		github = " with a GitHub token that has the right package scopes"
 	}
-	return fmt.Errorf("%s%s needs credentials for %s: run `zigsaw login %s`%s%s",
+	return fmt.Errorf("%s%s needs credentials for %s: run `quasidock login %s`%s%s",
 		r.Ref, maybeMissing, r.Actions, r.Host, github, r.envNote())
 }
 
@@ -1483,14 +1483,14 @@ func (r *Registry) failRefused(c credentials.Credential) error {
 	case credentials.SourceEnvironment:
 		return fmt.Errorf("%s refused the credentials %s", r.Ref.Host, c.Origin())
 	case credentials.SourceCredentialManager:
-		return fmt.Errorf("%s refused the credentials %s; run `zigsaw login %s` again", r.Ref.Host, c.Origin(), r.Host)
+		return fmt.Errorf("%s refused the credentials %s; run `quasidock login %s` again", r.Ref.Host, c.Origin(), r.Host)
 	default:
-		return fmt.Errorf("%s refused the credentials %s; run `docker login %s` again, or `zigsaw login %s`", r.Ref.Host, c.Origin(), r.Host, r.Host)
+		return fmt.Errorf("%s refused the credentials %s; run `docker login %s` again, or `quasidock login %s`", r.Ref.Host, c.Origin(), r.Host, r.Host)
 	}
 }
 
 func (r *Registry) envNote() string {
-	defReg := os.Getenv("ZIGSAW_REGISTRY")
+	defReg := os.Getenv("QUASIDOCK_REGISTRY")
 	if defReg == "" {
 		defReg = credentials.DefaultRegistry
 	}
@@ -1510,7 +1510,7 @@ func (r *Registry) failStatus(res response, what string) error {
 			return fmt.Errorf("%s for %s: access denied (HTTP %d); the registry refused the credentials %s, or they don't allow %s",
 				what, r.Ref, code, cred.Origin(), r.Actions)
 		}
-		return fmt.Errorf("%s for %s: access denied (HTTP %d); for private images and pushing, run `zigsaw login %s`%s",
+		return fmt.Errorf("%s for %s: access denied (HTTP %d); for private images and pushing, run `quasidock login %s`%s",
 			what, r.Ref, code, r.Host, r.envNote())
 	case http.StatusNotFound:
 		return fmt.Errorf("%s for %s: not found", what, r.Ref)

@@ -16,7 +16,7 @@
 # registrations (in a scratch registry key) too. Last, the registry: none of their keys stay in HKCU, and
 # an HKCU\Software\JavaSoft\Prefs that was there stays.
 #
-#   JAVAAPPS_HOME=path\to\store bash tests/java.sh [path\to\zigsaw.exe]
+#   JAVAAPPS_HOME=path\to\store bash tests/java.sh [path\to\quasidock.exe]
 #
 # The store (JAVAAPPS_HOME, or BUILD_HOME as tests/published.sh leaves it,
 # or a temporary one) gets the JDK, JRE, Maven and Gradle images and the
@@ -27,31 +27,25 @@ set -u
 export MSYS_NO_PATHCONV=1
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
-zigsaw=${1:-$root/zig-out/bin/zigsaw.exe}
+zigsaw=${1:-$root/zig-out/bin/quasidock.exe}
 temp_store=""
-ZIGSAW_HOME=${JAVAAPPS_HOME:-${BUILD_HOME:-}}
-if [ -z "$ZIGSAW_HOME" ]; then
-    ZIGSAW_HOME=$(cygpath -w "$(mktemp -d)")
-    temp_store=$ZIGSAW_HOME
+QUASIDOCK_HOME=${JAVAAPPS_HOME:-${BUILD_HOME:-}}
+if [ -z "$QUASIDOCK_HOME" ]; then
+    QUASIDOCK_HOME=$(cygpath -w "$(mktemp -d)")
+    temp_store=$QUASIDOCK_HOME
 fi
-export ZIGSAW_HOME
+export QUASIDOCK_HOME
 work=$(cygpath -w "$(mktemp -d)")
 PDFBOX=org.apache.pdfbox
 PLANTUML=com.plantuml.PlantUML
 LOGISIM=com.github.reds.LogisimEvolution
 SCENEBUILDER=com.gluonhq.SceneBuilder
-# Start menu shortcuts go here rather than the user's Start menu.
-links="$work\\links"
-export ZIGSAW_SHORTCUTS_DIR="$links"
-# File associations go under this key of HKCU rather than Software\Classes.
-classes="Software\\ZigsawTest\\java-$$"
-export ZIGSAW_CLASSES_KEY="$classes"
 # The user's folders the apps may use, such as Documents, are these, not
 # yours, which low and AppContainer runs would label and grant.
 for f in Desktop Documents Downloads; do mkdir -p "$work\\folders\\$f"; done
-export ZIGSAW_USER_FOLDERS="$work\\folders"
-(cd "$root" && zig build winwait) || { echo "building the window waiter failed"; exit 1; }
-winwait="$root\\zig-out\\test\\zigsaw-winwait.exe"
+export QUASIDOCK_USER_FOLDERS="$work\\folders"
+(cd "$root" && go run ./scripts/build.go winwait) || { echo "building the window waiter failed"; exit 1; }
+winwait="$root\\zig-out\\test\\quasidock-winwait.exe"
 had_prefs=false
 reg query 'HKCU\Software\JavaSoft\Prefs' >/dev/null 2>&1 && had_prefs=true
 
@@ -73,7 +67,7 @@ z() { "$zigsaw" "$@"; }
 # store built it before), noting whether this installed it.
 installed_here=""
 build_image() {
-    [ -f "$ZIGSAW_HOME\\refs\\$1.json" ] || installed_here="$installed_here $1"
+    [ -f "$QUASIDOCK_HOME\\refs\\$1.json" ] || installed_here="$installed_here $1"
     z build "$root\\recipes\\$2" >"$work\\$2.log" 2>&1 || echo "building $2 failed: $(tail -1 "$work\\$2.log")"
 }
 build_image org.openjdk.java.Sdk java-sdk.json
@@ -84,7 +78,7 @@ build_image $PDFBOX pdfbox.json
 build_image $PLANTUML plantuml.json
 build_image $LOGISIM logisim-evolution.json
 build_image $SCENEBUILDER scenebuilder.json
-data() { echo "$ZIGSAW_HOME\\data\\$1"; }
+data() { echo "$QUASIDOCK_HOME\\data\\$1"; }
 # Runs from the work directory's sandbox folders, never the repository: the
 # apps have the cwd permission, which low runs label and AppContainer runs
 # grant. (A check's `cd` lasts only for that check.)
@@ -160,19 +154,6 @@ recent_kept() {
     [ -f "$(data $PDFBOX)\\registry\\user.dat" ]
 }
 check "its settings, recent files among them, are kept in a hive in its data" recent_kept
-shim_dir=$(dirname "$zigsaw")
-shim_is() { cmp -s "$ZIGSAW_HOME\\bin\\$1.exe" "$shim_dir\\$2"; }
-check "pdfbox gets the console shim, pdfbox-debugger the windowless one" sh -c "cmp -s '$ZIGSAW_HOME\\bin\\pdfbox.exe' '$shim_dir\\zigsaw-shim.exe' && cmp -s '$ZIGSAW_HOME\\bin\\pdfbox-debugger.exe' '$shim_dir\\zigsaw-shimw.exe'"
-check "and a shortcut" test -f "$links\\PDFBox Debugger.lnk"
-reg_value() {
-    powershell -NoProfile -Command "(Get-ItemProperty -LiteralPath 'HKCU:\\$classes\\$1' -ErrorAction Stop).'(default)'" | tr -d '\r'
-}
-pdf_registered() {
-    local prog="Zigsaw.$PDFBOX.pdf"
-    [ "$(reg_value "$prog\\shell\\open\\command")" = "\"$ZIGSAW_HOME\\open\\$PDFBOX\\pdfbox-debugger.exe\" \"%1\"" ] || { echo "got: $(reg_value "$prog\\shell\\open\\command")"; return 1; }
-    reg query "HKCU\\$classes\\.pdf\\OpenWithProgids" /v "$prog" >/dev/null 2>&1
-}
-check "it's registered to open .pdf files with its debugger" pdf_registered
 
 # --- PlantUML ---------------------------------------------------------------------
 
@@ -197,7 +178,6 @@ check "and the dot it found is its own" sh -c "'$zigsaw' run $PLANTUML -version 
 for sb in soft low appcontainer; do
     check "its window comes up, under $sb" opens_window "$work\\$sb" class:SunAwtFrame --sandbox=$sb --command=plantuml-gui $PLANTUML
 done
-check "plantuml gets the console shim, plantuml-gui the windowless one, and a shortcut" sh -c "cmp -s '$ZIGSAW_HOME\\bin\\plantuml.exe' '$shim_dir\\zigsaw-shim.exe' && cmp -s '$ZIGSAW_HOME\\bin\\plantuml-gui.exe' '$shim_dir\\zigsaw-shimw.exe' && test -f '$links\\PlantUML.lnk'"
 
 # --- Logisim-evolution ----------------------------------------------------------
 
@@ -229,13 +209,6 @@ logisim_recent_kept() {
     [ -f "$(data $LOGISIM)\\registry\\user.dat" ]
 }
 check "its recent files are kept in a hive in its data" logisim_recent_kept
-check "logisim gets the console shim, logisim-gui the windowless one, and a shortcut" sh -c "cmp -s '$ZIGSAW_HOME\\bin\\logisim.exe' '$shim_dir\\zigsaw-shim.exe' && cmp -s '$ZIGSAW_HOME\\bin\\logisim-gui.exe' '$shim_dir\\zigsaw-shimw.exe' && test -f '$links\\Logisim-evolution.lnk'"
-circ_registered() {
-    local prog="Zigsaw.$LOGISIM.circ"
-    [ "$(reg_value "$prog\\shell\\open\\command")" = "\"$ZIGSAW_HOME\\open\\$LOGISIM\\logisim-gui.exe\" \"%1\"" ] || { echo "got: $(reg_value "$prog\\shell\\open\\command")"; return 1; }
-    reg query "HKCU\\$classes\\.circ\\OpenWithProgids" /v "$prog" >/dev/null 2>&1
-}
-check "it's registered to open .circ files" circ_registered
 
 # --- Scene Builder ---------------------------------------------------------------
 
@@ -253,13 +226,6 @@ scenebuilder_recent_kept() {
     [ -f "$(data $SCENEBUILDER)\\registry\\user.dat" ]
 }
 check "its recent files are kept in a hive in its data" scenebuilder_recent_kept
-check "scenebuilder gets the windowless shim, and a shortcut" sh -c "cmp -s '$ZIGSAW_HOME\\bin\\scenebuilder.exe' '$shim_dir\\zigsaw-shimw.exe' && test -f '$links\\Scene Builder.lnk'"
-fxml_registered() {
-    local prog="Zigsaw.$SCENEBUILDER.fxml"
-    [ "$(reg_value "$prog\\shell\\open\\command")" = "\"$ZIGSAW_HOME\\open\\$SCENEBUILDER\\scenebuilder.exe\" \"%1\"" ] || { echo "got: $(reg_value "$prog\\shell\\open\\command")"; return 1; }
-    reg query "HKCU\\$classes\\.fxml\\OpenWithProgids" /v "$prog" >/dev/null 2>&1
-}
-check "it's registered to open .fxml files" fxml_registered
 
 # --- The registry ------------------------------------------------------------------
 
@@ -276,9 +242,6 @@ fi
 check "no run labelled or granted the repository" sh -c "! icacls '$root' | grep -q -e 'Mandatory Label' -e 'S-1-15-'"
 
 cd "$root" || exit 1
-# The scratch key, and the one above it unless another run has one in it.
-reg delete "HKCU\\$classes" /f >/dev/null 2>&1
-reg query 'HKCU\Software\ZigsawTest' 2>/dev/null | grep -q . || reg delete 'HKCU\Software\ZigsawTest' /f >/dev/null 2>&1
 rm -rf "$docs"
 for id in $installed_here; do z rm --delete-data "$id" >/dev/null 2>&1; done
 if [ -n "$temp_store" ]; then

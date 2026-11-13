@@ -14,10 +14,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/zigsaw-io/zigsaw/internal/acl"
-	"github.com/zigsaw-io/zigsaw/internal/format"
-	"github.com/zigsaw-io/zigsaw/internal/oci"
-	"github.com/zigsaw-io/zigsaw/internal/win32"
+	"github.com/quasidock/quasidock/internal/acl"
+	"github.com/quasidock/quasidock/internal/format"
+	"github.com/quasidock/quasidock/internal/oci"
+	"github.com/quasidock/quasidock/internal/win32"
 )
 
 var (
@@ -54,15 +54,11 @@ type Store struct {
 var subdirs = []string{
 	"blobs/sha256",
 	"refs",
-	"versions",
 	"deploy",
 	"lazy",
 	"data",
 	"grants",
 	"overrides",
-	"bin",
-	"aliases",
-	"open",
 	"ports",
 	"relay",
 	"host",
@@ -75,23 +71,23 @@ var subdirs = []string{
 	"tmp",
 }
 
-// Open creates or opens the local image store at root (or %ZIGSAW_HOME% / %LOCALAPPDATA%\zigsaw).
+// Open creates or opens the local image store at root (or %QUASIDOCK_HOME% / %LOCALAPPDATA%\quasidock).
 func Open(root string, verbose bool, ledgerKey string) (*Store, error) {
 	if root == "" {
-		if home := os.Getenv("ZIGSAW_HOME"); home != "" {
+		if home := os.Getenv("QUASIDOCK_HOME"); home != "" {
 			root = home
 		} else if local := os.Getenv("LOCALAPPDATA"); local != "" {
-			root = filepath.Join(local, "zigsaw")
+			root = filepath.Join(local, "quasidock")
 		} else {
-			return nil, errors.New("neither ZIGSAW_HOME nor LOCALAPPDATA is set")
+			return nil, errors.New("neither QUASIDOCK_HOME nor LOCALAPPDATA is set")
 		}
 	}
 
 	if ledgerKey == "" {
-		if k := os.Getenv("ZIGSAW_GRANTS_KEY"); k != "" {
+		if k := os.Getenv("QUASIDOCK_GRANTS_KEY"); k != "" {
 			ledgerKey = k
 		} else {
-			ledgerKey = `Software\Zigsaw\Grants`
+			ledgerKey = `Software\Quasidock\Grants`
 		}
 	}
 
@@ -182,14 +178,6 @@ func (s *Store) MakeRunDir() (*RunDir, error) {
 	return &RunDir{Path: dir, Lock: inUse}, nil
 }
 
-func (s *Store) AliasDir(id string) string {
-	return s.Path("aliases", id)
-}
-
-func (s *Store) OpenDir(id string) string {
-	return s.Path("open", id)
-}
-
 // ---------------------------------------------------------------------------
 // Advisory File Locks via Win32 LockFileEx / UnlockFileEx
 
@@ -278,14 +266,6 @@ func (s *Store) Lock(exclusive bool) (*Lock, error) {
 		return l, nil
 	}
 	return OpenLock(p, exclusive, true)
-}
-
-func (s *Store) LockShims() (*Lock, error) {
-	return OpenLock(s.Path("bin.lock"), true, true)
-}
-
-func (s *Store) LockAliases(id string) (*Lock, error) {
-	return OpenLock(LockPathFor(s.Path("aliases", id)), true, true)
 }
 
 func (s *Store) LockGrantChanges() (*Lock, error) {
@@ -454,7 +434,7 @@ func (s *Store) LoadImage(id string) (*Image, error) {
 		return nil, err
 	}
 	if ref == nil {
-		return nil, fmt.Errorf("%s is not installed (see `zigsaw list`)", id)
+		return nil, fmt.Errorf("%s is not installed (see `quasidock list`)", id)
 	}
 	img, err := s.ReadImage(id, ref.Manifest)
 	if err != nil {
@@ -652,54 +632,7 @@ func (s *Store) ListRefs() ([]Ref, error) {
 }
 
 // ---------------------------------------------------------------------------
-// Versions: previous, skip, held
-
-type Skip struct {
-	Version  string `json:"version"`
-	Manifest string `json:"manifest"`
-}
-
-const (
-	previousSuffix = ".previous.json"
-	skipSuffix     = ".skip.json"
-	heldSuffix     = ".held"
-)
-
-var versionSuffixes = []string{previousSuffix, skipSuffix, heldSuffix}
-
-func (s *Store) versionPath(id, suffix string) string {
-	return s.Path("versions", id+suffix)
-}
-
-func (s *Store) ReadPrevious(id string) (*Ref, error) {
-	if !oci.IsValidID(id) {
-		return nil, nil
-	}
-	data, err := os.ReadFile(s.versionPath(id, previousSuffix))
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	var r Ref
-	if err := json.Unmarshal(data, &r); err != nil {
-		return nil, err
-	}
-	return &r, nil
-}
-
-func (s *Store) WritePrevious(ref Ref) error {
-	data, err := json.MarshalIndent(ref, "", "  ")
-	if err != nil {
-		return err
-	}
-	tmp := s.TmpPath("version")
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
-		return err
-	}
-	return os.Rename(tmp, s.versionPath(ref.ID, previousSuffix))
-}
+// Build cache
 
 func (s *Store) ReadBuildCache(inputsHex string) (string, error) {
 	p := s.Path("cache", "builds", inputsHex)
@@ -725,141 +658,6 @@ func (s *Store) WriteBuildCache(inputsHex, manifestDigest string) error {
 	dest := s.Path("cache", "builds", inputsHex)
 	_ = os.MkdirAll(filepath.Dir(dest), 0755)
 	return RenameRetrying(tmp, dest, 5000)
-}
-
-func (s *Store) ForgetPrevious(id string) (bool, error) {
-	err := os.Remove(s.versionPath(id, previousSuffix))
-	if err == nil {
-		return true, nil
-	}
-	if errors.Is(err, os.ErrNotExist) {
-		return false, nil
-	}
-	return false, err
-}
-
-func (s *Store) ListPrevious() ([]Ref, error) {
-	ids, err := s.ListVersionIds()
-	if err != nil {
-		return nil, err
-	}
-	var refs []Ref
-	for _, id := range ids {
-		r, err := s.ReadPrevious(id)
-		if err == nil && r != nil {
-			refs = append(refs, *r)
-		}
-	}
-	return refs, nil
-}
-
-func (s *Store) ReadSkip(id string) (*Skip, error) {
-	if !oci.IsValidID(id) {
-		return nil, nil
-	}
-	data, err := os.ReadFile(s.versionPath(id, skipSuffix))
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	var sk Skip
-	if err := json.Unmarshal(data, &sk); err != nil {
-		return nil, err
-	}
-	return &sk, nil
-}
-
-func (s *Store) WriteSkip(id string, sk Skip) error {
-	data, err := json.MarshalIndent(sk, "", "  ")
-	if err != nil {
-		return err
-	}
-	tmp := s.TmpPath("version")
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
-		return err
-	}
-	return os.Rename(tmp, s.versionPath(id, skipSuffix))
-}
-
-func (s *Store) DeleteSkip(id string) error {
-	err := os.Remove(s.versionPath(id, skipSuffix))
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-	return err
-}
-
-func (s *Store) IsHeld(id string) bool {
-	if !oci.IsValidID(id) {
-		return false
-	}
-	_, err := os.Stat(s.versionPath(id, heldSuffix))
-	return err == nil
-}
-
-func (s *Store) SetHeld(id string, held bool) (bool, error) {
-	p := s.versionPath(id, heldSuffix)
-	if !held {
-		err := os.Remove(p)
-		if err == nil {
-			return true, nil
-		}
-		if errors.Is(err, os.ErrNotExist) {
-			return false, nil
-		}
-		return false, err
-	}
-	if s.IsHeld(id) {
-		return false, nil
-	}
-	tmp := s.TmpPath("version")
-	if err := os.WriteFile(tmp, nil, 0o644); err != nil {
-		return false, err
-	}
-	if err := os.Rename(tmp, p); err != nil {
-		return false, err
-	}
-	return true, nil
-}
-
-func (s *Store) ForgetVersions(id string) error {
-	for _, suffix := range versionSuffixes {
-		_ = os.Remove(s.versionPath(id, suffix))
-	}
-	return nil
-}
-
-func (s *Store) ListVersionIds() ([]string, error) {
-	entries, err := os.ReadDir(s.Path("versions"))
-	if err != nil {
-		return nil, err
-	}
-	seen := make(map[string]struct{})
-	var ids []string
-	for _, e := range entries {
-		if e.IsDir() {
-			continue
-		}
-		for _, suffix := range versionSuffixes {
-			if strings.HasSuffix(e.Name(), suffix) {
-				id := strings.TrimSuffix(e.Name(), suffix)
-				if oci.IsValidID(id) {
-					lower := strings.ToLower(id)
-					if _, ok := seen[lower]; !ok {
-						seen[lower] = struct{}{}
-						ids = append(ids, id)
-					}
-				}
-				break
-			}
-		}
-	}
-	sort.Slice(ids, func(i, j int) bool {
-		return strings.ToLower(ids[i]) < strings.ToLower(ids[j])
-	})
-	return ids, nil
 }
 
 // ---------------------------------------------------------------------------

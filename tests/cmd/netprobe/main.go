@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/zigsaw-io/zigsaw/internal/win32"
+	"github.com/quasidock/quasidock/internal/win32"
 )
 
 func serve(port string) {

@@ -10,17 +10,17 @@
 # asked for once, unless COSIGN_PASSWORD has it. Older versions aren't signed: they're
 # old for a reason, and pull warns about them.
 #
-# Needs Git Bash, a zigsaw built with the matching public key (zig build), with a login
-# for the registry that may push (`zigsaw login ghcr.io`, or
-# ZIGSAW_REGISTRY_USERNAME and ZIGSAW_REGISTRY_PASSWORD), and cosign in its store. The
-# registry is the default one, or ZIGSAW_REGISTRY's.
+# Needs Git Bash, a quasidock built with the matching public key (`go run ./scripts/build.go`),
+# with a login for the registry that may push (`quasidock login ghcr.io`, or
+# QUASIDOCK_REGISTRY_USERNAME and QUASIDOCK_REGISTRY_PASSWORD), and cosign in its store.
+# The registry is the default one, or QUASIDOCK_REGISTRY's.
 
 set -eu
 export MSYS_NO_PATHCONV=1
 
 root=$(cd "$(dirname "$0")/.." && pwd)
 root_w=$(cygpath -w "$root")
-zigsaw=${ZIGSAW:-$root_w\\zig-out\\bin\\zigsaw.exe}
+quasidock=${QUASIDOCK:-$root_w\\zig-out\\bin\\quasidock.exe}
 # shellcheck source=scripts/sign-lib.sh
 . "$root/scripts/sign-lib.sh"
 
@@ -43,13 +43,13 @@ for recipe in "$@"; do
     version=$(field version "$recipe")
     for tag in "$version" latest; do
         image="$id:$tag"
-        if "$zigsaw" signature check "$image" >/dev/null 2>&1; then
+        if "$quasidock" signature check "$image" >/dev/null 2>&1; then
             already=$((already + 1))
             continue
         fi
-        "$zigsaw" signature payload "$image" >"$work/payload" || { echo "error: $image isn't there to sign" >&2; exit 1; }
+        "$quasidock" signature payload "$image" >"$work/payload" || { echo "error: $image isn't there to sign" >&2; exit 1; }
         sign_blob "$work_w\\payload" "$work_w\\signature"
-        "$zigsaw" signature push "$image" "$work_w\\payload" "$work_w\\signature"
+        "$quasidock" signature push "$image" "$work_w\\payload" "$work_w\\signature"
         signed=$((signed + 1))
     done
 done

@@ -6,13 +6,13 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/zigsaw-io/zigsaw/internal/acl"
-	"github.com/zigsaw-io/zigsaw/internal/context"
-	"github.com/zigsaw-io/zigsaw/internal/oci"
-	"github.com/zigsaw-io/zigsaw/internal/store"
+	"github.com/quasidock/quasidock/internal/acl"
+	"github.com/quasidock/quasidock/internal/context"
+	"github.com/quasidock/quasidock/internal/oci"
+	"github.com/quasidock/quasidock/internal/store"
 )
 
-// Own tracks the store root and zigsaw executable directory so no run may write to them.
+// Own tracks the store root and quasidock executable directory so no run may write to them.
 type Own struct {
 	Store   string
 	SelfDir string
@@ -33,17 +33,17 @@ func NewOwn(storeRoot string) Own {
 
 func (o Own) Refusal(path string) (string, bool) {
 	if IsWithin(o.Store, path) {
-		return "zigsaw's store is in it", true
+		return "quasidock's store is in it", true
 	}
 	if IsWithin(path, o.Store) {
-		return "it's in zigsaw's store", true
+		return "it's in quasidock's store", true
 	}
 	if o.SelfDir != "" {
 		if IsWithin(o.SelfDir, path) {
-			return "zigsaw is in it", true
+			return "quasidock is in it", true
 		}
 		if IsWithin(path, o.SelfDir) {
-			return "it's in zigsaw's folder", true
+			return "it's in quasidock's folder", true
 		}
 	}
 	return "", false
@@ -262,7 +262,7 @@ func SettleAll(ctx *context.Context) (int, error) {
 	return failed, nil
 }
 
-// UndoAll takes back everything the app's runs were given, for zigsaw rm.
+// UndoAll takes back everything the app's runs were given, for quasidock rm.
 func UndoAll(ctx *context.Context, id string) error {
 	lock, err := ctx.Store.LockGrantChanges()
 	if err != nil {
@@ -326,7 +326,7 @@ func Show(ctx *context.Context, only *string) error {
 		if only != nil {
 			fmt.Println("Nothing recorded for that app.")
 		} else {
-			fmt.Println("zigsaw has changed nothing outside its stores.")
+			fmt.Println("quasidock has changed nothing outside its stores.")
 		}
 	}
 	return nil

@@ -5,57 +5,53 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sort"
 	"strings"
 
-	"github.com/zigsaw-io/zigsaw/internal/appcontainer"
-	"github.com/zigsaw-io/zigsaw/internal/associations"
-	"github.com/zigsaw-io/zigsaw/internal/builder"
-	"github.com/zigsaw-io/zigsaw/internal/catalog"
-	"github.com/zigsaw-io/zigsaw/internal/context"
-	"github.com/zigsaw-io/zigsaw/internal/credentials"
-	"github.com/zigsaw-io/zigsaw/internal/environment"
-	"github.com/zigsaw-io/zigsaw/internal/exports"
-	"github.com/zigsaw-io/zigsaw/internal/grants"
-	"github.com/zigsaw-io/zigsaw/internal/hkcu"
-	"github.com/zigsaw-io/zigsaw/internal/info"
-	"github.com/zigsaw-io/zigsaw/internal/lazy"
-	"github.com/zigsaw-io/zigsaw/internal/lifecycle"
-	"github.com/zigsaw-io/zigsaw/internal/oci"
-	"github.com/zigsaw-io/zigsaw/internal/override"
-	"github.com/zigsaw-io/zigsaw/internal/peek"
-	"github.com/zigsaw-io/zigsaw/internal/prompt"
-	"github.com/zigsaw-io/zigsaw/internal/registry"
-	"github.com/zigsaw-io/zigsaw/internal/remote"
-	"github.com/zigsaw-io/zigsaw/internal/run"
-	"github.com/zigsaw-io/zigsaw/internal/schedule"
-	"github.com/zigsaw-io/zigsaw/internal/services"
-	"github.com/zigsaw-io/zigsaw/internal/shortcuts"
-	"github.com/zigsaw-io/zigsaw/internal/store"
-	"github.com/zigsaw-io/zigsaw/internal/trust"
-	"github.com/zigsaw-io/zigsaw/internal/updates"
-	"github.com/zigsaw-io/zigsaw/internal/version"
+	"github.com/quasidock/quasidock/internal/appcontainer"
+	"github.com/quasidock/quasidock/internal/builder"
+	"github.com/quasidock/quasidock/internal/catalog"
+	"github.com/quasidock/quasidock/internal/context"
+	"github.com/quasidock/quasidock/internal/credentials"
+	"github.com/quasidock/quasidock/internal/environment"
+	"github.com/quasidock/quasidock/internal/grants"
+	"github.com/quasidock/quasidock/internal/hkcu"
+	"github.com/quasidock/quasidock/internal/info"
+	"github.com/quasidock/quasidock/internal/lazy"
+	"github.com/quasidock/quasidock/internal/lifecycle"
+	"github.com/quasidock/quasidock/internal/oci"
+	"github.com/quasidock/quasidock/internal/override"
+	"github.com/quasidock/quasidock/internal/peek"
+	"github.com/quasidock/quasidock/internal/prompt"
+	"github.com/quasidock/quasidock/internal/registry"
+	"github.com/quasidock/quasidock/internal/remote"
+	"github.com/quasidock/quasidock/internal/run"
+	"github.com/quasidock/quasidock/internal/services"
+	"github.com/quasidock/quasidock/internal/store"
+	"github.com/quasidock/quasidock/internal/trust"
+	"github.com/quasidock/quasidock/internal/version"
 )
 
-const usage = `usage: zigsaw [-v|--verbose] <command> [options]
+const usage = `usage: quasidock [-v|--verbose] <command> [options]
 
 commands:
   build [--rebuild] [--clean] [--keep-build-dir] [<recipe.json> | <dir>]
-                                  build an app from a recipe, or from the zigsaw.json of a
+                                  build an app from a recipe, or from the quasidock.json of a
                                   project's directory (by default the current one), and
-                                  install it and its commands; --rebuild builds even if an
-                                  earlier build had the same inputs, and --clean also starts
-                                  a project's modules without their kept work directories
+                                  install it; --rebuild builds even if an earlier build had
+                                  the same inputs, and --clean also starts a project's
+                                  modules without their kept work directories
   search [<words>...]             find apps in the default registry's catalog
   info <image>                    show what an app in a registry is, needs and may reach
   ls <image>                      list the files of an app in a registry without pulling
                                   it, as far as its layers' format allows (eStargz)
   cat <image> <path>              write a file of an app in a registry to stdout, the
                                   same way
-  pull [--yes] [--lazy] <image>   install an app and its commands from a registry, once
-                                  you agree to what it may reach; --yes agrees without
-                                  asking; --lazy installs it before its large eStargz
-                                  layers are downloaded, their files fetched as they're
-                                  first used while the rest downloads
+  pull [--yes] [--lazy] <image>   install an app from a registry, once you agree to what it
+                                  may reach; --yes agrees without asking; --lazy installs
+                                  it before its large eStargz layers are downloaded, their
+                                  files fetched as they're first used while the rest
+                                  downloads
   push [--sources] <app-id> [<image>]
                                   publish an installed app to a registry; --sources also
                                   keeps the files it was built from next to it
@@ -65,36 +61,17 @@ commands:
                                   check and save a login for a registry
   logout <registry>               delete a registry's saved login
   run [options] <app-id> [args]   run an installed app
-  list                            list installed apps, their commands and shortcuts,
-                                  and the kinds of file they open
+  list                            list installed apps and their exported commands
   override [options] <app-id>     save run options that every run of the app gets;
                                   --show shows them, --reset removes them
   override [options] --global     the same for every app, below each app's own; also
                                   --real-folders lets the apps of a store that isn't your
                                   default one use your real folders, --noreal-folders
                                   stops them
-  grants [<app-id>]               list what zigsaw changed outside its store for apps, in
+  grants [<app-id>]               list what quasidock changed outside its store for apps, in
                                   this store and others, what stores since deleted left,
                                   and low labels on your folders no record explains
   grants --take-back <path>       remove a low label that no record explains
-  update [--yes] [--lazy] [<app-id>...]
-                                  rebuild or re-pull apps from where they came from;
-                                  one pulled again that may reach more asks first,
-                                  unless given --yes; --lazy as for pull
-  update --check [<app-id>...]    list the apps a new image waits for, and what it may
-                                  reach beyond theirs, installing nothing
-  rollback [--yes] <app-id>       go back to the version the installed one replaced, with
-                                  no network; updates then pass over the version left,
-                                  though not a newer one
-  hold <app-id>...                have updates, and the daily check, leave the apps alone
-  unhold <app-id>...              let updates reach them again
-  updates                         say what the last check found waiting, and whether a
-                                  daily check is on; neither installs anything
-  updates check                   look for updates of apps and zigsaw now
-  updates on|off                  start or stop the daily check; off is remembered, so
-                                  that installing or upgrading zigsaw leaves it off
-  upgrade [--yes]                 install zigsaw's latest release over this one, once you
-                                  agree; --yes agrees without asking
   trust                           list the keys that images' signatures are checked against
   trust add <registry/path> <key> check images under that path against a public key, as
                                   ` + "`cosign generate-key-pair`" + ` makes in cosign.pub
@@ -104,29 +81,27 @@ commands:
   signature push <image> <payload file> <signature file>
                                   put that signature beside the image, where pull looks
   signature check <image>         say whether an image has a good signature
-  rm [--delete-data] <app-id>     uninstall an app and its commands
-  prune [--dry-run] [--downloads] [--data] [--previous]
+  rm [--delete-data] <app-id>     uninstall an app
+  prune [--dry-run] [--downloads] [--data]
                                   delete what no installed app needs; also cached
-                                  downloads and tool caches, the data of uninstalled
-                                  apps, and the versions kept for rollback
-  repair                          write every app's commands, shortcuts and file
-                                  associations again, as after installing a new zigsaw,
-                                  and take back what apps may no longer reach, and what
-                                  stores since deleted left
-  version                         print zigsaw's version
+                                  downloads and tool caches, and the data of uninstalled
+                                  apps
+  repair                          take back what apps may no longer reach, and what stores
+                                  since deleted left
+  version                         print quasidock's version
 
 An image is <registry>/<repository>[:tag][@digest], e.g. ghcr.io/owner/node:24.21.0,
 or <app-id>[:tag][@digest] for the app's image in the default registry, e.g.
-org.nodejs.node for ghcr.io/zigsaw-io/org.nodejs.node. ZIGSAW_REGISTRY changes the
+org.nodejs.node for ghcr.io/zigsaw-io/org.nodejs.node. QUASIDOCK_REGISTRY changes the
 default registry. push goes to the app's image there unless given one, and tags
 with the app's version unless given a tag.
 
 Pushing, and pulling private images, needs a login. login saves one per registry in
 Windows Credential Manager; --password-stdin reads the password from stdin. For CI
-and scripts, ZIGSAW_REGISTRY_USERNAME and ZIGSAW_REGISTRY_PASSWORD are used instead,
+and scripts, QUASIDOCK_REGISTRY_USERNAME and QUASIDOCK_REGISTRY_PASSWORD are used instead,
 but only for the default registry. Without either, the login ` + "`docker login`" + ` saved is
 used. From a multi-platform index, pull takes the image for windows/amd64. Blobs over
-64 MiB are pushed in chunks of ZIGSAW_UPLOAD_CHUNK_SIZE bytes (0: in one request).
+64 MiB are pushed in chunks of QUASIDOCK_UPLOAD_CHUNK_SIZE bytes (0: in one request).
 
 run options (override takes them too, except --command and --file):
   --command=<name>                run one of the app's exported commands, or another
@@ -144,9 +119,7 @@ run options (override takes them too, except --command and --file):
                                   music, pictures, videos
   --nofilesystem=<location>       take away access the app or an override grants
   --share=network                 allow network access, and pass on your proxy variables
-  --share=commands                put your zigsaw apps' commands on its PATH, after the
-                                  system's; each runs as its own app (soft sandbox only)
-  --share=host                    put zigsaw-host on its PATH, which runs your own programs
+  --share=host                    put quasidock-host on its PATH, which runs your own programs
                                   in your real environment, with the run's rights (not in
                                   an AppContainer)
   --unshare=<what>                take away what --share gives, or the app's image asks for
@@ -167,9 +140,9 @@ or --port gives, in every sandbox.
 
 Under appcontainer, a run of an app with the network has its container exempt from
 loopback isolation while the app's runs go, so that it reaches other programs on this
-machine; with ZIGSAW_LOOPBACK_EXEMPTION=0, zigsaw never exempts one.
+machine; with QUASIDOCK_LOOPBACK_EXEMPTION=0, quasidock never exempts one.
 
-Data lives in %ZIGSAW_HOME%, or %LOCALAPPDATA%\zigsaw when that isn't set. Apps of a
+Data lives in %QUASIDOCK_HOME%, or %LOCALAPPDATA%\quasidock when that isn't set. Apps of a
 store elsewhere don't get your real folders until ` + "`override --global --real-folders`" + `.
 `
 
@@ -259,12 +232,10 @@ func (p *settingsParser) apply(opt Option) error {
 		switch val {
 		case "network":
 			p.settings.Network = &on
-		case "commands":
-			p.settings.Commands = &on
 		case "host":
 			p.settings.Host = &on
 		default:
-			return fmt.Errorf("--%s takes network, commands or host; got %q", name, val)
+			return fmt.Errorf("--%s takes network or host; got %q", name, val)
 		}
 	case "env":
 		if !strings.ContainsRune(val, '=') {
@@ -438,7 +409,7 @@ func doLogin(ctx *context.Context, opts loginOptions) error {
 	if err := credentials.Save(host, user, secret); err != nil {
 		return err
 	}
-	context.Note("saved the login for %s in Windows Credential Manager (zigsaw:%s)", host, host)
+	context.Note("saved the login for %s in Windows Credential Manager (quasidock:%s)", host, host)
 	return nil
 }
 
@@ -545,8 +516,10 @@ func overrideApp(ctx *context.Context, args []string) error {
 		return nil
 	}
 
+	var ref *store.Ref
 	if appID != "" {
-		ref, err := ctx.Store.ReadRef(appID)
+		var err error
+		ref, err = ctx.Store.ReadRef(appID)
 		if err != nil || ref == nil {
 			return fmt.Errorf("%s is not installed", appID)
 		}
@@ -555,6 +528,12 @@ func overrideApp(ctx *context.Context, args []string) error {
 	merged := override.Merge(saved, newSettings)
 	if err := override.Save(ctx.Store, appID, merged); err != nil {
 		return err
+	}
+
+	if ref != nil && newSettings.Sandbox != nil {
+		if image, err := ctx.Store.ReadImage(ref.ID, ref.Manifest); err == nil && image != nil {
+			run.WarnUnsupported(image.Config, *newSettings.Sandbox, context.Note)
+		}
 	}
 
 	if appID != "" {
@@ -598,23 +577,20 @@ func list(ctx *context.Context) error {
 	if err != nil {
 		return err
 	}
-	shims, err := exports.List(ctx)
-	if err != nil {
-		shims = nil
-	}
 
 	fmt.Printf("%-32s %-20s %-20s %s\n", "ID", "VERSION", "MANIFEST", "EXPORTS")
 	for _, ref := range refs {
+		image, err := ctx.Store.ReadImage(ref.ID, ref.Manifest)
 		var names []string
-		for _, s := range shims {
-			if s.Sidecar.App == ref.ID {
-				names = append(names, s.Name)
+		if err == nil && image != nil {
+			for k := range image.Config.Exports {
+				names = append(names, k)
 			}
+			sort.Strings(names)
 		}
 		var sb strings.Builder
 		fmt.Fprintf(&sb, "%-32s %-20s %-20s %s", ref.ID, ref.Version, oci.ShortDigest(ref.Manifest), strings.Join(names, ", "))
 
-		image, err := ctx.Store.ReadImage(ref.ID, ref.Manifest)
 		if err == nil && image != nil {
 			cfg := image.Config
 			for _, r := range cfg.Runtimes {
@@ -626,14 +602,6 @@ func list(ctx *context.Context) error {
 			if cfg.Extends != nil {
 				fmt.Fprintf(&sb, "  (extends %s %s)", cfg.Extends.Point, cfg.Extends.Version)
 			}
-			if sNames, err := shortcuts.Names(ctx, ref.ID); err == nil {
-				for _, name := range sNames {
-					fmt.Fprintf(&sb, "  (shortcut %q)", name)
-				}
-			}
-			if opens, err := associations.Names(ctx, ref.ID); err == nil && len(opens) > 0 {
-				fmt.Fprintf(&sb, "  (opens %s)", strings.Join(opens, ", "))
-			}
 			for _, k := range cfg.Registry {
 				fmt.Fprintf(&sb, "  (keeps HKCU\\%s)", k)
 			}
@@ -644,20 +612,10 @@ func list(ctx *context.Context) error {
 				fmt.Fprintf(&sb, "  %s", *state)
 			}
 		}
-		if ctx.Store.IsHeld(ref.ID) {
-			sb.WriteString("  (held)")
-		}
-		if p, err := ctx.Store.ReadPrevious(ref.ID); err == nil && p != nil && p.Manifest != ref.Manifest {
-			fmt.Fprintf(&sb, "  (previous %s)", p.Version)
-		}
-		if s, err := ctx.Store.ReadSkip(ref.ID); err == nil && s != nil {
-			fmt.Fprintf(&sb, "  (skips %s)", s.Version)
-		}
 		fmt.Println(sb.String())
 	}
 
 	_ = grants.NoteLeftovers(ctx)
-	_ = updates.NoteWaiting(ctx)
 	return nil
 }
 
@@ -667,37 +625,15 @@ func remove(ctx *context.Context, id string, deleteData bool) error {
 		return fmt.Errorf("%s is not installed", id)
 	}
 
-	shimsLock, err := ctx.Store.LockShims()
-	if err != nil {
-		return err
-	}
-	defer shimsLock.Release()
-
-	if removedShortcuts, err := shortcuts.RemoveAll(ctx, id); err == nil && len(removedShortcuts) > 0 {
-		context.Note("removed shortcuts %s", strings.Join(removedShortcuts, ", "))
-	}
-	if removedAssociations, err := associations.RemoveAll(ctx, id); err == nil && len(removedAssociations) > 0 {
-		context.Note("no longer opens %s", strings.Join(removedAssociations, ", "))
-	}
-	if removedExports, err := exports.RemoveAll(ctx, id); err == nil && len(removedExports) > 0 {
-		context.Note("removed commands %s", strings.Join(removedExports, ", "))
-	}
-
 	_ = grants.UndoAll(ctx, id)
 	_ = appcontainer.DeleteProfile(id)
 	_ = services.Forget(ctx.Store, id)
 	_ = hkcu.SettleLeftovers(ctx.Store, id)
 
 	_ = ctx.Store.DeleteRef(id)
-	_ = ctx.Store.ForgetVersions(id)
-
-	if aliasesLock, err := ctx.Store.LockAliases(id); err == nil && aliasesLock != nil {
-		_ = store.DeleteTree(ctx.Store.AliasDir(id))
-		aliasesLock.Release()
-	}
 
 	if deleted, err := ctx.Store.DeleteUnusedDeployments(ref.Manifest); err == nil && deleted {
-		context.Note("kept %s's files, which are still in use; `zigsaw prune` removes them later", id)
+		context.Note("kept %s's files, which are still in use; `quasidock prune` removes them later", id)
 	}
 	if deleteData {
 		_ = store.DeleteTree(ctx.Store.Path("data", id))
@@ -715,52 +651,6 @@ func remove(ctx *context.Context, id string, deleteData bool) error {
 func usageError() (uint32, error) {
 	context.PrintStderr("%s", usage)
 	return 1, nil
-}
-
-func updatesCommand(ctx *context.Context, args []string) (uint32, error) {
-	if len(args) == 0 {
-		return 0, updates.Show(ctx)
-	}
-	what := args[0]
-	rest := args[1:]
-	switch what {
-	case "check":
-		var opts updates.CheckOptions
-		for _, arg := range rest {
-			if isFlag(arg, "notify") {
-				opts.Notify = true
-			} else if isFlag(arg, "quiet") {
-				opts.Quiet = true
-			} else {
-				return usageError()
-			}
-		}
-		if opts.Notify && opts.Quiet {
-			return usageError()
-		}
-		lock, err := ctx.Store.Lock(false)
-		if err != nil {
-			return 1, err
-		}
-		defer lock.Release()
-		return updates.Check(ctx, opts)
-	case "on":
-		respect := len(rest) == 1 && isFlag(rest[0], "unless-off")
-		if len(rest) > 1 || (len(rest) == 1 && !respect) {
-			return usageError()
-		}
-		if respect && schedule.TurnedOff(ctx) {
-			return 0, nil
-		}
-		return 0, schedule.TurnOn(ctx)
-	case "off":
-		if len(rest) != 0 {
-			return usageError()
-		}
-		return 0, schedule.TurnOff(ctx)
-	default:
-		return usageError()
-	}
 }
 
 func trustCommand(ctx *context.Context, rest []string) (uint32, error) {
@@ -843,7 +733,7 @@ func signatureCommand(ctx *context.Context, rest []string) (uint32, error) {
 		}
 		envReg := ""
 		if ctx.Env != nil {
-			envReg = ctx.Env["ZIGSAW_REGISTRY"]
+			envReg = ctx.Env["QUASIDOCK_REGISTRY"]
 		}
 		target, err := remote.Resolve(envReg, image)
 		if err != nil {
@@ -933,7 +823,7 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 		return 0, nil
 	}
 	if cmd == "version" || isFlag(cmd, "version") || cmd == "-V" {
-		fmt.Printf("zigsaw %s\n", version.Version)
+		fmt.Printf("quasidock %s\n", version.Version)
 		return 0, nil
 	}
 	if cmd == "login" {
@@ -953,7 +843,7 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 		if len(rest) != 2 {
 			return usageError()
 		}
-		_ = os.Setenv("ZIGSAW_HOME", rest[0])
+		_ = os.Setenv("QUASIDOCK_HOME", rest[0])
 		st, err := store.Open(rest[0], ctx.Verbose, "")
 		if err != nil {
 			return 1, err
@@ -1037,14 +927,14 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 
 		envReg := ""
 		if ctx.Env != nil {
-			envReg = ctx.Env["ZIGSAW_REGISTRY"]
+			envReg = ctx.Env["QUASIDOCK_REGISTRY"]
 		}
 		img, err := remote.Fetch(ctx.Store, envReg, *image, ctx.Verbose)
 		if err != nil {
 			return 1, err
 		}
 		if consent == remote.ConsentAsk {
-			if err := remote.AgreeTo(ctx, img.Manifest, img.Config, nil, consent, remote.KindInstall); err != nil {
+			if err := remote.AgreeTo(ctx, img.Manifest, img.Config, consent); err != nil {
 				return 1, err
 			}
 		}
@@ -1077,7 +967,7 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 			defer lock.Release()
 			envReg := ""
 			if ctx.Env != nil {
-				envReg = ctx.Env["ZIGSAW_REGISTRY"]
+				envReg = ctx.Env["QUASIDOCK_REGISTRY"]
 			}
 			return 0, catalog.Push(ctx.Store, envReg, names, ctx.Verbose)
 		}
@@ -1108,7 +998,7 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 		defer lock.Release()
 		envReg := ""
 		if ctx.Env != nil {
-			envReg = ctx.Env["ZIGSAW_REGISTRY"]
+			envReg = ctx.Env["QUASIDOCK_REGISTRY"]
 		}
 		matches, err := catalog.Search(ctx.Store, envReg, rest, ctx.Verbose)
 		if err != nil {
@@ -1139,7 +1029,7 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 		defer lock.Release()
 		envReg := ""
 		if ctx.Env != nil {
-			envReg = ctx.Env["ZIGSAW_REGISTRY"]
+			envReg = ctx.Env["QUASIDOCK_REGISTRY"]
 		}
 		return 0, info.PrintInfo(ctx.Store, envReg, rest[0], ctx.Verbose, os.Stdout)
 
@@ -1162,7 +1052,7 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 			return 1, err
 		}
 		defer lock.Release()
-		envReg, _ := ctx.GetEnv("ZIGSAW_REGISTRY")
+		envReg, _ := ctx.GetEnv("QUASIDOCK_REGISTRY")
 		if isLs {
 			return 0, peek.List(ctx.Store, envReg, rest[0], ctx.Verbose, ctx.Stdout)
 		}
@@ -1189,100 +1079,11 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 		defer lock.Release()
 		return 0, overrideApp(ctx, rest)
 
-	case "update":
-		consent := remote.ConsentAsk
-		onlyCheck := false
-		lazily := false
-		var ids []string
-		for _, arg := range rest {
-			if isFlag(arg, "yes") {
-				consent = remote.ConsentGiven
-			} else if isFlag(arg, "check") {
-				onlyCheck = true
-			} else if isFlag(arg, "lazy") {
-				lazily = true
-			} else if !strings.HasPrefix(arg, "-") {
-				ids = append(ids, arg)
-			} else {
-				return usageError()
-			}
-		}
-		if onlyCheck && (consent == remote.ConsentGiven || lazily) {
-			return usageError()
-		}
-		lock, err := ctx.Store.Lock(false)
-		if err != nil {
-			return 1, err
-		}
-		defer lock.Release()
-		if onlyCheck {
-			return lifecycle.Check(ctx, ids)
-		}
-		return lifecycle.Update(ctx, ids, consent, lazily)
-
-	case "rollback":
-		consent := remote.ConsentAsk
-		var id *string
-		for _, arg := range rest {
-			if isFlag(arg, "yes") {
-				consent = remote.ConsentGiven
-			} else if id == nil && !strings.HasPrefix(arg, "-") {
-				val := arg
-				id = &val
-			} else {
-				return usageError()
-			}
-		}
-		if id == nil {
-			return usageError()
-		}
-		lock, err := ctx.Store.Lock(false)
-		if err != nil {
-			return 1, err
-		}
-		defer lock.Release()
-		return 0, lifecycle.Rollback(ctx, *id, consent)
-
-	case "hold", "unhold":
-		if len(rest) == 0 {
-			return usageError()
-		}
-		for _, arg := range rest {
-			if strings.HasPrefix(arg, "-") {
-				return usageError()
-			}
-		}
-		lock, err := ctx.Store.Lock(false)
-		if err != nil {
-			return 1, err
-		}
-		defer lock.Release()
-		return 0, lifecycle.SetHeld(ctx, rest, cmd == "hold")
-
-	case "updates":
-		return updatesCommand(ctx, rest)
-
 	case "trust":
 		return trustCommand(ctx, rest)
 
 	case "signature":
 		return signatureCommand(ctx, rest)
-
-	case "upgrade":
-		consent := remote.ConsentAsk
-		for _, arg := range rest {
-			if isFlag(arg, "yes") {
-				consent = remote.ConsentGiven
-			} else {
-				return usageError()
-			}
-		}
-		lock, err := ctx.Store.Lock(false)
-		if err != nil {
-			return 1, err
-		}
-		defer lock.Release()
-		return lifecycle.Upgrade(ctx, consent)
 
 	case "rm":
 		deleteData := false
@@ -1316,8 +1117,6 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 				opts.Downloads = true
 			} else if isFlag(arg, "data") {
 				opts.Data = true
-			} else if isFlag(arg, "previous") {
-				opts.Previous = true
 			} else {
 				return usageError()
 			}
@@ -1341,15 +1140,10 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 		_ = hkcu.SettleLeftovers(ctx.Store, "")
 		unsettled1, _ := grants.SettleAll(ctx)
 		unsettled2, _ := grants.SettleOrphans(ctx)
-		code, err := exports.Repair(ctx)
-		if err != nil {
-			return 1, err
-		}
-		_ = schedule.Repair(ctx)
 		if (unsettled1 + unsettled2) > 0 {
 			return 1, nil
 		}
-		return code, nil
+		return 0, nil
 
 	case "grants":
 		return grantsCommand(ctx, rest)
@@ -1359,7 +1153,7 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 	}
 }
 
-// Run is the main entry point called by cmd/zigsaw.
+// Run is the main entry point called by cmd/quasidock.
 func Run(args []string) uint32 {
 	envMap := make(map[string]string)
 	for _, kv := range os.Environ() {
@@ -1367,7 +1161,7 @@ func Run(args []string) uint32 {
 			envMap[kv[:eq]] = kv[eq+1:]
 		}
 	}
-	if envMap["ZIGSAW_ID"] != "" {
+	if envMap["QUASIDOCK_ID"] != "" {
 		_ = environment.RestoreUser(envMap)
 	}
 

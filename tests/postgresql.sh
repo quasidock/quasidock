@@ -22,7 +22,7 @@
 # give a band's values and statistics, reproject, and go through GeoTIFF
 # and PNG; --noextension leaves pg_cron out.
 #
-#   POSTGRES_HOME=path\to\store bash tests/postgresql.sh [path\to\zigsaw.exe]
+#   POSTGRES_HOME=path\to\store bash tests/postgresql.sh [path\to\quasidock.exe]
 #
 # Building PostgreSQL takes some 10 minutes, so this uses a store that has
 # it and the three extensions (POSTGRES_HOME, or BUILD_HOME as tests/published.sh
@@ -33,19 +33,19 @@ set -u
 export MSYS_NO_PATHCONV=1
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
-zigsaw=${1:-$root/zig-out/bin/zigsaw.exe}
-ZIGSAW_HOME=${POSTGRES_HOME:-${BUILD_HOME:-}}
+zigsaw=${1:-$root/zig-out/bin/quasidock.exe}
+QUASIDOCK_HOME=${POSTGRES_HOME:-${BUILD_HOME:-}}
 APP=org.postgresql.PostgreSQL
 for id in $APP $APP.pgvector $APP.pg_cron $APP.PostGIS; do
-    if [ -z "$ZIGSAW_HOME" ] || [ ! -f "$ZIGSAW_HOME\\refs\\$id.json" ]; then
+    if [ -z "$QUASIDOCK_HOME" ] || [ ! -f "$QUASIDOCK_HOME\\refs\\$id.json" ]; then
         echo "tests/postgresql.sh needs a store with $id in POSTGRES_HOME or BUILD_HOME;"
         echo "build recipes\\postgresql.json, postgresql-pgvector.json, postgresql-pg-cron.json and postgresql-postgis.json into one first."
         exit 1
     fi
 done
-export ZIGSAW_HOME
+export QUASIDOCK_HOME
 work=$(cygpath -w "$(mktemp -d)")
-data="$ZIGSAW_HOME\\data\\$APP"
+data="$QUASIDOCK_HOME\\data\\$APP"
 port=$((57000 + RANDOM % 900))
 # Every run gets it: the server listens there, or in an AppContainer is
 # published there, and its clients connect there (PGPORT).

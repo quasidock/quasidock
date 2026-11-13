@@ -8,7 +8,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/zigsaw-io/zigsaw/internal/win32"
+	"github.com/quasidock/quasidock/internal/win32"
 )
 
 type Process struct {
@@ -73,7 +73,7 @@ type Search struct {
 func main() {
 	args := os.Args[1:]
 	if len(args) < 3 {
-		fmt.Fprintln(os.Stderr, "usage: zigsaw-winwait <pid> <text> <seconds> [--close|--dismiss]")
+		fmt.Fprintln(os.Stderr, "usage: quasidock-winwait <pid> <text> <seconds> [--close|--dismiss]")
 		win32.ExitProcess(1)
 	}
 

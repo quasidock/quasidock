@@ -9,19 +9,19 @@
 #
 # The first runs the app (or one of its commands) with the arguments and waits
 # for it to end; the second starts it, waits for a window with that title, and
-# closes it (zig-out/test/zigsaw-winwait.exe, `zig build winwait`). A run in
+# closes it (zig-out/test/quasidock-winwait.exe, `go run ./scripts/build.go`). A run in
 # the current directory may need the app's permission for it.
 #
 # Prints, for each layer that was fetched from, its image's id and a
 # "prefetch" block to paste into that image's recipe, with how many files and
-# bytes it is. What the helper fetched for zigsaw itself (a program's header,
+# bytes it is. What the helper fetched for quasidock itself (a program's header,
 # its image as Windows starts it) and for Defender stays in: a real first run
 # pays for those too.
 #
 # The store goes in RECORD_WORK (a directory on NTFS, not a Dev Drive: lazy
 # pulls need Cloud Files), or a temporary one, and is removed at the end, as
-# are the shortcuts and registry keys it made. ZIGSAW is the zigsaw to use,
-# zig-out/bin/zigsaw.exe by default. Every eStargz layer is pulled lazily,
+# are the registry keys it made. QUASIDOCK is the quasidock to use,
+# zig-out/bin/quasidock.exe by default. Every eStargz layer is pulled lazily,
 # small ones too, its download held back, and an image that already has a
 # list has it ignored, so that what the run reads is what it fetches.
 
@@ -29,8 +29,8 @@ set -u
 export MSYS_NO_PATHCONV=1
 
 root=$(cd "$(dirname "$0")/.." && pwd)
-zigsaw=${ZIGSAW:-$(cygpath -w "$root/zig-out/bin/zigsaw.exe")}
-winwait=$(cygpath -w "$root/zig-out/test/zigsaw-winwait.exe")
+quasidock=${QUASIDOCK:-$(cygpath -w "$root/zig-out/bin/quasidock.exe")}
+winwait=$(cygpath -w "$root/zig-out/test/quasidock-winwait.exe")
 
 ref=
 command=
@@ -48,7 +48,7 @@ while [ $# -gt 0 ]; do
 done
 [ -n "$ref" ] || { sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
 if [ -n "$window" ] && [ ! -x "$(cygpath -u "$winwait")" ]; then
-    echo "--window needs $winwait: zig build winwait" >&2
+    echo "--window needs $winwait: go run ./scripts/build.go" >&2
     exit 2
 fi
 
@@ -62,28 +62,28 @@ store="$work\\store"
 gate="$work\\gate"
 touch "$(cygpath -u "$gate")"
 mkdir -p "$(cygpath -u "$work\\folders")"
-export ZIGSAW_HOME="$store"
-export ZIGSAW_TEST_LAZY_MIN=1 ZIGSAW_TEST_LAZY_GATE="$gate" ZIGSAW_TEST_LAZY_NO_HYDRATE=1
-export ZIGSAW_TASK_NAME="ZigsawRecord-$$" ZIGSAW_GRANTS_KEY="Software\\ZigsawRecord\\$$"
-export ZIGSAW_SHORTCUTS_DIR="$work\\links" ZIGSAW_USER_FOLDERS="$work\\folders"
+export QUASIDOCK_HOME="$store"
+export QUASIDOCK_TEST_LAZY_MIN=1 QUASIDOCK_TEST_LAZY_GATE="$gate" QUASIDOCK_TEST_LAZY_NO_HYDRATE=1
+export QUASIDOCK_GRANTS_KEY="Software\\QuasidockRecord\\$$"
+export QUASIDOCK_USER_FOLDERS="$work\\folders"
 
 app=
 cleanup() {
-    [ -n "$app" ] && "$zigsaw" rm --delete-data "$app" >/dev/null 2>&1
+    [ -n "$app" ] && "$quasidock" rm --delete-data "$app" >/dev/null 2>&1
     rm -f "$(cygpath -u "$gate")"
-    "$zigsaw" prune >/dev/null 2>&1
-    reg delete "HKCU\\Software\\ZigsawRecord\\$$" /f >/dev/null 2>&1
+    "$quasidock" prune >/dev/null 2>&1
+    reg delete "HKCU\\Software\\QuasidockRecord\\$$" /f >/dev/null 2>&1
     rm -rf "$(cygpath -u "$work")" 2>/dev/null
 }
 trap cleanup EXIT
 
-"$zigsaw" pull --yes --lazy "$ref" >"$work\\pull.txt" 2>&1 || { echo "pulling $ref failed:"; tail -3 "$work\\pull.txt"; exit 1; }
+"$quasidock" pull --yes --lazy "$ref" >"$work\\pull.txt" 2>&1 || { echo "pulling $ref failed:"; tail -3 "$work\\pull.txt"; exit 1; }
 app=$(grep -o '^installed [^ ]*' "$work\\pull.txt" | head -1 | cut -d' ' -f2)
 [ -n "$app" ] || { echo "the pull didn't say what it installed:"; tail -3 "$work\\pull.txt"; exit 1; }
 lazy="$store\\lazy"
 ls "$(cygpath -u "$lazy")" 2>/dev/null | grep -qE '^[0-9a-f]{64}$' || { echo "$ref has no eStargz layer to record for"; exit 1; }
 
-run=("$zigsaw" run)
+run=("$quasidock" run)
 [ -n "$command" ] && run+=("--command=$command")
 if [ -n "$window" ]; then
     "${run[@]}" "$app" >"$work\\run.txt" 2>&1 &

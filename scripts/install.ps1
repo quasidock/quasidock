@@ -1,77 +1,64 @@
 <#
 .SYNOPSIS
-Installs zigsaw for the current user, upgrades it, or removes it.
+Installs quasidock for the current user, upgrades it, or removes it.
 
 .DESCRIPTION
-Downloads a release of zigsaw from GitHub, checks it against the release's
-SHA256SUMS, puts zigsaw.exe, its two shim programs, its relay, zigsaw-host and
-zigsaw-notify in %LOCALAPPDATA%\zigsaw\bin, where zigsaw also puts the commands
-of the apps it installs, and adds that directory to the user's PATH. No
-administrator is needed. Run it again to upgrade: programs that are running are
-moved aside, and installed apps' commands, shortcuts and file associations are
-written again by the new zigsaw (zigsaw repair).
+Downloads a release of quasidock from GitHub, checks it against the release's
+SHA256SUMS, puts quasidock.exe, quasidock-relay.exe, and quasidock-host.exe
+in %LOCALAPPDATA%\quasidock\bin, and adds that directory to the user's PATH.
+No administrator is needed. Run it again to upgrade: programs that are running
+are moved aside, and installed apps' state is checked by the new quasidock
+(quasidock repair).
 
-For the default store, in the default directory, it also starts a daily check
-that tells you when updates are waiting, as a scheduled task of your own. It
-installs nothing, and 'zigsaw updates off' stops it for good.
-
-    irm https://github.com/zigsaw-io/zigsaw/releases/latest/download/install.ps1 | iex
+    irm https://github.com/quasidock/quasidock/releases/latest/download/install.ps1 | iex
 
 With parameters:
 
-    & ([scriptblock]::Create((irm https://github.com/zigsaw-io/zigsaw/releases/latest/download/install.ps1))) -Version 0.19.0
+    & ([scriptblock]::Create((irm https://github.com/quasidock/quasidock/releases/latest/download/install.ps1))) -Version 0.2.0
 
 .PARAMETER Version
-The release to install, such as 0.19.0. The latest by default. Also
-$env:ZIGSAW_VERSION.
+The release to install, such as 0.2.0. The latest by default. Also
+$env:QUASIDOCK_VERSION.
 
 .PARAMETER Dir
-Where to put zigsaw. %LOCALAPPDATA%\zigsaw\bin by default. Also
-$env:ZIGSAW_INSTALL_DIR.
+Where to put quasidock. %LOCALAPPDATA%\quasidock\bin by default. Also
+$env:QUASIDOCK_INSTALL_DIR.
 
 .PARAMETER From
-A directory or URL that has zigsaw-x86_64-windows.zip and SHA256SUMS, instead
-of a release on GitHub. Also $env:ZIGSAW_INSTALL_FROM.
+A directory or URL that has quasidock-x86_64-windows.zip and SHA256SUMS, instead
+of a release on GitHub. Also $env:QUASIDOCK_INSTALL_FROM.
 
 .PARAMETER NoPath
-Leave the user's PATH as it is. Also $env:ZIGSAW_INSTALL_NO_PATH.
-
-.PARAMETER NoUpdateCheck
-Don't have a daily check for updates, and remember that, as 'zigsaw updates off'
-does. Also $env:ZIGSAW_INSTALL_NO_UPDATE_CHECK.
+Leave the user's PATH as it is. Also $env:QUASIDOCK_INSTALL_NO_PATH.
 
 .PARAMETER Uninstall
-Remove zigsaw and its PATH entry. Apps have to be removed first, with
-zigsaw rm; the store's other files, such as downloads and apps' data, stay.
+Remove quasidock and its PATH entry. Apps have to be removed first, with
+quasidock rm; the store's other files, such as downloads and apps' data, stay.
 #>
 param(
-    [string]$Version = $env:ZIGSAW_VERSION,
-    [string]$Dir = $env:ZIGSAW_INSTALL_DIR,
-    [string]$From = $env:ZIGSAW_INSTALL_FROM,
+    [string]$Version = $env:QUASIDOCK_VERSION,
+    [string]$Dir = $env:QUASIDOCK_INSTALL_DIR,
+    [string]$From = $env:QUASIDOCK_INSTALL_FROM,
     [switch]$NoPath,
-    [switch]$NoUpdateCheck,
     [switch]$Uninstall
 )
 
 # In a scope of its own: piped to iex, the script runs in the caller's session,
 # whose preferences are theirs.
 & {
-    param([string]$Version, [string]$Dir, [string]$From, [bool]$NoPath, [bool]$NoUpdateCheck, [bool]$Uninstall)
+    param([string]$Version, [string]$Dir, [string]$From, [bool]$NoPath, [bool]$Uninstall)
     $ErrorActionPreference = 'Stop'
     $ProgressPreference = 'SilentlyContinue'
 
-    $programs = 'zigsaw.exe', 'zigsaw-shim.exe', 'zigsaw-shimw.exe', 'zigsaw-relay.exe', 'zigsaw-host.exe'
-    # Only from 0.73.0 on; -Version can install a release before that.
-    $notify = 'zigsaw-notify.exe'
-    $archive = 'zigsaw-x86_64-windows.zip'
+    $programs = 'quasidock.exe', 'quasidock-relay.exe', 'quasidock-host.exe'
+    $archive = 'quasidock-x86_64-windows.zip'
     # The user's environment variables. Tests name another key.
-    $envKey = if ($env:ZIGSAW_INSTALL_ENV_KEY) { $env:ZIGSAW_INSTALL_ENV_KEY } else { 'Environment' }
+    $envKey = if ($env:QUASIDOCK_INSTALL_ENV_KEY) { $env:QUASIDOCK_INSTALL_ENV_KEY } else { 'Environment' }
 
-    $defaultDir = Join-Path $env:LOCALAPPDATA 'zigsaw\bin'
+    $defaultDir = Join-Path $env:LOCALAPPDATA 'quasidock\bin'
     if (-not $Dir) { $Dir = $defaultDir }
     $Dir = [IO.Path]::GetFullPath($Dir).TrimEnd('\')
-    $store = if ($env:ZIGSAW_HOME) { $env:ZIGSAW_HOME } else { Join-Path $env:LOCALAPPDATA 'zigsaw' }
-    $offMarker = Join-Path $store 'updates\off'
+    $store = if ($env:QUASIDOCK_HOME) { $env:QUASIDOCK_HOME } else { Join-Path $env:LOCALAPPDATA 'quasidock' }
 
     function Same-Dir([string]$entry) {
         $expanded = [Environment]::ExpandEnvironmentVariables($entry.Trim().Trim('"')).TrimEnd('\')
@@ -97,17 +84,9 @@ param(
         if ($envKey -eq 'Environment') {
             # Tells running programs, Explorer first, that the environment
             # changed: setting any user variable through .NET broadcasts it.
-            [Environment]::SetEnvironmentVariable('ZIGSAW_INSTALL_NOTIFY', $null, 'User')
+            [Environment]::SetEnvironmentVariable('QUASIDOCK_INSTALL_NOTIFY', $null, 'User')
         }
         return $true
-    }
-
-    # Runs zigsaw for its effect alone. In a scope with another preference: under
-    # 'Stop', what it says on stderr would count as the command failing.
-    function Invoke-Quietly([string]$program, [string[]]$arguments) {
-        $ErrorActionPreference = 'Continue'
-        & $program @arguments 2>&1 | Out-Null
-        return $LASTEXITCODE
     }
 
     # Deletes a program, or moves it aside if it's running: Windows lets a
@@ -119,7 +98,7 @@ param(
     }
 
     function Remove-Leftovers {
-        foreach ($name in ($programs + $notify)) {
+        foreach ($name in $programs) {
             foreach ($filter in "$name.old-*", "$name.new-*") {
                 Get-ChildItem -LiteralPath $Dir -Filter $filter -ErrorAction SilentlyContinue |
                     ForEach-Object { Remove-Item -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue }
@@ -128,21 +107,17 @@ param(
     }
 
     if ($Uninstall) {
-        $zigsaw = Join-Path $Dir 'zigsaw.exe'
-        if (Test-Path -LiteralPath $zigsaw) {
+        $quasidock = Join-Path $Dir 'quasidock.exe'
+        if (Test-Path -LiteralPath $quasidock) {
             # A header line, then a line per app.
-            $apps = @(& $zigsaw list | Select-Object -Skip 1 | ForEach-Object { ($_ -split '\s+')[0] } | Where-Object { $_ })
+            $apps = @(& $quasidock list | Select-Object -Skip 1 | ForEach-Object { ($_ -split '\s+')[0] } | Where-Object { $_ })
             if ($apps.Count -gt 0) {
-                throw "These apps are still installed: $($apps -join ', '). Remove each with 'zigsaw rm <id>' first: zigsaw undoes what it changed for them, which deleting its files wouldn't."
+                throw "These apps are still installed: $($apps -join ', '). Remove each with 'quasidock rm <id>' first: quasidock undoes what it changed for them, which deleting its files wouldn't."
             }
-            # What stores since deleted left; later, no zigsaw is here to.
-            & $zigsaw repair | Out-Null
-            # And the daily check. Leaving nothing behind includes the memory of
-            # having turned it off: an install after this one is a fresh one.
-            if (Test-Path -LiteralPath (Join-Path $Dir $notify)) { [void](Invoke-Quietly $zigsaw 'updates', 'off') }
-            Remove-Item -LiteralPath $offMarker -Force -ErrorAction SilentlyContinue
+            # What stores since deleted left; later, no quasidock is here to.
+            & $quasidock repair | Out-Null
         }
-        foreach ($name in ($programs + $notify)) {
+        foreach ($name in $programs) {
             $path = Join-Path $Dir $name
             if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Force }
         }
@@ -150,23 +125,23 @@ param(
         if (-not $NoPath -and (Set-UserPath $false)) { Write-Host "Removed $Dir from your PATH." }
         # The record of what stores changed outside themselves: it goes once it
         # has nothing in it, and until then says what another store still needs.
-        $record = 'HKCU:\' + $(if ($env:ZIGSAW_GRANTS_KEY) { $env:ZIGSAW_GRANTS_KEY } else { 'Software\Zigsaw\Grants' })
+        $record = 'HKCU:\' + $(if ($env:QUASIDOCK_GRANTS_KEY) { $env:QUASIDOCK_GRANTS_KEY } else { 'Software\Quasidock\Grants' })
         if (Test-Path -LiteralPath $record) {
             $left = @((Get-Item -LiteralPath $record).Property)
             if ($left.Count -eq 0) { Remove-Item -LiteralPath $record -Force }
-            else { Write-Warning "zigsaw's record still has what other stores changed: $($left -join '; '). A zigsaw using them takes it back." }
+            else { Write-Warning "quasidock's record still has what other stores changed: $($left -join '; '). A quasidock using them takes it back." }
         }
-        Write-Host "zigsaw is removed from $Dir. Its store, with downloads and apps' data, is $store; delete that too if you don't want them."
+        Write-Host "quasidock is removed from $Dir. Its store, with downloads and apps' data, is $store; delete that too if you don't want them."
         return
     }
 
-    if (-not [Environment]::Is64BitOperatingSystem) { throw 'zigsaw needs 64-bit Windows.' }
+    if (-not [Environment]::Is64BitOperatingSystem) { throw 'quasidock needs 64-bit Windows.' }
     if (-not $From) {
-        $From = if ($Version) { "https://github.com/zigsaw-io/zigsaw/releases/download/v$($Version.TrimStart('v'))" }
-        else { 'https://github.com/zigsaw-io/zigsaw/releases/latest/download' }
+        $From = if ($Version) { "https://github.com/quasidock/quasidock/releases/download/v$($Version.TrimStart('v'))" }
+        else { 'https://github.com/quasidock/quasidock/releases/latest/download' }
     }
 
-    $tmp = Join-Path ([IO.Path]::GetTempPath()) ('zigsaw-install-' + [Guid]::NewGuid().ToString('N'))
+    $tmp = Join-Path ([IO.Path]::GetTempPath()) ('quasidock-install-' + [Guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Path $tmp | Out-Null
     try {
         foreach ($name in $archive, 'SHA256SUMS') {
@@ -196,15 +171,7 @@ param(
 
         New-Item -ItemType Directory -Path $Dir -Force | Out-Null
         Remove-Leftovers
-        # Going back to a release without it: the zigsaw here can still take its
-        # task away, which the one going in couldn't.
-        $hasNotify = Test-Path -LiteralPath (Join-Path $unpacked $notify)
-        if (-not $hasNotify -and (Test-Path -LiteralPath (Join-Path $Dir $notify))) {
-            [void](Invoke-Quietly (Join-Path $Dir 'zigsaw.exe') 'updates', 'off')
-            Remove-Item -LiteralPath $offMarker -Force -ErrorAction SilentlyContinue
-            Clear-Program (Join-Path $Dir $notify)
-        }
-        foreach ($name in $(if ($hasNotify) { $programs + $notify } else { $programs })) {
+        foreach ($name in $programs) {
             Clear-Program (Join-Path $Dir $name)
             Copy-Item -LiteralPath (Join-Path $unpacked $name) -Destination (Join-Path $Dir $name)
         }
@@ -212,32 +179,18 @@ param(
         Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue
     }
 
-    $zigsaw = Join-Path $Dir 'zigsaw.exe'
-    $installed = & $zigsaw version
+    $quasidock = Join-Path $Dir 'quasidock.exe'
+    $installed = & $quasidock version
     Write-Host "Installed $installed in $Dir."
 
-    # Apps installed by an earlier zigsaw have its shims, which name its path.
     if (Test-Path (Join-Path $store 'refs\*.json')) {
-        & $zigsaw repair
-        if ($LASTEXITCODE -ne 0) { Write-Warning "Some apps' commands are still those of the zigsaw before. Close the apps and run 'zigsaw repair'." }
+        & $quasidock repair
+        if ($LASTEXITCODE -ne 0) { Write-Warning "Some apps' grants remain from the earlier quasidock. Close the apps and run 'quasidock repair'." }
     }
 
     if (-not $NoPath) {
         if (Set-UserPath $true) { Write-Host "Added $Dir to your PATH. Terminals opened from now on have it." }
         if (-not (@($env:Path -split ';') | Where-Object { $_ -ne '' -and (Same-Dir $_) })) { $env:Path = "$($env:Path.TrimEnd(';'));$Dir" }
     }
-    # The daily check: only where this is the user's own zigsaw, and never against
-    # their wishes. Not being able to have it doesn't stop an install.
-    if (-not $env:ZIGSAW_HOME -and $Dir -ieq $defaultDir.TrimEnd('\') -and (Test-Path -LiteralPath (Join-Path $Dir $notify))) {
-        if ($NoUpdateCheck) {
-            [void](Invoke-Quietly $zigsaw 'updates', 'off')
-            Write-Host "No daily check for updates. 'zigsaw updates on' starts one."
-        } elseif (Test-Path -LiteralPath $offMarker) {
-            Write-Host "The daily check for updates stays off, as you left it. 'zigsaw updates on' starts it."
-        } else {
-            if ((Invoke-Quietly $zigsaw 'updates', 'on', '--unless-off') -eq 0) { Write-Host "A daily check will tell you when updates are waiting; it installs nothing. 'zigsaw updates off' stops it." }
-            else { Write-Warning "Windows wouldn't add the daily check for updates. 'zigsaw update --check' tells you by hand." }
-        }
-    }
-    Write-Host "Try: zigsaw pull org.nodejs.node"
-} $Version $Dir $From ($NoPath -or [bool]$env:ZIGSAW_INSTALL_NO_PATH) ($NoUpdateCheck -or [bool]$env:ZIGSAW_INSTALL_NO_UPDATE_CHECK) ([bool]$Uninstall)
+    Write-Host "Try: quasidock pull org.nodejs.node"
+} $Version $Dir $From ($NoPath -or [bool]$env:QUASIDOCK_INSTALL_NO_PATH) ([bool]$Uninstall)

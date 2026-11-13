@@ -7,9 +7,9 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/zigsaw-io/zigsaw/internal/oci"
-	"github.com/zigsaw-io/zigsaw/internal/process"
-	"github.com/zigsaw-io/zigsaw/internal/win32"
+	"github.com/quasidock/quasidock/internal/oci"
+	"github.com/quasidock/quasidock/internal/process"
+	"github.com/quasidock/quasidock/internal/win32"
 )
 
 var Passthrough = []string{
@@ -104,7 +104,7 @@ func Build(host map[string]string, spec Spec) ([]Var, error) {
 	Set(&env, "LOCALAPPDATA", p.Local)
 	Set(&env, "TEMP", p.Temp)
 	Set(&env, "TMP", p.Temp)
-	Set(&env, "ZIGSAW_ID", spec.ID)
+	Set(&env, "QUASIDOCK_ID", spec.ID)
 
 	for _, kv := range spec.Vars {
 		Set(&env, kv.Name, kv.Value)
@@ -144,7 +144,7 @@ func RestoreUser(m map[string]string) error {
 		}
 		name := entry[0:eq]
 		val := entry[eq+1:]
-		if strings.HasPrefix(strings.ToUpper(name), "ZIGSAW_") {
+		if strings.HasPrefix(strings.ToUpper(name), "QUASIDOCK_") {
 			continue
 		}
 		m[name] = val

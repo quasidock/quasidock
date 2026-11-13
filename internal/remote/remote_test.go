@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zigsaw-io/zigsaw/internal/oci"
-	"github.com/zigsaw-io/zigsaw/internal/registry"
+	"github.com/quasidock/quasidock/internal/oci"
+	"github.com/quasidock/quasidock/internal/registry"
 )
 
 func repeatStr(s string, count int) string {

@@ -8,7 +8,7 @@ import (
 	"syscall"
 	"unsafe"
 
-	"github.com/zigsaw-io/zigsaw/internal/win32"
+	"github.com/quasidock/quasidock/internal/win32"
 )
 
 var (
@@ -156,7 +156,6 @@ type SpawnSpec struct {
 	BreakawayOk   bool
 	Stdio         *[3]win32.HANDLE
 	Inherit       []win32.HANDLE
-	Shortcut      string
 }
 
 // LowIntegrityToken creates a copy of the current process token with low integrity level.
@@ -472,10 +471,6 @@ func StartIn(job win32.HANDLE, spec SpawnSpec) (win32.HANDLE, error) {
 		startup.StartupInfo.HStdInput = stdHandles[0]
 		startup.StartupInfo.HStdOutput = stdHandles[1]
 		startup.StartupInfo.HStdError = stdHandles[2]
-	}
-	if spec.Shortcut != "" {
-		startup.StartupInfo.DwFlags |= win32.STARTF_TITLEISLINKNAME
-		startup.StartupInfo.LpTitle = win32.UTF16Ptr(spec.Shortcut)
 	}
 
 	win32.SetConsoleCtrlHandler(ignoreCtrlCHandler, true)

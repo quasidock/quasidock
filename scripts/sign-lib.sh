@@ -1,6 +1,6 @@
 # What the scripts that sign have in common: sourced, not run.
 #
-# They use cosign's program from a store, as it is there, and not `zigsaw run`: what
+# They use cosign's program from a store, as it is there, and not `quasidock run`: what
 # they'd give a run goes on a command line, which the passphrase mustn't, and a low run
 # would label the key's folder so that any low program may write in it. It only does
 # the arithmetic: nothing it runs here reaches a registry or the internet.
@@ -8,9 +8,9 @@
 # cosign's program, in the store: COSIGN names another.
 find_cosign() {
     [ -z "${COSIGN:-}" ] || { printf '%s\n' "$COSIGN"; return; }
-    local store=${ZIGSAW_HOME:-$LOCALAPPDATA\\zigsaw} found
+    local store=${QUASIDOCK_HOME:-$LOCALAPPDATA\\quasidock} found
     found=$(find "$(cygpath -u "$store\\deploy")" -maxdepth 2 -iname cosign.exe 2>/dev/null | head -1)
-    [ -n "$found" ] || { echo "error: no cosign in $store: run \`zigsaw pull dev.sigstore.cosign\` first, or set COSIGN" >&2; return 1; }
+    [ -n "$found" ] || { echo "error: no cosign in $store: run \`quasidock pull dev.sigstore.cosign\` first, or set COSIGN" >&2; return 1; }
     printf '%s\n' "$found"
 }
 

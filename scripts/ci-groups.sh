@@ -36,14 +36,14 @@ all=$(grep -v -e '^#' -e '^\s*$' "$groups_file" | cut -d: -f1 | grep -vx skip | 
 
 # What checks any group: a change to one checks both families.
 common_paths=(
-    tests/published.sh tests/seed-store.sh tests/imports.zig scripts/ci-groups.sh
+    tests/published.sh tests/seed-store.sh tests/cmd/imports/main.go scripts/ci-groups.sh
     "$groups_file" scripts/published-recipes.txt .github/workflows/reproduce.yml .gitattributes
 )
 # Paths whose change means a family is checked: a file, or a directory
 # ending in /, or a prefix of a file name ending in -. Its groups' recipes,
 # and their directories, are added below.
 gtk_paths=(
-    tests/gtk.sh tests/gtk3.sh tests/gtk/ tests/acprobe.sh tests/acprobe.zig
+    tests/gtk.sh tests/gtk3.sh tests/gtk/ tests/acprobe.sh tests/cmd/acprobe/main.go
     recipes/gtk4-msvc.json recipes/no-publish/pinta.json recipes/no-publish/dotnet
     # What gtk-suites seeds its store with besides GTK's family.
     recipes/busybox.json recipes/llvm-mingw.json recipes/meson.json recipes/mingit.json

@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/zigsaw-io/zigsaw/internal/signature"
+	"github.com/quasidock/quasidock/internal/signature"
 )
 
 func TestP256SignAndVerify(t *testing.T) {

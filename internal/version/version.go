@@ -1,4 +1,4 @@
 package version
 
-// Version is the current version of zigsaw.
-const Version = "0.78.0"
+// Version is the current version of quasidock.
+const Version = "0.2.0"

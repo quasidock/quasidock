@@ -9,8 +9,8 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/zigsaw-io/zigsaw/internal/regkey"
-	"github.com/zigsaw-io/zigsaw/internal/win32"
+	"github.com/quasidock/quasidock/internal/regkey"
+	"github.com/quasidock/quasidock/internal/win32"
 )
 
 func report(what string, status int32) {

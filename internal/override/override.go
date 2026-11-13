@@ -9,15 +9,14 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/zigsaw-io/zigsaw/internal/oci"
-	"github.com/zigsaw-io/zigsaw/internal/store"
+	"github.com/quasidock/quasidock/internal/oci"
+	"github.com/quasidock/quasidock/internal/store"
 )
 
 // Settings represents run options saved for an app or store-wide.
 type Settings struct {
 	Sandbox      *oci.Sandbox `json:"sandbox,omitempty"`
 	Network      *bool        `json:"network,omitempty"`
-	Commands     *bool        `json:"commands,omitempty"`
 	Host         *bool        `json:"host,omitempty"`
 	Ephemeral    *bool        `json:"ephemeral,omitempty"`
 	Filesystem   []string     `json:"filesystem,omitempty"`
@@ -30,7 +29,7 @@ type Settings struct {
 }
 
 func (s Settings) IsEmpty() bool {
-	return s.Sandbox == nil && s.Network == nil && s.Commands == nil && s.Host == nil &&
+	return s.Sandbox == nil && s.Network == nil && s.Host == nil &&
 		s.Ephemeral == nil && len(s.Filesystem) == 0 && len(s.NoFilesystem) == 0 &&
 		len(s.Env) == 0 && len(s.NoExtension) == 0 && len(s.Extension) == 0 &&
 		len(s.Ports) == 0 && s.RealFolders == nil
@@ -45,10 +44,6 @@ func Merge(lower, upper Settings) Settings {
 	net := upper.Network
 	if net == nil {
 		net = lower.Network
-	}
-	cmds := upper.Commands
-	if cmds == nil {
-		cmds = lower.Commands
 	}
 	host := upper.Host
 	if host == nil {
@@ -66,7 +61,6 @@ func Merge(lower, upper Settings) Settings {
 	return Settings{
 		Sandbox:      sb,
 		Network:      net,
-		Commands:     cmds,
 		Host:         host,
 		Ephemeral:    eph,
 		Filesystem:   mergeList(without(lower.Filesystem, upper.NoFilesystem, grantPath), upper.Filesystem, grantPath),
@@ -96,13 +90,6 @@ func (s Settings) Format() string {
 			parts = append(parts, "--share=network")
 		} else {
 			parts = append(parts, "--unshare=network")
-		}
-	}
-	if s.Commands != nil {
-		if *s.Commands {
-			parts = append(parts, "--share=commands")
-		} else {
-			parts = append(parts, "--unshare=commands")
 		}
 	}
 	if s.Host != nil {
@@ -247,7 +234,7 @@ func Load(st *store.Store, id string) (Settings, error) {
 		if target == "" {
 			target = "--global"
 		}
-		return Settings{}, fmt.Errorf("%s: %w; fix it, or remove it with `zigsaw override --reset %s`", p, err, target)
+		return Settings{}, fmt.Errorf("%s: %w; fix it, or remove it with `quasidock override --reset %s`", p, err, target)
 	}
 	return s, nil
 }

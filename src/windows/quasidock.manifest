@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<!-- The application manifest of zigsaw.exe and the shims: they run with the
+<!-- The application manifest of quasidock.exe and its helper binaries: they run with the
      rights of whoever starts them, never asking for more, and are written
      for Windows 10 and 11. Nothing else: no long paths, DPI awareness or code
      page, which would change how they behave. -->

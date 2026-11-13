@@ -5,7 +5,7 @@ import (
 )
 
 func TestEventName(t *testing.T) {
-	root1 := `C:\Users\u\AppData\Local\zigsaw`
+	root1 := `C:\Users\u\AppData\Local\quasidock`
 	root2 := `D:\other`
 	hex := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 

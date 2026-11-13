@@ -62,7 +62,7 @@ if [ "${1:-}" = --fetch ]; then
             ;;
         page)
             local code
-            code=$(curl -sSL --compressed --max-time 60 -A 'zigsaw check-upstream' -o "$n.out" -w '%{http_code}' "$where" 2>"$n.err")
+            code=$(curl -sSL --compressed --max-time 60 -A 'quasidock check-upstream' -o "$n.out" -w '%{http_code}' "$where" 2>"$n.err")
             local got=$?
             if [ "$got" -ne 0 ]; then
                 echo "unreachable curl says: $(tail -1 "$n.err" | tr -d '\r')" >"$n.status"
@@ -583,7 +583,7 @@ declare -a a_ids a_more # for each question: the IDs answered, and whether OSV h
 if [ "$n_queries" -gt 0 ]; then
     send() {
         local code got
-        code=$("$osv_curl" -sS --compressed --max-time 120 -A 'zigsaw check-upstream' -H 'Content-Type: application/json' \
+        code=$("$osv_curl" -sS --compressed --max-time 120 -A 'quasidock check-upstream' -H 'Content-Type: application/json' \
             -d @queries.json -o answer.json -w '%{http_code}' "$osv/querybatch" 2>osv.err)
         got=$?
         osv_problem=

@@ -9,8 +9,8 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/zigsaw-io/zigsaw/internal/context"
-	"github.com/zigsaw-io/zigsaw/internal/win32"
+	"github.com/quasidock/quasidock/internal/context"
+	"github.com/quasidock/quasidock/internal/win32"
 )
 
 var ErrEndOfInput = errors.New("end of input")

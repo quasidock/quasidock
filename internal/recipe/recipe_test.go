@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zigsaw-io/zigsaw/internal/format"
+	"github.com/quasidock/quasidock/internal/format"
 )
 
 func TestParseMinimalRecipe(t *testing.T) {
@@ -142,7 +142,7 @@ func TestRecipeChecks(t *testing.T) {
 
 	projectJSON := `{ "id": "x", "version": "1", "command": "bin/a.exe", "exports": {},
   "modules": [{ "name": "m", "sources": [{ "path": ".", "skip": ["/docs", "*.log"] }, { "path": "src/" }], "build": ["x"] }] }`
-	project, err := Parse("zigsaw.json", []byte(projectJSON))
+	project, err := Parse("quasidock.json", []byte(projectJSON))
 	if err != nil {
 		t.Fatalf("Parse error: %v", err)
 	}

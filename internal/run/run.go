@@ -1,6 +1,7 @@
 package run
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -8,27 +9,24 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/zigsaw-io/zigsaw/internal/acl"
-	"github.com/zigsaw-io/zigsaw/internal/aliases"
-	"github.com/zigsaw-io/zigsaw/internal/appcontainer"
-	"github.com/zigsaw-io/zigsaw/internal/context"
-	"github.com/zigsaw-io/zigsaw/internal/environment"
-	"github.com/zigsaw-io/zigsaw/internal/exports"
-	"github.com/zigsaw-io/zigsaw/internal/extensions"
-	"github.com/zigsaw-io/zigsaw/internal/folders"
-	"github.com/zigsaw-io/zigsaw/internal/forward"
-	"github.com/zigsaw-io/zigsaw/internal/grants"
-	"github.com/zigsaw-io/zigsaw/internal/hkcu"
-	"github.com/zigsaw-io/zigsaw/internal/lazy"
-	"github.com/zigsaw-io/zigsaw/internal/oci"
-	"github.com/zigsaw-io/zigsaw/internal/override"
-	"github.com/zigsaw-io/zigsaw/internal/process"
-	"github.com/zigsaw-io/zigsaw/internal/roots"
-	"github.com/zigsaw-io/zigsaw/internal/services"
-	"github.com/zigsaw-io/zigsaw/internal/sidecar"
-	"github.com/zigsaw-io/zigsaw/internal/store"
-	"github.com/zigsaw-io/zigsaw/internal/win32"
-	"github.com/zigsaw-io/zigsaw/internal/written"
+	"github.com/quasidock/quasidock/internal/acl"
+	"github.com/quasidock/quasidock/internal/appcontainer"
+	"github.com/quasidock/quasidock/internal/context"
+	"github.com/quasidock/quasidock/internal/environment"
+	"github.com/quasidock/quasidock/internal/extensions"
+	"github.com/quasidock/quasidock/internal/folders"
+	"github.com/quasidock/quasidock/internal/forward"
+	"github.com/quasidock/quasidock/internal/grants"
+	"github.com/quasidock/quasidock/internal/hkcu"
+	"github.com/quasidock/quasidock/internal/lazy"
+	"github.com/quasidock/quasidock/internal/oci"
+	"github.com/quasidock/quasidock/internal/override"
+	"github.com/quasidock/quasidock/internal/process"
+	"github.com/quasidock/quasidock/internal/roots"
+	"github.com/quasidock/quasidock/internal/services"
+	"github.com/quasidock/quasidock/internal/store"
+	"github.com/quasidock/quasidock/internal/win32"
+	"github.com/quasidock/quasidock/internal/written"
 )
 
 type Options struct {
@@ -114,7 +112,7 @@ func Run(ctx *context.Context, opts Options) (uint32, error) {
 		case oci.FsGrantFolder:
 			folderGrants = append(folderGrants, folders.Grant{Folder: g.Where.Folder, ReadOnly: g.ReadOnly})
 		default:
-			ctx.Note("warning: %s asks for the filesystem permission %q, which this zigsaw doesn't know, and leaves out; a newer zigsaw may", cfg.ID, spec)
+			ctx.Note("warning: %s asks for the filesystem permission %q, which this quasidock doesn't know, and leaves out; a newer quasidock may", cfg.ID, spec)
 		}
 	}
 
@@ -141,12 +139,6 @@ func Run(ctx *context.Context, opts Options) (uint32, error) {
 			return 1, err
 		}
 		defer runDir.Delete()
-	}
-
-	appAliases, err := syncAliases(ctx, img)
-	if err != nil {
-		storeLock.Release()
-		return 1, err
 	}
 
 	found, err := extensions.Find(ctx.Store, cfg, settings.NoExtension)
@@ -243,9 +235,6 @@ func Run(ctx *context.Context, opts Options) (uint32, error) {
 	}
 
 	var appPath []string
-	if appAliases != nil {
-		appPath = append(appPath, appAliases.Dir)
-	}
 	appDirs, _ := environment.PathDirs(placeholders, cfg.Path)
 	appPath = append(appPath, appDirs...)
 	for i, r := range rt.own {
@@ -286,6 +275,9 @@ func Run(ctx *context.Context, opts Options) (uint32, error) {
 	if cmd.Batch {
 		commandLine, err = process.BuildBatchCommandLine(exe, cmd.Exe, allArgs)
 		if err != nil {
+			if errors.Is(err, process.ErrInvalidBatchArgument) {
+				return 1, ctx.Fail("%s is a batch file, and cmd.exe can't pass it an argument with a line break or a NUL character", cmd.Exe)
+			}
 			return 1, ctx.Fail("%s can't be run as a batch file: %v", cmd.Exe, err)
 		}
 	} else {
@@ -303,9 +295,6 @@ func Run(ctx *context.Context, opts Options) (uint32, error) {
 		_ = environment.Expand(&appEnv, extOwn[i], e.Config.Env, joined)
 	}
 	_ = environment.Expand(&appEnv, placeholders, cfg.Env, joined)
-	if appAliases != nil {
-		environment.Set(&appEnv, "BB_OVERRIDE_APPLETS", appAliases.Names)
-	}
 
 	sharedPathDirs := sharedPath(ctx, cfg, settings, sandbox)
 	envVars, err := environment.Build(ctx.Env, environment.Spec{
@@ -338,9 +327,6 @@ func Run(ctx *context.Context, opts Options) (uint32, error) {
 		for _, e := range found.Loaded {
 			ctx.Note("extension %s %s (%s)", e.ID, e.Version, e.Dir)
 		}
-		if appAliases != nil {
-			ctx.Note("aliases  %s (%s)", appAliases.Names, appAliases.Dir)
-		}
 		if !saved.IsEmpty() {
 			ctx.Note("override %v", saved)
 		}
@@ -355,7 +341,7 @@ func Run(ctx *context.Context, opts Options) (uint32, error) {
 			ctx.Note("loopback exempt while the app's runs go: it reaches other programs on this machine")
 		case LoopbackIsolated:
 			if forwarding {
-				ctx.Note("loopback isolated: it reaches other programs on this machine only on the ports it uses, which zigsaw forwards")
+				ctx.Note("loopback isolated: it reaches other programs on this machine only on the ports it uses, which quasidock forwards")
 			} else {
 				ctx.Note("loopback isolated: it reaches no other program on this machine")
 			}
@@ -371,7 +357,7 @@ func Run(ctx *context.Context, opts Options) (uint32, error) {
 			if t.Connect == t.Port {
 				ctx.Note("uses     %s: localhost:%d", t.Use.Name, t.Port)
 			} else {
-				ctx.Note("uses     %s: localhost:%d, which zigsaw forwards from %d in its container", t.Use.Name, t.Port, t.Connect)
+				ctx.Note("uses     %s: localhost:%d, which quasidock forwards from %d in its container", t.Use.Name, t.Port, t.Connect)
 			}
 		}
 		ctx.Note("exe      %s", exe)
@@ -416,7 +402,7 @@ func Run(ctx *context.Context, opts Options) (uint32, error) {
 
 	if sandbox == oci.SandboxSoft {
 		if rid, err := acl.EffectiveLabel(exe); err == nil && rid != nil && *rid <= win32.SECURITY_MANDATORY_LOW_RID {
-			ctx.Note("warning: %s is labelled low integrity, so Windows starts it, and this run, at low integrity; `zigsaw repair` takes back a label zigsaw gave a folder it's in", exe)
+			ctx.Note("warning: %s is labelled low integrity, so Windows starts it, and this run, at low integrity; `quasidock repair` takes back a label quasidock gave a folder it's in", exe)
 		}
 	}
 
@@ -450,10 +436,6 @@ func Run(ctx *context.Context, opts Options) (uint32, error) {
 		var allRuntimeDirs []string
 		allRuntimeDirs = append(allRuntimeDirs, img.RuntimeDirs...)
 		allRuntimeDirs = append(allRuntimeDirs, extensionDirs(found.Loaded)...)
-		aliasDir := ""
-		if appAliases != nil {
-			aliasDir = appAliases.Dir
-		}
 		relayDir := ""
 		if relayExe != "" {
 			relayDir = filepath.Dir(relayExe)
@@ -465,7 +447,6 @@ func Run(ctx *context.Context, opts Options) (uint32, error) {
 		sec, err := setUpAppContainer(ctx, cfg.ID, appContainerSetup{
 			deployDir:    img.DeployDir,
 			runtimeDirs:  allRuntimeDirs,
-			aliasDir:     aliasDir,
 			relayDir:     relayDir,
 			rootsFile:    rootsPath,
 			dataDir:      dataDir,
@@ -534,7 +515,6 @@ func Run(ctx *context.Context, opts Options) (uint32, error) {
 		Cwd:         cwd,
 		Security:    security,
 		Token:       token,
-		Shortcut:    ctx.Env["ZIGSAW_SHORTCUT"],
 	})
 	if err != nil {
 		if watcher != nil {
@@ -551,17 +531,13 @@ func Run(ctx *context.Context, opts Options) (uint32, error) {
 			hex := oci.DigestHex(l.Digest)
 			fails, _ := lazy.FailedFetches(ctx.Store, hex, failuresBefore[i])
 			for _, line := range fails {
-				ctx.Note("zigsaw: %s of a layer still being fetched couldn't be: %s", cfg.ID, line)
+				ctx.Note("quasidock: %s of a layer still being fetched couldn't be: %s", cfg.ID, line)
 			}
 		}
 	}
 
 	if watcher != nil {
 		written.Finish(ctx.Store, cfg.ID, watcher)
-	}
-
-	if runDir == nil && exports.HasCommandDirs(cfg) {
-		exports.SyncAfterRun(ctx, cfg.ID)
 	}
 
 	return code, err
@@ -603,19 +579,6 @@ func WarnUnsupported(cfg oci.AppConfig, sandbox oci.Sandbox, note func(string, .
 
 func sharedPath(ctx *context.Context, cfg oci.AppConfig, settings override.Settings, sandbox oci.Sandbox) []string {
 	var dirs []string
-	commands := false
-	if settings.Commands != nil {
-		commands = *settings.Commands
-	} else if cfg.Permissions.Commands != nil {
-		commands = *cfg.Permissions.Commands
-	}
-	if commands {
-		if sandbox == oci.SandboxSoft {
-			dirs = append(dirs, ctx.Store.Path("bin"))
-		} else {
-			ctx.Note("note: %s doesn't get your apps' commands under the %v sandbox, only under soft: zigsaw can't run from it", cfg.ID, sandbox)
-		}
-	}
 	host := false
 	if settings.Host != nil {
 		host = *settings.Host
@@ -629,7 +592,7 @@ func sharedPath(ctx *context.Context, cfg oci.AppConfig, settings override.Setti
 				dirs = append(dirs, hd)
 			}
 		} else {
-			ctx.Note("note: %s doesn't get zigsaw-host in an AppContainer: your programs couldn't read their own files from there", cfg.ID)
+			ctx.Note("note: %s doesn't get quasidock-host in an AppContainer: your programs couldn't read their own files from there", cfg.ID)
 		}
 	}
 	return dirs
@@ -640,14 +603,14 @@ func hostDir(ctx *context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	src := filepath.Join(filepath.Dir(self), "zigsaw-host.exe")
+	src := filepath.Join(filepath.Dir(self), "quasidock-host.exe")
 	bytes, err := os.ReadFile(src)
 	if err != nil {
-		return "", ctx.Fail("reading %s, which should be installed next to zigsaw.exe: %v", src, err)
+		return "", ctx.Fail("reading %s, which should be installed next to quasidock.exe: %v", src, err)
 	}
 	dir := ctx.Store.Path("host")
 	_ = os.MkdirAll(dir, 0o755)
-	dest := filepath.Join(dir, "zigsaw-host.exe")
+	dest := filepath.Join(dir, "quasidock-host.exe")
 	had, _ := os.ReadFile(dest)
 	if had != nil && string(had) == string(bytes) {
 		return dir, nil
@@ -743,90 +706,9 @@ func openedFiles(hostCwd string, named []string) ([]string, error) {
 	return files, nil
 }
 
-type AppAliases struct {
-	Dir   string
-	Names string
-}
-
-func syncAliases(ctx *context.Context, image *store.Image) (*AppAliases, error) {
-	cfg := image.Config
-	dir := ctx.Store.AliasDir(cfg.ID)
-	providers := aliasProviders(image)
-	resolved, err := aliases.Resolve(ctx.Store, providers, aliases.MissingSkip, false)
-	if err != nil {
-		return nil, err
-	}
-	if len(resolved) == 0 {
-		if _, err := os.Stat(dir); err == nil {
-			l, err := ctx.Store.LockAliases(cfg.ID)
-			if err == nil {
-				_ = os.RemoveAll(dir)
-				l.Release()
-			}
-		}
-		return nil, nil
-	}
-
-	l, err := ctx.Store.LockAliases(cfg.ID)
-	if err != nil {
-		return nil, err
-	}
-	defer l.Release()
-
-	start := ctx.Now()
-	zigsawExe, _ := win32.GetModuleFileName()
-	shimExe, err := sidecar.ShimExe(zigsawExe, sidecar.ShimConsole)
-	if err != nil {
-		return nil, err
-	}
-	changed, err := aliases.Sync(dir, resolved, shimExe, ctx.Verbose)
-	if err != nil {
-		return nil, err
-	}
-	if changed > 0 {
-		ctx.Timed(start, "update %d alias file(s)", changed)
-	}
-	return &AppAliases{
-		Dir:   dir,
-		Names: aliases.Names(resolved),
-	}, nil
-}
-
-func aliasProviders(image *store.Image) []aliases.Provider {
-	cfg := image.Config
-	runtimes := make([]oci.DirPlaceholder, 0, len(image.RuntimeDirs))
-	idx := 0
-	for alias := range cfg.Runtimes {
-		if idx < len(image.RuntimeDirs) {
-			runtimes = append(runtimes, oci.DirPlaceholder{Alias: alias, Path: image.RuntimeDirs[idx]})
-			idx++
-		}
-	}
-	var out []aliases.Provider
-	out = append(out, aliases.Provider{
-		ID:       cfg.ID,
-		Dir:      image.DeployDir,
-		Aliases:  cfg.Aliases,
-		Runtimes: runtimes,
-	})
-	idx = 0
-	for _, r := range cfg.Runtimes {
-		if idx < len(image.RuntimeDirs) {
-			out = append(out, aliases.Provider{
-				ID:      r.ID,
-				Dir:     image.RuntimeDirs[idx],
-				Aliases: r.Aliases,
-			})
-			idx++
-		}
-	}
-	return out
-}
-
 type appContainerSetup struct {
 	deployDir    string
 	runtimeDirs  []string
-	aliasDir     string
 	relayDir     string
 	rootsFile    string
 	dataDir      string
@@ -855,9 +737,6 @@ func setUpAppContainer(ctx *context.Context, id string, setup appContainerSetup)
 	wanted = append(wanted, wantedGrant{path: setup.deployDir, access: acl.AccessReadExecute, host: false})
 	for _, dir := range setup.runtimeDirs {
 		wanted = append(wanted, wantedGrant{path: dir, access: acl.AccessReadExecute, host: false})
-	}
-	if setup.aliasDir != "" {
-		wanted = append(wanted, wantedGrant{path: setup.aliasDir, access: acl.AccessReadExecute, host: false})
 	}
 	if setup.relayDir != "" {
 		wanted = append(wanted, wantedGrant{path: setup.relayDir, access: acl.AccessReadExecute, host: false})
@@ -956,7 +835,7 @@ func exemptLoopback(ctx *context.Context, id string, network, uses bool) (Loopba
 	if !network {
 		return LoopbackIsolated, nil
 	}
-	if v, ok := ctx.Env["ZIGSAW_LOOPBACK_EXEMPTION"]; ok && v == "0" {
+	if v, ok := ctx.Env["QUASIDOCK_LOOPBACK_EXEMPTION"]; ok && v == "0" {
 		return LoopbackIsolated, nil
 	}
 	sid, err := appcontainer.PackageSid(id)
@@ -1001,9 +880,9 @@ func exemptLoopback(ctx *context.Context, id string, network, uses bool) (Loopba
 		}
 		what := "no other program"
 		if uses {
-			what = "other programs only on the ports it uses, through zigsaw,"
+			what = "other programs only on the ports it uses, through quasidock,"
 		}
-		ctx.Note("note: Windows didn't let zigsaw exempt %s from loopback isolation (error %d), so this run reaches %s on this machine", appcontainer.ProfileName(id), res.Refused, what)
+		ctx.Note("note: Windows didn't let quasidock exempt %s from loopback isolation (error %d), so this run reaches %s on this machine", appcontainer.ProfileName(id), res.Refused, what)
 		return LoopbackIsolated, nil
 	}
 	return LoopbackExempt, nil
@@ -1036,7 +915,7 @@ func unlabelData(ctx *context.Context, id string) error {
 		}
 		defer lock.Release()
 	} else {
-		ctx.Note("warning: %s's data folder stays labelled low integrity, as zigsaw runs at low integrity here: programs this run writes there start at low integrity", id)
+		ctx.Note("warning: %s's data folder stays labelled low integrity, as quasidock runs at low integrity here: programs this run writes there start at low integrity", id)
 		return nil
 	}
 	start := time.Now()

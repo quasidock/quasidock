@@ -3,8 +3,8 @@ package main
 import (
 	"os"
 
-	"github.com/zigsaw-io/zigsaw/internal/cli"
-	"github.com/zigsaw-io/zigsaw/internal/win32"
+	"github.com/quasidock/quasidock/internal/cli"
+	"github.com/quasidock/quasidock/internal/win32"
 )
 
 func main() {

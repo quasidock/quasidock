@@ -15,7 +15,7 @@
       "sources": [
         { "path": "echo-args.cmd" },
         { "path": "exit-code.cmd" },
-        { "path": "../../zig-out/test/zigsaw-argv.exe", "dest": "argv.exe" }
+        { "path": "../../zig-out/test/quasidock-argv.exe", "dest": "argv.exe" }
       ]
     }
   ]

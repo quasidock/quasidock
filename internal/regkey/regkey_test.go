@@ -7,12 +7,12 @@ import (
 	"testing"
 	"unsafe"
 
-	"github.com/zigsaw-io/zigsaw/internal/regkey"
-	"github.com/zigsaw-io/zigsaw/internal/win32"
+	"github.com/quasidock/quasidock/internal/regkey"
+	"github.com/quasidock/quasidock/internal/win32"
 )
 
 func TestCopyFrom(t *testing.T) {
-	path := fmt.Sprintf("Software\\ZigsawTest\\regkey-%d", os.Getpid())
+	path := fmt.Sprintf("Software\\QuasidockTest\\regkey-%d", os.Getpid())
 	root, err := regkey.CreateWith(win32.HKEY_CURRENT_USER, path, win32.KEY_ALL_ACCESS)
 	if err != nil {
 		t.Fatalf("Create root failed: %v", err)
@@ -20,7 +20,7 @@ func TestCopyFrom(t *testing.T) {
 	defer func() {
 		root.Close()
 		_ = win32.RegDeleteTree(win32.HKEY_CURRENT_USER, path)
-		_ = win32.RegDeleteKey(win32.HKEY_CURRENT_USER, "Software\\ZigsawTest")
+		_ = win32.RegDeleteKey(win32.HKEY_CURRENT_USER, "Software\\QuasidockTest")
 	}()
 
 	src, err := regkey.CreateWith(root.Handle, "src\\deep\\er", win32.KEY_ALL_ACCESS)

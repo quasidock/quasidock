@@ -15,13 +15,13 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/zigsaw-io/zigsaw/internal/estargz"
-	"github.com/zigsaw-io/zigsaw/internal/format"
-	"github.com/zigsaw-io/zigsaw/internal/oci"
-	"github.com/zigsaw-io/zigsaw/internal/registry"
-	"github.com/zigsaw-io/zigsaw/internal/remote"
-	"github.com/zigsaw-io/zigsaw/internal/store"
-	"github.com/zigsaw-io/zigsaw/internal/win32"
+	"github.com/quasidock/quasidock/internal/estargz"
+	"github.com/quasidock/quasidock/internal/format"
+	"github.com/quasidock/quasidock/internal/oci"
+	"github.com/quasidock/quasidock/internal/registry"
+	"github.com/quasidock/quasidock/internal/remote"
+	"github.com/quasidock/quasidock/internal/store"
+	"github.com/quasidock/quasidock/internal/win32"
 )
 
 const (
@@ -134,7 +134,7 @@ func Describe(st *store.Store, manifest oci.Manifest) *string {
 }
 
 func minSize() uint64 {
-	if val := os.Getenv("ZIGSAW_TEST_LAZY_MIN"); val != "" {
+	if val := os.Getenv("QUASIDOCK_TEST_LAZY_MIN"); val != "" {
 		if n, err := strconv.ParseUint(val, 10, 64); err == nil {
 			return n
 		}
@@ -299,7 +299,7 @@ func EventName(storeRoot, hexDig, which string) string {
 	if len(prefix) > 16 {
 		prefix = prefix[:16]
 	}
-	return fmt.Sprintf("Local\\zigsaw-%s-%s-%s", hHex, prefix, which)
+	return fmt.Sprintf("Local\\quasidock-%s-%s-%s", hHex, prefix, which)
 }
 
 func StartHelper(st *store.Store, hexDig string, verbose bool) (Started, error) {
@@ -458,7 +458,7 @@ func helperExe(st *store.Store) (string, error) {
 
 	h := sha256.Sum256(data)
 	hStr := hex.EncodeToString(h[:8])
-	dest := filepath.Join(st.Root, "lazy", fmt.Sprintf("zigsaw-%s.exe", hStr))
+	dest := filepath.Join(st.Root, "lazy", fmt.Sprintf("quasidock-%s.exe", hStr))
 
 	if _, err := os.Stat(dest); err == nil {
 		return dest, nil
@@ -521,7 +521,7 @@ func Prune(st *store.Store, currentExeName string) (int, error) {
 					deleted++
 				}
 			}
-		} else if strings.HasPrefix(name, "zigsaw-") && strings.HasSuffix(name, ".exe") {
+		} else if strings.HasPrefix(name, "quasidock-") && strings.HasSuffix(name, ".exe") {
 			if currentExeName != "" && name == currentExeName {
 				continue
 			}

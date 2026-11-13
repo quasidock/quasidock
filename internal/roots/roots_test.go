@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zigsaw-io/zigsaw/internal/store"
+	"github.com/quasidock/quasidock/internal/store"
 )
 
 func TestAllowsServerAuth(t *testing.T) {

@@ -6,14 +6,14 @@ import (
 	"testing"
 	"unsafe"
 
-	"github.com/zigsaw-io/zigsaw/internal/win32"
+	"github.com/quasidock/quasidock/internal/win32"
 )
 
 func TestWTF8Encoding(t *testing.T) {
 	tests := []string{
 		"Hello, World!",
 		"",
-		"C:\\Program Files\\Zigsaw\\bin.exe",
+		"C:\\Program Files\\Quasidock\\bin.exe",
 		"日本語とEmoji 🎉🚀",
 		"Path with spaces and symbols: (foo) [bar] {baz} ~!@#$%^&*()_+",
 	}

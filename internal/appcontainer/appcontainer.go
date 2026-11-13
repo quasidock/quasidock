@@ -3,12 +3,12 @@ package appcontainer
 import (
 	"fmt"
 
-	"github.com/zigsaw-io/zigsaw/internal/win32"
+	"github.com/quasidock/quasidock/internal/win32"
 )
 
 const (
-	mutexProfiles   = "Local\\zigsaw-appcontainer"
-	mutexExemptions = "Local\\zigsaw-loopback"
+	mutexProfiles   = "Local\\quasidock-appcontainer"
+	mutexExemptions = "Local\\quasidock-loopback"
 
 	CapabilityInternetClient            = "S-1-15-3-1"
 	CapabilityPrivateNetworkClientServer = "S-1-15-3-3"
@@ -41,7 +41,7 @@ func releaseMutex(h win32.HANDLE) {
 }
 
 func ProfileName(id string) string {
-	return "zigsaw." + id
+	return "quasidock." + id
 }
 
 // Ensure creates the app's profile, or opens it if it already exists.

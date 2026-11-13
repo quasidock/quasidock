@@ -8,8 +8,8 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/zigsaw-io/zigsaw/internal/net"
-	"github.com/zigsaw-io/zigsaw/internal/win32"
+	"github.com/quasidock/quasidock/internal/net"
+	"github.com/quasidock/quasidock/internal/win32"
 )
 
 type UpstreamKind int
@@ -31,8 +31,8 @@ type Pipes struct {
 }
 
 var (
-	zigsaw     *Pipes
-	zigsawLock sync.Mutex
+	parent     *Pipes
+	parentLock sync.Mutex
 )
 
 type ArgKind int
@@ -152,24 +152,24 @@ func connectApp(port uint16) win32.SOCKET {
 	return win32.INVALID_SOCKET
 }
 
-func askZigsaw(index uint8) win32.SOCKET {
-	if zigsaw == nil {
+func askParent(index uint8) win32.SOCKET {
+	if parent == nil {
 		return win32.INVALID_SOCKET
 	}
-	zigsawLock.Lock()
-	defer zigsawLock.Unlock()
+	parentLock.Lock()
+	defer parentLock.Unlock()
 
-	if !writeAll(zigsaw.Out, []byte{index}) {
+	if !writeAll(parent.Out, []byte{index}) {
 		return win32.INVALID_SOCKET
 	}
 	status := make([]byte, 1)
-	if !readAll(zigsaw.In, status) || status[0] != 0 {
+	if !readAll(parent.In, status) || status[0] != 0 {
 		return win32.INVALID_SOCKET
 	}
 
 	var info win32.WSAPROTOCOL_INFOW
 	infoBytes := unsafe.Slice((*byte)(unsafe.Pointer(&info)), unsafe.Sizeof(info))
-	if !readAll(zigsaw.In, infoBytes) {
+	if !readAll(parent.In, infoBytes) {
 		return win32.INVALID_SOCKET
 	}
 
@@ -177,8 +177,8 @@ func askZigsaw(index uint8) win32.SOCKET {
 	if err != nil || s == win32.INVALID_SOCKET {
 		return win32.INVALID_SOCKET
 	}
-	// zigsaw keeps its own until this one is open.
-	_ = writeAll(zigsaw.Out, []byte{1})
+	// quasidock keeps its own until this one is open.
+	_ = writeAll(parent.Out, []byte{1})
 	return s
 }
 
@@ -189,7 +189,7 @@ func relay(client win32.SOCKET, upstream Upstream) {
 	case UpstreamApp:
 		other = connectApp(upstream.Port)
 	case UpstreamForward:
-		other = askZigsaw(upstream.Forward)
+		other = askParent(upstream.Forward)
 	}
 	if other == win32.INVALID_SOCKET {
 		return
@@ -237,9 +237,9 @@ func main() {
 			listeners++
 		case ArgForward:
 			z := parsed.Forward
-			zigsaw = &z
+			parent = &z
 		case ArgUse:
-			if zigsaw == nil || uses == 255 {
+			if parent == nil || uses == 255 {
 				win32.ExitProcess(2)
 			}
 			families := []net.Family{net.FamilyIPv4, net.FamilyIPv6}
@@ -258,8 +258,8 @@ func main() {
 		win32.ExitProcess(2)
 	}
 
-	if zigsaw != nil {
-		if !writeAll(zigsaw.Out, []byte{0}) {
+	if parent != nil {
+		if !writeAll(parent.Out, []byte{0}) {
 			win32.ExitProcess(1)
 		}
 	}

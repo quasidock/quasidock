@@ -1,4 +1,4 @@
-module github.com/zigsaw-io/zigsaw
+module github.com/quasidock/quasidock
 
 go 1.26.7
 

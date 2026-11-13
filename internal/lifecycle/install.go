@@ -3,15 +3,14 @@ package lifecycle
 import (
 	"strings"
 
-	"github.com/zigsaw-io/zigsaw/internal/context"
-	"github.com/zigsaw-io/zigsaw/internal/exports"
-	"github.com/zigsaw-io/zigsaw/internal/grants"
-	"github.com/zigsaw-io/zigsaw/internal/oci"
-	"github.com/zigsaw-io/zigsaw/internal/override"
-	"github.com/zigsaw-io/zigsaw/internal/store"
+	"github.com/quasidock/quasidock/internal/context"
+	"github.com/quasidock/quasidock/internal/grants"
+	"github.com/quasidock/quasidock/internal/oci"
+	"github.com/quasidock/quasidock/internal/override"
+	"github.com/quasidock/quasidock/internal/store"
 )
 
-// Install deploys an image's layers, updates the app's ref, and syncs shims/shortcuts/associations.
+// Install deploys an image's layers and updates the app's ref.
 func Install(ctx *context.Context, image *oci.Image) error {
 	cfg := image.Config
 	previous, err := ctx.Store.ReadRef(cfg.ID)
@@ -38,11 +37,6 @@ func Install(ctx *context.Context, image *oci.Image) error {
 	}
 	ctx.Timed(start, "deploy")
 
-	replaced := previous != nil && previous.Manifest != image.ManifestDigest
-	if replaced {
-		_ = ctx.Store.WritePrevious(*previous)
-	}
-
 	if err := ctx.Store.WriteRef(store.Ref{
 		ID:       cfg.ID,
 		Version:  cfg.Version,
@@ -52,10 +46,9 @@ func Install(ctx *context.Context, image *oci.Image) error {
 		return err
 	}
 
-	if replaced {
-		_ = ctx.Store.DeleteSkip(cfg.ID)
+	if previous != nil && previous.Manifest != image.ManifestDigest {
 		if deleted, err := ctx.Store.DeleteUnusedDeployments(previous.Manifest); err == nil && deleted {
-			ctx.Note("  kept     %s %s, which is still running; `zigsaw prune` removes it later", cfg.ID, previous.Version)
+			ctx.Note("  kept     %s %s, which is still running; `quasidock prune` removes it later", cfg.ID, previous.Version)
 		}
 	}
 
@@ -104,12 +97,8 @@ func Install(ctx *context.Context, image *oci.Image) error {
 		ctx.Note("  override %s", saved.String())
 	}
 
-	if err := exports.Sync(ctx, image.Manifest, cfg); err != nil {
-		return err
-	}
-
 	if _, err := grants.SettleUnlessRunning(ctx, cfg.ID); err != nil {
-		ctx.Note("warning: what %s's earlier runs were granted stays until its next run ends, `zigsaw repair` or `zigsaw rm`", cfg.ID)
+		ctx.Note("warning: what %s's earlier runs were granted stays until its next run ends, `quasidock repair` or `quasidock rm`", cfg.ID)
 	}
 	return nil
 }

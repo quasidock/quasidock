@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Builds recipes and publishes them as images, each tagged with its app's
 # version and "latest", to the default registry (ghcr.io/zigsaw-io) or the
-# one in ZIGSAW_REGISTRY; then the registry's catalog of the apps, which
-# `zigsaw search` reads.
+# one in QUASIDOCK_REGISTRY; then the registry's catalog of the apps, which
+# `quasidock search` reads.
 #
 #   scripts/publish.sh [--skip-unchanged[=REV]] [recipe.json...]
 #                                  (default: those in published-recipes.txt)
@@ -25,13 +25,13 @@
 # On the default registry, COSIGN_KEY must name the key that signs them, and it's
 # used as scripts/sign-images.sh says. Elsewhere, nothing's signed here.
 #
-# Needs Git Bash, a built zigsaw (zig build), and credentials for the
-# registry: a login saved with `zigsaw login ghcr.io`, or
-# ZIGSAW_REGISTRY_USERNAME and ZIGSAW_REGISTRY_PASSWORD. For ghcr.io, that's a
+# Needs Git Bash, a built quasidock (go run ./scripts/build.go), and credentials for the
+# registry: a login saved with `quasidock login ghcr.io`, or
+# QUASIDOCK_REGISTRY_USERNAME and QUASIDOCK_REGISTRY_PASSWORD. For ghcr.io, that's a
 # GitHub user and a token with the write:packages scope, and new packages
 # start out private: make each one public in its package settings on GitHub.
 #
-# Builds happen in a temporary store, unless ZIGSAW_HOME points at one (to
+# Builds happen in a temporary store, unless QUASIDOCK_HOME points at one (to
 # reuse its downloads). Either way, each image is built from its recipe right
 # before it's pushed, so what's published is exactly what the recipe produces.
 # The files each image was built from are pushed next to it (push --sources),
@@ -41,8 +41,8 @@ set -eu
 export MSYS_NO_PATHCONV=1
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
-zigsaw=${ZIGSAW:-$root/zig-out/bin/zigsaw.exe}
-registry=${ZIGSAW_REGISTRY:-ghcr.io/zigsaw-io}
+quasidock=${QUASIDOCK:-$root/zig-out/bin/quasidock.exe}
+registry=${QUASIDOCK_REGISTRY:-ghcr.io/zigsaw-io}
 
 changed=
 skipped=()
@@ -88,11 +88,11 @@ if [ "$registry" = ghcr.io/zigsaw-io ]; then
 fi
 
 own_store=false
-if [ -z "${ZIGSAW_HOME:-}" ]; then
-    ZIGSAW_HOME=$(cygpath -w "$(mktemp -d)")
+if [ -z "${QUASIDOCK_HOME:-}" ]; then
+    QUASIDOCK_HOME=$(cygpath -w "$(mktemp -d)")
     own_store=true
 fi
-export ZIGSAW_HOME
+export QUASIDOCK_HOME
 
 # With --skip-unchanged: work out which recipes to publish. Those git sees
 # changed, then (until nothing more is added) those that name the image of one
@@ -121,34 +121,34 @@ published=()
 for recipe in "${todo[@]}"; do
     id=$(grep -o '"id": *"[^"]*"' "$recipe" | cut -d'"' -f4)
     echo "== $id"
-    "$zigsaw" build "$recipe"
-    "$zigsaw" push --sources "$id"
-    "$zigsaw" push "$id" "$id:latest"
-    version=$("$zigsaw" list | awk -v id="$id" '$1 == id { print $2 }')
-    digest=$(grep -o 'sha256:[0-9a-f]*' "$ZIGSAW_HOME\\refs\\$id.json")
+    "$quasidock" build "$recipe"
+    "$quasidock" push --sources "$id"
+    "$quasidock" push "$id" "$id:latest"
+    version=$("$quasidock" list | awk -v id="$id" '$1 == id { print $2 }')
+    digest=$(grep -o 'sha256:[0-9a-f]*' "$QUASIDOCK_HOME\\refs\\$id.json")
     published+=("$id $version $digest")
 done
 
 # Each beside its image, by digest of what was just pushed.
 if [ "$sign" = true ] && [ ${#todo[@]} -gt 0 ]; then
     echo "== signatures"
-    ZIGSAW="$zigsaw" bash "$root/scripts/sign-images.sh" "${todo[@]}"
+    QUASIDOCK="$quasidock" bash "$root/scripts/sign-images.sh" "${todo[@]}"
 fi
 
-# The catalog `zigsaw search` reads lists every app published-recipes.txt
+# The catalog `quasidock search` reads lists every app published-recipes.txt
 # names, as the registry has it now: those published before this run too.
 catalog_ids=()
 for name in $(grep -v '^#' "$root/scripts/published-recipes.txt" | tr -d '\r'); do
     catalog_ids+=("$(grep -o '"id": *"[^"]*"' "$root/recipes/$name" | head -1 | cut -d'"' -f4)")
 done
 echo "== catalog"
-"$zigsaw" push --catalog "${catalog_ids[@]}"
+"$quasidock" push --catalog "${catalog_ids[@]}"
 
 if $own_store; then
-    # Installed apps are protected against deletion, so remove them through zigsaw.
-    for line in "${published[@]}"; do "$zigsaw" rm --delete-data "${line%% *}" >/dev/null 2>&1 || true; done
-    "$zigsaw" prune --downloads >/dev/null 2>&1 || true
-    rm -rf "$ZIGSAW_HOME"
+    # Installed apps are protected against deletion, so remove them through quasidock.
+    for line in "${published[@]}"; do "$quasidock" rm --delete-data "${line%% *}" >/dev/null 2>&1 || true; done
+    "$quasidock" prune --downloads >/dev/null 2>&1 || true
+    rm -rf "$QUASIDOCK_HOME"
 fi
 
 echo

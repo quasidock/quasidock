@@ -2,11 +2,11 @@
 # depend on it (tests/matrix.sh, tests/zls.sh). Sourced, not run:
 #
 #   . "$(dirname "$0")/acprobe.sh"
-#   acprobe_run <zigsaw.exe> <repository> <work dir>   # sets $probe, or exits
+#   acprobe_run <quasidock.exe> <repository> <work dir>   # sets $probe, or exits
 #   want=$(ac_if self-path-dos nul)                     # "ok", or "gap"
-#   acprobe_rm <zigsaw.exe>
+#   acprobe_rm <quasidock.exe>
 #
-# The probe (tests/acprobe.zig, built with `zig build acprobe`) is installed
+# The probe (tests/cmd/acprobe, built with `go run ./scripts/build.go`) is installed
 # as an app of its own and run in an AppContainer from a granted directory.
 # Its output is a line per check, "<check> ok" or "<check> error <n> (...)".
 
@@ -14,9 +14,9 @@ ACPROBE_ID=test.acprobe
 
 acprobe_run() {
     local zigsaw=$1 root=$2 work=$3 out
-    (cd "$root" && zig build acprobe) || { echo "building the AppContainer probe failed"; exit 1; }
-    mkdir -p "$work\\acprobe\\cwd" && cp "$root\\zig-out\\test\\zigsaw-acprobe.exe" "$work\\acprobe\\"
-    printf '{ "id": "%s", "version": "1", "command": "zigsaw-acprobe.exe", "exports": {}, "permissions": { "filesystem": ["cwd"] },\n  "modules": [{ "name": "probe", "sources": [{ "path": "zigsaw-acprobe.exe" }] }] }\n' \
+    (cd "$root" && go run ./scripts/build.go acprobe) || { echo "building the AppContainer probe failed"; exit 1; }
+    mkdir -p "$work\\acprobe\\cwd" && cp "$root\\zig-out\\test\\quasidock-acprobe.exe" "$work\\acprobe\\"
+    printf '{ "id": "%s", "version": "1", "command": "quasidock-acprobe.exe", "exports": {}, "permissions": { "filesystem": ["cwd"] },\n  "modules": [{ "name": "probe", "sources": [{ "path": "quasidock-acprobe.exe" }] }] }\n' \
         $ACPROBE_ID >"$work\\acprobe\\acprobe.json"
     out=$("$zigsaw" build "$work\\acprobe\\acprobe.json" 2>&1) || { echo "$out"; exit 1; }
     probe=$(cd "$work\\acprobe\\cwd" && "$zigsaw" run --sandbox=appcontainer $ACPROBE_ID 2>/dev/null | tr -d '\r')
@@ -35,7 +35,7 @@ ac_if() {
 
 # The probe's report, for the end of a suite.
 acprobe_report() {
-    echo "In an AppContainer on $(cmd /c ver | tr -d '\r' | grep -v '^$') (tests/acprobe.zig):"
+    echo "In an AppContainer on $(cmd /c ver | tr -d '\r' | grep -v '^$') (tests/cmd/acprobe):"
     grep -v '^#' <<<"$probe" | sed 's/^/  /'
 }
 

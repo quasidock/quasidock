@@ -7,7 +7,7 @@ import (
 	"strings"
 	"unsafe"
 
-	"github.com/zigsaw-io/zigsaw/internal/win32"
+	"github.com/quasidock/quasidock/internal/win32"
 )
 
 type Process struct {
@@ -102,7 +102,7 @@ var loosening = []string{
 func main() {
 	args := os.Args[1:]
 	if len(args) != 1 {
-		fmt.Fprintln(os.Stderr, "usage: zigsaw-procprobe <pid>")
+		fmt.Fprintln(os.Stderr, "usage: quasidock-procprobe <pid>")
 		win32.ExitProcess(2)
 	}
 

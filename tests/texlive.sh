@@ -18,7 +18,7 @@
 # find its own long path in one and every program stops at once: the
 # AppContainer check is a known gap there.
 #
-#   TEXLIVE_HOME=path\to\store bash tests/texlive.sh [path\to\zigsaw.exe]
+#   TEXLIVE_HOME=path\to\store bash tests/texlive.sh [path\to\quasidock.exe]
 #
 # Building TeX Live takes some 15 minutes, most of them downloading 430
 # packages, so this uses a store that has it (TEXLIVE_HOME, or BUILD_HOME as
@@ -28,17 +28,17 @@ set -u
 export MSYS_NO_PATHCONV=1
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
-zigsaw=${1:-$root/zig-out/bin/zigsaw.exe}
-ZIGSAW_HOME=${TEXLIVE_HOME:-${BUILD_HOME:-}}
+zigsaw=${1:-$root/zig-out/bin/quasidock.exe}
+QUASIDOCK_HOME=${TEXLIVE_HOME:-${BUILD_HOME:-}}
 APP=org.tug.texlive
-if [ -z "$ZIGSAW_HOME" ] || [ ! -f "$ZIGSAW_HOME\\refs\\$APP.json" ]; then
+if [ -z "$QUASIDOCK_HOME" ] || [ ! -f "$QUASIDOCK_HOME\\refs\\$APP.json" ]; then
     echo "tests/texlive.sh needs a store with $APP in TEXLIVE_HOME or BUILD_HOME;"
     echo "build recipes\\texlive.json into one first."
     exit 1
 fi
-export ZIGSAW_HOME
+export QUASIDOCK_HOME
 work=$(cygpath -w "$(mktemp -d)")
-data="$ZIGSAW_HOME\\data\\$APP"
+data="$QUASIDOCK_HOME\\data\\$APP"
 # First use is what's checked: the formats, fontconfig's cache and
 # luaotfload's names are made in an empty data directory. One the store had
 # is set aside, and put back at the end.

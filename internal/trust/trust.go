@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/zigsaw-io/zigsaw/internal/signature"
-	"github.com/zigsaw-io/zigsaw/internal/store"
+	"github.com/quasidock/quasidock/internal/signature"
+	"github.com/quasidock/quasidock/internal/store"
 )
 
 const (
@@ -71,7 +71,7 @@ func readTrust(st *store.Store) (*File, error) {
 	}
 	var f File
 	if err := json.Unmarshal(data, &f); err != nil {
-		return nil, fmt.Errorf("%s isn't what zigsaw wrote: fix or delete it: %w", p, err)
+		return nil, fmt.Errorf("%s isn't what quasidock wrote: fix or delete it: %w", p, err)
 	}
 	return &f, nil
 }
@@ -135,7 +135,7 @@ func All(st *store.Store) ([]Named, error) {
 	for _, entry := range f.Keys {
 		k, err := signature.Parse([]byte(entry.Key))
 		if err != nil {
-			return nil, fmt.Errorf("%s has a key for %s that isn't one: `zigsaw trust rm %s` removes it", trustPath(st), entry.Prefix, entry.Prefix)
+			return nil, fmt.Errorf("%s has a key for %s that isn't one: `quasidock trust rm %s` removes it", trustPath(st), entry.Prefix, entry.Prefix)
 		}
 		result = append(result, Named{
 			Key:     k,
@@ -159,34 +159,6 @@ func ForImage(st *store.Store, repository string) ([]*signature.Key, error) {
 			result = append(result, named.Key)
 		}
 	}
-	return result, nil
-}
-
-// ForRelease returns keys that count for a release of zigsaw.
-func ForRelease(st *store.Store) ([]*signature.Key, error) {
-	var result []*signature.Key
-	if os.Getenv("ZIGSAW_UPGRADE_FROM") != "" {
-		if keyFile := os.Getenv("ZIGSAW_UPGRADE_KEY"); keyFile != "" {
-			data, err := os.ReadFile(keyFile)
-			if err != nil {
-				return nil, fmt.Errorf("reading the key %s: %w", keyFile, err)
-			}
-			k, err := signature.Parse(data)
-			if err != nil {
-				return nil, fmt.Errorf("%s isn't a P-256 public key", keyFile)
-			}
-			result = append(result, k)
-		}
-	}
-
-	for _, pem := range PublishedKeys {
-		k, err := signature.Parse([]byte(pem))
-		if err != nil {
-			panic("corrupt built-in key: " + err.Error())
-		}
-		result = append(result, k)
-	}
-
 	return result, nil
 }
 

@@ -9,7 +9,7 @@
 #   e.g. tests/zot.sh bash tests/registry.sh
 #
 # zot is the zigsaw app recipes/zot.json builds, run by the zigsaw under test
-# (ZIGSAW, default zig-out\bin\zigsaw.exe), from the store in ZOT_HOME, or
+# (QUASIDOCK, default zig-out\bin\quasidock.exe), from the store in ZOT_HOME, or
 # else BUILD_HOME (where tests/published.sh builds it), or else a temporary
 # one. If zot isn't installed there at the recipe's version, it's built
 # there first: minutes with its vendored modules in the store's downloads
@@ -22,7 +22,7 @@
 set -u
 export MSYS_NO_PATHCONV=1
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
-zigsaw=${ZIGSAW:-$root\\zig-out\\bin\\zigsaw.exe}
+zigsaw=${QUASIDOCK:-$root\\zig-out\\bin\\quasidock.exe}
 ZOT=dev.zotregistry.zot
 
 store=${ZOT_HOME:-${BUILD_HOME:-}}
@@ -36,7 +36,7 @@ if [ -z "$store" ]; then
             cp -n "$(cygpath -u "$SEED_DOWNLOADS")"/* "$(cygpath -u "$store")/cache/downloads/"
     fi
 fi
-z() { ZIGSAW_HOME="$store" "$zigsaw" "$@"; }
+z() { QUASIDOCK_HOME="$store" "$zigsaw" "$@"; }
 dir=$(mktemp -d)
 version=$(grep -o '"version": *"[^"]*"' "$root\\recipes\\zot.json" | cut -d'"' -f4)
 if ! z list 2>/dev/null | grep -q "^$ZOT  *$version "; then
@@ -48,9 +48,9 @@ if ! z list 2>/dev/null | grep -q "^$ZOT  *$version "; then
     done
 fi
 
-user=zigsaw-test
+user=quasidock-test
 password="test-$RANDOM$RANDOM$RANDOM"
-zig run "$root\\tests\\htpasswd.zig" -- "$user" "$password" >"$dir/htpasswd" || { echo "making the htpasswd file failed"; exit 1; }
+(cd "$root" && go run ./tests/cmd/htpasswd "$user" "$password") >"$dir/htpasswd" || { echo "making the htpasswd file failed"; exit 1; }
 
 # config <port> <more "http" settings>. Paths are relative to $dir, the
 # registries' working directory, which zot's image may use.
@@ -63,9 +63,9 @@ config 5001 ', "auth": { "htpasswd": { "path": "htpasswd" } }'
 # zigsaw itself in the background, not a function or subshell running it, so
 # that `kill` below ends zigsaw.
 cd "$dir"
-ZIGSAW_HOME="$store" "$zigsaw" run $ZOT serve zot-5000.json >zot-5000.log 2>&1 &
+QUASIDOCK_HOME="$store" "$zigsaw" run $ZOT serve zot-5000.json >zot-5000.log 2>&1 &
 plain=$!
-ZIGSAW_HOME="$store" "$zigsaw" run $ZOT serve zot-5001.json >zot-5001.log 2>&1 &
+QUASIDOCK_HOME="$store" "$zigsaw" run $ZOT serve zot-5001.json >zot-5001.log 2>&1 &
 login=$!
 cd "$OLDPWD"
 

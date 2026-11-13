@@ -22,7 +22,7 @@
 # published images (tests/seed-store.sh), which it installs again rather
 # than building.
 #
-#   QT_HOME=path\to\store bash tests/qt.sh [path\to\zigsaw.exe]
+#   QT_HOME=path\to\store bash tests/qt.sh [path\to\quasidock.exe]
 #
 # Building Qt's SDK takes over an hour, so this uses a store that has both
 # Qt images (QT_HOME, or BUILD_HOME as tests/published.sh leaves it), and
@@ -35,25 +35,22 @@ set -u
 export MSYS_NO_PATHCONV=1
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
-zigsaw=${1:-$root/zig-out/bin/zigsaw.exe}
-ZIGSAW_HOME=${QT_HOME:-${BUILD_HOME:-}}
-if [ -z "$ZIGSAW_HOME" ] || [ ! -f "$ZIGSAW_HOME\\refs\\io.qt.Qt6.json" ] || [ ! -f "$ZIGSAW_HOME\\refs\\io.qt.Qt6.Sdk.json" ]; then
+zigsaw=${1:-$root/zig-out/bin/quasidock.exe}
+QUASIDOCK_HOME=${QT_HOME:-${BUILD_HOME:-}}
+if [ -z "$QUASIDOCK_HOME" ] || [ ! -f "$QUASIDOCK_HOME\\refs\\io.qt.Qt6.json" ] || [ ! -f "$QUASIDOCK_HOME\\refs\\io.qt.Qt6.Sdk.json" ]; then
     echo "tests/qt.sh needs a store with io.qt.Qt6 and io.qt.Qt6.Sdk in QT_HOME or BUILD_HOME;"
     echo "build recipes\\qt6-sdk.json and recipes\\qt6.json into one first."
     exit 1
 fi
-export ZIGSAW_HOME
+export QUASIDOCK_HOME
 work=$(cygpath -w "$(mktemp -d)")
 APP=test.qt.hello
 FLAMESHOT=org.flameshot.Flameshot
 NOTES=io.github.nuttyartist.notes
-# Start menu shortcuts go here rather than the user's Start menu.
-links="$work\\links"
-export ZIGSAW_SHORTCUTS_DIR="$links"
 # The user's folders the apps may use, such as Pictures, are these, not
 # yours, which low and AppContainer runs would label and grant.
 for f in Documents Pictures; do mkdir -p "$work\\folders\\$f"; done
-export ZIGSAW_USER_FOLDERS="$work\\folders"
+export QUASIDOCK_USER_FOLDERS="$work\\folders"
 
 failures=0
 check() {
@@ -69,14 +66,14 @@ check() {
 }
 
 z() { "$zigsaw" "$@"; }
-manifest_of() { grep -o 'sha256:[0-9a-f]*' "$ZIGSAW_HOME\\refs\\$1.json"; }
+manifest_of() { grep -o 'sha256:[0-9a-f]*' "$QUASIDOCK_HOME\\refs\\$1.json"; }
 # install_again <id> <recipe>: installs an app the store has again, as the
 # store got it: from the build cache, if it built it, or the registry it was
 # pulled from, so its shortcuts go to this test's folder. Builds the recipe
 # if the store hasn't the app.
 install_again() {
     local source=""
-    [ -f "$ZIGSAW_HOME\\refs\\$1.json" ] && source=$(grep -o '"source": *"[^"]*"' "$ZIGSAW_HOME\\refs\\$1.json" | cut -d'"' -f4)
+    [ -f "$QUASIDOCK_HOME\\refs\\$1.json" ] && source=$(grep -o '"source": *"[^"]*"' "$QUASIDOCK_HOME\\refs\\$1.json" | cut -d'"' -f4)
     case $source in
     "" | *.json) z build "$root\\recipes\\$2" ;;
     *) z pull --yes "$source" ;;
@@ -123,7 +120,7 @@ check "qtbase's French catalogue translates a string" sh -c "\"\$0\" run $APP --
 app_data() {
     local out
     out=$(say 'app data' | tr '/' '\\')
-    case $out in "$ZIGSAW_HOME\\data\\$APP\\"*) ;; *) echo "app data in $out"; return 1 ;; esac
+    case $out in "$QUASIDOCK_HOME\\data\\$APP\\"*) ;; *) echo "app data in $out"; return 1 ;; esac
 }
 check "it keeps its files in the app's data directory" app_data
 
@@ -174,10 +171,8 @@ check "the runtime's qml tool runs a QML file" sh -c "timeout 60 \"\$0\" run --e
 # runs the SDK's as its shim would. On failure, CMake's output is kept in
 # LOG_DIR.
 mkdir -p "$work\\loose" && cp "$work\\hello.cpp" "$work\\CMakeLists.txt" "$work\\loose\\"
-bin="$ZIGSAW_HOME\\bin"
 loose_cmake() {
-    local cmake=("$bin\\cmake.exe")
-    [ "$(sed -n 's/^app = //p' "$bin\\cmake.shim" | tr -d '\r')" = io.qt.Qt6.Sdk ] || cmake=("$zigsaw" run --command=cmake io.qt.Qt6.Sdk)
+    local cmake=("$zigsaw" run --command=cmake io.qt.Qt6.Sdk)
     (cd "$work\\loose" && "${cmake[@]}" -S . -B out -DCMAKE_BUILD_TYPE=Release && "${cmake[@]}" --build out) >"$work\\loose.log" 2>&1 || {
         [ -z "${LOG_DIR:-}" ] || cp "$work\\loose.log" "$LOG_DIR\\qt-loose-cmake.log"
         tail -5 "$work\\loose.log"
@@ -189,14 +184,7 @@ loose_cmake() {
 }
 check "the SDK's cmake builds a Qt program, which runs on the runtime" loose_cmake
 
-# GUI programs get the shim that opens no console, and declared shortcuts.
-# Installing the runtime again puts its shortcut in the test's folder.
-install_again io.qt.Qt6 qt6.json >/dev/null 2>&1
-shim_dir=$(dirname "$zigsaw")
-shim_is() { cmp -s "$ZIGSAW_HOME\\bin\\$1.exe" "$shim_dir\\$2"; }
-gui_shims() { shim_is designer zigsaw-shimw.exe && shim_is linguist zigsaw-shimw.exe && shim_is pixeltool zigsaw-shimw.exe && shim_is qtdiag zigsaw-shim.exe; }
-check "Designer, Linguist and Pixeltool get the windowless shim, qtdiag the console one" gui_shims
-check "Designer and Linguist get shortcuts" test -f "$links\\Qt Widgets Designer.lnk" -a -f "$links\\Qt Linguist.lnk"
+
 # stays_up <seconds> <zigsaw run arguments...>: the app is still running
 # when the time is up, rather than having crashed.
 stays_up() {
@@ -240,14 +228,13 @@ check "the runtime's qtdiag finds the windows platform plugin" sh -c "timeout 60
 # Flameshot, on the runtime. Built here unless the store has it, which takes
 # a few minutes.
 installed_flameshot=false
-if [ ! -f "$ZIGSAW_HOME\\refs\\$FLAMESHOT.json" ]; then
+if [ ! -f "$QUASIDOCK_HOME\\refs\\$FLAMESHOT.json" ]; then
     z build "$root\\recipes\\flameshot.json" >"$work\\flameshot.log" 2>&1 || echo "building $FLAMESHOT failed: $(tail -1 "$work\\flameshot.log")"
     installed_flameshot=true
 else
     install_again $FLAMESHOT flameshot.json >/dev/null 2>&1
 fi
 check "Flameshot 14.0.0 is installed" sh -c "timeout 60 \"\$0\" run $FLAMESHOT --version 2>&1 | tr -d '\r' | grep -q 'Flameshot v14\\.0\\.0'" "$zigsaw"
-check "it gets the windowless shim and a shortcut" sh -c "cmp -s '$ZIGSAW_HOME\\bin\\flameshot.exe' '$shim_dir\\zigsaw-shimw.exe' && test -f '$links\\Flameshot.lnk'"
 check "it runs, in the tray" stays_up 15 $FLAMESHOT
 check "with --sandbox=soft" stays_up 15 --sandbox=soft $FLAMESHOT
 check "with --sandbox=appcontainer" stays_up 15 --sandbox=appcontainer $FLAMESHOT
@@ -271,13 +258,12 @@ check "with --sandbox=appcontainer" screenshot --sandbox=appcontainer
 # and its notes database in its data directory. Built here unless the store
 # has it, which takes a minute or two.
 installed_notes=false
-if [ ! -f "$ZIGSAW_HOME\\refs\\$NOTES.json" ]; then
+if [ ! -f "$QUASIDOCK_HOME\\refs\\$NOTES.json" ]; then
     z build "$root\\recipes\\notes.json" >"$work\\notes.log" 2>&1 || echo "building $NOTES failed: $(tail -1 "$work\\notes.log")"
     installed_notes=true
 else
     install_again $NOTES notes.json >/dev/null 2>&1
 fi
-check "Notes gets the windowless shim and a shortcut" sh -c "cmp -s '$ZIGSAW_HOME\\bin\\notes.exe' '$shim_dir\\zigsaw-shimw.exe' && test -f '$links\\Notes.lnk'"
 notes_window() { app_window Notes Notes "$@" $NOTES; }
 check "Notes opens its window" notes_window
 check "with --sandbox=soft" notes_window --sandbox=soft
@@ -291,7 +277,7 @@ notes_qml() {
     grep -q '^Database: connection ok$' <<<"$out" && ! grep -q 'qrc:/' <<<"$out" || { echo "got: $(grep -m3 'qrc:/\|Database' <<<"$out")"; return 1; }
 }
 check "its QML loads without errors, and it opens its database" notes_qml
-check "it keeps its notes in its data directory" test -f "$ZIGSAW_HOME\\data\\$NOTES\\home\\AppData\\Roaming\\Awesomeness\\notes.db"
+check "it keeps its notes in its data directory" test -f "$QUASIDOCK_HOME\\data\\$NOTES\\home\\AppData\\Roaming\\Awesomeness\\notes.db"
 
 cd "$root" || exit 1
 $installed_notes && z rm --delete-data $NOTES >/dev/null 2>&1

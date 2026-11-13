@@ -7,7 +7,7 @@ import (
 	"strings"
 	"unsafe"
 
-	"github.com/zigsaw-io/zigsaw/internal/win32"
+	"github.com/quasidock/quasidock/internal/win32"
 )
 
 var folders = []struct {
@@ -93,7 +93,7 @@ func reportFolder(name, dir string) {
 		return
 	}
 	pid := os.Getpid()
-	tmpFile := filepath.Join(dir, fmt.Sprintf("zigsaw-hostprobe-%d.tmp", pid))
+	tmpFile := filepath.Join(dir, fmt.Sprintf("quasidock-hostprobe-%d.tmp", pid))
 	h, err := win32.CreateFile(
 		tmpFile,
 		win32.GENERIC_WRITE|win32.DELETE,
@@ -149,13 +149,13 @@ func main() {
 	reportFolder("GetTempPath", strings.TrimRight(tmpDir, "\\/"))
 
 	pid := os.Getpid()
-	if err := createAndDelete(fmt.Sprintf("Software\\ZigsawHostProbe-%d", pid)); err == nil {
+	if err := createAndDelete(fmt.Sprintf("Software\\QuasidockHostProbe-%d", pid)); err == nil {
 		fmt.Println("registry write HKCU\\Software ok")
 	} else {
 		fmt.Printf("registry write HKCU\\Software %v\n", err)
 	}
 
-	if err := createAndDelete(fmt.Sprintf("Software\\AppDataLow\\ZigsawHostProbe-%d", pid)); err == nil {
+	if err := createAndDelete(fmt.Sprintf("Software\\AppDataLow\\QuasidockHostProbe-%d", pid)); err == nil {
 		fmt.Println("registry write HKCU\\Software\\AppDataLow ok")
 	} else {
 		fmt.Printf("registry write HKCU\\Software\\AppDataLow %v\n", err)

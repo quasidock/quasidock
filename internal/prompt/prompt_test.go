@@ -3,7 +3,7 @@ package prompt_test
 import (
 	"testing"
 
-	"github.com/zigsaw-io/zigsaw/internal/prompt"
+	"github.com/quasidock/quasidock/internal/prompt"
 )
 
 func TestParseAnswer(t *testing.T) {

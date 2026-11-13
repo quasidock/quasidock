@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/zigsaw-io/zigsaw/internal/oci"
+	"github.com/quasidock/quasidock/internal/oci"
 )
 
 func TestStoreLocks(t *testing.T) {
@@ -125,50 +125,6 @@ func TestStoreBlobsAndRefs(t *testing.T) {
 	gotRef, err = st.ReadRef(ref.ID)
 	if err != nil || gotRef != nil {
 		t.Fatalf("expected nil after delete, got %+v (err %v)", gotRef, err)
-	}
-}
-
-func TestStoreVersions(t *testing.T) {
-	tmpDir := t.TempDir()
-	st, err := Open(tmpDir, false, "")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Previous
-	ref := Ref{ID: "app.a", Version: "1", Manifest: "sha256:aa"}
-	st.WritePrevious(ref)
-	gotPrev, _ := st.ReadPrevious("app.a")
-	if gotPrev == nil || gotPrev.Version != "1" {
-		t.Fatalf("expected previous version 1, got %+v", gotPrev)
-	}
-
-	// Skip
-	skip := Skip{Version: "2", Manifest: "sha256:bb"}
-	st.WriteSkip("app.a", skip)
-	gotSkip, _ := st.ReadSkip("app.a")
-	if gotSkip == nil || gotSkip.Version != "2" {
-		t.Fatalf("expected skip version 2, got %+v", gotSkip)
-	}
-
-	// Held
-	if st.IsHeld("app.a") {
-		t.Fatal("expected not held initially")
-	}
-	changed, err := st.SetHeld("app.a", true)
-	if err != nil || !changed || !st.IsHeld("app.a") {
-		t.Fatal("expected held true")
-	}
-
-	ids, _ := st.ListVersionIds()
-	if len(ids) != 1 || ids[0] != "app.a" {
-		t.Fatalf("unexpected version IDs: %v", ids)
-	}
-
-	st.ForgetVersions("app.a")
-	ids, _ = st.ListVersionIds()
-	if len(ids) != 0 {
-		t.Fatalf("expected 0 version IDs after ForgetVersions, got %v", ids)
 	}
 }
 

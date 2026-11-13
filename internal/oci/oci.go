@@ -10,13 +10,17 @@ import (
 
 // Media types
 const (
-	MediaTypeManifest      = "application/vnd.oci.image.manifest.v1+json"
-	MediaTypeConfig        = "application/vnd.zigsaw.app.config.v2+json"
-	MediaTypeConfigV1      = "application/vnd.zigsaw.app.config.v1+json"
-	MediaTypeLayerTar      = "application/vnd.oci.image.layer.v1.tar"
-	MediaTypeLayerTarGzip  = "application/vnd.oci.image.layer.v1.tar+gzip"
-	MediaTypeSourcesConfig = "application/vnd.zigsaw.sources.v1+json"
-	MediaTypeSource        = "application/vnd.zigsaw.source.v1"
+	MediaTypeManifest            = "application/vnd.oci.image.manifest.v1+json"
+	MediaTypeConfig              = "application/vnd.quasidock.app.config.v2+json"
+	MediaTypeConfigV1            = "application/vnd.quasidock.app.config.v1+json"
+	LegacyMediaTypeConfig        = "application/vnd.zigsaw.app.config.v2+json"
+	LegacyMediaTypeConfigV1      = "application/vnd.zigsaw.app.config.v1+json"
+	MediaTypeLayerTar            = "application/vnd.oci.image.layer.v1.tar"
+	MediaTypeLayerTarGzip        = "application/vnd.oci.image.layer.v1.tar+gzip"
+	MediaTypeSourcesConfig       = "application/vnd.quasidock.sources.v1+json"
+	MediaTypeSource              = "application/vnd.quasidock.source.v1"
+	LegacyMediaTypeSourcesConfig = "application/vnd.zigsaw.sources.v1+json"
+	LegacyMediaTypeSource        = "application/vnd.zigsaw.source.v1"
 )
 
 type SourcesConfig struct {
@@ -202,18 +206,19 @@ func ToJSON(v any) ([]byte, error) {
 }
 
 func IsConfigType(t string) bool {
-	return t == MediaTypeConfig || t == MediaTypeConfigV1
+	return t == MediaTypeConfig || t == MediaTypeConfigV1 ||
+		t == LegacyMediaTypeConfig || t == LegacyMediaTypeConfigV1
 }
 
 func ParseConfig(what, configType string, data []byte) (*AppConfig, error) {
 	if !IsConfigType(configType) {
-		return nil, fmt.Errorf("%s is not a zigsaw app (its config type is %s; it may be a container image)", what, configType)
+		return nil, fmt.Errorf("%s is not a quasidock app (its config type is %s; it may be a container image)", what, configType)
 	}
 	var cfg AppConfig
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("%s: its app config can't be read: %w", what, err)
 	}
-	if configType == MediaTypeConfigV1 && len(cfg.Runtimes) > 0 {
+	if (configType == MediaTypeConfigV1 || configType == LegacyMediaTypeConfigV1) && len(cfg.Runtimes) > 0 {
 		return nil, fmt.Errorf("%s: a v1 config can't have runtimes", what)
 	}
 	if err := ValidateConfig(what, &cfg); err != nil {
@@ -225,7 +230,7 @@ func ParseConfig(what, configType string, data []byte) (*AppConfig, error) {
 func ValidateLayers(what string, m *Manifest, c *AppConfig) error {
 	for _, l := range m.Layers {
 		if l.MediaType != MediaTypeLayerTar && l.MediaType != MediaTypeLayerTarGzip {
-			return fmt.Errorf("%s has a layer of type %s, which zigsaw can't unpack", what, l.MediaType)
+			return fmt.Errorf("%s has a layer of type %s, which quasidock can't unpack", what, l.MediaType)
 		}
 	}
 	expectedLayers := len(c.Runtimes) + 1
@@ -670,7 +675,7 @@ func ValidateEntryPoints(what string, c *AppConfig, aliases []string) error {
 	}
 	for name, exp := range c.Exports {
 		if !IsValidExportName(name) {
-			return fmt.Errorf("%s: export name %q must be letters, digits, '.', '-', '_', '+' (and not zigsaw's own)", what, name)
+			return fmt.Errorf("%s: export name %q must be letters, digits, '.', '-', '_', '+' (and not quasidock's own)", what, name)
 		}
 		if !IsValidCommand(exp.Command, aliases) {
 			return fmt.Errorf("%s: export %s command %q must be a relative path inside the app, or start with a runtime's ${alias}\\", what, name, exp.Command)
@@ -747,7 +752,7 @@ func ValidateEntryPoints(what string, c *AppConfig, aliases []string) error {
 	if len(c.Registry) > 0 {
 		for i, key := range c.Registry {
 			if !IsValidRegistryKey(key) {
-				return fmt.Errorf("%s: registry key %q must be a key of the app's own in HKEY_CURRENT_USER\\Software, such as \"Software\\\\7-Zip\": no other root, not Software itself, nor Classes, Microsoft, Policies, Wow6432Node, AppDataLow or zigsaw in it", what, key)
+				return fmt.Errorf("%s: registry key %q must be a key of the app's own in HKEY_CURRENT_USER\\Software, such as \"Software\\\\7-Zip\": no other root, not Software itself, nor Classes, Microsoft, Policies, Wow6432Node, AppDataLow or quasidock in it", what, key)
 			}
 			for _, earlier := range c.Registry[:i] {
 				if registryKeyWithin(earlier, key) || registryKeyWithin(key, earlier) {
@@ -908,7 +913,7 @@ func isValidJoinName(name string) bool {
 func validateAliases(what, owner string, aliases map[string]Export, runtimes []string) error {
 	for name, e := range aliases {
 		if !IsValidExportName(name) {
-			return fmt.Errorf("%s: %salias name %q must be letters, digits, '.', '-', '_', '+' (and not zigsaw's own)", what, owner, name)
+			return fmt.Errorf("%s: %salias name %q must be letters, digits, '.', '-', '_', '+' (and not quasidock's own)", what, owner, name)
 		}
 		if !IsValidCommand(e.Command, runtimes) {
 			if len(runtimes) == 0 {
@@ -1005,7 +1010,7 @@ func IsValidExportName(name string) bool {
 		}
 		return false
 	}
-	reserved := []string{"zigsaw", "zigsaw-shim", "zigsaw-shimw"}
+	reserved := []string{"quasidock", "quasidock-relay", "quasidock-host", "zigsaw", "zigsaw-shim", "zigsaw-shimw"}
 	for _, r := range reserved {
 		if strings.EqualFold(name, r) {
 			return false
@@ -1137,7 +1142,7 @@ func IsValidScheme(scheme string) bool {
 			return false
 		}
 	}
-	prefixes := []string{"ms-", "microsoft", "windows", "search", "zigsaw"}
+	prefixes := []string{"ms-", "microsoft", "windows", "search", "zigsaw", "quasidock"}
 	for _, p := range prefixes {
 		if strings.HasPrefix(scheme, p) {
 			return false
@@ -1157,7 +1162,7 @@ func IsValidRegistryKey(key string) bool {
 	if !strings.EqualFold(parts[0], "Software") {
 		return false
 	}
-	for _, shared := range []string{"Classes", "Microsoft", "Policies", "Wow6432Node", "AppDataLow", "zigsaw"} {
+	for _, shared := range []string{"Classes", "Microsoft", "Policies", "Wow6432Node", "AppDataLow", "zigsaw", "quasidock"} {
 		if strings.EqualFold(parts[1], shared) {
 			return false
 		}
@@ -1317,10 +1322,10 @@ func DescribePermissions(p Permissions) string {
 		parts = append(parts, "whatever you can write (it asks for the soft sandbox)")
 	}
 	if p.Commands != nil && *p.Commands {
-		parts = append(parts, "the commands of your zigsaw apps")
+		parts = append(parts, "the commands of your quasidock apps")
 	}
 	if p.Host != nil && *p.Host {
-		parts = append(parts, "your own programs, in your real environment (zigsaw-host)")
+		parts = append(parts, "your own programs, in your real environment (quasidock-host)")
 	}
 	if p.Network {
 		parts = append(parts, "the network")
@@ -1348,7 +1353,7 @@ func DescribePermissions(p Permissions) string {
 				rwFolders = append(rwFolders, folderName)
 			}
 		case FsGrantUnknown:
-			parts = append(parts, fmt.Sprintf("%q, which this zigsaw doesn't know", g.Where.Path))
+			parts = append(parts, fmt.Sprintf("%q, which this quasidock doesn't know", g.Where.Path))
 		}
 	}
 	if len(rwFolders) > 0 {

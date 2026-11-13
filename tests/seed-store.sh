@@ -8,20 +8,20 @@
 #
 # Recipes are named as in recipes/, without .json. After --pull (the
 # default), each recipe's image is pulled at the recipe's version from the
-# default registry (or ZIGSAW_REGISTRY), which tests/published.sh checks is
+# default registry (or QUASIDOCK_REGISTRY), which tests/published.sh checks is
 # what the recipe builds; a version that isn't published yet is built from
 # the recipe instead. After --build, recipes are built, so that their
 # downloads are in the store's cache\downloads, for the suites'
-# SEED_DOWNLOADS. Uses the store in ZIGSAW_HOME (required) and the zigsaw in
-# ZIGSAW (default zig-out\bin\zigsaw.exe); apps installed there already are
+# SEED_DOWNLOADS. Uses the store in QUASIDOCK_HOME (required) and the zigsaw in
+# ZIGSAW (default zig-out\bin\quasidock.exe); apps installed there already are
 # left as they are.
 
 set -u
 export MSYS_NO_PATHCONV=1
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
-zigsaw=${ZIGSAW:-$root\\zig-out\\bin\\zigsaw.exe}
-[ -n "${ZIGSAW_HOME:-}" ] || { echo "ZIGSAW_HOME isn't set"; exit 2; }
-export ZIGSAW_HOME
+zigsaw=${QUASIDOCK:-$root\\zig-out\\bin\\quasidock.exe}
+[ -n "${QUASIDOCK_HOME:-}" ] || { echo "QUASIDOCK_HOME isn't set"; exit 2; }
+export QUASIDOCK_HOME
 log=$(mktemp)
 trap 'rm -f "$log"' EXIT
 

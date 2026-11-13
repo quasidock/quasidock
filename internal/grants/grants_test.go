@@ -3,9 +3,9 @@ package grants
 import (
 	"testing"
 
-	"github.com/zigsaw-io/zigsaw/internal/acl"
-	"github.com/zigsaw-io/zigsaw/internal/oci"
-	"github.com/zigsaw-io/zigsaw/internal/store"
+	"github.com/quasidock/quasidock/internal/acl"
+	"github.com/quasidock/quasidock/internal/oci"
+	"github.com/quasidock/quasidock/internal/store"
 )
 
 func TestSamePathAndIsWithin(t *testing.T) {
@@ -36,28 +36,28 @@ func TestSamePathAndIsWithin(t *testing.T) {
 }
 
 func TestOwnRefusal(t *testing.T) {
-	own := Own{Store: `D:\zs\Store`, SelfDir: `C:\tools\zigsaw`}
+	own := Own{Store: `D:\zs\Store`, SelfDir: `C:\tools\quasidock`}
 	for _, p := range []string{`D:\zs\store`, `d:/zs/STORE/`, `D:\zs`, `D:\`} {
 		msg, ok := own.Refusal(p)
-		if !ok || msg != "zigsaw's store is in it" {
+		if !ok || msg != "quasidock's store is in it" {
 			t.Errorf("expected refusal for %s, got %s (%v)", p, msg, ok)
 		}
 	}
 	msg, ok := own.Refusal(`D:\zs\Store\deploy\0123`)
-	if !ok || msg != "it's in zigsaw's store" {
+	if !ok || msg != "it's in quasidock's store" {
 		t.Errorf("expected refusal for store subpath, got %s (%v)", msg, ok)
 	}
-	for _, p := range []string{`C:\tools\zigsaw`, `C:\tools`} {
+	for _, p := range []string{`C:\tools\quasidock`, `C:\tools`} {
 		msg, ok := own.Refusal(p)
-		if !ok || msg != "zigsaw is in it" {
+		if !ok || msg != "quasidock is in it" {
 			t.Errorf("expected refusal for %s, got %s (%v)", p, msg, ok)
 		}
 	}
-	msg, ok = own.Refusal(`c:/tools/zigsaw/x`)
-	if !ok || msg != "it's in zigsaw's folder" {
+	msg, ok = own.Refusal(`c:/tools/quasidock/x`)
+	if !ok || msg != "it's in quasidock's folder" {
 		t.Errorf("expected refusal for exe subpath, got %s (%v)", msg, ok)
 	}
-	for _, p := range []string{`D:\zs\store2`, `D:\z`, `C:\tools\zigsaw2`, `E:\src`} {
+	for _, p := range []string{`D:\zs\store2`, `D:\z`, `C:\tools\quasidock2`, `E:\src`} {
 		if _, ok := own.Refusal(p); ok {
 			t.Errorf("expected no refusal for %s", p)
 		}

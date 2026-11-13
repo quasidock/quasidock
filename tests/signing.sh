@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # End-to-end checks for images' signatures: what pull, update and info do with a good
 # one, a wrong one, and none, against a local registry, with keys `zigsaw trust` adds.
-# Signatures are made by tests/p256sign.zig, in the form cosign's are, which
+# Signatures are made by tests/cmd/p256sign, in the form cosign's are, which
 # tests/oci.sh checks with the real thing. `upgrade`'s are in tests/install.sh.
 #
-#   tests/zot.sh bash tests/signing.sh [path\to\zigsaw.exe]
+#   tests/zot.sh bash tests/signing.sh [path\to\quasidock.exe]
 #
 # Takes less than a minute.
 
@@ -12,18 +12,17 @@ set -u
 export MSYS_NO_PATHCONV=1
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
-zigsaw=${1:-$root\\zig-out\\bin\\zigsaw.exe}
+zigsaw=${1:-$root\\zig-out\\bin\\quasidock.exe}
 work=$(cygpath -wl "$(mktemp -d)")
 mkdir -p "$work\\cwd" && cd "$work\\cwd" || exit 1
-(cd "$root" && zig build p256sign resetproxy) || { echo "building the helpers failed"; exit 1; }
-signer="$root\\zig-out\\test\\zigsaw-p256sign.exe"
-proxy="$root\\zig-out\\test\\zigsaw-resetproxy.exe"
+(cd "$root" && go run ./scripts/build.go p256sign resetproxy) || { echo "building the helpers failed"; exit 1; }
+signer="$root\\zig-out\\test\\quasidock-p256sign.exe"
+proxy="$root\\zig-out\\test\\quasidock-resetproxy.exe"
 
-export ZIGSAW_GRANTS_KEY="Software\\ZigsawTest\\signing-$$"
-export ZIGSAW_SHORTCUTS_DIR="$work\\links"
-export ZIGSAW_USER_FOLDERS="$work\\folders"
+export QUASIDOCK_GRANTS_KEY="Software\\QuasidockTest\\signing-$$"
+export QUASIDOCK_USER_FOLDERS="$work\\folders"
 export DOCKER_CONFIG="$work\\docker"
-mkdir -p "$DOCKER_CONFIG" "$ZIGSAW_USER_FOLDERS"
+mkdir -p "$DOCKER_CONFIG" "$QUASIDOCK_USER_FOLDERS"
 : "${AUTH_REGISTRY:?run this with tests/zot.sh}"
 
 failures=0
@@ -40,16 +39,16 @@ check() {
 }
 
 registry=localhost:5000
-namespace="zigsaw-signing-$RANDOM"
+namespace="quasidock-signing-$RANDOM"
 repo="$registry/$namespace/app"
 APP=test.signing.app
 
 # The publisher's store, and those of people pulling.
-za() { ZIGSAW_HOME="$work\\publisher" "$zigsaw" "$@"; }
+za() { QUASIDOCK_HOME="$work\\publisher" "$zigsaw" "$@"; }
 in_store() { # <store name> <args>
     local name=$1
     shift
-    ZIGSAW_HOME="$work\\$name" "$zigsaw" "$@"
+    QUASIDOCK_HOME="$work\\$name" "$zigsaw" "$@"
 }
 blobs_in() { ls "$work\\$1\\blobs\\sha256" 2>/dev/null | wc -l; }
 installed() { in_store "$1" list 2>/dev/null | tr -d '\r' | awk -v id="$APP" '$1 == id { print $2 }'; }
@@ -73,7 +72,7 @@ sign_as() { # <word> <image>
     za signature push "$2" "$p" "$s"
 }
 # Another's image, for keys in the right place and images in the wrong one.
-fingerprint() { ZIGSAW_HOME="$work\\fp" "$zigsaw" trust add "example.test/fp-$1" "$work\\$1.pub" 2>&1 | grep -o 'key [0-9a-f]*' | cut -d' ' -f2; }
+fingerprint() { QUASIDOCK_HOME="$work\\fp" "$zigsaw" trust add "example.test/fp-$1" "$work\\$1.pub" 2>&1 | grep -o 'key [0-9a-f]*' | cut -d' ' -f2; }
 one_fp=$(fingerprint one)
 
 # Copies a manifest, and what it refers to, to another repository and tag, with curl,
@@ -269,41 +268,6 @@ check "trust rm takes a key away, and the image it refused now goes unchecked" r
 rm_nothing() { ! in_store plain trust rm "$registry/$namespace" 2>/dev/null; }
 check "  and it says when there was nothing to take" rm_nothing
 
-# --- An update --------------------------------------------------------------------
-
-moved="$repo:moved"
-moving() {
-    publish 5 moved || return 1
-    sign_as one "$moved" >/dev/null 2>&1 || return 1
-    store_with_key u1
-    in_store u1 pull --yes "$moved" >/dev/null 2>&1 && [ "$(installed u1)" = 5 ]
-}
-check "installed from a tag, with a good signature" moving
-to_unsigned() {
-    publish 6 moved || return 1
-    local out
-    out=$(in_store u1 update --yes "$APP" 2>&1) || { echo "$out"; return 1; }
-    grep -q "warning: .* isn't signed" <<<"$out" || { echo "$out"; return 1; }
-    [ "$(installed u1)" = 6 ]
-}
-check "  the tag moved to something unsigned: update warns, and goes on, for now" to_unsigned
-to_wrong() {
-    publish 7 moved || return 1
-    sign_as other "$moved" >/dev/null 2>&1 || return 1
-    local out
-    out=$(in_store u1 update --yes "$APP" 2>&1) && { echo "it updated: $out"; return 1; }
-    grep -q 'not by any key that counts' <<<"$out" || { echo "$out"; return 1; }
-    [ "$(installed u1)" = 6 ] || { echo "it's at $(installed u1)"; return 1; }
-    [ "$(in_store u1 run "$APP" 2>/dev/null | tr -d '\r')" = "version 6" ]
-}
-check "  moved to a wrong signature: update refuses, and what's installed still runs" to_wrong
-checks_nothing() {
-    local out
-    out=$(in_store u1 update --check "$APP" 2>/dev/null) || true
-    grep -q '6 -> 7' <<<"$out" || { echo "$out"; return 1; }
-}
-check "  update --check reads only what it always did" checks_nothing
-
 # --- What a build pins ----------------------------------------------------------------
 
 pinned() {
@@ -353,9 +317,9 @@ indexed() {
 }
 check "a signature of a multi-platform index covers its image" indexed
 
-for s in "$work"/*/; do [ -f "${s}refs/$APP.json" ] && ZIGSAW_HOME="$(cygpath -w "$s")" "$zigsaw" rm --delete-data "$APP" >/dev/null 2>&1; done
-reg delete "HKCU\\$ZIGSAW_GRANTS_KEY" /f >/dev/null 2>&1
-reg query 'HKCU\Software\ZigsawTest' 2>/dev/null | grep -q . || reg delete 'HKCU\Software\ZigsawTest' /f >/dev/null 2>&1
+for s in "$work"/*/; do [ -f "${s}refs/$APP.json" ] && QUASIDOCK_HOME="$(cygpath -w "$s")" "$zigsaw" rm --delete-data "$APP" >/dev/null 2>&1; done
+reg delete "HKCU\\$QUASIDOCK_GRANTS_KEY" /f >/dev/null 2>&1
+reg query 'HKCU\Software\QuasidockTest' 2>/dev/null | grep -q . || reg delete 'HKCU\Software\QuasidockTest' /f >/dev/null 2>&1
 cd / && rm -rf "$work" 2>/dev/null
 
 echo

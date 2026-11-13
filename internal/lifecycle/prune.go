@@ -7,15 +7,15 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/zigsaw-io/zigsaw/internal/context"
-	"github.com/zigsaw-io/zigsaw/internal/lazy"
-	"github.com/zigsaw-io/zigsaw/internal/oci"
-	"github.com/zigsaw-io/zigsaw/internal/roots"
-	"github.com/zigsaw-io/zigsaw/internal/services"
-	"github.com/zigsaw-io/zigsaw/internal/store"
+	"github.com/quasidock/quasidock/internal/context"
+	"github.com/quasidock/quasidock/internal/lazy"
+	"github.com/quasidock/quasidock/internal/oci"
+	"github.com/quasidock/quasidock/internal/roots"
+	"github.com/quasidock/quasidock/internal/services"
+	"github.com/quasidock/quasidock/internal/store"
 )
 
-// PruneOptions configures zigsaw prune.
+// PruneOptions configures quasidock prune.
 type PruneOptions struct {
 	// Only report what would be deleted.
 	DryRun bool
@@ -23,8 +23,6 @@ type PruneOptions struct {
 	Downloads bool
 	// Also delete the data directories of apps that aren't installed.
 	Data bool
-	// Also forget the versions kept for rollback.
-	Previous bool
 }
 
 type tally struct {
@@ -127,30 +125,9 @@ func Prune(ctx *context.Context, opts PruneOptions) error {
 		buildImages = nil
 	}
 
-	var previous []store.Ref
-	if rawPrev, err := ctx.Store.ListPrevious(); err == nil {
-		for _, p := range rawPrev {
-			if isInstalled(refs, p.ID) {
-				previous = append(previous, p)
-			}
-		}
-	}
-	keptPrevious := !opts.Previous
-
 	var manifests []string
 	for _, ref := range refs {
 		manifests = append(manifests, ref.Manifest)
-	}
-	if keptPrevious {
-		for _, p := range previous {
-			hex := oci.DigestHex(p.Manifest)
-			if hex == "" {
-				continue
-			}
-			if store.Exists(ctx.Store.BlobPath(hex)) {
-				manifests = append(manifests, p.Manifest)
-			}
-		}
 	}
 	if !opts.Downloads {
 		manifests = append(manifests, buildImages...)
@@ -170,67 +147,6 @@ func Prune(ctx *context.Context, opts PruneOptions) error {
 		}
 		if h := oci.DigestHex(digest); h != "" {
 			blobsUsed[h] = struct{}{}
-		}
-	}
-
-	var previousOnly tally
-	if keptPrevious {
-		others := make(map[string]struct{})
-		for _, ref := range refs {
-			m, err := ctx.Store.ReadManifest(ref.Manifest)
-			if err != nil {
-				continue
-			}
-			if h := oci.DigestHex(ref.Manifest); h != "" {
-				others[h] = struct{}{}
-			}
-			if h := oci.DigestHex(m.Config.Digest); h != "" {
-				others[h] = struct{}{}
-			}
-			for _, l := range m.Layers {
-				if h := oci.DigestHex(l.Digest); h != "" {
-					others[h] = struct{}{}
-				}
-			}
-		}
-		counted := make(map[string]struct{})
-		for _, p := range previous {
-			hex := oci.DigestHex(p.Manifest)
-			if hex == "" {
-				continue
-			}
-			bp := ctx.Store.BlobPath(hex)
-			if _, exists := others[hex]; exists || !store.Exists(bp) {
-				continue
-			}
-			previousOnly.count++
-			m, err := ctx.Store.ReadManifest(p.Manifest)
-			if err != nil {
-				continue
-			}
-			descs := append([]oci.Descriptor{m.Config}, m.Layers...)
-			for _, d := range descs {
-				h := oci.DigestHex(d.Digest)
-				if h == "" {
-					continue
-				}
-				if _, exists := others[h]; exists {
-					continue
-				}
-				if _, seen := counted[h]; seen {
-					continue
-				}
-				counted[h] = struct{}{}
-				pPath := ctx.Store.BlobPath(h)
-				if store.Exists(pPath) {
-					sz, _ := treeSize(pPath)
-					previousOnly.bytes += sz
-				}
-			}
-		}
-	} else if !opts.DryRun {
-		for _, p := range previous {
-			_, _ = ctx.Store.ForgetPrevious(p.ID)
 		}
 	}
 
@@ -402,40 +318,7 @@ func Prune(ctx *context.Context, opts PruneOptions) error {
 		}
 	}
 
-	aliasesDir := ctx.Store.Path("aliases")
 	if !opts.DryRun {
-		if entries, err := os.ReadDir(aliasesDir); err == nil {
-			for _, entry := range entries {
-				if !entry.IsDir() || isInstalled(refs, entry.Name()) {
-					continue
-				}
-				l, err := ctx.Store.LockAliases(entry.Name())
-				if err == nil && l != nil {
-					_ = store.DeleteTree(filepath.Join(aliasesDir, entry.Name()))
-					l.Release()
-				}
-			}
-			deleteStaleLocks(aliasesDir)
-		}
-
-		openDir := ctx.Store.Path("open")
-		if entries, err := os.ReadDir(openDir); err == nil {
-			for _, entry := range entries {
-				if !entry.IsDir() || isInstalled(refs, entry.Name()) {
-					continue
-				}
-				_ = store.DeleteTree(filepath.Join(openDir, entry.Name()))
-			}
-		}
-
-		if vids, err := ctx.Store.ListVersionIds(); err == nil {
-			for _, id := range vids {
-				if !isInstalled(refs, id) {
-					_ = ctx.Store.ForgetVersions(id)
-				}
-			}
-		}
-
 		var ids []string
 		for _, r := range refs {
 			ids = append(ids, r.ID)
@@ -510,16 +393,6 @@ func Prune(ctx *context.Context, opts PruneOptions) error {
 	}
 	if !opts.Downloads && buildOnly > 0 {
 		context.Note("kept %d image(s) that builds use as runtimes or SDKs; --downloads deletes them", buildOnly)
-	}
-	if keptPrevious && previousOnly.count > 0 {
-		context.Note("kept %d previous version(s) (%s) for `zigsaw rollback`; --previous deletes them", previousOnly.count, formatBytes(previousOnly.bytes))
-	}
-	if !keptPrevious && len(previous) > 0 {
-		forgetVerb := "forgot"
-		if opts.DryRun {
-			forgetVerb = "would forget"
-		}
-		context.Note("%s %d previous version(s): `zigsaw rollback` has nothing to go back to", forgetVerb, len(previous))
 	}
 
 	return nil

@@ -7,7 +7,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/zigsaw-io/zigsaw/internal/oci"
+	"github.com/quasidock/quasidock/internal/oci"
 )
 
 var (

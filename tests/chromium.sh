@@ -3,12 +3,12 @@
 # VSCodium, as their recipes package them from upstream's zips. They bring a
 # sandbox of their own, which Windows doesn't let start at low integrity or in
 # an AppContainer (docs/findings.md), so both images ask for soft: each row
-# says so, and tests/procprobe.zig checks with Windows that their renderers
+# says so, and tests/cmd/procprobe checks with Windows that their renderers
 # are confined. Each opens a file given with --file, hands a second one to the
 # running instance, and is closed as its close button would. Their settings
 # must be in their data directory, not the real AppData or registry.
 #
-#   tests/chromium.sh [path\to\zigsaw.exe]
+#   tests/chromium.sh [path\to\quasidock.exe]
 #
 # Like tests/guiapps.sh, each row states the intended result per sandbox: "ok",
 # "fails", or "gap" for "ok is intended, but zigsaw doesn't manage it yet"; a
@@ -27,45 +27,39 @@ set -u
 export MSYS_NO_PATHCONV=1
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
-zigsaw=${1:-$root/zig-out/bin/zigsaw.exe}
+zigsaw=${1:-$root/zig-out/bin/quasidock.exe}
 own_store=false
-ZIGSAW_HOME=${CHROMIUM_HOME:-${BUILD_HOME:-}}
-if [ -z "$ZIGSAW_HOME" ]; then
-    ZIGSAW_HOME=$(cygpath -w "$(mktemp -d)")
+QUASIDOCK_HOME=${CHROMIUM_HOME:-${BUILD_HOME:-}}
+if [ -z "$QUASIDOCK_HOME" ]; then
+    QUASIDOCK_HOME=$(cygpath -w "$(mktemp -d)")
     own_store=true
 fi
-export ZIGSAW_HOME
+export QUASIDOCK_HOME
 if [ -n "${SEED_DOWNLOADS:-}" ]; then
-    mkdir -p "$ZIGSAW_HOME\\cache\\downloads"
-    cp -l "$(cygpath -u "$SEED_DOWNLOADS")"/* "$(cygpath -u "$ZIGSAW_HOME")/cache/downloads/" 2>/dev/null ||
-        cp -n "$(cygpath -u "$SEED_DOWNLOADS")"/* "$(cygpath -u "$ZIGSAW_HOME")/cache/downloads/"
+    mkdir -p "$QUASIDOCK_HOME\\cache\\downloads"
+    cp -l "$(cygpath -u "$SEED_DOWNLOADS")"/* "$(cygpath -u "$QUASIDOCK_HOME")/cache/downloads/" 2>/dev/null ||
+        cp -n "$(cygpath -u "$SEED_DOWNLOADS")"/* "$(cygpath -u "$QUASIDOCK_HOME")/cache/downloads/"
 fi
 work=$(cygpath -w "$(mktemp -d)")
-export ZIGSAW_SHORTCUTS_DIR="$work\\links"
-classes="Software\\ZigsawTest\\chromium-$$"
-export ZIGSAW_CLASSES_KEY="$classes"
 folders="$work\\folders"
 for f in Desktop Documents Downloads Music Pictures Videos; do mkdir -p "$folders\\$f"; done
-export ZIGSAW_USER_FOLDERS="$folders"
+export QUASIDOCK_USER_FOLDERS="$folders"
 
 CHROMIUM=io.github.ungoogled_software.ungoogled_chromium
 CODIUM=com.vscodium.codium
 
 . "$(dirname "$0")/acprobe.sh"
 
-(cd "$root" && zig build winwait procprobe) || { echo "building the window waiter and the process probe failed"; exit 1; }
-winwait="$root\\zig-out\\test\\zigsaw-winwait.exe"
-procprobe="$root\\zig-out\\test\\zigsaw-procprobe.exe"
+(cd "$root" && go run ./scripts/build.go winwait procprobe) || { echo "building the window waiter and the process probe failed"; exit 1; }
+winwait="$root\\zig-out\\test\\quasidock-winwait.exe"
+procprobe="$root\\zig-out\\test\\quasidock-procprobe.exe"
 
 installed=()
 for recipe in recipes\\no-publish\\ungoogled-chromium recipes\\vscodium; do
     id=$(grep -o '"id": *"[^"]*"' "$root\\$recipe.json" | cut -d'"' -f4)
-    [ -f "$ZIGSAW_HOME\\refs\\$id.json" ] || installed+=("$id")
+    [ -f "$QUASIDOCK_HOME\\refs\\$id.json" ] || installed+=("$id")
     "$zigsaw" build "$root\\$recipe.json" >"$work\\build.log" 2>&1 || { echo "building $recipe failed: $(tail -1 "$work\\build.log")"; exit 1; }
 done
-# Another app's command, for VSCodium's terminal.
-(cd "$root" && zig build hostprobe) || { echo "building the host probe failed"; exit 1; }
-"$zigsaw" build "$root\\tests\\reach\\tool.json" >"$work\\build.log" 2>&1 || { echo "building the test tool failed: $(tail -1 "$work\\build.log")"; exit 1; }
 
 failures=0
 gaps=0
@@ -144,7 +138,7 @@ note="$work\\zigsaw-note.txt"
 printf 'a note for zigsaw\r\n' >"$note"
 printf 'a second note\r\n' >"$work\\zigsaw-second.txt"
 
-data() { echo "$ZIGSAW_HOME\\data\\$1"; }
+data() { echo "$QUASIDOCK_HOME\\data\\$1"; }
 
 runner=
 winpid=
@@ -351,8 +345,7 @@ EOF
     printf '@echo off\r\n> term.txt echo started\r\n'
     printf 'whoami /groups | findstr /C:"Mandatory Label" >> term.txt\r\n'
     printf 'git --version >> term.txt 2>&1\r\ngit status --short --branch >> term.txt 2>&1\r\n'
-    printf 'call reach-probe >> term.txt 2>&1\r\n'
-    printf 'zigsaw-host cmd /c set USERPROFILE >> term.txt 2>&1\r\n'
+    printf 'quasidock-host cmd /c set USERPROFILE >> term.txt 2>&1\r\n'
     printf 'call codium --version >> term.txt 2>&1\r\n>> term.txt echo done\r\n'
 } >"$proj\\probe.cmd"
 settings="$(data $CODIUM)\\home\\AppData\\Roaming\\VSCodium\\User"
@@ -380,20 +373,19 @@ terminal() {
     grep -q '^git version .*windows' "$proj\\term.txt" || { echo "git isn't there: $(cat "$proj\\term.txt")"; return 1; }
     grep -q '^## ' "$proj\\term.txt" || { echo "git status failed: $(cat "$proj\\term.txt")"; return 1; }
     grep -qE '^[0-9]+\.[0-9]+\.[0-9]+' "$proj\\term.txt" || { echo "codium isn't on its terminal's PATH: $(cat "$proj\\term.txt")"; return 1; }
-    grep -qF "env USERPROFILE = $ZIGSAW_HOME\\data\\test.reach.tool\\home" "$proj\\term.txt" || { echo "another app's command didn't run as itself: $(tail -5 "$proj\\term.txt")"; return 1; }
-    grep -qF "USERPROFILE=$USERPROFILE" "$proj\\term.txt" || { echo "zigsaw-host didn't give your environment: $(tail -5 "$proj\\term.txt")"; return 1; }
+    grep -qF "USERPROFILE=$USERPROFILE" "$proj\\term.txt" || { echo "quasidock-host didn't give your environment: $(tail -5 "$proj\\term.txt")"; return 1; }
     local log
     log=$(find "$(cygpath -u "$(data $CODIUM)")" -name Git.log 2>/dev/null | xargs -r ls -t 2>/dev/null | head -1)
     grep -q 'Using git .*windows' "$log" || { echo "git's extension didn't find it: $log"; return 1; }
 }
-check "VSCodium's terminal runs a task, with git, your apps' commands and zigsaw-host on its PATH, and its git extension finds git" terminal
+check "VSCodium's terminal runs a task, with git and quasidock-host on its PATH, and its git extension finds git" terminal
 
 # saves <sandbox>: a small extension edits a file and saves it, through the
 # editor's own file service.
 saves() {
     local i saved="$work\\saved-$1.txt"
     printf 'before\n' >"$saved"
-    "$zigsaw" run --sandbox=$1 --env="ZIGSAW_SAVER_FILE=$saved" --file="$saved" $CODIUM "--extensionDevelopmentPath=$root\\tests\\chromium\\saver" ${2:-} >"$work\\run.log" 2>&1 &
+    "$zigsaw" run --sandbox=$1 --env="QUASIDOCK_SAVER_FILE=$saved" --file="$saved" $CODIUM "--extensionDevelopmentPath=$root\\tests\\chromium\\saver" ${2:-} >"$work\\run.log" 2>&1 &
     runner=$!
     winpid=$(cat /proc/$runner/winpid)
     window "saved-$1.txt - " 30 || return 1
@@ -425,62 +417,6 @@ no_update_check() {
 }
 check "VSCodium doesn't look for updates: zigsaw's its way of getting them" no_update_check
 
-# codium <folder>: through the shim, as from a console, the editor outlives
-# the command that a console would come back from. codium-cli hands over too.
-shim_stays() {
-    local i
-    cd "$proj" || return 1
-    "$ZIGSAW_HOME\\bin\\codium.exe" . >"$work\\run.log" 2>&1 </dev/null &
-    runner=$!
-    winpid=$(cat /proc/$runner/winpid)
-    cd "$work" || return 1
-    window 'proj - ' 30 || return 1
-    sleep 4
-    "$winwait" "$winpid" 'proj - ' 1 >/dev/null || { echo "its window went away"; stop; return 1; }
-    (cd "$proj" && "$ZIGSAW_HOME\\bin\\codium-cli.exe" "$work\\zigsaw-second.txt" >"$work\\second.log" 2>&1 </dev/null) || { finish 'proj - '; echo "codium-cli failed: $(tail -1 "$work\\second.log")"; return 1; }
-    window 'zigsaw-second.txt - ' 15 || return 1
-    finish 'zigsaw-second.txt - '
-}
-check "codium <folder> stays up after its shim's started it, and codium-cli opens a file in it" shim_stays
-
-# Links, through the shims Windows would start. VSCodium's handler is its own:
-# it opens a file named by a vscodium://file/ link. Each row's file is one it
-# has never opened, so that restoring its last session can't show it.
-codium_url="$ZIGSAW_HOME\\open\\$CODIUM\\urls\\codium-url.exe"
-chromium_url="$ZIGSAW_HOME\\open\\$CHROMIUM\\urls\\chromium-url.exe"
-link_to() { printf 'vscodium://file/%s' "$(cygpath -m "$1")"; }
-for f in started handed windows; do printf 'opened by a link\r\n' >"$work\\zigsaw-link-$f.txt"; done
-link_starts() {
-    "$codium_url" "$(link_to "$work\\zigsaw-link-started.txt")" >"$work\\run.log" 2>&1 </dev/null &
-    runner=$!
-    winpid=$(cat /proc/$runner/winpid)
-    window 'zigsaw-link-started.txt - ' 30 || return 1
-    finish 'zigsaw-link-started.txt - '
-}
-check "A vscodium: link starts VSCodium, with the file it names" link_starts
-link_hands_over() {
-    start $CODIUM codium soft "$note"
-    window 'zigsaw-note.txt - ' 30 || return 1
-    "$codium_url" "$(link_to "$work\\zigsaw-link-handed.txt")" >"$work\\second.log" 2>&1 </dev/null || { finish 'zigsaw-note.txt - '; echo "the link's run failed: $(tail -1 "$work\\second.log")"; return 1; }
-    window 'zigsaw-link-handed.txt - ' 15 || return 1
-    finish 'zigsaw-link-handed.txt - '
-}
-check "A vscodium: link goes to the VSCodium that's running" link_hands_over
-link_refused() {
-    local out
-    out=$("$codium_url" "$(link_to "$note")" --disable-extensions 2>&1 </dev/null) && { echo "two arguments were taken"; return 1; }
-    grep -q 'came as several' <<<"$out" || { echo "$out"; return 1; }
-}
-check "A link that comes as two arguments starts nothing" link_refused
-# Nothing listens there: Chromium's error page has the host for its title.
-http_link() {
-    "$chromium_url" 'http://127.0.0.1:9/zigsaw-link' >"$work\\run.log" 2>&1 </dev/null &
-    runner=$!
-    winpid=$(cat /proc/$runner/winpid)
-    window '127.0.0.1' 30 || return 1
-    finish '127.0.0.1'
-}
-check "An http: link opens in Chromium, through --single-argument" http_link
 says_why() {
     local out sb
     for sb in low appcontainer; do
@@ -500,74 +436,12 @@ untouched() {
 }
 check "They left the real AppData, profile and registry alone" untouched
 
-shim_dir=$(dirname "$zigsaw")
-# gui_installed <id> <export> <shortcut> <extension...>
-gui_installed() {
-    local id=$1 cmd=$2 link=$3 ext
-    shift 3
-    cmp -s "$ZIGSAW_HOME\\bin\\$cmd.exe" "$shim_dir\\zigsaw-shimw.exe" || { echo "$cmd hasn't the windowless shim"; return 1; }
-    [ -f "$ZIGSAW_SHORTCUTS_DIR\\$link.lnk" ] || { echo "no shortcut $link"; return 1; }
-    for ext in "$@"; do
-        reg query "HKCU\\$classes\\$ext\\OpenWithProgids" /v "Zigsaw.$id.${ext#.}" >/dev/null 2>&1 || { echo "$ext isn't registered"; return 1; }
-    done
-}
-check "Chromium gets the windowless shim, a shortcut, and .html, .htm, .pdf, .svg" gui_installed $CHROMIUM chromium ungoogled-chromium .html .htm .pdf .svg
-check "VSCodium gets the windowless shim, a shortcut, and .json, .js, .ts, .py, .zig, .md" gui_installed $CODIUM codium VSCodium .json .js .ts .py .zig .md
-check "codium-cli, its command-line program, gets the console shim" cmp -s "$ZIGSAW_HOME\\bin\\codium-cli.exe" "$shim_dir\\zigsaw-shim.exe"
-offered() {
-    local caps="HKCU\\$classes\\Apps\\$CHROMIUM\\Capabilities\\URLAssociations"
-    reg query "$caps" /v http >/dev/null 2>&1 || { echo "http isn't listed"; return 1; }
-    reg query "$caps" /v https >/dev/null 2>&1 || { echo "https isn't listed"; return 1; }
-    ! reg query "HKCU\\$classes\\http" >/dev/null 2>&1 || { echo "it took http's own key"; return 1; }
-    reg query "HKCU\\$classes\\Zigsaw.$CHROMIUM.url.https\\shell\\open\\command" >/dev/null 2>&1 || { echo "nothing to open https with"; return 1; }
-}
-check "Chromium is offered for http and https, and takes neither" offered
-
-# Last, in the real classes, followed through Windows; only if nothing has the
-# scheme, and all of it is taken back.
-through_windows() {
-    local key='HKCU\Software\Classes\vscodium' out i pid
-    ZIGSAW_CLASSES_KEY='Software\Classes' "$zigsaw" build "$root\\recipes\\vscodium.json" >"$work\\build.log" 2>&1 || { echo "installing it failed: $(tail -1 "$work\\build.log")"; return 1; }
-    out=$(reg query "$key\\shell\\open\\command" 2>&1)
-    grep -qF "$ZIGSAW_HOME\\open\\$CODIUM\\urls\\codium-url.exe" <<<"$out" || { echo "$out"; return 1; }
-    powershell -NoProfile -Command "Start-Process '$(link_to "$work\\zigsaw-link-windows.txt")'" || return 1
-    for ((i = 0; i < 40; i++)); do
-        pid=$(powershell -NoProfile -Command "(Get-Process VSCodium -ErrorAction SilentlyContinue | Where-Object { \$_.MainWindowTitle -like 'zigsaw-link-windows.txt*' } | Select-Object -First 1).Id" | tr -d '\r')
-        [ -n "$pid" ] && break
-        sleep 0.5
-    done
-    local result=0
-    if [ -n "$pid" ]; then
-        "$winwait" "$pid" 'zigsaw-link-windows.txt - ' 15 --close >/dev/null
-        sleep 3
-    else
-        echo "no window for the file"
-        result=1
-    fi
-    # It stays as zigsaw wrote it: a run doesn't rewrite it.
-    out=$(reg query "$key\\shell\\open\\command" 2>&1)
-    grep -qF "$ZIGSAW_HOME\\open\\$CODIUM\\urls\\codium-url.exe" <<<"$out" || { echo "the run rewrote it: $out"; result=1; }
-    # Whatever came of that, the real registry goes back as it was.
-    ZIGSAW_CLASSES_KEY='Software\Classes' "$zigsaw" rm "$CODIUM" >/dev/null 2>&1 || { echo "rm failed"; result=1; }
-    ! reg query "$key" >/dev/null 2>&1 || { echo "rm left it"; result=1; }
-    "$zigsaw" build "$root\\recipes\\vscodium.json" >"$work\\build.log" 2>&1
-    return $result
-}
-if $had_scheme_key; then
-    echo "skip  a link followed through Windows: HKCU\\Software\\Classes\\vscodium was there before"
-else
-    check "A link Windows follows starts VSCodium through zigsaw, and rm takes the key out" through_windows
-fi
-
 cd "$root" || exit 1
 acprobe_rm "$zigsaw"
 for id in "${installed[@]}"; do "$zigsaw" rm --delete-data "$id" >/dev/null 2>&1; done
-"$zigsaw" rm --delete-data test.reach.tool >/dev/null 2>&1
 $had_chromium_key || reg delete 'HKCU\Software\Chromium' /f >/dev/null 2>&1
 for d in "${absent_before[@]}"; do rm -rf "$d"; done
-reg delete "HKCU\\$classes" /f >/dev/null 2>&1
-reg query 'HKCU\Software\ZigsawTest' 2>/dev/null | grep -q . || reg delete 'HKCU\Software\ZigsawTest' /f >/dev/null 2>&1
-$own_store && rm -rf "$ZIGSAW_HOME"
+$own_store && rm -rf "$QUASIDOCK_HOME"
 rm -rf "$work"
 echo
 echo "$failures check(s) failed; $gaps known gap(s)."

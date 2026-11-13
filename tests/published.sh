@@ -2,7 +2,7 @@
 # Checks that the published images are what the recipes build. For every
 # recipe listed in scripts/published-recipes.txt, it builds the recipe, then
 # pulls the image tagged with the recipe's version, anonymously and by app id,
-# from the default registry (or ZIGSAW_REGISTRY):
+# from the default registry (or QUASIDOCK_REGISTRY):
 # - The image must have the digest of the build. If it doesn't, either the
 #   build isn't reproducible, or the recipe changed without a new version.
 # - A version that isn't published yet is reported, but isn't a failure:
@@ -13,12 +13,12 @@
 #   its login page), `latest` must be the same image, and the app must then
 #   be up to date.
 # - The programs of an image built with Rust must have all their imports
-#   bound (tests/imports.zig).
+#   bound (tests/cmd/imports).
 # - The registry's catalog must list the apps published at these versions.
 # CI runs this on a fresh Windows runner (.github/workflows/reproduce.yml), so
 # it also shows that the recipes build the same images on another machine.
 #
-#   tests/published.sh [path\to\zigsaw.exe]
+#   tests/published.sh [path\to\quasidock.exe]
 #
 # Needs Git Bash and network access. Pulls into a temporary store. Builds the
 # recipes in BUILD_HOME if set, e.g. a store that already has their downloads,
@@ -30,15 +30,15 @@
 
 set -u
 export MSYS_NO_PATHCONV=1
-unset ZIGSAW_REGISTRY_USERNAME ZIGSAW_REGISTRY_PASSWORD # Pulls must work anonymously.
+unset QUASIDOCK_REGISTRY_USERNAME QUASIDOCK_REGISTRY_PASSWORD # Pulls must work anonymously.
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
-zigsaw=${1:-$root/zig-out/bin/zigsaw.exe}
+zigsaw=${1:-$root/zig-out/bin/quasidock.exe}
 work=$(cygpath -w "$(mktemp -d)")
 # Apps that may use the user's folders, such as Documents, find none here,
 # rather than yours.
-export ZIGSAW_USER_FOLDERS="$work\\no-folders"
-mkdir -p "$ZIGSAW_USER_FOLDERS"
+export QUASIDOCK_USER_FOLDERS="$work\\no-folders"
+mkdir -p "$QUASIDOCK_USER_FOLDERS"
 # Low runs (the default) label the working directory of an app with cwd: the
 # runs go from a scratch one, not the repository, nor a folder that holds the
 # stores (their programs would then start at low integrity).
@@ -47,11 +47,11 @@ logs=${LOG_DIR:-$work\\logs}
 mkdir -p "$logs"
 pull_store="$work\\pulled"
 build_store=${BUILD_HOME:-$work\\built}
-# tests/imports.zig: whether the loader binds every import of a program.
-(cd "$root" && zig build imports) || { echo "building the import checker failed"; exit 1; }
-imports="$root\\zig-out\\test\\zigsaw-imports.exe"
-zp() { ZIGSAW_HOME="$pull_store" "$zigsaw" "$@"; }
-zb() { ZIGSAW_HOME="$build_store" "$zigsaw" "$@"; }
+# tests/cmd/imports: whether the loader binds every import of a program.
+(cd "$root" && go run ./scripts/build.go imports) || { echo "building the import checker failed"; exit 1; }
+imports="$root\\zig-out\\test\\quasidock-imports.exe"
+zp() { QUASIDOCK_HOME="$pull_store" "$zigsaw" "$@"; }
+zb() { QUASIDOCK_HOME="$build_store" "$zigsaw" "$@"; }
 
 failures=0
 unpublished=0
@@ -112,7 +112,7 @@ smoke_args() {
 # seconds, when the run is stopped.
 stays_up_ids=" com.vscodium.codium org.notepad_plus_plus.NotepadPlusPlus org.sumatrapdfreader.SumatraPDF org.gtk.Gtk3demo com.gluonhq.SceneBuilder io.qt.Qt6 io.github.nuttyartist.notes "
 stays_up() {
-    ZIGSAW_HOME="$pull_store" timeout 10 "$zigsaw" run "$1" >/dev/null 2>&1
+    QUASIDOCK_HOME="$pull_store" timeout 10 "$zigsaw" run "$1" >/dev/null 2>&1
     [ $? -eq 124 ]
 }
 # Apps whose command is a web server, which they open in the browser unless
@@ -122,7 +122,7 @@ stays_up() {
 serves_ids=" org.kanboard.Kanboard "
 serves() {
     local port=$((9100 + RANDOM % 800)) out="$logs\\$1.serve.log" server page=""
-    ZIGSAW_HOME="$pull_store" "$zigsaw" run --ephemeral "$1" --no-browser --listen=127.0.0.1:$port >"$out" 2>&1 &
+    QUASIDOCK_HOME="$pull_store" "$zigsaw" run --ephemeral "$1" --no-browser --listen=127.0.0.1:$port >"$out" 2>&1 &
     server=$!
     for _ in $(seq 40); do
         page=$(curl -s -m 5 "http://127.0.0.1:$port/?controller=AuthController&action=login") && [ -n "$page" ] && break
@@ -136,9 +136,9 @@ serves() {
     echo "no login page on port $port, but \"$(grep -o '<title>[^<]*' <<<"$page" | cut -c8- | head -1)\" ($1.page.html): $(last_line "$out")"
     return 1
 }
-smoke() { ZIGSAW_HOME="$pull_store" timeout 120 "$zigsaw" run "$@" </dev/null; }
+smoke() { QUASIDOCK_HOME="$pull_store" timeout 120 "$zigsaw" run "$@" </dev/null; }
 ref_digest() { grep -o 'sha256:[0-9a-f]*' "$1\\refs\\$2.json"; }
-# all_bound <store> <manifest digest>: tests/imports.zig on the executables
+# all_bound <store> <manifest digest>: tests/cmd/imports on the executables
 # and DLLs of the image's own layer, the last, deployed by a run.
 all_bound() {
     local layer
@@ -342,12 +342,6 @@ for name in $published_recipes; do
         [ "$latest" = "$published" ] || { echo "latest is $latest, $version is $published"; return 1; }
     }
     check "$id: latest is $version" latest_is_version
-    up_to_date() {
-        local out
-        out=$(zp update --yes "$id" 2>&1)
-        grep -q 'up to date' <<<"$out" || { echo "$out"; return 1; }
-    }
-    check "$id: is up to date" up_to_date
 done
 if [ $pulled -gt 0 ]; then
     redirected() { cat "$(cygpath -u "$logs")"/*.pull.log | grep -q 'redirected to .*, without the registry token'; }

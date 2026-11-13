@@ -12,8 +12,8 @@ import (
 	"math/big"
 	"os"
 
-	"github.com/zigsaw-io/zigsaw/internal/signature"
-	"github.com/zigsaw-io/zigsaw/internal/win32"
+	"github.com/quasidock/quasidock/internal/signature"
+	"github.com/quasidock/quasidock/internal/win32"
 )
 
 func deriveKey(word string) *ecdsa.PrivateKey {
@@ -35,7 +35,7 @@ func deriveKey(word string) *ecdsa.PrivateKey {
 func main() {
 	args := os.Args
 	if len(args) != 4 {
-		fmt.Fprintln(os.Stderr, "usage: zigsaw-p256sign key|sign <word> <file>")
+		fmt.Fprintln(os.Stderr, "usage: quasidock-p256sign key|sign <word> <file>")
 		win32.ExitProcess(2)
 	}
 
@@ -78,7 +78,7 @@ func main() {
 		win32.ExitProcess(0)
 	}
 
-	fmt.Fprintln(os.Stderr, "usage: zigsaw-p256sign key|sign <word> <file>")
+	fmt.Fprintln(os.Stderr, "usage: quasidock-p256sign key|sign <word> <file>")
 	win32.ExitProcess(2)
 }
 

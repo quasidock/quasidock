@@ -1,9 +1,16 @@
 package cli
 
 import (
+	"bytes"
+	"encoding/json"
+	"io"
+	"os"
+	"strings"
 	"testing"
 
-	"github.com/zigsaw-io/zigsaw/internal/context"
+	"github.com/quasidock/quasidock/internal/context"
+	"github.com/quasidock/quasidock/internal/oci"
+	"github.com/quasidock/quasidock/internal/store"
 )
 
 func TestHelp(t *testing.T) {
@@ -76,5 +83,88 @@ func TestIsFlag(t *testing.T) {
 	}
 	if isFlag("-r", "rebuild") {
 		t.Fatal("expected -r not to match rebuild")
+	}
+}
+
+func TestOverrideWarnsUnsupported(t *testing.T) {
+	st, err := store.Open(t.TempDir(), false, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	why := "the test says it can't"
+	cfg := oci.AppConfig{
+		ID:      "test.override.app",
+		Version: "1",
+		Command: "app.exe",
+		Permissions: oci.Permissions{
+			Sandbox:     oci.SandboxSoft,
+			Unsupported: &oci.Unsupported{AppContainer: &why},
+		},
+	}
+	cfgBytes, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfgDesc, err := st.PutBlob(cfgBytes, oci.MediaTypeConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	layerDesc, err := st.PutBlob([]byte("layer"), oci.MediaTypeLayerTar)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest := oci.Manifest{
+		SchemaVersion: 2,
+		MediaType:     oci.MediaTypeManifest,
+		Config:        cfgDesc,
+		Layers:        []oci.Descriptor{layerDesc},
+	}
+	manBytes, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manDesc, err := st.PutBlob(manBytes, oci.MediaTypeManifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.ReadImage(cfg.ID, manDesc.Digest); err != nil {
+		t.Fatal(err)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.WriteRef(store.Ref{ID: cfg.ID, Version: cfg.Version, Manifest: manDesc.Digest}); err != nil {
+		t.Fatal(err)
+	}
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldStderr := os.Stderr
+	os.Stderr = w
+	var outBuf bytes.Buffer
+	done := make(chan struct{})
+	go func() {
+		_, _ = io.Copy(&outBuf, r)
+		close(done)
+	}()
+
+	ctx := context.New()
+	ctx.Store = st
+	err = overrideApp(ctx, []string{"--sandbox=appcontainer", cfg.ID})
+
+	_ = w.Close()
+	os.Stderr = oldStderr
+	<-done
+	_ = r.Close()
+
+	if err != nil {
+		t.Fatalf("overrideApp returned error: %v", err)
+	}
+	got := outBuf.String()
+	want := "warning: test.override.app can't run under the appcontainer sandbox: the test says it can't"
+	if !strings.Contains(got, want) {
+		t.Fatalf("expected stderr to contain %q, got %q", want, got)
 	}
 }
