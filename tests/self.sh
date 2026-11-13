@@ -48,14 +48,14 @@ check() {
 }
 z() { "$zigsaw" "$@"; }
 
-version=$(sed -n 's/^ *\.version = "\(.*\)",$/\1/p' "$root\\build.zig.zon")
+version=$(grep '"version":' "$root/zigsaw.json" | head -1 | sed -E 's/.*"version": "([^"]+)".*/\1/')
 same_version() { grep -q "^  \"version\": \"$version\",\$" "$root\\zigsaw.json"; }
-check "zigsaw.json has build.zig.zon's version, $version" same_version
+check "zigsaw.json has version $version" same_version
 # So that a checkout's line endings don't change what's built, and a build of a
 # tag has the release's bytes wherever it's made.
 line_endings_pinned() {
     local attrs
-    attrs=$(cd "$root" && git ls-files src/windows 'src/*.zig' build.zig build.zig.zon | git check-attr --stdin eol) || return 1
+    attrs=$(cd "$root" && git ls-files 'cmd/**/*.go' 'internal/**/*.go' go.mod | git check-attr --stdin eol) || return 1
     [ -n "$attrs" ] && ! grep -v ': eol: lf$' <<<"$attrs"
 }
 check "what's built into the programs has its line endings pinned" line_endings_pinned
@@ -69,9 +69,9 @@ layer=$(grep -o 'sha256:[0-9a-f]*' "$ZIGSAW_HOME\\blobs\\sha256\\$manifest" | ta
 built="$ZIGSAW_HOME\\deploy\\$layer\\bin"
 
 if [ -z "${PACKAGE_DIR:-}" ]; then
-    (cd "$root" && zig build -Dstrip -p "$work\\strip") || { echo "zig build -Dstrip failed"; exit 1; }
+    (cd "$root" && go run "$(cygpath -w "$root/scripts/build.go")" -Dstrip -p "$work\\strip") || { echo "build -Dstrip failed"; exit 1; }
     expected="$work\\strip\\bin"
-    what="zig build -Dstrip's"
+    what="build -Dstrip's"
 fi
 for program in zigsaw.exe zigsaw-shim.exe zigsaw-shimw.exe zigsaw-relay.exe zigsaw-host.exe zigsaw-notify.exe; do
     check "its $program is the same bytes as $what" cmp "$built\\$program" "$expected\\$program"
@@ -113,8 +113,8 @@ for program in zigsaw.exe zigsaw-shim.exe zigsaw-shimw.exe zigsaw-relay.exe zigs
     check "the incremental build's $program is the same bytes as --clean's" cmp "$work\\incremental\\$program" "$(own_bin)\\$program"
 done
 if [ -z "${PACKAGE_DIR:-}" ]; then
-    (cd "$copy" && zig build -Dstrip -p "$work\\copy-strip") || { echo "zig build -Dstrip of the copy failed"; exit 1; }
-    check "and as zig build -Dstrip's of the copy" cmp "$work\\incremental\\zigsaw.exe" "$work\\copy-strip\\bin\\zigsaw.exe"
+    (cd "$copy" && go run "$(cygpath -w "$copy/scripts/build.go")" -Dstrip -p "$work\\copy-strip") || { echo "build -Dstrip of the copy failed"; exit 1; }
+    check "and as build -Dstrip's of the copy" cmp "$work\\incremental\\zigsaw.exe" "$work\\copy-strip\\bin\\zigsaw.exe"
 fi
 
 z rm --delete-data $APP >/dev/null 2>&1

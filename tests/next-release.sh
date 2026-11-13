@@ -17,12 +17,12 @@ out=$1
 copy=$(cygpath -w "$(mktemp -d)")
 trap 'rm -rf "$copy"' EXIT
 
-this_version=$(sed -n 's/^ *\.version = "\(.*\)",$/\1/p' "$root\\build.zig.zon")
+this_version=$(grep '"version":' "$root/zigsaw.json" | head -1 | sed -E 's/.*"version": "([^"]+)".*/\1/')
 next_version="${this_version%.*}.$((${this_version##*.} + 1))"
 (cd "$root" && git ls-files -co --exclude-standard -z | tar --null -T - -cf - | tar -xf - -C "$(cygpath -u "$copy")") ||
     { echo "copying the checkout failed"; exit 1; }
-sed -i "s/\.version = \"$this_version\"/.version = \"$next_version\"/" "$(cygpath -u "$copy\\build.zig.zon")"
-sed -i "s/\"version\": \"$this_version\"/\"version\": \"$next_version\"/" "$(cygpath -u "$copy\\zigsaw.json")"
+sed -i "s/Version = \"$this_version\"/Version = \"$next_version\"/" "$(cygpath -u "$copy/internal/version/version.go")"
+sed -i "s/\"version\": \"$this_version\"/\"version\": \"$next_version\"/" "$(cygpath -u "$copy/zigsaw.json")"
 log=$(mktemp)
 (cd "$copy" && bash scripts/package.sh "$(cygpath -u "$out")") >"$log" 2>&1 ||
     { echo "packaging the later release failed: $(tail -1 "$log")"; rm -f "$log"; exit 1; }

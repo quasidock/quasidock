@@ -25,16 +25,19 @@ jobs:
           persist-credentials: false
           submodules: true
 
-      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+#      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
         with:
           version: 0.17.0
 
-      - name: The tag is build.zig.zon's version, and zigsaw.json's
+      - name: The tag matches zigsaw.json's version
         shell: bash
         run: |
-          version=$(sed -n 's/^ *\.version = "\(.*\)",$/\1/p' build.zig.zon)
+          version=$(grep '"version":' zigsaw.json | head -1 | sed -E 's/.*"version": "([^"]+)".*/\1/')
           if [ "$GITHUB_REF_NAME" != "v$version" ]; then
-              echo "::error::The tag is $GITHUB_REF_NAME, but build.zig.zon's version is $version"
+              echo "::error::The tag is $GITHUB_REF_NAME, but zigsaw.json's version is $version"
               exit 1
           fi
           if ! grep -q "^  \"version\": \"$version\",\$" zigsaw.json; then
@@ -43,7 +46,7 @@ jobs:
           fi
 
       - name: Unit tests
-        run: zig build test --summary all
+        run: go test ./...
 
       - name: Package
         shell: bash

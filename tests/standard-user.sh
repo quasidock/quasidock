@@ -39,7 +39,7 @@ if [ "${1:-}" != --inner ]; then
         { echo "packaging failed: $(tail -1 "$stage\\package.log")"; exit 1; }
     # For tests/install.sh, as packaging needs git and Zig, which the account hasn't.
     bash "$(cygpath -u "$repo")/tests/next-release.sh" "$stage\\next-package" || exit 1
-    for d in tests recipes scripts build.zig.zon; do cp -r "$(cygpath -u "$repo")/$d" "$(cygpath -u "$stage")/"; done
+    for d in tests recipes scripts zigsaw.json go.mod; do cp -r "$(cygpath -u "$repo")/$d" "$(cygpath -u "$stage")/"; done
     mkdir -p "$stage\\zig-out" "$stage\\tmp" "$stage\\bin" "$stage\\seed"
     cp -r "$(cygpath -u "$repo")/zig-out/bin" "$(cygpath -u "$repo")/zig-out/test" "$(cygpath -u "$stage")/zig-out/"
     if [ -n "${SEED_DOWNLOADS:-}" ]; then

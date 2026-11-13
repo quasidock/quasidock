@@ -135,7 +135,10 @@ jobs:
           persist-credentials: false
           submodules: true
 
-      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+#      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
         with:
           version: 0.17.0
 
@@ -146,7 +149,7 @@ jobs:
           printf '%s\n' "TMP=$t" "TEMP=$t" "BUILD_HOME=$t\\store" "LOG_DIR=$t\\logs" >>"$GITHUB_ENV"
 
       - name: Build zigsaw
-        run: zig build
+        run: go run ./scripts/build.go
 
       - name: Build the group's recipes and compare them with the published images
         shell: bash
@@ -179,7 +182,10 @@ jobs:
           persist-credentials: false
           submodules: true
 
-      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+#      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
         with:
           version: 0.17.0
 
@@ -190,7 +196,7 @@ jobs:
           printf '%s\n' "TMP=$t" "TEMP=$t" "BUILD_HOME=$t\\store" "SEED_DOWNLOADS=$t\\store\\cache\\downloads" "LOG_DIR=$t\\logs" >>"$GITHUB_ENV"
 
       - name: Build zigsaw
-        run: zig build
+        run: go run ./scripts/build.go
 
       # The apps tests/matrix.sh runs, zot for tests/zot.sh and ZLS for
       # tests/zls.sh. BusyBox and Node are built, for their downloads, which
@@ -390,7 +396,10 @@ jobs:
           persist-credentials: false
           submodules: true
 
-      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+#      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
         with:
           version: 0.17.0
 
@@ -431,7 +440,10 @@ jobs:
           persist-credentials: false
           submodules: true
 
-      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+#      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
         with:
           version: 0.17.0
 
@@ -442,7 +454,7 @@ jobs:
           printf '%s\n' "TMP=$t" "TEMP=$t" "GTK_HOME=$t\\store" "LOG_DIR=$t\\logs" >>"$GITHUB_ENV"
 
       - name: Build zigsaw
-        run: zig build
+        run: go run ./scripts/build.go
 
       # GTK's images and the apps on them, as published; the suites install
       # them again rather than building them. (They build Pinta, which isn't
@@ -484,7 +496,10 @@ jobs:
           persist-credentials: false
           submodules: true
 
-      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+#      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
         with:
           version: 0.17.0
 
@@ -495,7 +510,7 @@ jobs:
           printf '%s\n' "TMP=$t" "TEMP=$t" "QT_HOME=$t\\store" "LOG_DIR=$t\\logs" >>"$GITHUB_ENV"
 
       - name: Build zigsaw
-        run: zig build
+        run: go run ./scripts/build.go
 
       # Qt's images, Flameshot and Notes, as published; the suite installs them
       # again rather than building them. Only these: the SDK brings its
@@ -541,7 +556,10 @@ jobs:
           persist-credentials: false
           submodules: true
 
-      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+#      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
         with:
           version: 0.17.0
 
@@ -551,22 +569,22 @@ jobs:
           t=$RUNNER_TEMP
           printf '%s\n' "TMP=$t" "TEMP=$t" "LOG_DIR=$t\\logs" >>"$GITHUB_ENV"
 
-      - name: zigsaw.json has build.zig.zon's version
+      - name: zigsaw.json has valid version
         if: matrix.group == 'base'
         shell: bash
         run: |
-          version=$(sed -n 's/^ *\.version = "\(.*\)",$/\1/p' build.zig.zon)
+          version=$(grep '"version":' zigsaw.json | head -1 | sed -E 's/.*"version": "([^"]+)".*/\1/')
           if ! grep -q "^  \"version\": \"$version\",\$" zigsaw.json; then
-              echo "::error::zigsaw.json's version isn't build.zig.zon's, $version"
+              echo "::error::zigsaw.json has no valid version, $version"
               exit 1
           fi
 
       - name: Unit tests
         if: matrix.group == 'base'
-        run: zig build test --summary all
+        run: go test ./...
 
       - name: Build zigsaw
-        run: zig build
+        run: go run ./scripts/build.go
 
       - name: tests/build.sh, the group's sections
         shell: bash

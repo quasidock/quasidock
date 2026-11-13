@@ -58,7 +58,7 @@ if [ -z "${PACKAGE_DIR:-}" ]; then
     bash "$(cygpath -u "$root")/scripts/package.sh" "$(cygpath -u "$package")" >"$work\\package.log" 2>&1 ||
         { echo "packaging failed: $(tail -1 "$work\\package.log")"; exit 1; }
 fi
-(cd "$root" && zig build && zig build p256sign) || { echo "building zigsaw failed"; exit 1; }
+(cd "$root" && bash scripts/build.sh && bash scripts/build.sh p256sign) || { echo "building zigsaw failed"; exit 1; }
 signer="$root\\zig-out\\test\\zigsaw-p256sign.exe"
 
 install() { powershell -NoProfile -ExecutionPolicy Bypass -File "$script" -From "$package" -Dir "$bin" "$@"; }
@@ -68,7 +68,7 @@ check "the package has the zip, the installer and their hashes" sh -c \
     "test -f '$package\\zigsaw-x86_64-windows.zip' -a -f '$package\\install.ps1' && grep -q 'zigsaw-x86_64-windows.zip' '$package\\SHA256SUMS' && grep -q 'install.ps1' '$package\\SHA256SUMS'"
 programs_noted() { for f in zigsaw.exe zigsaw-shim.exe zigsaw-shimw.exe zigsaw-relay.exe zigsaw-host.exe zigsaw-notify.exe; do grep -q "^| \`$f\` | \`[0-9a-f]\{64\}\` |$" "$package\\notes.md" || return 1; done; }
 check "its notes list the programs' hashes" programs_noted
-version_file() { [ "$(tr -d '\r\n' <"$package\\VERSION")" = "$(sed -n 's/^ *\.version = "\(.*\)",$/\1/p' "$root\\build.zig.zon")" ]; }
+version_file() { [ "$(tr -d '\r\n' <"$package\\VERSION")" = "$(grep '"version":' "$root/zigsaw.json" | head -1 | sed -E 's/.*"version": "([^"]+)".*/\1/')" ]; }
 check "and VERSION says which release it is" version_file
 
 # An app that an earlier zigsaw installed, here the one in zig-out: its shim
@@ -97,9 +97,9 @@ installs() {
     out=$(install 2>&1) || { echo "$out"; return 1; }
     grep -q "^Installed zigsaw [0-9][0-9.]* in " <<<"$out" || { echo "$out"; return 1; }
     for f in zigsaw.exe zigsaw-shim.exe zigsaw-shimw.exe zigsaw-relay.exe zigsaw-host.exe zigsaw-notify.exe; do [ -f "$bin\\$f" ] || { echo "no $f"; return 1; }; done
-    [ "$("$bin\\zigsaw.exe" version | tr -d '\r')" = "zigsaw $(sed -n 's/^ *\.version = "\(.*\)",$/\1/p' "$root\\build.zig.zon")" ]
+    [ "$("$bin\\zigsaw.exe" version | tr -d '\r')" = "zigsaw $(grep '"version":' "$root/zigsaw.json" | head -1 | sed -E 's/.*"version": "([^"]+)".*/\1/')" ]
 }
-check "it installs zigsaw and its shims, with build.zig.zon's version" installs
+check "it installs zigsaw and its shims, with zigsaw.json's version" installs
 version_info() {
     local version f info
     version=$("$bin\\zigsaw.exe" version | tr -d '\r' | cut -d' ' -f2)
@@ -175,7 +175,7 @@ check "uninstalling leaves what another store still needs in the record, and say
 
 # --- zigsaw upgrade --------------------------------------------------------------
 # A later release of the same code: the only way to have a zigsaw that says it's newer.
-this_version=$(sed -n 's/^ *\.version = "\(.*\)",$/\1/p' "$root\\build.zig.zon")
+this_version=$(grep '"version":' "$root/zigsaw.json" | head -1 | sed -E 's/.*"version": "([^"]+)".*/\1/')
 next_version="${this_version%.*}.$((${this_version##*.} + 1))"
 next=$(cygpath -aw "${NEXT_PACKAGE_DIR:-$work\\next-package}")
 if [ -z "${NEXT_PACKAGE_DIR:-}" ]; then

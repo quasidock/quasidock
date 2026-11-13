@@ -28,13 +28,15 @@ cd "$root"
 rm -rf "$out"
 mkdir -p "$out/files"
 # Into a prefix of its own: zig-out/bin keeps the build with debug information.
-zig build -Dstrip -p "$(cygpath -w "$out/build")"
+go run "$(cygpath -w "$root/scripts/build.go")" -Dstrip -p "$(cygpath -w "$out/build")"
 version=$("$out/build/bin/zigsaw.exe" version | tr -d '\r' | cut -d' ' -f2)
 cp "$out/build/bin/zigsaw.exe" "$out/build/bin/zigsaw-shim.exe" "$out/build/bin/zigsaw-shimw.exe" "$out/build/bin/zigsaw-relay.exe" "$out/build/bin/zigsaw-host.exe" "$out/build/bin/zigsaw-notify.exe" LICENSE "$out/files/"
 rm -rf "$out/build"
-# Zig's licence is next to its lib directory.
-zig_lib=$(zig env | tr -d '\r' | sed -n 's/^ *\.lib_dir = "\(.*\)",$/\1/p' | sed 's/\\\\/\\/g')
-cp "$(dirname "$(cygpath -u "$zig_lib")")/LICENSE" "$out/files/LICENSE-zig.txt"
+# Go's licence is next to its lib directory.
+go_root=$(go env GOROOT | tr -d '\r')
+if [ -f "$go_root/LICENSE" ]; then
+    cp "$go_root/LICENSE" "$out/files/LICENSE-go.txt"
+fi
 
 powershell -NoProfile -Command "Compress-Archive -Path '$(cygpath -w "$out/files")\\*' -DestinationPath '$(cygpath -w "$out")\\zigsaw-x86_64-windows.zip'"
 cp scripts/install.ps1 "$out/"
@@ -48,7 +50,7 @@ sum() { sha256sum <"$1" | cut -d' ' -f1; }
     {
         printf 'Install or upgrade, in PowerShell:\n\n'
         printf '```powershell\nirm https://github.com/zigsaw-io/zigsaw/releases/download/v%s/install.ps1 | iex\n```\n\n' "$version"
-        printf 'Built with Zig %s by `zig build -Dstrip`. A build of this tag has the same programs:\n\n' "$(zig version | tr -d '\r')"
+        printf 'Built with %s by `go run ./scripts/build.go -Dstrip`. A build of this tag has the same programs:\n\n' "$(go version | tr -d '\r')"
         printf '| Program | SHA-256 |\n|---|---|\n'
         for f in zigsaw.exe zigsaw-shim.exe zigsaw-shimw.exe zigsaw-relay.exe zigsaw-host.exe zigsaw-notify.exe; do printf '| `%s` | `%s` |\n' "$f" "$(sum "files/$f")"; done
     } >notes.md
