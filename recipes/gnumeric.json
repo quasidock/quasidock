@@ -12,14 +12,14 @@
     "filesystem": ["cwd"]
   },
   "from": {
-    "gtk": "gtk4:4.24.1@sha256:e61173f2deba589f1f1b40a38e5a4d6584c8efbbff1f40be5c173ccee5b27c49",
-    "gtk3": "gtk3:3.24.52@sha256:fc4deee61a122ee76c7ea15a5745b52247357d8ae4044cd39e411d99645a45e9"
+    "gtk": "gtk4:4.24.1@sha256:550c7eddb54fc071caae8955664a76ed418c65e727237ba8585ee6827f4e5ad1",
+    "gtk3": "gtk3:3.24.52@sha256:c558346bcb30030982e187c1027238660b51d8fd7909a029ddb6c33fbc297a1c"
   },
   "sdk": {
-    "gtksdk": "gtk4-sdk:4.24.1@sha256:31b88a3d1d0a4530f3a31cf558d7c6c6c58e04a42ced0d7aeb28d0cf501de104",
-    "gtk3sdk": "gtk3-sdk:3.24.52@sha256:100f44c0111f325b3289c380071f2c6039908f70b34c7ef3ec469fe69312773c",
-    "cmake": "cmake:4.4.4@sha256:fdc6a6bb933b2d7994fba0ccdb07a2a91a02012a6e4879cf67ad451e53e6f53d",
-    "perl": "perl:5.42.3.1@sha256:0a4e1bd6c15cb3d2ff507685d62b3cd5769dbbd71c5e7c68ffe44c8d9b4bca85"
+    "gtksdk": "gtk4-sdk:4.24.1@sha256:7c063e56d0148fbc2ea019ddce1b4368d0aee279ff30b5417bad3e8ad78ca682",
+    "gtk3sdk": "gtk3-sdk:3.24.52@sha256:03d48cf8138d5d9b28d59a51b34b454d5ff8127abc4bd37e6407a2d15468fc37",
+    "cmake": "cmake:4.4.4@sha256:b96b30bb57b5147726b7deef2607917b43972bb896d9f5d3e3082e31368dbeae",
+    "perl": "perl:5.42.3.1@sha256:2854c34722b812ef3173f5d4ab6fb091ac45dc16d6079865a5024d6a6527dfd6"
   },
   "cleanup": [
     "/include",
@@ -66,8 +66,8 @@
         "EGREP": "grep -E",
         "FGREP": "grep -F",
         "AWK": "awk",
-        "AR": "ar",
-        "RANLIB": "ranlib",
+        "AR": "ar.exe",
+        "RANLIB": "ranlib.exe",
         "RM": "rm -f",
         "CFLAGS": "-O2",
         "PATH_SEPARATOR": ";",
@@ -116,8 +116,8 @@
         "EGREP": "grep -E",
         "FGREP": "grep -F",
         "AWK": "awk",
-        "AR": "ar",
-        "RANLIB": "ranlib",
+        "AR": "ar.exe",
+        "RANLIB": "ranlib.exe",
         "RM": "rm -f",
         "CFLAGS": "-O2 -Wno-implicit-function-declaration",
         "CPP": "cc -E",
@@ -148,8 +148,8 @@
         "EGREP": "grep -E",
         "FGREP": "grep -F",
         "AWK": "awk",
-        "AR": "ar",
-        "RANLIB": "ranlib",
+        "AR": "ar.exe",
+        "RANLIB": "ranlib.exe",
         "RM": "rm -f",
         "CFLAGS": "-O2 -DGNM_VAR_DECL=extern -Wno-implicit-function-declaration",
         "CPP": "cc -E",

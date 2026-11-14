@@ -223,9 +223,21 @@ type Child struct {
 	Process win32.HANDLE
 }
 
+// Close releases the owned process and job handles. It is safe after a wait
+// method has already released them, including when Windows reuses their values.
+func (c *Child) Close() {
+	if c.Process != 0 {
+		win32.CloseHandle(c.Process)
+		c.Process = 0
+	}
+	if c.Job != 0 {
+		win32.CloseHandle(c.Job)
+		c.Job = 0
+	}
+}
+
 func (c *Child) Wait() (uint32, error) {
-	defer win32.CloseHandle(c.Job)
-	defer win32.CloseHandle(c.Process)
+	defer c.Close()
 
 	if r := win32.WaitForSingleObject(c.Process, win32.INFINITE); r != win32.WAIT_OBJECT_0 {
 		return 0, fmt.Errorf("WaitForSingleObject: %d", r)
@@ -247,8 +259,7 @@ func (c *Child) WaitOrStop(stopEvent win32.HANDLE, graceMs win32.DWORD) (uint32,
 		code, err := c.Wait()
 		return code, false, err
 	}
-	defer win32.CloseHandle(c.Job)
-	defer win32.CloseHandle(c.Process)
+	defer c.Close()
 
 	r := win32.WaitForMultipleObjects([]win32.HANDLE{c.Process, stopEvent}, false, win32.INFINITE)
 	switch r {
@@ -292,8 +303,7 @@ func (c *Child) WaitFor(ms win32.DWORD) (uint32, bool, error) {
 		return code, true, err
 	case win32.WAIT_TIMEOUT:
 		EndJob(c.Job)
-		win32.CloseHandle(c.Job)
-		win32.CloseHandle(c.Process)
+		c.Close()
 		return 0, false, nil
 	default:
 		return 0, false, fmt.Errorf("WaitForSingleObject error")

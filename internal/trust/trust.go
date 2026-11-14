@@ -1,6 +1,7 @@
 package trust
 
 import (
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,22 +13,13 @@ import (
 	"github.com/quasidock/quasidock/internal/store"
 )
 
-const (
-	PublishedPrefix = "ghcr.io/zigsaw-io"
-)
+const QuasidockPrefix = "ghcr.io/quasidock/quasidock"
 
-var PublishedKeys = []string{
-	// The one that signs.
-	`-----BEGIN PUBLIC KEY-----
-MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEUZck4bKpm1+mXkfSwwtKR7F/5wtN
-Bv0hEXNn87aFzykUsp9tr5ObOFmfhMYic5jpqF770iN5rpLgiHIfhKrn9Q==
------END PUBLIC KEY-----`,
-	// The backup.
-	`-----BEGIN PUBLIC KEY-----
-MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEW9tLORn/aGD3/ABpidEgKtLNAclh
-MkSEg6LPrxr7b9mkhjFJ3+YTZ00H4tFj87++RLucN6Q8hy1WbefSA30v+w==
------END PUBLIC KEY-----`,
-}
+// QuasidockPublicKey is populated during the documented signing-key setup.
+// An empty file disables built-in trust; CI refuses to publish.
+//
+//go:embed quasidock.pub
+var QuasidockPublicKey string
 
 type Named struct {
 	Key     *signature.Key
@@ -111,18 +103,13 @@ func List(st *store.Store) error {
 // All returns all known trusted keys, built-in ones first.
 func All(st *store.Store) ([]Named, error) {
 	var result []Named
-	for _, pem := range PublishedKeys {
-		k, err := signature.Parse([]byte(pem))
+	if strings.TrimSpace(QuasidockPublicKey) != "" {
+		key, err := signature.Parse([]byte(QuasidockPublicKey))
 		if err != nil {
-			panic("corrupt built-in key: " + err.Error())
+			return nil, fmt.Errorf("invalid bundled Quasidock key: %w", err)
 		}
-		result = append(result, Named{
-			Key:     k,
-			Prefix:  PublishedPrefix,
-			BuiltIn: true,
-		})
+		result = append(result, Named{Key: key, Prefix: QuasidockPrefix, BuiltIn: true})
 	}
-
 	if st == nil {
 		return result, nil
 	}

@@ -98,9 +98,16 @@ digest1=$digest
 
 added_keys() { in_store "$1" trust | tr -d '\r' | grep -v ', built in$'; }
 built_in_only() {
-    [ "$(in_store plain trust | tr -d '\r' | grep -c '^ghcr.io/zigsaw-io  key [0-9a-f]*, built in$')" = 2 ] && [ -z "$(added_keys plain)" ]
+    local keys
+    keys=$(in_store plain trust | tr -d '\r') || return 1
+    if grep -q -- '-----BEGIN PUBLIC KEY-----' "$root\\internal\\trust\\quasidock.pub"; then
+        [ "$(grep -c . <<<"$keys")" = 1 ] &&
+            grep -q '^ghcr.io/quasidock/quasidock  key [0-9a-f]*, built in$' <<<"$keys"
+    else
+        [ -z "$keys" ]
+    fi
 }
-check "a store begins with zigsaw-io's two keys, for its images only" built_in_only
+check "a store has only the configured Quasidock key, for its images only" built_in_only
 key_refused() {
     printf 'not a key\n' >"$work\\notkey.pub"
     ! in_store trusting trust add "$registry/$namespace" "$work\\notkey.pub" 2>/dev/null

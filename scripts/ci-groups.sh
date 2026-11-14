@@ -36,6 +36,7 @@ all=$(grep -v -e '^#' -e '^\s*$' "$groups_file" | cut -d: -f1 | grep -vx skip | 
 
 # What checks any group: a change to one checks both families.
 common_paths=(
+    recipes/sdk-tools/ tests/sdktools/
     tests/published.sh tests/seed-store.sh tests/cmd/imports/main.go scripts/ci-groups.sh
     "$groups_file" scripts/published-recipes.txt .github/workflows/reproduce.yml .gitattributes
 )

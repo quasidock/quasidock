@@ -2,8 +2,60 @@ package process
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
+
+	"github.com/quasidock/quasidock/internal/win32"
 )
+
+func TestChildCleanupAfterWait(t *testing.T) {
+	for _, method := range []string{"Wait", "WaitOrStop", "WaitFor"} {
+		t.Run(method, func(t *testing.T) {
+			exe := filepath.Join(os.Getenv("SystemRoot"), "System32", "cmd.exe")
+			child, err := Start(SpawnSpec{Exe: exe, CommandLine: BuildCommandLine(exe, []string{"/d", "/c", "exit", "/b", "7"})})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer child.Close()
+			var code uint32
+			switch method {
+			case "Wait":
+				code, err = child.Wait()
+			case "WaitOrStop":
+				stop, e := win32.CreateEvent("", true, false)
+				if e != nil {
+					t.Fatal(e)
+				}
+				defer win32.CloseHandle(stop)
+				code, _, err = child.WaitOrStop(stop, 0)
+			case "WaitFor":
+				var exited bool
+				code, exited, err = child.WaitFor(5000)
+				if !exited {
+					t.Fatal("child did not exit")
+				}
+			}
+			if err != nil || code != 7 {
+				t.Fatalf("exit = %d, %v", code, err)
+			}
+			if child.Process != 0 || child.Job != 0 {
+				t.Fatal("wait retained closed handle values")
+			}
+			// Windows can reuse a released handle for a runtime event before the
+			// caller's deferred cleanup. Repeated cleanup must leave new events alone.
+			event, err := win32.CreateEvent("", true, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer win32.CloseHandle(event)
+			child.Close()
+			if !win32.SetEvent(event) {
+				t.Fatal("cleanup closed an unrelated event")
+			}
+		})
+	}
+}
 
 func TestBuildCommandLine(t *testing.T) {
 	cases := []struct {

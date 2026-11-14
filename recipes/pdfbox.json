@@ -10,10 +10,10 @@
     "filesystem": ["cwd"]
   },
   "registry": ["Software\\JavaSoft\\Prefs\\org\\apache\\pdfbox"],
-  "from": { "java": "java:25.0.5_8@sha256:95555a36dec93c035655f66162ec5b557feaecb14c4cab3320a9181a93f1c823" },
+  "from": { "java": "java:25.0.5_8@sha256:cf6e3c25a745b91bd94d4aebff340702f7ef7e6935f1f91c9ef322daec09291d" },
   "sdk": {
-    "maven": "maven:3.10.0@sha256:05d74d8cf97a8ad0adafb3594488d660a9aad616bf189ac17bea1b1d8cd73043",
-    "busybox": "busybox:FRP-6075-g169694ebd@sha256:db9d39727bfdd4d176b5878c0a125daa8a2396ea21e0f01a6a372f53d9d97e5d"
+    "maven": "maven:3.10.0@sha256:50dfb31e20a15df21eca3f40aca42e05009ef4066997d755eeca16ecc19d4d3f",
+    "busybox": "busybox:FRP-6075-g169694ebd@sha256:baca1ecd27b7b5ffe54402d4f8b6e36802d9db5e0e4cb2b7ab13104031045c50"
   },
   "stages": [
     {
@@ -28,7 +28,7 @@
           "rm -rf vendor/.meta"
         ],
         "dir": "vendor",
-        "sha256": "c542ae044edaa623249e1daff91f6da76c57777564d9e0819670cd1d7a34d5e1"
+        "sha256": "e5513fb7ef22fc74dded614e01034b93e6c1e5af5fb306cc6a8664a47127a58b"
       },
       "build": [
         "mvn -B -ntp -o -Dmaven.repo.local=\"$PWD/vendor\" -pl :pdfbox-app -am package -DskipTests",

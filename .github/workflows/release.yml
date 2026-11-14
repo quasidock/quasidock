@@ -4,7 +4,7 @@
 # install.ps1, SHA256SUMS), with notes listing the programs' hashes. The
 # programs are built without debug information, so a build of the tag
 # anywhere, with the same Go toolchain, has those hashes. Images are still
-# published by hand (scripts/publish.sh).
+# published by the separate, manually dispatched Publish images workflow.
 name: Release
 
 on:
@@ -24,7 +24,7 @@ jobs:
           persist-credentials: false
           submodules: true
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: '1.26'
 #      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
@@ -42,6 +42,14 @@ jobs:
 
       - name: Unit tests
         run: go test ./...
+
+      - name: Public image registry is ready for the default-registry change
+        shell: bash
+        env:
+          QUASIDOCK_REGISTRY: ghcr.io/quasidock/quasidock
+        run: |
+          grep -q -- '-----BEGIN PUBLIC KEY-----' internal/trust/quasidock.pub
+          bash scripts/check-pins.sh
 
       - name: Package
         shell: bash

@@ -11,8 +11,8 @@
     "filesystem": ["cwd"]
   },
   "sdk": {
-    "go": "go:1.27.3@sha256:fb6554b0d89f578112c72b92c87a05583980578328180762571770884b3bc162",
-    "busybox": "busybox:FRP-6075-g169694ebd@sha256:db9d39727bfdd4d176b5878c0a125daa8a2396ea21e0f01a6a372f53d9d97e5d"
+    "go": "go:1.27.3@sha256:7ce8afd12dc7371e8f546f455036b941fdfdcbbaa81cefb3c320ea693d951ccc",
+    "busybox": "busybox:FRP-6075-g169694ebd@sha256:baca1ecd27b7b5ffe54402d4f8b6e36802d9db5e0e4cb2b7ab13104031045c50"
   },
   "stages": [
     {
@@ -24,7 +24,7 @@
       "vendor": {
         "commands": ["go mod vendor"],
         "dir": "vendor",
-        "sha256": "da7d25c2d9bb26ebb88dcd01484572e59cd5bab4acb43967ef9ca35b99b4e0ca"
+        "sha256": "ed77415b30b5d14a0df57c03b34261c34960d793f360408253601d2ce4bd3635"
       },
       "build": [
         "go build -mod=vendor -ldflags '-s -w -X oras.land/oras/internal/version.BuildMetadata= -X oras.land/oras/internal/version.GitCommit=9b1fc815f6b7fba743f08b9b5c5846639cc11d3c -X oras.land/oras/internal/version.GitTreeState=clean' -o \"$PREFIX/oras.exe\" ./cmd/oras",

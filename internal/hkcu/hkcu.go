@@ -1,13 +1,18 @@
 package hkcu
 
 import (
+	"crypto/sha256"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/quasidock/quasidock/internal/acl"
 	"github.com/quasidock/quasidock/internal/appcontainer"
+	"github.com/quasidock/quasidock/internal/mounts"
 	"github.com/quasidock/quasidock/internal/regkey"
 	"github.com/quasidock/quasidock/internal/store"
 	"github.com/quasidock/quasidock/internal/win32"
@@ -34,6 +39,7 @@ type Access struct {
 }
 
 type Session struct {
+	HiveDir  string
 	ID       string
 	Keys     []string
 	DataDir  string
@@ -77,11 +83,14 @@ func parseRecordState(s string) RecordState {
 }
 
 type Record struct {
-	Data  string
-	App   string
-	Aside bool
-	State RecordState
-	Made  string
+	Apps    []string
+	HiveDir string
+	Locks   []string
+	Data    string
+	App     string
+	Aside   bool
+	State   RecordState
+	Made    string
 }
 
 type Mutex struct {
@@ -89,13 +98,16 @@ type Mutex struct {
 }
 
 func acquireMutex() (*Mutex, error) {
+	runtime.LockOSThread()
 	h, err := win32.CreateMutex(mutexName)
 	if err != nil {
+		runtime.UnlockOSThread()
 		return nil, fmt.Errorf("CreateMutex %s: %w", mutexName, err)
 	}
 	wait := win32.WaitForSingleObject(h, win32.INFINITE)
 	if wait != win32.WAIT_OBJECT_0 && wait != win32.WAIT_ABANDONED {
 		win32.CloseHandle(h)
+		runtime.UnlockOSThread()
 		return nil, fmt.Errorf("WaitForSingleObject mutex: %d", wait)
 	}
 	return &Mutex{handle: h}, nil
@@ -106,11 +118,24 @@ func (m *Mutex) Release() {
 		win32.ReleaseMutex(m.handle)
 		win32.CloseHandle(m.handle)
 		m.handle = 0
+		runtime.UnlockOSThread()
 	}
 }
 
 func lockPath(dataDir string) string {
 	return strings.TrimRight(dataDir, `\/`) + ".hkcu.lock"
+}
+
+func recordRunning(r *Record) bool {
+	if r == nil {
+		return false
+	}
+	for _, path := range r.Locks {
+		if store.IsLocked(path) {
+			return true
+		}
+	}
+	return false
 }
 
 func Escape(key string) string {
@@ -141,6 +166,9 @@ func readRecord(key string) (*Record, error) {
 	appStr, _ := k.GetString("App")
 	asideStr, _ := k.GetString("Aside")
 	madeStr, _ := k.GetString("Made")
+	hiveStr, _ := k.GetString("HiveDir")
+	locksStr, _ := k.GetString("Locks")
+	appsStr, _ := k.GetString("Apps")
 
 	dataVal := ""
 	if dataStr != nil {
@@ -159,12 +187,33 @@ func readRecord(key string) (*Record, error) {
 		madeVal = *madeStr
 	}
 
+	hiveDir := filepath.Join(dataVal, "registry")
+	if hiveStr != nil {
+		hiveDir = *hiveStr
+	}
+	var locks []string
+	if locksStr != nil {
+		if err := json.Unmarshal([]byte(*locksStr), &locks); err != nil {
+			return nil, err
+		}
+	} else {
+		locks = []string{lockPath(dataVal)}
+	}
+	apps := []string{appVal}
+	if appsStr != nil {
+		if err := json.Unmarshal([]byte(*appsStr), &apps); err != nil {
+			return nil, err
+		}
+	}
 	return &Record{
-		Data:  dataVal,
-		App:   appVal,
-		Aside: asideVal,
-		State: parseRecordState(*stateStr),
-		Made:  madeVal,
+		Apps:    apps,
+		HiveDir: hiveDir,
+		Locks:   locks,
+		Data:    dataVal,
+		App:     appVal,
+		Aside:   asideVal,
+		State:   parseRecordState(*stateStr),
+		Made:    madeVal,
 	}, nil
 }
 
@@ -180,19 +229,32 @@ func writeRecord(key string, r *Record) error {
 	as := "Aside"
 	s := "State"
 	m := "Made"
+	h := "HiveDir"
+	l := "Locks"
+	ap := "Apps"
+	apps, _ := json.Marshal(r.Apps)
+	if err := k.SetString(&ap, string(apps)); err != nil {
+		return err
+	}
+	locks, _ := json.Marshal(r.Locks)
+	if err := k.SetString(&h, r.HiveDir); err != nil {
+		return err
+	}
+	if err := k.SetString(&l, string(locks)); err != nil {
+		return err
+	}
 
-	_ = k.SetString(&d, r.Data)
-	_ = k.SetString(&a, r.App)
+	var errs []error
+	errs = append(errs, k.SetString(&d, r.Data), k.SetString(&a, r.App))
 	asideText := "no"
 	if r.Aside {
 		asideText = "yes"
 	}
-	_ = k.SetString(&as, asideText)
-	_ = k.SetString(&s, r.State.String())
+	errs = append(errs, k.SetString(&as, asideText), k.SetString(&s, r.State.String()))
 	if r.Made != "" {
-		_ = k.SetString(&m, r.Made)
+		errs = append(errs, k.SetString(&m, r.Made))
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 func setRecordState(key string, state RecordState) error {
@@ -225,16 +287,15 @@ func (h *Hive) Close() {
 	}
 }
 
-func openHive(dataDir string, create bool) (*Hive, error) {
-	dir := filepath.Join(dataDir, "registry")
+func openHive(dir string, create bool) (*Hive, error) {
 	file := filepath.Join(dir, "user.dat")
 	if !create {
 		if _, err := os.Stat(file); err != nil {
 			return nil, nil
 		}
 	} else {
-		if _, err := os.Stat(dataDir); err != nil {
-			return nil, nil
+		if _, err := os.Stat(dir); err != nil {
+			return nil, err
 		}
 		_ = os.MkdirAll(dir, 0755)
 	}
@@ -256,15 +317,35 @@ func Enter(st *store.Store, id string, keys []string, dataDir string, access Acc
 	}
 	defer mutex.Release()
 
-	lPath := lockPath(dataDir)
-	first := false
-	if tryL, _ := store.TryLock(lPath, true); tryL != nil {
-		tryL.Release()
-		first = true
+	hiveDir := filepath.Join(dataDir, "registry")
+	if err := os.MkdirAll(hiveDir, 0o755); err != nil {
+		return nil, err
+	}
+	resolvedHive, err := mounts.CanonicalPath(hiveDir)
+	if err != nil {
+		return nil, fmt.Errorf("resolving registry directory %s: %w", hiveDir, err)
+	}
+	hiveDir = resolvedHive
+	identity := sha256.Sum256([]byte(strings.ToLower(hiveDir)))
+	lPath := st.Path("registry-locks", fmt.Sprintf("%x.lock", identity))
+	// Inspect ownership before taking our lock, which may have the same path
+	// as a stale record left by an earlier process in this store.
+	active := map[string]bool{}
+	for _, key := range keys {
+		r, e := readRecord(key)
+		if e != nil {
+			return nil, e
+		}
+		active[key] = recordRunning(r)
 	}
 
 	lock, err := store.OpenLock(lPath, false, true)
 	if err != nil {
+		return nil, err
+	}
+	lPath, err = mounts.CanonicalPath(lPath)
+	if err != nil {
+		lock.Release()
 		return nil, err
 	}
 
@@ -276,33 +357,68 @@ func Enter(st *store.Store, id string, keys []string, dataDir string, access Acc
 		}
 
 		if r != nil {
-			if samePath(r.Data, dataDir) {
-				if first {
-					_ = settle(st, key, r, true)
-					if err := putInPlace(st, id, key, dataDir); err != nil {
+			if samePath(r.HiveDir, hiveDir) {
+				if !active[key] {
+					if err := settle(st, key, r, true); err != nil {
+						lock.Release()
+						return nil, err
+					}
+					if err := putInPlace(st, id, key, dataDir, hiveDir, lPath); err != nil {
 						lock.Release()
 						return nil, err
 					}
 				}
 			} else {
-				otherLock := lockPath(r.Data)
-				if store.IsLocked(otherLock) {
+				if active[key] {
 					lock.Release()
 					return nil, fmt.Errorf("%s keeps HKCU\\%s, which a run of %s is using (its data is in %s); run it once that ends", id, key, r.App, r.Data)
 				}
-				_ = settle(st, key, r, true)
-				if err := putInPlace(st, id, key, dataDir); err != nil {
+				if err := settle(st, key, r, true); err != nil {
+					lock.Release()
+					return nil, err
+				}
+				if err := putInPlace(st, id, key, dataDir, hiveDir, lPath); err != nil {
 					lock.Release()
 					return nil, err
 				}
 			}
 		} else {
-			if err := putInPlace(st, id, key, dataDir); err != nil {
+			if err := putInPlace(st, id, key, dataDir, hiveDir, lPath); err != nil {
 				lock.Release()
 				return nil, err
 			}
 		}
 
+		current, err := readRecord(key)
+		if err != nil || current == nil {
+			lock.Release()
+			if err == nil {
+				err = fmt.Errorf("missing HKCU ownership record for %s", key)
+			}
+			return nil, err
+		}
+		found := false
+		for _, p := range current.Locks {
+			if samePath(p, lPath) {
+				found = true
+			}
+		}
+		if !found {
+			current.Locks = append(current.Locks, lPath)
+		}
+		found = false
+		for _, app := range current.Apps {
+			if strings.EqualFold(app, id) {
+				found = true
+			}
+		}
+		if !found {
+			current.Apps = append(current.Apps, id)
+		}
+		if err := writeRecord(key, current); err != nil {
+			lock.Release()
+			return nil, err
+		}
 		switch access.Type {
 		case AccessNone:
 		case AccessLow:
@@ -314,6 +430,7 @@ func Enter(st *store.Store, id string, keys []string, dataDir string, access Acc
 	}
 
 	return &Session{
+		HiveDir:  hiveDir,
 		ID:       id,
 		Keys:     keys,
 		DataDir:  dataDir,
@@ -340,25 +457,20 @@ func leaveOrFail(st *store.Store, s *Session) error {
 	defer mutex.Release()
 
 	s.Lock.Release()
-	last, _ := store.TryLock(s.LockPath, true)
-	if last == nil {
-		return nil
-	}
-
 	for _, key := range s.Keys {
 		r, err := readRecord(key)
 		if err == nil && r != nil {
-			if samePath(r.Data, s.DataDir) {
+			if samePath(r.HiveDir, s.HiveDir) && !recordRunning(r) {
 				if err := settle(st, key, r, s.Keep); err != nil {
-					last.Release()
 					return err
 				}
 			}
 		}
 	}
 	_ = Tidy()
-	last.Release()
-	_ = os.Remove(s.LockPath)
+	if !store.IsLocked(s.LockPath) {
+		_ = os.Remove(s.LockPath)
+	}
 	return nil
 }
 
@@ -377,6 +489,7 @@ func Tidy() error {
 }
 
 func SettleLeftovers(st *store.Store, id string) error {
+	var errs []error
 	records, _ := regkey.Open(hkcuRoot, recordsKey, win32.KEY_READ)
 	asides, _ := regkey.Open(hkcuRoot, asideKey, win32.KEY_READ|win32.KEY_WRITE)
 	if records == nil && asides == nil {
@@ -404,17 +517,32 @@ func SettleLeftovers(st *store.Store, id string) error {
 			if err != nil || r == nil {
 				continue
 			}
-			if !IsInStore(r.Data, st.Root) {
+			belongs := IsInStore(r.Data, st.Root)
+			for _, path := range r.Locks {
+				if IsInStore(path, st.FullRoot()) {
+					belongs = true
+				}
+			}
+			if !belongs {
 				continue
 			}
-			if id != "" && !strings.EqualFold(id, r.App) {
+			matches := id == ""
+			for _, app := range r.Apps {
+				if strings.EqualFold(id, app) {
+					matches = true
+				}
+			}
+			if !matches {
 				continue
 			}
 			lPath := lockPath(r.Data)
-			if store.IsLocked(lPath) {
+			if recordRunning(r) {
 				continue
 			}
-			_ = settle(st, key, r, true)
+			if err := settle(st, key, r, true); err != nil {
+				errs = append(errs, err)
+				continue
+			}
 			_ = os.Remove(lPath)
 		}
 	}
@@ -430,10 +558,11 @@ func SettleLeftovers(st *store.Store, id string) error {
 		}
 	}
 
-	return Tidy()
+	errs = append(errs, Tidy())
+	return errors.Join(errs...)
 }
 
-func putInPlace(st *store.Store, id, key, dataDir string) error {
+func putInPlace(st *store.Store, id, key, dataDir, hiveDir, leasePath string) error {
 	name := Escape(key)
 	native, _ := regkey.Exists(hkcuRoot, key)
 	if native {
@@ -463,13 +592,18 @@ func putInPlace(st *store.Store, id, key, dataDir string) error {
 	}
 
 	r := &Record{
-		Data:  dataDir,
-		App:   id,
-		Aside: native,
-		State: StateMoving,
-		Made:  made,
+		Apps:    []string{id},
+		HiveDir: hiveDir,
+		Locks:   []string{leasePath},
+		Data:    dataDir,
+		App:     id,
+		Aside:   native,
+		State:   StateMoving,
+		Made:    made,
 	}
-	_ = writeRecord(key, r)
+	if err := writeRecord(key, r); err != nil {
+		return err
+	}
 
 	if native {
 		_ = deleteKey(key)
@@ -482,7 +616,11 @@ func putInPlace(st *store.Store, id, key, dataDir string) error {
 	}
 	defer dest.Close()
 
-	if h, _ := openHive(dataDir, false); h != nil {
+	h, err := openHive(hiveDir, false)
+	if err != nil {
+		return err
+	}
+	if h != nil {
 		defer h.Close()
 		if src, _ := regkey.Open(h.Root, key, win32.KEY_READ); src != nil {
 			_ = dest.CopyFrom(*src)
@@ -496,7 +634,9 @@ func putInPlace(st *store.Store, id, key, dataDir string) error {
 func settle(st *store.Store, key string, r *Record, keep bool) error {
 	if r.State == StateInPlace {
 		if keep {
-			_ = saveToHive(st, key, r.Data)
+			if err := saveToHive(st, key, r.HiveDir); err != nil {
+				return err
+			}
 		}
 		_ = setRecordState(key, StateTakenBack)
 	}
@@ -528,7 +668,9 @@ func settle(st *store.Store, key string, r *Record, keep bool) error {
 	if !r.Aside && r.Made != "" {
 		_ = DeleteEmptyParents(key, r.Made)
 	}
-	_ = revokeAbove(key, r.App)
+	for _, app := range r.Apps {
+		_ = revokeAbove(key, app)
+	}
 	return nil
 }
 

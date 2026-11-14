@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/quasidock/quasidock/internal/context"
+	"github.com/quasidock/quasidock/internal/grants"
 	"github.com/quasidock/quasidock/internal/hkcu"
 	"github.com/quasidock/quasidock/internal/lazy"
 	"github.com/quasidock/quasidock/internal/oci"
@@ -122,6 +123,11 @@ func deleteStaleLocks(dir string) {
 
 // Prune deletes what no installed app needs.
 func Prune(ctx *context.Context, opts PruneOptions) error {
+	if !opts.DryRun {
+		if err := grants.RepairMounts(ctx.Store); err != nil {
+			return err
+		}
+	}
 	prunedContainers, containerBytes, containersRunning, err := ctx.Store.PruneContainers(opts.DryRun)
 	if err != nil {
 		return err

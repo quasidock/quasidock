@@ -7,8 +7,8 @@
     "filesystem": ["cwd"]
   },
   "sdk": {
-    "llvm": "llvm-mingw:20261020@sha256:115b5e484a219e75e899eedcb456cfc3d7177859e704937f13db301b49fc9f64",
-    "busybox": "busybox:FRP-6075-g169694ebd@sha256:db9d39727bfdd4d176b5878c0a125daa8a2396ea21e0f01a6a372f53d9d97e5d"
+    "llvm": "llvm-mingw:20261020@sha256:65425754b958693accc5dc8d8e8ca0dfa6235669c286cc8875105171b3e299b9",
+    "busybox": "busybox:FRP-6075-g169694ebd@sha256:baca1ecd27b7b5ffe54402d4f8b6e36802d9db5e0e4cb2b7ab13104031045c50"
   },
   "cleanup": [
     "/share/doc/gettext/examples",
@@ -33,8 +33,8 @@
         "FGREP": "grep -F",
         "EGREP_TRADITIONAL": "grep -E",
         "AWK": "awk",
-        "AR": "ar",
-        "RANLIB": "ranlib",
+        "AR": "ar.exe",
+        "RANLIB": "ranlib.exe",
         "RM": "rm -f",
         "CFLAGS": "-O2",
         "WINDRES": "windres"
@@ -59,8 +59,8 @@
         "FGREP": "grep -F",
         "EGREP_TRADITIONAL": "grep -E",
         "AWK": "awk",
-        "AR": "ar",
-        "RANLIB": "ranlib",
+        "AR": "ar.exe",
+        "RANLIB": "ranlib.exe",
         "RM": "rm -f",
         "CFLAGS": "-O2",
         "CXXFLAGS": "-O2",

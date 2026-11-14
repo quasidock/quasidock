@@ -10,10 +10,10 @@
     "filesystem": ["cwd"]
   },
   "from": {
-    "gtk": "gtk4:4.24.1@sha256:e61173f2deba589f1f1b40a38e5a4d6584c8efbbff1f40be5c173ccee5b27c49",
-    "gtk3": "gtk3:3.24.52@sha256:fc4deee61a122ee76c7ea15a5745b52247357d8ae4044cd39e411d99645a45e9"
+    "gtk": "gtk4:4.24.1@sha256:550c7eddb54fc071caae8955664a76ed418c65e727237ba8585ee6827f4e5ad1",
+    "gtk3": "gtk3:3.24.52@sha256:c558346bcb30030982e187c1027238660b51d8fd7909a029ddb6c33fbc297a1c"
   },
-  "sdk": { "gtksdk": "gtk4-sdk:4.24.1@sha256:31b88a3d1d0a4530f3a31cf558d7c6c6c58e04a42ced0d7aeb28d0cf501de104" },
+  "sdk": { "gtksdk": "gtk4-sdk:4.24.1@sha256:7c063e56d0148fbc2ea019ddce1b4368d0aee279ff30b5417bad3e8ad78ca682" },
   "stages": [
     {
       "name": "icons",

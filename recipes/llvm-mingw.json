@@ -7,13 +7,20 @@
   "license": "Apache-2.0 WITH LLVM-exception AND ZPL-2.1 AND MIT AND ISC",
   "entrypoint": "bin/clang.exe",
   "layer": "estargz",
-  "path": ["bin"],
-  "env": { "CC": "cc", "CXX": "c++", "RC": "windres", "LDFLAGS": "-s" },
+  "path": ["sdk-bin", "bin"],
+  "env": {
+    "CC": "cc.exe",
+    "CXX": "c++.exe",
+    "RC": "windres",
+    "LDFLAGS": "-s",
+    "AR": "ar.exe",
+    "RANLIB": "ranlib.exe"
+  },
   "permissions": {
     "sandbox": "soft",
     "filesystem": ["cwd"]
   },
-  "sdk": { "busybox": "busybox:FRP-6075-g169694ebd@sha256:db9d39727bfdd4d176b5878c0a125daa8a2396ea21e0f01a6a372f53d9d97e5d" },
+  "sdk": { "busybox": "busybox:FRP-6075-g169694ebd@sha256:baca1ecd27b7b5ffe54402d4f8b6e36802d9db5e0e4cb2b7ab13104031045c50" },
   "cleanup": [
     "/aarch64-w64-mingw32",
     "/armv7-w64-mingw32",
@@ -61,6 +68,26 @@
         "printf '%s\\n' '# zigsaw: no time in the objects Clang writes or the programs lld links, so that builds are reproducible.' '-mno-incremental-linker-compatible' '-Wl,--no-insert-timestamp' >> \"$PREFIX/bin/mingw32-common.cfg\"",
         "printf 'int main(void) { return 0; }\\n' > t.c && cc -Werror -c t.c -o t1.o && cc -s t.c -o t1.exe && sleep 2 && cc -Werror -c t.c -o t2.o && cc -s t.c -o t2.exe && cmp t1.o t2.o && cmp t1.exe t2.exe",
         "printf '#include <thread>\\nint main() { std::thread t([] {}); t.join(); }\\n' > t.cpp && c++ -s t.cpp -o t.exe && ! llvm-objdump -p t.exe | grep -iE 'DLL Name: lib(c\\+\\+|unwind|winpthread)'"
+      ]
+    },
+    {
+      "name": "sdk-commands",
+      "sources": [
+        { "path": "sdk-tools/launcher.c", "dest": "launcher.c" },
+        { "path": "llvm-mingw/commands.h", "dest": "commands.h" }
+      ],
+      "build": [
+        "mkdir -p \"$PREFIX/sdk-bin\"",
+        "\"$PREFIX/bin/x86_64-w64-mingw32-clang.exe\" -O2 -municode -s -Wl,--no-insert-timestamp launcher.c -o \"$PREFIX/sdk-bin/cc.exe\"",
+        "cp \"$PREFIX/sdk-bin/cc.exe\" \"$PREFIX/sdk-bin/c++.exe\"",
+        "cp \"$PREFIX/sdk-bin/cc.exe\" \"$PREFIX/sdk-bin/ar.exe\"",
+        "cp \"$PREFIX/sdk-bin/cc.exe\" \"$PREFIX/sdk-bin/ranlib.exe\"",
+        "cp \"$PREFIX/sdk-bin/cc.exe\" \"$PREFIX/sdk-bin/nm.exe\"",
+        "cp \"$PREFIX/sdk-bin/cc.exe\" \"$PREFIX/sdk-bin/strip.exe\"",
+        "cp \"$PREFIX/sdk-bin/cc.exe\" \"$PREFIX/sdk-bin/objdump.exe\"",
+        "cp \"$PREFIX/sdk-bin/cc.exe\" \"$PREFIX/sdk-bin/windres.exe\"",
+        "cp \"$PREFIX/sdk-bin/cc.exe\" \"$PREFIX/sdk-bin/dlltool.exe\"",
+        "cp \"$PREFIX/sdk-bin/cc.exe\" \"$PREFIX/sdk-bin/as.exe\""
       ]
     }
   ]

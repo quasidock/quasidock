@@ -2,8 +2,11 @@
   "id": "rust",
   "version": "1.99.0",
   "entrypoint": "bin/cargo.exe",
-  "path": ["bin", "${data}\\cargo\\bin"],
-  "env": { "CARGO_HOME": "${data}\\cargo", "CARGO_PROFILE_RELEASE_STRIP": "symbols" },
+  "path": ["sdk-bin", "bin", "${data}\\cargo\\bin"],
+  "env": {
+    "CARGO_HOME": "${data}\\cargo",
+    "CARGO_PROFILE_RELEASE_STRIP": "symbols"
+  },
   "permissions": {
     "sandbox": "soft",
     "network": true,
@@ -15,6 +18,10 @@
     "/lib/rustlib/x86_64-pc-windows-gnu/bin/gcc-ld",
     "/lib/rustlib/x86_64-pc-windows-gnu/bin/wasm-component-ld.exe"
   ],
+  "sdk": {
+    "zig": "zig:0.17.0@sha256:56fc3e4f42c25dbf70236aedb053606311cb2d4b582ad4d1e26e76036c08eab1",
+    "busybox": "busybox:FRP-6075-g169694ebd@sha256:baca1ecd27b7b5ffe54402d4f8b6e36802d9db5e0e4cb2b7ab13104031045c50"
+  },
   "stages": [
     {
       "name": "rust",
@@ -23,6 +30,17 @@
         { "url": "https://static.rust-lang.org/dist/cargo-1.99.0-x86_64-pc-windows-gnu.tar.xz", "sha256": "36dc7cba4be341c5a6cb3e10f660c4565b6f87f318d3cb87519b2cfe8c630bca", "strip": 2 },
         { "url": "https://static.rust-lang.org/dist/rust-std-1.99.0-x86_64-pc-windows-gnu.tar.xz", "sha256": "a2382bf189d5621e09db647da419a8e1d4c604d60941cb116da00ce34042b1dd", "strip": 2 },
         { "url": "https://static.rust-lang.org/dist/rust-mingw-1.99.0-x86_64-pc-windows-gnu.tar.xz", "sha256": "ad2b4b41362a99a86e20a8dbcec4be81b99f2d507f6408a72c7a139bc1919080", "strip": 2 }
+      ]
+    },
+    {
+      "name": "sdk-commands",
+      "sources": [
+        { "path": "sdk-tools/launcher.c", "dest": "launcher.c" },
+        { "path": "rust/commands.h", "dest": "commands.h" }
+      ],
+      "build": [
+        "mkdir -p \"$PREFIX/sdk-bin\"",
+        "cc.exe -O2 -municode -s -Wl,-Brepro launcher.c -o \"$PREFIX/sdk-bin/dlltool.exe\""
       ]
     }
   ]

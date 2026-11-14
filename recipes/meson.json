@@ -7,8 +7,8 @@
     "filesystem": ["cwd"]
   },
   "sdk": {
-    "zig": "zig:0.17.0@sha256:93ec2b6b36708ae80ffac87872e70dafaee350cd2d49a95dd2fa5847d0a10449",
-    "busybox": "busybox:FRP-6075-g169694ebd@sha256:db9d39727bfdd4d176b5878c0a125daa8a2396ea21e0f01a6a372f53d9d97e5d"
+    "zig": "zig:0.17.0@sha256:56fc3e4f42c25dbf70236aedb053606311cb2d4b582ad4d1e26e76036c08eab1",
+    "busybox": "busybox:FRP-6075-g169694ebd@sha256:baca1ecd27b7b5ffe54402d4f8b6e36802d9db5e0e4cb2b7ab13104031045c50"
   },
   "cleanup": [
     "/include",
@@ -22,6 +22,8 @@
     "/meson/unittests",
     "__pycache__"
   ],
+  "path": ["sdk-bin", "."],
+  "env": { "PKG_CONFIG": "${app}\\sdk-bin\\pkg-config.exe" },
   "stages": [
     {
       "name": "python",
@@ -57,6 +59,20 @@
         "PATH=\"$PREFIX;$PATH\" \"$PREFIX/python.exe\" \"$PREFIX/meson/meson.py\" setup out --prefix=\"$PREFIX\" --buildtype=release --default-library=static -Dwith-system-libdir=/usr/lib -Dwith-system-includedir=/usr/include",
         "PATH=\"$PREFIX;$PATH\" \"$PREFIX/python.exe\" \"$PREFIX/meson/meson.py\" install -C out",
         "cp COPYING \"$PREFIX/bin/pkgconf-COPYING\""
+      ]
+    },
+    {
+      "name": "sdk-commands",
+      "sources": [
+        { "path": "sdk-tools/launcher.c", "dest": "launcher.c" },
+        { "path": "meson/commands.h", "dest": "commands.h" }
+      ],
+      "build": [
+        "mkdir -p \"$PREFIX/sdk-bin\"",
+        "cc.exe -O2 -municode -s -Wl,-Brepro launcher.c -o \"$PREFIX/sdk-bin/meson.exe\"",
+        "cp \"$PREFIX/sdk-bin/meson.exe\" \"$PREFIX/sdk-bin/ninja.exe\"",
+        "cp \"$PREFIX/sdk-bin/meson.exe\" \"$PREFIX/sdk-bin/pkg-config.exe\"",
+        "cp \"$PREFIX/sdk-bin/meson.exe\" \"$PREFIX/sdk-bin/pkgconf.exe\""
       ]
     }
   ]

@@ -16,25 +16,20 @@
     "TEXLIVE_WINDOWS_TRY_EXTERNAL_PERL": "1",
     "TEXLIVE_WINDOWS_EXTERNAL_GS": "${gs}\\bin\\gswin64c.exe"
   },
-  "permissions": {
-    "filesystem": ["cwd"]
-  },
+  "permissions": { "filesystem": ["cwd"] },
   "from": {
-    "perl": "perl:5.42.3.1@sha256:4bf63dc4d73c1094335f85767629736c3d01276dc3e46be04bfba985b70e25df",
-    "gs": "ghostscript:10.08.0@sha256:deaacbe917263f355abc4ee700d91c52ca95d322f2b7af4d1719456a78594041"
+    "perl": "perl:5.42.3.1@sha256:2854c34722b812ef3173f5d4ab6fb091ac45dc16d6079865a5024d6a6527dfd6",
+    "gs": "ghostscript:10.08.0@sha256:54970c331bab95b9224e51bf1ed0857746030a7a7db01d4260aa946d19b5df74"
   },
-  "sdk": { "busybox": "busybox:FRP-6075-g169694ebd@sha256:db9d39727bfdd4d176b5878c0a125daa8a2396ea21e0f01a6a372f53d9d97e5d" },
+  "sdk": {
+    "busybox": "busybox:FRP-6075-g169694ebd@sha256:baca1ecd27b7b5ffe54402d4f8b6e36802d9db5e0e4cb2b7ab13104031045c50"
+  },
   "cleanup": [
-    "/tlpkg/tlperl",
-    "/tlpkg/tlgs",
-    "/tlpkg/installer",
-    "/tlpkg/tltcl",
-    "/tlpkg/translations",
-    "/tlpkg/backups",
-    "/install-tl",
-    "/install-tl-windows.bat",
-    "/tl-tray-menu.exe",
-    "*.log"
+    "/tlpkg/tlperl", "/tlpkg/tlgs", "/tlpkg/installer", "/tlpkg/tltcl", "/tlpkg/translations", "/tlpkg/backups",
+    "/install-tl", "/install-tl-windows.bat", "/tl-tray-menu.exe", "*.log"
+  ],
+  "source_mirrors": [
+    "ghcr.io/zigsaw-io/org.tug.texlive@sha256:7d55caed461ff9a28b4bf818bf45f762e76159b0af1db05dee5226467d18a065"
   ],
   "stages": [
     {

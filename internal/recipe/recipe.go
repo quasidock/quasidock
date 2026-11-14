@@ -7,6 +7,7 @@ import (
 
 	"github.com/quasidock/quasidock/internal/format"
 	"github.com/quasidock/quasidock/internal/oci"
+	"github.com/quasidock/quasidock/internal/registry"
 )
 
 type Kind string
@@ -149,25 +150,26 @@ func (l LayerKind) Format() format.Format {
 }
 
 type Recipe struct {
-	ID          string            `json:"id"`
-	Version     string            `json:"version"`
-	Name        *string           `json:"name,omitempty"`
-	Summary     *string           `json:"summary,omitempty"`
-	Homepage    *string           `json:"homepage,omitempty"`
-	License     *string           `json:"license,omitempty"`
-	Entrypoint  Entrypoint        `json:"entrypoint"`
-	Cmd         []string          `json:"cmd,omitempty"`
-	Path        []string          `json:"path,omitempty"`
-	Env         map[string]string `json:"env,omitempty"`
-	Permissions oci.Permissions   `json:"permissions,omitempty"`
-	Registry    []string          `json:"registry,omitempty"`
-	SDK         map[string]string `json:"sdk,omitempty"`
-	From        map[string]string `json:"from,omitempty"`
-	Layer       LayerKind         `json:"layer,omitempty"`
-	Prefetch    []string          `json:"prefetch,omitempty"`
-	Cleanup     []string          `json:"cleanup,omitempty"`
-	Host        []string          `json:"host,omitempty"`
-	Stages      []Stage           `json:"stages"`
+	ID            string            `json:"id"`
+	Version       string            `json:"version"`
+	Name          *string           `json:"name,omitempty"`
+	Summary       *string           `json:"summary,omitempty"`
+	Homepage      *string           `json:"homepage,omitempty"`
+	License       *string           `json:"license,omitempty"`
+	Entrypoint    Entrypoint        `json:"entrypoint"`
+	Cmd           []string          `json:"cmd,omitempty"`
+	Path          []string          `json:"path,omitempty"`
+	Env           map[string]string `json:"env,omitempty"`
+	Permissions   oci.Permissions   `json:"permissions,omitempty"`
+	Registry      []string          `json:"registry,omitempty"`
+	SDK           map[string]string `json:"sdk,omitempty"`
+	From          map[string]string `json:"from,omitempty"`
+	Layer         LayerKind         `json:"layer,omitempty"`
+	Prefetch      []string          `json:"prefetch,omitempty"`
+	Cleanup       []string          `json:"cleanup,omitempty"`
+	Host          []string          `json:"host,omitempty"`
+	SourceMirrors []string          `json:"source_mirrors,omitempty"`
+	Stages        []Stage           `json:"stages"`
 }
 
 func (r Recipe) HasBuildCommands() bool {
@@ -225,6 +227,12 @@ func Parse(fileName string, bytes []byte) (*Recipe, error) {
 
 	if err := validateDependencies(fileName, r); err != nil {
 		return nil, err
+	}
+	for _, mirror := range r.SourceMirrors {
+		ref, err := registry.ParseReference(mirror)
+		if err != nil || ref.Digest == "" {
+			return nil, fmt.Errorf("%s: source mirror %q must be a fully qualified image pinned with @sha256:...", fileName, mirror)
+		}
 	}
 
 	var fromAliases []string

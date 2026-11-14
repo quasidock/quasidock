@@ -14,14 +14,14 @@
 # and the runtime's other apps deploys the runtime twice. A pin whose image
 # differs only in its config doesn't warn. Older SDK pins don't warn.
 #
-# The registry is the default one (ghcr.io/zigsaw-io) or QUASIDOCK_REGISTRY's,
+# The registry is the default one (ghcr.io/quasidock/quasidock) or QUASIDOCK_REGISTRY's,
 # read anonymously. Needs curl and Git Bash, not quasidock.
 
 set -eu
 export MSYS_NO_PATHCONV=1
 
 root=$(cd "$(dirname "$0")/.." && pwd)
-registry=${QUASIDOCK_REGISTRY:-ghcr.io/zigsaw-io}
+registry=${QUASIDOCK_REGISTRY:-ghcr.io/quasidock/quasidock}
 registry=${registry%/}
 case $registry in
 http://*) scheme=http; registry=${registry#http://} ;;
@@ -120,7 +120,7 @@ while read -r tid tversion tdigest; do tag_digest[$tid:$tversion]=$tdigest; done
     for recipe in "$@"; do
         echo "$(field id "$recipe") $(field version "$recipe")"
         grep -o "$pin_re" "$recipe" | tr -d '"' | sed 's/@.*//; s/:/ /'
-    done | sort -u | xargs -P 8 -n 2 bash "$0" --tag
+    done | sort -u | xargs -r -P 8 -n 2 bash "$0" --tag
 )
 
 tmp_pinned=$(mktemp) tmp_now=$(mktemp)
@@ -180,13 +180,13 @@ done
 # warns about one that hasn't. Only here, where quasidock knows a key, and only that one's
 # there: whether it's good is what `quasidock signature check` and a pull are for.
 unsigned=0
-if [ "$registry" = ghcr.io/zigsaw-io ]; then
+if [ "$registry" = ghcr.io/quasidock/quasidock ]; then
     while read -r tid ttag tdigest; do tag_digest[$tid:$ttag]=$tdigest; done < <(
         for recipe in "$@"; do
             id=$(field id "$recipe")
             digest=${tag_digest[$id:$(field version "$recipe")]:-}
             [ -z "$digest" ] || echo "$id sha256-${digest#sha256:}.sig"
-        done | sort -u | xargs -P 8 -n 2 bash "$0" --tag
+        done | sort -u | xargs -r -P 8 -n 2 bash "$0" --tag
     )
     for recipe in "$@"; do
         id=$(field id "$recipe")

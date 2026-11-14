@@ -7,13 +7,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/quasidock/quasidock/internal/mounts"
 	"github.com/quasidock/quasidock/internal/oci"
 )
 
@@ -47,13 +46,14 @@ type ContainerConfig struct {
 }
 
 type ContainerHostConfig struct {
-	AutoRemove   bool     `json:"AutoRemove"`
-	Sandbox      string   `json:"Sandbox,omitempty"`
-	Network      *bool    `json:"Network,omitempty"`
-	Host         *bool    `json:"Host,omitempty"`
-	Filesystem   []string `json:"Filesystem,omitempty"`
-	NoFilesystem []string `json:"NoFilesystem,omitempty"`
-	Ports        []string `json:"Ports,omitempty"`
+	Mounts       []mounts.Spec `json:"Mounts,omitempty"`
+	AutoRemove   bool          `json:"AutoRemove"`
+	Sandbox      string        `json:"Sandbox,omitempty"`
+	Network      *bool         `json:"Network,omitempty"`
+	Host         *bool         `json:"Host,omitempty"`
+	Filesystem   []string      `json:"Filesystem,omitempty"`
+	NoFilesystem []string      `json:"NoFilesystem,omitempty"`
+	Ports        []string      `json:"Ports,omitempty"`
 }
 
 // ContainerRunSpec records the CLI launch inputs needed by a detached supervisor.
@@ -65,6 +65,7 @@ type ContainerRunSpec struct {
 }
 
 type ContainerRecord struct {
+	Mounts     []mounts.Mount      `json:"Mounts,omitempty"`
 	ID         string              `json:"Id"`
 	Created    string              `json:"Created"`
 	Name       string              `json:"Name"`
@@ -177,9 +178,9 @@ func (s *Store) deleteContainerDirNoLock(id string) error {
 	}
 	trash := s.TmpPath("trash-container")
 	if err := RenameRetrying(dir, trash, 2000); err == nil {
-		return os.RemoveAll(trash)
+		return mounts.RemoveTree(trash)
 	}
-	return os.RemoveAll(dir)
+	return mounts.RemoveTree(dir)
 }
 
 func (s *Store) readRawContainer(id string) (*ContainerRecord, error) {
@@ -335,6 +336,10 @@ func (s *Store) CreateContainer(explicitName string, rec ContainerRecord) (*Cont
 	}
 	rec.DataDir = s.ContainerDataDir(id)
 	rec.LogPath = s.ContainerLogPath(id)
+	if err := s.resolveContainerMountsNoLock(&rec); err != nil {
+		_ = mounts.RemoveTree(s.ContainerDir(id))
+		return nil, err
+	}
 	if rec.Args == nil {
 		rec.Args = []string{}
 	}
@@ -349,7 +354,7 @@ func (s *Store) CreateContainer(explicitName string, rec ContainerRecord) (*Cont
 	}
 
 	if err := s.writeContainerStateNoLock(&rec); err != nil {
-		_ = os.RemoveAll(s.ContainerDir(id))
+		_ = mounts.RemoveTree(s.ContainerDir(id))
 		return nil, err
 	}
 	return &rec, nil
@@ -496,17 +501,7 @@ func (s *Store) ContainerUsingImage(manifest string) (*ContainerRecord, error) {
 }
 
 func containerDirSize(root string) uint64 {
-	var total uint64
-	_ = filepath.WalkDir(root, func(_ string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return nil
-		}
-		if info, err := d.Info(); err == nil {
-			total += uint64(info.Size())
-		}
-		return nil
-	})
-	return total
+	return mounts.TreeSize(root)
 }
 
 func (s *Store) PruneContainers(dryRun bool) ([]ContainerRecord, uint64, int, error) {
@@ -516,7 +511,12 @@ func (s *Store) PruneContainers(dryRun bool) ([]ContainerRecord, uint64, int, er
 	}
 	defer lk.Release()
 
-	all, err := s.listContainersNoLock(true)
+	var all []ContainerRecord
+	if dryRun {
+		all, err = s.rawContainersNoLock()
+	} else {
+		all, err = s.listContainersNoLock(true)
+	}
 	if err != nil {
 		return nil, 0, 0, err
 	}
@@ -525,6 +525,10 @@ func (s *Store) PruneContainers(dryRun bool) ([]ContainerRecord, uint64, int, er
 	var running int
 	now := time.Now().UTC()
 	for _, c := range all {
+		if dryRun && !s.IsContainerRunning(c.ID) && (c.State.Running || c.State.Status == "created" && c.State.Launched) {
+			c.State.Running = false
+			c.State.Status = "exited"
+		}
 		if c.State.Running || s.IsContainerRunning(c.ID) {
 			running++
 			continue

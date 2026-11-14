@@ -6,6 +6,7 @@ import (
 
 	"github.com/quasidock/quasidock/internal/oci"
 	"github.com/quasidock/quasidock/internal/registry"
+	"github.com/quasidock/quasidock/internal/store"
 )
 
 func repeatStr(s string, count int) string {
@@ -20,7 +21,7 @@ func TestExpandShort(t *testing.T) {
 	if mingit == nil {
 		t.Fatal("expected non-nil mingit")
 	}
-	if mingit.Text != "ghcr.io/zigsaw-io/org.git_scm.mingit:2.56.0.windows.1" {
+	if mingit.Text != "ghcr.io/quasidock/quasidock/org.git_scm.mingit:2.56.0.windows.1" {
 		t.Errorf("got %s", mingit.Text)
 	}
 	if mingit.AppID != "org.git_scm.MinGit" {
@@ -49,6 +50,38 @@ func TestExpandShort(t *testing.T) {
 	}
 	if _, err := ExpandShort(DefaultRegistry, ":latest"); err == nil {
 		t.Errorf("expected error for empty ID")
+	}
+}
+
+func TestResolveRepositoryRegistry(t *testing.T) {
+	digest := "sha256:" + strings.Repeat("a", 64)
+	for _, tc := range []struct {
+		name, registry, image, want string
+	}{
+		{"bare", "", "node", "ghcr.io/quasidock/quasidock/node:latest"},
+		{"tag", "", "node:24", "ghcr.io/quasidock/quasidock/node:24"},
+		{"digest", "", "node@" + digest, "ghcr.io/quasidock/quasidock/node@" + digest},
+		{"override", "localhost:5000/custom/", "node", "localhost:5000/custom/node:latest"},
+		{"explicit", "", "ghcr.io/quasidock/node:24", "ghcr.io/quasidock/node:24"},
+		{"explicit with override", "localhost:5000/custom", "ghcr.io/other/node:24", "ghcr.io/other/node:24"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			target, err := Resolve(tc.registry, tc.image)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ref := target.Ref
+			if ref.Tag == "" && ref.Digest == "" {
+				ref.Tag = ref.ManifestRef()
+			}
+			if ref.String() != tc.want {
+				t.Fatalf("resolved %s, want %s", ref, tc.want)
+			}
+			cachedName, err := store.ImageName(tc.registry, tc.image)
+			if err != nil || cachedName != tc.want {
+				t.Fatalf("cache name %s differs from remote: %v", cachedName, err)
+			}
+		})
 	}
 }
 

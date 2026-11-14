@@ -14,6 +14,7 @@ import (
 
 	"github.com/quasidock/quasidock/internal/context"
 	"github.com/quasidock/quasidock/internal/recipe"
+	"github.com/quasidock/quasidock/internal/remote"
 	"github.com/quasidock/quasidock/internal/store"
 )
 
@@ -21,13 +22,15 @@ type Fetcher struct {
 	ctx     *context.Context
 	baseDir string
 	app     string
+	mirrors []string
 }
 
-func NewFetcher(ctx *context.Context, baseDir, app string) *Fetcher {
+func NewFetcher(ctx *context.Context, baseDir, app string, mirrors ...string) *Fetcher {
 	return &Fetcher{
 		ctx:     ctx,
 		baseDir: baseDir,
 		app:     app,
+		mirrors: mirrors,
 	}
 }
 
@@ -62,7 +65,7 @@ func (f *Fetcher) Fetch(src recipe.Source) (string, error) {
 
 	f.ctx.Note("fetching %s", url)
 	if err := downloadFile(url, tmp); err != nil {
-		return "", fmt.Errorf("downloading %s: %w", url, err)
+		return f.fallback(src, fmt.Errorf("downloading %s: %w", url, err))
 	}
 
 	got, err := store.Sha256File(tmp)
@@ -80,9 +83,29 @@ func (f *Fetcher) Fetch(src recipe.Source) (string, error) {
 		return "", fmt.Errorf("source %s has no sha256. Pin it with:\n  \"sha256\": %q", url, got.Hex)
 	}
 	if !strings.EqualFold(*src.Sha256, got.Hex) {
-		return "", fmt.Errorf("sha256 mismatch for %s\n  expected %s\n  got      %s", url, *src.Sha256, got.Hex)
+		return f.fallback(src, fmt.Errorf("%s: it's no longer the pinned file (expected %s, got %s)", url, *src.Sha256, got.Hex))
 	}
 	return cached, nil
+}
+
+func (f *Fetcher) fallback(src recipe.Source, cause error) (string, error) {
+	if src.Sha256 == nil || (f.app == "" && len(f.mirrors) == 0) {
+		return "", cause
+	}
+	images := []string{}
+	if f.app != "" {
+		images = append(images, f.app)
+	}
+	images = append(images, f.mirrors...)
+	var failures []string
+	for _, image := range images {
+		path, err := remote.FetchSource(f.ctx.Store, f.ctx.Env[remote.RegistryVar], image, *src.Sha256, f.ctx.Verbose)
+		if err == nil {
+			return path, nil
+		}
+		failures = append(failures, fmt.Sprintf("sources next to %s: %v", image, err))
+	}
+	return "", fmt.Errorf("%w; %s", cause, strings.Join(failures, "; "))
 }
 
 func (f *Fetcher) FetchAll(srcs []recipe.Source) error {

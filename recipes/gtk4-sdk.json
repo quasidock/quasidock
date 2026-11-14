@@ -14,21 +14,21 @@
   },
   "cleanup": ["__pycache__"],
   "sdk": {
-    "cmake": "cmake:4.4.4@sha256:fdc6a6bb933b2d7994fba0ccdb07a2a91a02012a6e4879cf67ad451e53e6f53d",
-    "perl": "perl:5.42.3.1@sha256:4459f0a9487860f976ef170b4e55c10e4889b2eff314c9eaacf4c42135406773",
-    "rust": "rust:1.99.0@sha256:e7e9706485bba88759915d9509993d0e41d340d7d8dfec6426fce1feda9a10e2",
-    "cargo-c": "cargo-c:0.10.25@sha256:5c3ab8267b4c4a8f4a1628ef7f0d8f62f9838a28f46df2800a13f542e71bed71"
+    "cmake": "cmake:4.4.4@sha256:b96b30bb57b5147726b7deef2607917b43972bb896d9f5d3e3082e31368dbeae",
+    "perl": "perl:5.42.3.1@sha256:2854c34722b812ef3173f5d4ab6fb091ac45dc16d6079865a5024d6a6527dfd6",
+    "rust": "rust:1.99.0@sha256:62344d25e7c11b393e6094386eca31bc4f8f0bdbe45845fc61fe58700f112f8d",
+    "cargo-c": "cargo-c:0.10.25@sha256:796088c5e02aef272bea1df667952836d49f71df3ef39dad1f58749ae5822222"
   },
   "from": {
-    "meson": "meson:1.12.1@sha256:7448a74d497dd62b290ce6a647f1de6d561e7267335d9058dff36dca9c3eddad",
-    "llvm": "llvm-mingw:20261020@sha256:115b5e484a219e75e899eedcb456cfc3d7177859e704937f13db301b49fc9f64",
-    "busybox": "busybox:FRP-6075-g169694ebd@sha256:db9d39727bfdd4d176b5878c0a125daa8a2396ea21e0f01a6a372f53d9d97e5d"
+    "meson": "meson:1.12.1@sha256:9b656a460928dbde77dc31f5827e9b99ad4b53e007de87b19b6fbec26785bbc3",
+    "llvm": "llvm-mingw:20261020@sha256:65425754b958693accc5dc8d8e8ca0dfa6235669c286cc8875105171b3e299b9",
+    "busybox": "busybox:FRP-6075-g169694ebd@sha256:baca1ecd27b7b5ffe54402d4f8b6e36802d9db5e0e4cb2b7ab13104031045c50"
   },
   "stages": [
     {
       "name": "base",
       "sources": [
-        { "image": "gtk4-sdk-base:4.24.1@sha256:6c0f713be1848ba225024de99ab06b8ebaf88b3168069afa8affae69f0e48017" }
+        { "image": "gtk4-sdk-base:4.24.1@sha256:542f0ad46f32f30faac897d9d34d0ca6300490b371843cae81dc790ae6e283f6" }
       ]
     },
     {
@@ -158,7 +158,7 @@
       "vendor": {
         "commands": ["cargo vendor --locked vendor >/dev/null"],
         "dir": "vendor",
-        "sha256": "0d28d53ae9347f5479f5a35747cba39b2bb025e93937cbe8f3d11d20ebdb1c54"
+        "sha256": "33f8df190034ad563f52cdbd4834cef3d655a3657c52f89e14c91225cc1cfe0a"
       },
       "build": [
         "mkdir -p .cargo && printf '%s\\n' '[source.crates-io]' 'replace-with = \"vendored\"' '[source.vendored]' 'directory = \"vendor\"' '[net]' 'offline = true' > .cargo/config.toml",
@@ -179,8 +179,8 @@
         "EGREP": "grep -E",
         "FGREP": "grep -F",
         "AWK": "awk",
-        "AR": "ar",
-        "RANLIB": "ranlib",
+        "AR": "ar.exe",
+        "RANLIB": "ranlib.exe",
         "CFLAGS": "-O2",
         "CXXFLAGS": "-O2"
       },
@@ -205,8 +205,8 @@
         "EGREP": "grep -E",
         "FGREP": "grep -F",
         "AWK": "awk",
-        "AR": "ar",
-        "RANLIB": "ranlib",
+        "AR": "ar.exe",
+        "RANLIB": "ranlib.exe",
         "NM": "nm",
         "RM": "rm -f",
         "CFLAGS": "-O2",

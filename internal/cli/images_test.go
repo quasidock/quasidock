@@ -30,7 +30,7 @@ import (
 	"github.com/quasidock/quasidock/internal/trust"
 )
 
-func fixtureImage(t *testing.T, reg *testregistry.Registry, version string, payload []byte) (string, oci.Descriptor) {
+func fixtureImage(t *testing.T, reg *testregistry.Registry, version string, payload []byte, customize ...func(*oci.AppConfig)) (string, oci.Descriptor) {
 	t.Helper()
 	var archive bytes.Buffer
 	tw := tar.NewWriter(&archive)
@@ -48,6 +48,9 @@ func fixtureImage(t *testing.T, reg *testregistry.Registry, version string, payl
 	}
 	layer := oci.Descriptor{MediaType: oci.MediaTypeLayerTar, Digest: reg.PutBlob(archive.Bytes()), Size: int64(archive.Len())}
 	cfg := oci.AppConfig{ID: "test.cli.fixture", Version: version, Entrypoint: []string{"fixture.exe"}, Cmd: []string{"default", version}, Path: []string{"."}, Env: map[string]string{"REMOVE_ME": "image"}, Permissions: oci.Permissions{Sandbox: oci.SandboxSoft}}
+	for _, f := range customize {
+		f(&cfg)
+	}
 	b, err := json.Marshal(cfg)
 	if err != nil {
 		t.Fatal(err)

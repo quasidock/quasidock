@@ -2,8 +2,11 @@ package builder
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+
+	"github.com/ulikunitz/xz"
 
 	"github.com/quasidock/quasidock/internal/context"
 	"github.com/quasidock/quasidock/internal/format"
@@ -23,10 +26,10 @@ type Sources struct {
 	images    []string
 }
 
-func NewSources(ctx *context.Context, baseDir, appID string, projects *Snapshots) *Sources {
+func NewSources(ctx *context.Context, baseDir, appID string, projects *Snapshots, mirrors ...string) *Sources {
 	return &Sources{
 		ctx:      ctx,
-		fetcher:  NewFetcher(ctx, baseDir, appID),
+		fetcher:  NewFetcher(ctx, baseDir, appID, mirrors...),
 		projects: projects,
 	}
 }
@@ -173,7 +176,16 @@ func (s *Sources) plainTar(file string, kind recipe.Kind, hash string) (string, 
 	tmp := s.ctx.Store.TmpPath("untar")
 	defer func() { _ = os.Remove(tmp) }()
 
-	if err := format.Inflate(file, tmp); err != nil {
+	var err error
+	switch kind {
+	case recipe.KindTarGz:
+		err = format.Inflate(file, tmp)
+	case recipe.KindTarXz:
+		err = inflateXZ(file, tmp)
+	default:
+		return "", fmt.Errorf("unsupported tar compression: %s", kind)
+	}
+	if err != nil {
 		return "", err
 	}
 	_ = os.MkdirAll(filepath.Dir(dest), 0755)
@@ -181,4 +193,26 @@ func (s *Sources) plainTar(file string, kind recipe.Kind, hash string) (string, 
 		return "", err
 	}
 	return dest, nil
+}
+
+func inflateXZ(file, dest string) error {
+	in, err := os.Open(file)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	reader, err := xz.NewReader(in)
+	if err != nil {
+		return err
+	}
+	out, err := os.Create(dest)
+	if err != nil {
+		return err
+	}
+	_, copyErr := io.Copy(out, reader)
+	closeErr := out.Close()
+	if copyErr != nil {
+		return copyErr
+	}
+	return closeErr
 }
