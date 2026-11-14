@@ -23,6 +23,7 @@
 
 set -u
 export MSYS_NO_PATHCONV=1
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/images.sh"
 
 default_suites="store sandbox batch ctrlc network reach install build-base"
 
@@ -149,12 +150,12 @@ check "  and puts it on this user's PATH" on_path
 pulls() { z pull --yes $BB; }
 check "pull gets an app from ghcr.io" pulls
 for sb in soft low appcontainer; do
-    runs_in() { [ "$(z run --sandbox="$1" $BB sh -c 'echo hello; true' | tr -d '\r')" = hello ]; }
+    runs_in() { [ "$(qd_run z --sandbox="$1" $BB sh -c 'echo hello; true' | tr -d '\r')" = hello ]; }
     check "it runs under $sb" runs_in "$sb"
 done
 keeps_data() {
-    z run $BB sh -c 'echo kept > "$USERPROFILE/kept.txt"; true' &&
-        [ "$(z run $BB sh -c 'cat "$USERPROFILE/kept.txt"; true' | tr -d '\r')" = kept ]
+    qd_run z $BB sh -c 'echo kept > "$USERPROFILE/kept.txt"; true' &&
+        [ "$(qd_run z $BB sh -c 'cat "$USERPROFILE/kept.txt"; true' | tr -d '\r')" = kept ]
 }
 check "its data stays between runs" keeps_data
 
@@ -180,15 +181,15 @@ check "grants --take-back removes a low label" unexplained
 own="$stage\\tmp\\my-own"
 mkdir -p "$own"
 drive_own() {
-    z run --filesystem="$own" $BB sh -c "echo x > '$own\\f.txt'; true" && [ -f "$own\\f.txt" ] && no_label "$own"
+    qd_run z --filesystem="$own" $BB sh -c "echo x > '$own\\f.txt'; true" && [ -f "$own\\f.txt" ] && no_label "$own"
 }
 check "a folder it made itself, on ${stage:0:2}, is labelled for a run and taken back" drive_own
 not_mine="$stage\\not-mine"
-tell "a folder it may modify but doesn't own, on ${stage:0:2}" "$(z run --filesystem="$not_mine" $BB sh -c "echo x > '$not_mine\\f.txt'; echo wrote; true" 2>&1)"
+tell "a folder it may modify but doesn't own, on ${stage:0:2}" "$(qd_run z --filesystem="$not_mine" $BB sh -c "echo x > '$not_mine\\f.txt'; echo wrote; true" 2>&1)"
 
 # --- The loopback exemption, which gaps.md said nobody had tried ----------------------
 
-tell "the loopback exemption" "$(z -v run --sandbox=appcontainer --share=network $BB sh -c 'true; true' 2>&1 | grep -iE 'loopback|exempt' | head -3)"
+tell "the loopback exemption" "$(qd_run z --verbose  --sandbox=appcontainer --share=network $BB sh -c 'true; true' 2>&1 | grep -iE 'loopback|exempt' | head -3)"
 tell "  what grants lists while none runs" "$(z grants $BB)"
 
 # --- A build, for B: under this logon --------------------------------------------------
@@ -201,7 +202,7 @@ check "a recipe builds, on its own B:" builds
 
 # --- And away again ---------------------------------------------------------------------
 
-removes() { z rm --delete-data $BB; }
+removes() { qd_remove_app z $BB; }
 check "rm removes the app" removes
 real_clean() {
     no_label "$docs" || { echo "$docs is labelled"; return 1; }

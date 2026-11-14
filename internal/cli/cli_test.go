@@ -26,7 +26,7 @@ func TestVersion(t *testing.T) {
 func TestParseRunOptions(t *testing.T) {
 	ctx := context.New()
 	opts, err := parseRunOptions(ctx, []string{
-		"--command=test.exe",
+		"--entrypoint=test.exe",
 		"--filesystem=cwd",
 		"--filesystem=C:\\Work:ro",
 		"--share=network",
@@ -41,8 +41,8 @@ func TestParseRunOptions(t *testing.T) {
 	if opts.ID != "org.example.app" {
 		t.Fatalf("expected ID org.example.app, got %q", opts.ID)
 	}
-	if opts.Command == nil || *opts.Command != "test.exe" {
-		t.Fatalf("expected command test.exe, got %v", opts.Command)
+	if opts.Entrypoint == nil || *opts.Entrypoint != "test.exe" {
+		t.Fatalf("expected entrypoint test.exe, got %v", opts.Entrypoint)
 	}
 	if len(opts.Settings.Filesystem) != 2 || opts.Settings.Filesystem[0] != "cwd" || opts.Settings.Filesystem[1] != "C:\\Work:ro" {
 		t.Fatalf("unexpected filesystem grants: %v", opts.Settings.Filesystem)
@@ -85,8 +85,8 @@ func TestUsageError(t *testing.T) {
 }
 
 func TestIsFlag(t *testing.T) {
-	if !isFlag("-v", "verbose") {
-		t.Fatal("expected -v to match verbose")
+	if isFlag("-v", "verbose") {
+		t.Fatal("-v is reserved for volumes")
 	}
 	if !isFlag("--verbose", "verbose") {
 		t.Fatal("expected --verbose to match verbose")

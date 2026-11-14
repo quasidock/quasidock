@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,6 +11,8 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/quasidock/quasidock/internal/oci"
+	"github.com/quasidock/quasidock/internal/store"
 	"github.com/quasidock/quasidock/internal/win32"
 )
 
@@ -200,28 +201,21 @@ func (c *Console) Deinit() {
 	win32.CloseHandle(c.process)
 }
 
-func installedNode(store string) (string, error) {
-	refPath := filepath.Join(store, "refs", "org.nodejs.node.json")
-	ref, err := os.ReadFile(refPath)
+func installedNode(root string) (string, error) {
+	st, err := store.Open(root, false, "")
 	if err != nil {
 		return "", err
 	}
-	at := bytes.Index(ref, []byte("sha256:"))
-	if at == -1 || at+7+64 > len(ref) {
-		return "", fmt.Errorf("bad ref")
-	}
-	manifestDigest := string(ref[at+7 : at+7+64])
-	manifestPath := filepath.Join(store, "blobs", "sha256", manifestDigest)
-	manifest, err := os.ReadFile(manifestPath)
+	ref, err := st.ResolveLocalImage("", "org.nodejs.node")
 	if err != nil {
 		return "", err
 	}
-	layerAt := bytes.LastIndex(manifest, []byte("sha256:"))
-	if layerAt == -1 || layerAt+7+64 > len(manifest) {
-		return "", fmt.Errorf("bad manifest")
+	manifest, err := st.ReadManifest(ref.Manifest)
+	if err != nil {
+		return "", err
 	}
-	layerDigest := string(manifest[layerAt+7 : layerAt+7+64])
-	return filepath.Join(store, "deploy", layerDigest, "node.exe"), nil
+	layer := oci.OwnLayer(manifest)
+	return filepath.Join(root, "deploy", oci.DigestHex(layer.Digest), "node.exe"), nil
 }
 
 func main() {

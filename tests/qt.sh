@@ -33,11 +33,12 @@
 
 set -u
 export MSYS_NO_PATHCONV=1
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/images.sh"
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
 zigsaw=${1:-$root/out/bin/quasidock.exe}
 QUASIDOCK_HOME=${QT_HOME:-${BUILD_HOME:-}}
-if [ -z "$QUASIDOCK_HOME" ] || [ ! -f "$QUASIDOCK_HOME\\refs\\io.qt.Qt6.json" ] || [ ! -f "$QUASIDOCK_HOME\\refs\\io.qt.Qt6.Sdk.json" ]; then
+if [ -z "$QUASIDOCK_HOME" ] || ! qd_cached "$zigsaw" "io.qt.Qt6" || ! qd_cached "$zigsaw" "io.qt.Qt6.Sdk"; then
     echo "tests/qt.sh needs a store with io.qt.Qt6 and io.qt.Qt6.Sdk in QT_HOME or BUILD_HOME;"
     echo "build recipes\\qt6-sdk.json and recipes\\qt6.json into one first."
     exit 1
@@ -63,14 +64,14 @@ check() {
 }
 
 z() { "$zigsaw" "$@"; }
-manifest_of() { grep -o 'sha256:[0-9a-f]*' "$QUASIDOCK_HOME\\refs\\$1.json"; }
+manifest_of() { qd_manifest "$zigsaw" "$1"; }
 # install_again <id> <recipe>: installs an app the store has again, as the
 # store got it: from the build cache, if it built it, or the registry it was
 # pulled from, so its shortcuts go to this test's folder. Builds the recipe
 # if the store hasn't the app.
 install_again() {
     local source=""
-    [ -f "$QUASIDOCK_HOME\\refs\\$1.json" ] && source=$(grep -o '"source": *"[^"]*"' "$QUASIDOCK_HOME\\refs\\$1.json" | cut -d'"' -f4)
+    qd_cached "$zigsaw" "$1" && source=$(qd_source "$zigsaw" "$1")
     case $source in
     "" | *.json) z build "$root\\recipes\\$2" ;;
     *) z pull --yes "$source" ;;
@@ -87,14 +88,14 @@ check "an app builds against Qt's SDK image with CMake, finding Qt" z build "$wo
 cd "$work" || exit 1
 painted() {
     local out
-    out=$(timeout 120 "$zigsaw" run "$@" $APP 2>&1 | tr -d '\r')
+    out=$(timeout 120 bash "$QD_IMAGES_HELPER" run "$zigsaw" "$@" $APP 2>&1 | tr -d '\r')
     grep -q '^Qt 6\.12\.0$' <<<"$out" && grep -q '^painted a window with windows$' <<<"$out" || { echo "got: $out"; return 1; }
 }
 check "it runs on Qt's runtime: opens a window and paints it" painted
 check "with --sandbox=soft" painted --sandbox=soft
 check "with --sandbox=appcontainer" painted --sandbox=appcontainer
 # say <label>: the line the app printed after the label, without a window.
-say() { timeout 60 "$zigsaw" run $APP --no-window 2>&1 | tr -d '\r' | sed -n "s/^$1 //p"; }
+say() { timeout 60 bash "$QD_IMAGES_HELPER" run "$zigsaw" $APP --no-window 2>&1 | tr -d '\r' | sed -n "s/^$1 //p"; }
 # Qt finds its plugins next to Qt6Core.dll, in the runtime's deployment,
 # though it was built for B:\prefix.
 relocated() {
@@ -110,8 +111,8 @@ formats() {
     for f in png jpeg gif svg webp tiff ico; do grep -qw "$f" <<<"$out" || { echo "no $f in: $out"; return 1; }; done
 }
 check "it reads PNG, JPEG, GIF, SVG, WebP, TIFF and ICO images" formats
-check "it has Schannel for TLS" sh -c "\"\$0\" run $APP --no-window 2>&1 | tr -d '\r' | grep -q '^tls backends .*schannel'" "$zigsaw"
-check "qtbase's French catalogue translates a string" sh -c "\"\$0\" run $APP --no-window 2>&1 | tr -d '\r' | grep -q '^Cancel in French: Annuler$'" "$zigsaw"
+check "it has Schannel for TLS" sh -c "bash '$QD_IMAGES_HELPER' run \"\$0\" $APP --no-window 2>&1 | tr -d '\r' | grep -q '^tls backends .*schannel'" "$zigsaw"
+check "qtbase's French catalogue translates a string" sh -c "bash '$QD_IMAGES_HELPER' run \"\$0\" $APP --no-window 2>&1 | tr -d '\r' | grep -q '^Cancel in French: Annuler$'" "$zigsaw"
 # QStandardPaths finds AppData through the profile, which runs have in the
 # app's data directory.
 app_data() {
@@ -126,7 +127,7 @@ check "it keeps its files in the app's data directory" app_data
 # sandbox. Qt finds the Controls' QML modules in the runtime's deployment.
 quick() {
     local out
-    out=$(timeout 120 "$zigsaw" run "$@" --command=hello-quick $APP 2>&1 | tr -d '\r')
+    out=$(timeout 120 bash "$QD_IMAGES_HELPER" run "$zigsaw" "$@" --entrypoint=hello-quick $APP 2>&1 | tr -d '\r')
     grep -q '^drew a frame with Direct3D11, corner #3a7bd5$' <<<"$out" || { echo "got: $out"; return 1; }
 }
 check "a Qt Quick app draws its window of Controls with Direct3D 11" quick
@@ -134,7 +135,7 @@ check "with --sandbox=soft" quick --sandbox=soft
 check "with --sandbox=appcontainer" quick --sandbox=appcontainer
 quick_imports() {
     local qml
-    qml=$(timeout 60 "$zigsaw" run --command=hello-quick $APP 2>&1 | tr -d '\r' | sed -n 's/^qml //p')
+    qml=$(timeout 60 bash "$QD_IMAGES_HELPER" run "$zigsaw" --entrypoint=hello-quick $APP 2>&1 | tr -d '\r' | sed -n 's/^qml //p')
     case $qml in */deploy/*/qml) ;; *) echo "qml in $qml"; return 1 ;; esac
     test -f "$qml/QtQuick/Controls/qmldir" || { echo "no QtQuick/Controls in $qml"; return 1; }
 }
@@ -144,7 +145,7 @@ check "Qt finds QML modules in the runtime's deployment" quick_imports
 # Universal); the SDK leaves out Imagine and Qt Labs StyleKit.
 styles() {
     local qml s
-    qml=$(timeout 60 "$zigsaw" run --command=hello-quick $APP 2>&1 | tr -d '\r' | sed -n 's/^qml //p')
+    qml=$(timeout 60 bash "$QD_IMAGES_HELPER" run "$zigsaw" --entrypoint=hello-quick $APP 2>&1 | tr -d '\r' | sed -n 's/^qml //p')
     for s in Basic Fusion FluentWinUI3 Windows Material Universal; do
         test -f "$qml/QtQuick/Controls/$s/qmldir" || { echo "no $s style in $qml"; return 1; }
     done
@@ -158,7 +159,7 @@ check "it has the Controls styles for Windows, and Material and Universal, but n
 printf '%s\n' 'import QtQuick' 'Window {' '    visible: true' \
     '    Timer { interval: 200; running: true; onTriggered: { console.log("ran on " + Qt.platform.os); Qt.quit() } }' \
     '}' >"$work\\ran.qml"
-check "the runtime's qml tool runs a QML file" sh -c "timeout 60 \"\$0\" run --env=QT_FORCE_STDERR_LOGGING=1 --command=qml io.qt.Qt6 ran.qml 2>&1 | tr -d '\r' | grep -q 'ran on windows'" "$zigsaw"
+check "the runtime's qml tool runs a QML file" sh -c "timeout 60 bash '$QD_IMAGES_HELPER' run \"\$0\" --env=QT_FORCE_STDERR_LOGGING=1 --entrypoint=qml io.qt.Qt6 ran.qml 2>&1 | tr -d '\r' | grep -q 'ran on windows'" "$zigsaw"
 
 # Building without a recipe: the SDK's exports, from the store's bin, as
 # cmake (with its ninja, llvm-mingw's c++ and windres); the program then
@@ -169,14 +170,14 @@ check "the runtime's qml tool runs a QML file" sh -c "timeout 60 \"\$0\" run --e
 # LOG_DIR.
 mkdir -p "$work\\loose" && cp "$work\\hello.cpp" "$work\\CMakeLists.txt" "$work\\loose\\"
 loose_cmake() {
-    local cmake=("$zigsaw" run --command=cmake io.qt.Qt6.Sdk)
+    local cmake=(bash "$QD_IMAGES_HELPER" run "$zigsaw" --entrypoint=cmake io.qt.Qt6.Sdk)
     (cd "$work\\loose" && "${cmake[@]}" -S . -B out -DCMAKE_BUILD_TYPE=Release && "${cmake[@]}" --build out) >"$work\\loose.log" 2>&1 || {
         [ -z "${LOG_DIR:-}" ] || cp "$work\\loose.log" "$LOG_DIR\\qt-loose-cmake.log"
         tail -5 "$work\\loose.log"
         return 1
     }
     local out
-    out=$(cd "$work\\loose" && timeout 120 "$zigsaw" run --command="$work\\loose\\out\\hello-qt.exe" io.qt.Qt6 2>&1 | tr -d '\r')
+    out=$(cd "$work\\loose" && timeout 120 bash "$QD_IMAGES_HELPER" run "$zigsaw" --entrypoint="$work\\loose\\out\\hello-qt.exe" io.qt.Qt6 2>&1 | tr -d '\r')
     grep -q '^painted a window with windows$' <<<"$out" || { echo "got: $out"; return 1; }
 }
 check "the SDK's cmake builds a Qt program, which runs on the runtime" loose_cmake
@@ -187,7 +188,7 @@ check "the SDK's cmake builds a Qt program, which runs on the runtime" loose_cma
 stays_up() {
     local seconds=$1
     shift
-    timeout "$seconds" "$zigsaw" run "$@" >/dev/null 2>&1
+    timeout "$seconds" bash "$QD_IMAGES_HELPER" run "$zigsaw" "$@" >/dev/null 2>&1
     [ $? -eq 124 ]
 }
 # app_window <process> <title> <zigsaw run arguments...>: the program's
@@ -196,7 +197,7 @@ stays_up() {
 app_window() {
     local process=$1 want=$2 title=""
     shift 2
-    ("$zigsaw" run "$@" >/dev/null 2>&1 &)
+    (bash "$QD_IMAGES_HELPER" run "$zigsaw" "$@" >/dev/null 2>&1 &)
     for _ in $(seq 30); do
         title=$(powershell -NoProfile -Command "(Get-Process $process -ErrorAction SilentlyContinue | Where-Object MainWindowTitle | Select-Object -First 1).MainWindowTitle" | tr -d '\r')
         [ -n "$title" ] && break
@@ -210,7 +211,7 @@ app_window() {
     [ "$title" = "$want" ] || { echo "window: \"$title\"${running:+, $running $process process(es) still running}"; return 1; }
 }
 designer_window() { app_window designer "Qt Widgets Designer" "$@" io.qt.Qt6; }
-linguist_window() { app_window linguist "Qt Linguist" "$@" --command=linguist io.qt.Qt6; }
+linguist_window() { app_window linguist "Qt Linguist" "$@" --entrypoint=linguist io.qt.Qt6; }
 check "Designer opens its window" designer_window
 check "with --sandbox=soft" designer_window --sandbox=soft
 check "with --sandbox=appcontainer" designer_window --sandbox=appcontainer
@@ -220,18 +221,18 @@ check "with --sandbox=appcontainer" linguist_window --sandbox=appcontainer
 # Programs in the runtime's bin, beside Qt6Core.dll, would take bin for Qt's
 # prefix without its qt.conf (Qt looks for lib\libQt6Core.a to tell), and
 # find no platform plugin.
-check "the runtime's qtdiag finds the windows platform plugin" sh -c "timeout 60 \"\$0\" run --command=qtdiag io.qt.Qt6 2>&1 | tr -d '\r' | grep -q '^Qt 6\\.12\\.0 .* on \"windows\"'" "$zigsaw"
+check "the runtime's qtdiag finds the windows platform plugin" sh -c "timeout 60 bash '$QD_IMAGES_HELPER' run \"\$0\" --entrypoint=qtdiag io.qt.Qt6 2>&1 | tr -d '\r' | grep -q '^Qt 6\\.12\\.0 .* on \"windows\"'" "$zigsaw"
 
 # Flameshot, on the runtime. Built here unless the store has it, which takes
 # a few minutes.
 installed_flameshot=false
-if [ ! -f "$QUASIDOCK_HOME\\refs\\$FLAMESHOT.json" ]; then
+if ! qd_cached "$zigsaw" "$FLAMESHOT"; then
     z build "$root\\recipes\\flameshot.json" >"$work\\flameshot.log" 2>&1 || echo "building $FLAMESHOT failed: $(tail -1 "$work\\flameshot.log")"
     installed_flameshot=true
 else
     install_again $FLAMESHOT flameshot.json >/dev/null 2>&1
 fi
-check "Flameshot 14.0.0 is installed" sh -c "timeout 60 \"\$0\" run $FLAMESHOT --version 2>&1 | tr -d '\r' | grep -q 'Flameshot v14\\.0\\.0'" "$zigsaw"
+check "Flameshot 14.0.0 is installed" sh -c "timeout 60 bash '$QD_IMAGES_HELPER' run \"\$0\" $FLAMESHOT --version 2>&1 | tr -d '\r' | grep -q 'Flameshot v14\\.0\\.0'" "$zigsaw"
 check "it runs, in the tray" stays_up 15 $FLAMESHOT
 check "with --sandbox=soft" stays_up 15 --sandbox=soft $FLAMESHOT
 check "with --sandbox=appcontainer" stays_up 15 --sandbox=appcontainer $FLAMESHOT
@@ -240,7 +241,7 @@ check "with --sandbox=appcontainer" stays_up 15 --sandbox=appcontainer $FLAMESHO
 pictures="$work\\folders\\Pictures"
 screenshot() {
     rm -f "$pictures"/*.png
-    timeout 60 "$zigsaw" run --filesystem="$pictures" "$@" $FLAMESHOT full --path "$pictures" >"$work\\shot.log" 2>&1 || { tail -3 "$work\\shot.log"; return 1; }
+    timeout 60 bash "$QD_IMAGES_HELPER" run "$zigsaw" --filesystem="$pictures" "$@" $FLAMESHOT full --path "$pictures" >"$work\\shot.log" 2>&1 || { tail -3 "$work\\shot.log"; return 1; }
     local png
     png=$(ls "$pictures"/*.png 2>/dev/null | head -1)
     [ -n "$png" ] || { echo "no PNG in Pictures: $(tail -1 "$work\\shot.log")"; return 1; }
@@ -255,7 +256,7 @@ check "with --sandbox=appcontainer" screenshot --sandbox=appcontainer
 # and its notes database in its data directory. Built here unless the store
 # has it, which takes a minute or two.
 installed_notes=false
-if [ ! -f "$QUASIDOCK_HOME\\refs\\$NOTES.json" ]; then
+if ! qd_cached "$zigsaw" "$NOTES"; then
     z build "$root\\recipes\\notes.json" >"$work\\notes.log" 2>&1 || echo "building $NOTES failed: $(tail -1 "$work\\notes.log")"
     installed_notes=true
 else
@@ -269,7 +270,7 @@ check "with --sandbox=appcontainer" notes_window --sandbox=appcontainer
 # file.
 notes_qml() {
     local out
-    out=$(timeout 15 "$zigsaw" run --env=QT_FORCE_STDERR_LOGGING=1 $NOTES 2>&1 | tr -d '\r')
+    out=$(timeout 15 bash "$QD_IMAGES_HELPER" run "$zigsaw" --env=QT_FORCE_STDERR_LOGGING=1 $NOTES 2>&1 | tr -d '\r')
     powershell -NoProfile -Command "Get-Process Notes -ErrorAction SilentlyContinue | Stop-Process -Force"
     grep -q '^Database: connection ok$' <<<"$out" && ! grep -q 'qrc:/' <<<"$out" || { echo "got: $(grep -m3 'qrc:/\|Database' <<<"$out")"; return 1; }
 }
@@ -277,9 +278,9 @@ check "its QML loads without errors, and it opens its database" notes_qml
 check "it keeps its notes in its data directory" test -f "$QUASIDOCK_HOME\\data\\$NOTES\\home\\AppData\\Roaming\\Awesomeness\\notes.db"
 
 cd "$root" || exit 1
-$installed_notes && z rm --delete-data $NOTES >/dev/null 2>&1
-$installed_flameshot && z rm --delete-data $FLAMESHOT >/dev/null 2>&1
-z rm --delete-data $APP >/dev/null 2>&1
+$installed_notes && qd_remove_app z $NOTES >/dev/null 2>&1
+$installed_flameshot && qd_remove_app z $FLAMESHOT >/dev/null 2>&1
+qd_remove_app z $APP >/dev/null 2>&1
 rm -rf "$work"
 echo
 echo "$failures check(s) failed."

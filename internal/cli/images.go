@@ -1,0 +1,397 @@
+package cli
+
+import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"sort"
+	"strings"
+	"text/template"
+
+	"github.com/quasidock/quasidock/internal/appcontainer"
+	"github.com/quasidock/quasidock/internal/catalog"
+	"github.com/quasidock/quasidock/internal/context"
+	"github.com/quasidock/quasidock/internal/grants"
+	"github.com/quasidock/quasidock/internal/hkcu"
+	"github.com/quasidock/quasidock/internal/info"
+	"github.com/quasidock/quasidock/internal/lazy"
+	"github.com/quasidock/quasidock/internal/lifecycle"
+	"github.com/quasidock/quasidock/internal/oci"
+	"github.com/quasidock/quasidock/internal/peek"
+	"github.com/quasidock/quasidock/internal/registry"
+	"github.com/quasidock/quasidock/internal/remote"
+	"github.com/quasidock/quasidock/internal/run"
+	"github.com/quasidock/quasidock/internal/services"
+	"github.com/quasidock/quasidock/internal/store"
+)
+
+type inspectedImage struct {
+	Id           string
+	RepoTags     []string
+	RepoDigests  []string
+	OS           string `json:"Os"`
+	Architecture string
+	Size         int64
+	Config       struct {
+		Entrypoint []string
+		Cmd        []string
+		Env        []string
+	}
+	Quasidock oci.AppConfig
+	Source    string
+	Default   bool
+	Lazy      *string `json:"Lazy,omitempty"`
+}
+
+func inspectImage(ctx *context.Context, idx *store.ImageIndex, ref store.Ref) (inspectedImage, error) {
+	out := inspectedImage{Id: ref.Manifest, OS: "windows", Architecture: "amd64", RepoTags: []string{}, RepoDigests: []string{}}
+	img, err := ctx.Store.ReadImage(ref.ID, ref.Manifest)
+	if err != nil {
+		return out, err
+	}
+	out.Quasidock = img.Config
+	out.Source = ref.Source
+	out.Default = idx.Defaults[strings.ToLower(ref.ID)] == ref.Manifest
+	out.Config.Cmd = append([]string{img.Config.Command}, img.Config.Args...)
+	out.Config.Env = []string{}
+	for k, v := range img.Config.Env {
+		out.Config.Env = append(out.Config.Env, k+"="+v)
+	}
+	sort.Strings(out.Config.Env)
+	out.Size = img.Manifest.Config.Size
+	seen := map[string]bool{}
+	for _, layer := range img.Manifest.Layers {
+		if !seen[layer.Digest] {
+			out.Size += layer.Size
+			seen[layer.Digest] = true
+		}
+	}
+	seen = map[string]bool{}
+	for _, repository := range ref.Repositories {
+		d := repository + "@" + ref.Manifest
+		out.RepoDigests = append(out.RepoDigests, d)
+		seen[d] = true
+	}
+	for name, digest := range idx.Names {
+		if digest != ref.Manifest {
+			continue
+		}
+		r, err := registry.ParseReference(name)
+		if err != nil {
+			return out, err
+		}
+		if r.Digest == "" {
+			out.RepoTags = append(out.RepoTags, name)
+		}
+		d := r.Host + "/" + r.Repository + "@" + digest
+		if !seen[d] {
+			out.RepoDigests = append(out.RepoDigests, d)
+			seen[d] = true
+		}
+	}
+	sort.Strings(out.RepoTags)
+	sort.Strings(out.RepoDigests)
+	out.Lazy = lazy.Describe(ctx.Store, img.Manifest)
+	return out, nil
+}
+
+func imageList(ctx *context.Context, args []string) error {
+	quiet := false
+	for _, arg := range args {
+		if arg == "-q" || arg == "--quiet" {
+			quiet = true
+		} else {
+			return fmt.Errorf("unknown images option %q", arg)
+		}
+	}
+	idx, err := ctx.Store.ImageCatalog()
+	if err != nil {
+		return err
+	}
+	digests := make([]string, 0, len(idx.Images))
+	for d := range idx.Images {
+		digests = append(digests, d)
+	}
+	sort.Strings(digests)
+	if quiet {
+		for _, d := range digests {
+			fmt.Fprintln(ctx.Stdout, d)
+		}
+		return nil
+	}
+	fmt.Fprintf(ctx.Stdout, "%-54s %-24s %-12s %s\n", "REPOSITORY", "TAG", "IMAGE ID", "SIZE")
+	type row struct {
+		repository, tag, digest string
+		size                    int64
+	}
+	var rows []row
+	for _, d := range digests {
+		img, err := inspectImage(ctx, idx, idx.Images[d])
+		if err != nil {
+			return err
+		}
+		found := false
+		for name, digest := range idx.Names {
+			if digest != d {
+				continue
+			}
+			r, err := registry.ParseReference(name)
+			if err != nil {
+				return err
+			}
+			tag := r.Tag
+			if tag == "" {
+				tag = "<none>"
+			}
+			rows = append(rows, row{r.Host + "/" + r.Repository, tag, d, img.Size})
+			found = true
+		}
+		if !found {
+			rows = append(rows, row{"<none>", "<none>", d, img.Size})
+		}
+	}
+	sort.Slice(rows, func(i, j int) bool {
+		a, b := rows[i], rows[j]
+		if a.repository != b.repository {
+			return a.repository < b.repository
+		}
+		if a.tag != b.tag {
+			return a.tag < b.tag
+		}
+		return a.digest < b.digest
+	})
+	for _, r := range rows {
+		fmt.Fprintf(ctx.Stdout, "%-54s %-24s %-12s %d B\n", r.repository, r.tag, oci.DigestHex(r.digest)[:12], r.size)
+	}
+	return nil
+}
+
+func imageInspect(ctx *context.Context, args []string) error {
+	format := ""
+	var names []string
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == "-f" || arg == "--format" {
+			i++
+			if i == len(args) {
+				return errors.New("inspect --format needs a template")
+			}
+			format = args[i]
+		} else if strings.HasPrefix(arg, "--format=") {
+			format = strings.TrimPrefix(arg, "--format=")
+		} else if strings.HasPrefix(arg, "-") {
+			return fmt.Errorf("unknown inspect option %q", arg)
+		} else {
+			names = append(names, arg)
+		}
+	}
+	if len(names) == 0 {
+		return errors.New("usage: quasidock image inspect [-f TEMPLATE] IMAGE [IMAGE...]")
+	}
+	idx, err := ctx.Store.ImageCatalog()
+	if err != nil {
+		return err
+	}
+	images := make([]inspectedImage, 0, len(names))
+	for _, name := range names {
+		ref, err := idx.Resolve(ctx.Env["QUASIDOCK_REGISTRY"], name)
+		if err != nil {
+			return err
+		}
+		out, err := inspectImage(ctx, idx, *ref)
+		if err != nil {
+			return err
+		}
+		images = append(images, out)
+	}
+	if format != "" {
+		tmpl, err := template.New("inspect").Funcs(template.FuncMap{"json": func(v any) (string, error) { b, e := json.Marshal(v); return string(b), e }}).Parse(format)
+		if err != nil {
+			return err
+		}
+		var buf bytes.Buffer
+		for _, img := range images {
+			if err := tmpl.Execute(&buf, img); err != nil {
+				return err
+			}
+			buf.WriteByte('\n')
+		}
+		_, err = ctx.Stdout.Write(buf.Bytes())
+		return err
+	}
+	enc := json.NewEncoder(ctx.Stdout)
+	enc.SetIndent("", "  ")
+	return enc.Encode(images)
+}
+
+func pullImage(ctx *context.Context, image string, isLazy bool) (*oci.Image, error) {
+	var prepare func(*registry.Registry, oci.Descriptor) (bool, error)
+	if isLazy {
+		prepare = func(reg *registry.Registry, desc oci.Descriptor) (bool, error) {
+			if !lazy.Eligible(desc) {
+				return false, nil
+			}
+			kind, err := lazy.Prepare(ctx.Store, reg, desc, ctx.Verbose)
+			return kind == lazy.PreparedLazy, err
+		}
+	}
+	img, err := remote.FetchPrepared(ctx.Store, ctx.Env["QUASIDOCK_REGISTRY"], image, ctx.Verbose, prepare)
+	if err != nil {
+		return nil, err
+	}
+	if err := lifecycle.Install(ctx, img); err != nil {
+		return nil, err
+	}
+	return img, nil
+}
+
+func runImage(ctx *context.Context, opts run.Options) (uint32, error) {
+	// Exclude GC while selecting or filling the cache. Run reacquires this lock
+	// and checks the selected record before acquiring its process-backed leases.
+	err := func() error {
+		lock, err := ctx.Store.Lock(false)
+		if err != nil {
+			return err
+		}
+		defer lock.Release()
+		ref, err := ctx.Store.ResolveLocalImage(ctx.Env["QUASIDOCK_REGISTRY"], opts.ID)
+		missing := errors.Is(err, store.ErrImageNotFound)
+		if err != nil && !missing {
+			return err
+		}
+		if opts.Pull == "always" || missing && opts.Pull != "never" {
+			if oci.DigestHex(opts.ID) != "" {
+				return errors.New("pull needs a repository reference; a manifest ID is a local selector")
+			}
+			img, err := pullImage(ctx, opts.ID, false)
+			if err != nil {
+				return err
+			}
+			ref = &store.Ref{ID: img.Config.ID, Version: img.Config.Version, Manifest: img.ManifestDigest, Source: img.Source}
+		} else if err != nil {
+			return err
+		}
+		opts.Image = ref
+		return nil
+	}()
+	if err != nil {
+		return 1, err
+	}
+	return run.Run(ctx, opts)
+}
+
+func imageRemove(ctx *context.Context, args []string) error {
+	if len(args) == 0 {
+		return errors.New("usage: quasidock image rm IMAGE [IMAGE...]")
+	}
+	for _, arg := range args {
+		if strings.HasPrefix(arg, "-") {
+			return fmt.Errorf("unknown rmi option %q; application data is removed with prune --data", arg)
+		}
+	}
+	var failures []error
+	for _, arg := range args {
+		ref, last, err := ctx.Store.RemoveImage(ctx.Env["QUASIDOCK_REGISTRY"], arg)
+		if err != nil {
+			failures = append(failures, err)
+			continue
+		}
+		if last {
+			if err := grants.UndoAll(ctx, ref.ID); err != nil {
+				failures = append(failures, err)
+			}
+			if err := appcontainer.DeleteProfile(ref.ID); err != nil {
+				ctx.Note("warning: cleaning profile for %s: %v", ref.ID, err)
+			}
+			if err := services.Forget(ctx.Store, ref.ID); err != nil {
+				failures = append(failures, err)
+			}
+			if err := hkcu.SettleLeftovers(ctx.Store, ref.ID); err != nil {
+				failures = append(failures, err)
+			}
+		}
+		if _, err := ctx.Store.DeleteUnusedDeployments(ref.Manifest); err != nil {
+			failures = append(failures, err)
+		}
+		fmt.Fprintln(ctx.Stdout, "Removed:", arg)
+	}
+	return errors.Join(failures...)
+}
+
+func imageCommand(ctx *context.Context, args []string) (uint32, error) {
+	if len(args) == 0 {
+		return 1, errors.New("usage: quasidock image <ls|inspect|pull|tag|push|rm|info|files|cat>")
+	}
+	cmd, rest := args[0], args[1:]
+	if cmd == "--help" || cmd == "help" {
+		fmt.Fprint(ctx.Stdout, usage)
+		return 0, nil
+	}
+	lock, err := ctx.Store.Lock(cmd == "rm" || cmd == "remove")
+	if err != nil {
+		return 1, err
+	}
+	defer lock.Release()
+	switch cmd {
+	case "ls", "list":
+		return 0, imageList(ctx, rest)
+	case "inspect":
+		return 0, imageInspect(ctx, rest)
+	case "tag":
+		if len(rest) != 2 {
+			return 1, errors.New("usage: quasidock tag SOURCE TARGET")
+		}
+		return 0, ctx.Store.TagImage(ctx.Env["QUASIDOCK_REGISTRY"], rest[0], rest[1])
+	case "pull":
+		opts, err := parsePullOptions(rest)
+		if err != nil {
+			return 1, err
+		}
+		_, err = pullImage(ctx, opts.Image, opts.Lazy)
+		return 0, err
+	case "push":
+		var opts remote.PushOptions
+		var names []string
+		makeCatalog := false
+		for _, arg := range rest {
+			if arg == "--sources" {
+				opts.Sources = true
+			} else if arg == "--catalog" {
+				makeCatalog = true
+			} else if strings.HasPrefix(arg, "-") {
+				return 1, fmt.Errorf("unknown push option %q", arg)
+			} else {
+				names = append(names, arg)
+			}
+		}
+		if makeCatalog && !opts.Sources && len(names) > 0 {
+			return 0, catalog.Push(ctx.Store, ctx.Env["QUASIDOCK_REGISTRY"], names, ctx.Verbose)
+		}
+		if makeCatalog || len(names) != 1 {
+			return 1, errors.New("usage: quasidock push [--sources] IMAGE; to publish elsewhere, tag SOURCE TARGET then push TARGET")
+		}
+		return 0, remote.Push(ctx, names[0], opts)
+	case "rm", "remove":
+		return 0, imageRemove(ctx, rest)
+	case "info":
+		if len(rest) != 1 {
+			return 1, errors.New("usage: quasidock image info IMAGE")
+		}
+		return 0, info.PrintInfo(ctx.Store, ctx.Env["QUASIDOCK_REGISTRY"], rest[0], ctx.Verbose, ctx.Stdout)
+	case "files", "cat":
+		count := 1
+		if cmd == "cat" {
+			count = 2
+		}
+		if len(rest) != count {
+			return 1, fmt.Errorf("usage: quasidock image %s IMAGE [PATH]", cmd)
+		}
+		if cmd == "files" {
+			return 0, peek.List(ctx.Store, ctx.Env["QUASIDOCK_REGISTRY"], rest[0], ctx.Verbose, ctx.Stdout)
+		}
+		return 0, peek.Cat(ctx.Store, ctx.Env["QUASIDOCK_REGISTRY"], rest[0], rest[1], ctx.Verbose, ctx.Stdout)
+	default:
+		return 1, fmt.Errorf("unknown image command %q", cmd)
+	}
+}

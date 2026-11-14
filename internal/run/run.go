@@ -99,10 +99,12 @@ func grantKey(spec string) string {
 }
 
 type Options struct {
-	ID       string
-	Args     []string
-	Command  *string
-	Settings Settings
+	ID         string
+	Args       []string
+	Entrypoint *string
+	Pull       string
+	Image      *store.Ref
+	Settings   Settings
 }
 
 type HostGrant struct {
@@ -123,8 +125,22 @@ func Run(ctx *context.Context, opts Options) (uint32, error) {
 	if err != nil {
 		return 1, err
 	}
+	defer storeLock.Release()
+	selected := opts.Image
+	if selected == nil {
+		selected, err = ctx.Store.ResolveLocalImage(ctx.Env["QUASIDOCK_REGISTRY"], opts.ID)
+		if err != nil {
+			return 1, err
+		}
+	} else {
+		selected, err = ctx.Store.ResolveLocalImage("", selected.Manifest)
+		if err != nil {
+			return 1, err
+		}
+	}
+	opts.ID = selected.ID
 
-	lazyLayers, err := lazyLayersOf(ctx, opts.ID)
+	lazyLayers, err := lazyLayersOf(ctx, selected.Manifest)
 	if err != nil {
 		storeLock.Release()
 		return 1, err
@@ -137,13 +153,20 @@ func Run(ctx *context.Context, opts Options) (uint32, error) {
 		failuresBefore[i] = len(fails)
 	}
 
-	img, err := ctx.Store.LoadImage(opts.ID)
+	img, err := ctx.Store.LoadImageRef(*selected)
 	if err != nil {
 		storeLock.Release()
 		return 1, err
 	}
 	defer img.Release()
 	cfg := img.Config
+	appLease, imageLease, err := ctx.Store.BeginImageRun(*selected)
+	if err != nil {
+		return 1, err
+	}
+	defer imageLease.Release()
+	runs := &grants.Session{ID: cfg.ID, LockPath: ctx.Store.RunsLockPath(cfg.ID), Lock: appLease}
+	defer runs.End(ctx.Store)
 
 	settings := opts.Settings
 	sandbox := SandboxOf(settings, cfg.Permissions)
@@ -197,13 +220,6 @@ func Run(ctx *context.Context, opts Options) (uint32, error) {
 	if sandbox == oci.SandboxSoft && runDir == nil {
 		_ = unlabelData(ctx, cfg.ID)
 	}
-
-	runs, err := grants.Begin(ctx.Store, cfg.ID)
-	if err != nil {
-		storeLock.Release()
-		return 1, err
-	}
-	defer runs.End(ctx.Store)
 
 	storeLock.Release()
 
@@ -285,13 +301,12 @@ func Run(ctx *context.Context, opts Options) (uint32, error) {
 		appPath = append(appPath, pDirs...)
 	}
 
-	cmd, err := resolveCommand(placeholders, cfg, opts.Command, appPath, systemRoot)
+	cmd, err := commandForRun(placeholders, cfg, opts, appPath, systemRoot)
 	if err != nil {
 		return 1, err
 	}
 	var allArgs []string
 	allArgs = append(allArgs, cmd.Args...)
-	allArgs = append(allArgs, opts.Args...)
 
 	exe := cmd.Exe
 	if cmd.Batch {
@@ -383,8 +398,10 @@ func Run(ctx *context.Context, opts Options) (uint32, error) {
 	var published *services.Published
 	if sandbox == oci.SandboxAppContainer {
 		cmdStr := ""
-		if opts.Command != nil {
-			cmdStr = *opts.Command
+		if opts.Entrypoint != nil {
+			cmdStr = *opts.Entrypoint
+		} else if len(opts.Args) > 0 {
+			cmdStr = opts.Args[0]
 		}
 		published, _ = services.Publish(cfg, servicePorts, cmdStr)
 	}
@@ -549,12 +566,8 @@ func Run(ctx *context.Context, opts Options) (uint32, error) {
 	return code, err
 }
 
-func lazyLayersOf(ctx *context.Context, id string) ([]oci.Descriptor, error) {
-	ref, err := ctx.Store.ReadRef(id)
-	if err != nil || ref == nil {
-		return nil, err
-	}
-	manifest, err := ctx.Store.ReadManifest(ref.Manifest)
+func lazyLayersOf(ctx *context.Context, digest string) ([]oci.Descriptor, error) {
+	manifest, err := ctx.Store.ReadManifest(digest)
 	if err != nil {
 		return nil, err
 	}
@@ -1140,6 +1153,25 @@ func newCommand(exe string, args []string) Command {
 	}
 }
 
+func commandForRun(p oci.Placeholders, cfg oci.AppConfig, opts Options, path []string, systemRoot string) (Command, error) {
+	var requested *string
+	args := opts.Args
+	if opts.Entrypoint != nil && *opts.Entrypoint != "" {
+		requested = opts.Entrypoint
+	} else if len(args) > 0 {
+		requested = &args[0]
+		args = args[1:]
+	} else if opts.Entrypoint != nil {
+		return Command{}, errors.New("empty --entrypoint needs a command after IMAGE")
+	}
+	cmd, err := resolveCommand(p, cfg, requested, path, systemRoot)
+	if err != nil {
+		return Command{}, err
+	}
+	cmd.Args = append(cmd.Args, args...)
+	return cmd, nil
+}
+
 func resolveCommand(placeholders oci.Placeholders, config oci.AppConfig, requested *string, appPath []string, systemRoot string) (Command, error) {
 	if requested == nil {
 		cmdPath := placeholders.CommandPath(config.Command)
@@ -1154,10 +1186,13 @@ func resolveCommand(placeholders oci.Placeholders, config oci.AppConfig, request
 			return newCommand(cmdPath, args), nil
 		}
 	}
+	if oci.IsPlaceholderPath(name) {
+		name = placeholders.Expand(name)
+	}
 	resolved, ok := findCommand(placeholders.App, name, appPath, systemRoot)
 	if !ok {
 		if strings.ContainsAny(name, `/\`) && !filepath.IsAbs(name) {
-			return Command{}, fmt.Errorf("command %q is not a file in the app; for a program of yours, give its absolute path (e.g. --command=%%CD%%\\%s)", name, filepath.Base(name))
+			return Command{}, fmt.Errorf("command %q is not a file in the app; for a program of yours, give its absolute path (e.g. --entrypoint=%%CD%%\\%s)", name, filepath.Base(name))
 		}
 		return Command{}, fmt.Errorf("command %q is not an export of the app, or an executable or batch file in it or in System32", name)
 	}
@@ -1186,7 +1221,7 @@ func findCommand(deployDir, name string, appPath []string, systemRoot string) (s
 		}
 		return "", false
 	}
-	var dirs []string
+	dirs := []string{deployDir}
 	dirs = append(dirs, appPath...)
 	dirs = append(dirs, filepath.Join(systemRoot, "System32"))
 	exts := []string{""}

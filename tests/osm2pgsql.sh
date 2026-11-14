@@ -23,6 +23,7 @@
 
 set -u
 export MSYS_NO_PATHCONV=1
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/images.sh"
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
 zigsaw=${1:-$root/out/bin/quasidock.exe}
@@ -30,7 +31,7 @@ QUASIDOCK_HOME=${OSM2PGSQL_HOME:-${BUILD_HOME:-}}
 APP=org.osm2pgsql.osm2pgsql
 PG=org.postgresql.PostgreSQL
 for id in $APP $PG $PG.PostGIS; do
-    if [ -z "$QUASIDOCK_HOME" ] || [ ! -f "$QUASIDOCK_HOME\\refs\\$id.json" ]; then
+    if [ -z "$QUASIDOCK_HOME" ] || ! qd_cached "$zigsaw" "$id"; then
         echo "tests/osm2pgsql.sh needs a store with $id in OSM2PGSQL_HOME or BUILD_HOME;"
         echo "build or pull osm2pgsql, PostgreSQL and PostGIS into one first."
         exit 1
@@ -70,7 +71,7 @@ gap() {
 pg() {
     local command=$1
     shift
-    timeout 120 "$zigsaw" run --sandbox=soft --command=$command $PG "$@"
+    timeout 120 bash "$QD_IMAGES_HELPER" run "$zigsaw" --sandbox=soft --entrypoint=$command $PG "$@"
 }
 # sql <database> <statement...>: psql's unaligned output, one line per row.
 sql() {
@@ -92,7 +93,7 @@ start() {
     local log="$work\\server.out" i
     rm -rf "$data\\data" "$data\\pgpass.conf" "$work\\server.exit"
     (
-        timeout 600 "$zigsaw" run --sandbox=soft $PG -p $port >"$log" 2>&1
+        timeout 600 bash "$QD_IMAGES_HELPER" run "$zigsaw" --sandbox=soft $PG -p $port >"$log" 2>&1
         echo $? >"$work\\server.exit"
     ) </dev/null >/dev/null 2>&1 &
     for i in $(seq 60); do
@@ -118,7 +119,7 @@ database() { sql postgres "create database $1" >/dev/null && sql "$1" "create ex
 o() {
     local command=$1
     shift
-    timeout 120 "$zigsaw" run ${SANDBOX:+--sandbox=$SANDBOX} --env="PGPASSWORD=$password" --env=PGCONNECT_TIMEOUT=5 --command="$command" $APP "$@" 2>&1 | tr -d '\r'
+    timeout 120 bash "$QD_IMAGES_HELPER" run "$zigsaw" ${SANDBOX:+--sandbox=$SANDBOX} --env="PGPASSWORD=$password" --env=PGCONNECT_TIMEOUT=5 --entrypoint="$command" $APP "$@" 2>&1 | tr -d '\r'
     return "${PIPESTATUS[0]}"
 }
 # import <database> [osm2pgsql args...]: osm2pgsql into the database on the
@@ -145,7 +146,7 @@ versions() {
 # without PGPASSWORD.
 prompted() {
     local out
-    out=$(printf '%s\n' "$password" | timeout 120 "$zigsaw" run ${SANDBOX:+--sandbox=$SANDBOX} --command=osm2pgsql $APP \
+    out=$(printf '%s\n' "$password" | timeout 120 bash "$QD_IMAGES_HELPER" run "$zigsaw" ${SANDBOX:+--sandbox=$SANDBOX} --entrypoint=osm2pgsql $APP \
         -H localhost -P $port -U postgres -W -d "$1" -O pgsql tiny.osm 2>&1) || { echo "$out" | tail -3; return 1; }
 }
 # compressed <database> <file>: the flex style's points from a compressed file.
@@ -198,8 +199,8 @@ check "appcontainer: osm2pgsql reaches the server on 127.0.0.1" import osm_appco
 # zigsaw: PGPORT is ${uses:postgresql}, which --port moves to the server's.
 forwarded() {
     local out
-    out=$(QUASIDOCK_LOOPBACK_EXEMPTION=0 timeout 120 "$zigsaw" run --sandbox=appcontainer --env="PGPASSWORD=$password" --env=PGCONNECT_TIMEOUT=5 \
-        --port=postgresql=$port --command=osm2pgsql $APP -U postgres -d osm_forwarded -O pgsql --slim tiny.osm 2>&1 | tr -d '\r'; exit "${PIPESTATUS[0]}") ||
+    out=$(QUASIDOCK_LOOPBACK_EXEMPTION=0 timeout 120 bash "$QD_IMAGES_HELPER" run "$zigsaw" --sandbox=appcontainer --env="PGPASSWORD=$password" --env=PGCONNECT_TIMEOUT=5 \
+        --port=postgresql=$port --entrypoint=osm2pgsql $APP -U postgres -d osm_forwarded -O pgsql --slim tiny.osm 2>&1 | tr -d '\r'; exit "${PIPESTATUS[0]}") ||
         { echo "$out" | tail -5; return 1; }
 }
 check "appcontainer: a database for the forwarded run" database osm_forwarded

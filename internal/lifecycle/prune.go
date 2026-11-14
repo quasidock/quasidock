@@ -116,9 +116,26 @@ func deleteStaleLocks(dir string) {
 
 // Prune deletes what no installed app needs.
 func Prune(ctx *context.Context, opts PruneOptions) error {
-	refs, err := ctx.Store.ListRefs()
+	collected, err := ctx.Store.PruneImages(opts.DryRun)
 	if err != nil {
 		return err
+	}
+	refs, err := ctx.Store.ListImages()
+	if err != nil {
+		return err
+	}
+	if opts.DryRun {
+		dropped := map[string]bool{}
+		for _, ref := range collected {
+			dropped[ref.Manifest] = true
+		}
+		kept := refs[:0]
+		for _, ref := range refs {
+			if !dropped[ref.Manifest] {
+				kept = append(kept, ref)
+			}
+		}
+		refs = kept
 	}
 	buildImages, err := ctx.Store.ListBuildImages()
 	if err != nil {
@@ -150,9 +167,15 @@ func Prune(ctx *context.Context, opts PruneOptions) error {
 		}
 	}
 
-	deploymentsUsed, err := ctx.Store.UsedLayers(!opts.Downloads)
-	if err != nil {
-		deploymentsUsed = make(map[string]struct{})
+	deploymentsUsed := make(map[string]struct{})
+	for _, digest := range manifests {
+		manifest, err := ctx.Store.ReadManifest(digest)
+		if err != nil {
+			return err
+		}
+		for _, layer := range manifest.Layers {
+			deploymentsUsed[oci.DigestHex(layer.Digest)] = struct{}{}
+		}
 	}
 
 	var blobs tally

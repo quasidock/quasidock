@@ -17,12 +17,13 @@
 
 set -u
 export MSYS_NO_PATHCONV=1
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/images.sh"
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
 zigsaw=${1:-$root/out/bin/quasidock.exe}
 QUASIDOCK_HOME=${GDAL_HOME:-${BUILD_HOME:-}}
 APP=org.gdal.GDAL
-if [ -z "$QUASIDOCK_HOME" ] || [ ! -f "$QUASIDOCK_HOME\\refs\\$APP.json" ]; then
+if [ -z "$QUASIDOCK_HOME" ] || ! qd_cached "$zigsaw" "$APP"; then
     echo "tests/gdal.sh needs a store with $APP in GDAL_HOME or BUILD_HOME;"
     echo "build recipes\\gdal-sdk.json and recipes\\gdal.json into one first."
     exit 1
@@ -48,7 +49,7 @@ check() {
 g() {
     local command=$1
     shift
-    timeout 120 "$zigsaw" run ${SANDBOX:+--sandbox=$SANDBOX} --command="$command" $APP "$@" | tr -d '\r'
+    timeout 120 bash "$QD_IMAGES_HELPER" run "$zigsaw" ${SANDBOX:+--sandbox=$SANDBOX} --entrypoint="$command" $APP "$@" | tr -d '\r'
 }
 # has <pattern> <command> [args...]: the command's output has a line matching.
 has() {

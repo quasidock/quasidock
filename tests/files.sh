@@ -23,6 +23,7 @@
 
 set -u
 export MSYS_NO_PATHCONV=1
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/images.sh"
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
 zigsaw=${1:-$root/out/bin/quasidock.exe}
@@ -50,11 +51,11 @@ check() {
 }
 
 z() { "$zigsaw" "$@"; }
-manifest_of() { grep -o 'sha256:[0-9a-f]*' "$QUASIDOCK_HOME\\refs\\$1.json"; }
+manifest_of() { qd_manifest "$zigsaw" "$1"; }
 
 installed_dotnet=false installed_files=false
-[ -f "$QUASIDOCK_HOME\\refs\\com.microsoft.dotnet.Sdk.json" ] || installed_dotnet=true
-[ -f "$QUASIDOCK_HOME\\refs\\$FILES.json" ] || installed_files=true
+qd_cached "$zigsaw" "com.microsoft.dotnet.Sdk" || installed_dotnet=true
+qd_cached "$zigsaw" "$FILES" || installed_files=true
 for r in dotnet-sdk dotnet; do
     z build "$root\\recipes\\no-publish\\$r.json" >"$work\\$r.log" 2>&1 || echo "building $r.json failed: $(tail -1 "$work\\$r.log")"
 done
@@ -94,7 +95,7 @@ stays_up() {
     local seconds=$1
     shift
     end_files
-    "$zigsaw" run "$@" >/dev/null 2>&1 &
+    bash "$QD_IMAGES_HELPER" run "$zigsaw" "$@" >/dev/null 2>&1 &
     local run=$! i
     sleep "$seconds"
     if ! kill -0 $run 2>/dev/null; then
@@ -148,8 +149,8 @@ check "it keeps its settings in its data directory, and its registry values in a
 
 cd "$root" || exit 1
 end_files
-$installed_files && z rm --delete-data $FILES >/dev/null 2>&1
-$installed_dotnet && { z rm --delete-data com.microsoft.dotnet >/dev/null 2>&1; z rm --delete-data com.microsoft.dotnet.Sdk >/dev/null 2>&1; }
+$installed_files && qd_remove_app z $FILES >/dev/null 2>&1
+$installed_dotnet && { qd_remove_app z com.microsoft.dotnet >/dev/null 2>&1; qd_remove_app z com.microsoft.dotnet.Sdk >/dev/null 2>&1; }
 rm -rf "$work"
 echo
 echo "$failures check(s) failed."

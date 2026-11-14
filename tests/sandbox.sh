@@ -16,6 +16,7 @@
 
 set -u
 export MSYS_NO_PATHCONV=1
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/images.sh"
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
 zigsaw=${1:-$root/out/bin/quasidock.exe}
@@ -56,7 +57,7 @@ z() { "$zigsaw" "$@" </dev/null; }
 writes() {
     local app=$1 sb=$2 file=$3
     shift 3
-    z run --sandbox="$sb" "$@" "$app" sh -c "echo x > '$file'"
+    qd_run z --sandbox="$sb" "$@" "$app" sh -c "echo x > '$file'"
 }
 # What icacls says about a path's integrity label, and its ACEs for
 # AppContainer packages (S-1-15-2-) and capabilities (S-1-15-3-).
@@ -70,7 +71,7 @@ granted() { grep -qxF "$2" "$QUASIDOCK_HOME\\grants\\$1.txt" 2>/dev/null; }
 icacls_in() {
     local app=$1 sb=$2 p=$3
     shift 3
-    z run --sandbox="$sb" "$@" --command=icacls "$app" "$p"
+    qd_run z --sandbox="$sb" "$@" --entrypoint=icacls "$app" "$p"
 }
 # hold <dir> <app> [run options...]: starts a run of the app that goes on,
 # writing to <dir>, until `release`; returns once it's going. Its PID is in
@@ -79,7 +80,7 @@ hold() {
     local dir=$1 app=$2
     shift 2
     rm -f "$dir\\started" "$dir\\stop"
-    "$zigsaw" run "$@" "$app" sh -c "touch '$dir\\started'; while [ ! -f '$dir\\stop' ]; do sleep 0.2; done" </dev/null >/dev/null 2>&1 &
+    bash "$QD_IMAGES_HELPER" run "$zigsaw" "$@" "$app" sh -c "touch '$dir\\started'; while [ ! -f '$dir\\stop' ]; do sleep 0.2; done" </dev/null >/dev/null 2>&1 &
     held=$!
     held_dir=$dir
     local i
@@ -107,7 +108,7 @@ echo secret >"$work\\outside\\secret.txt"
 
 labelled_in_run() { icacls_in $BB low "$1" --filesystem="$2" | grep -qF "$3"; }
 label_gone() { no_label "$1" && fails granted $BB "low $1"; }
-check "low: writes its data directory" z run --sandbox=low $BB sh -c 'echo x > "$APPDATA/f"'
+check "low: writes its data directory" qd_run z --sandbox=low $BB sh -c 'echo x > "$APPDATA/f"'
 check "low: writes a path it may write" writes $BB low "$work\\rw\\f" --filesystem="$work\\rw"
 check "  which is labelled low while it runs, for everything in it" labelled_in_run "$work\\rw" "$work\\rw" 'Low Mandatory Level:(OI)(CI)(NW)'
 check "  what it wrote inherits the label" labelled_in_run "$work\\rw\\f" "$work\\rw" 'Low Mandatory Level:(I)(NW)'
@@ -115,8 +116,8 @@ check "  and the label, and its record, go when the run ends" sh -c "$(declare -
 check "low: can't write a read-only grant" fails writes $BB low "$work\\ro\\f" --filesystem="$work\\ro:ro"
 check "  which isn't labelled" no_label "$work\\ro"
 check "low: can't write elsewhere" fails writes $BB low "$work\\outside\\f"
-check "low: reads elsewhere (not enforced)" z run --sandbox=low $BB cat "$work\\outside\\secret.txt"
-check "low: writes cwd with the cwd permission" sh -c "cd '$work\\cwd' && \"\$0\" run --sandbox=low --filesystem=cwd $BB sh -c 'echo x > \"\$1\"' sh '$work\\cwd\\f' </dev/null" "$zigsaw"
+check "low: reads elsewhere (not enforced)" qd_run z --sandbox=low $BB cat "$work\\outside\\secret.txt"
+check "low: writes cwd with the cwd permission" sh -c "cd '$work\\cwd' && bash '$QD_IMAGES_HELPER' run \"\$0\" --sandbox=low --filesystem=cwd $BB sh -c 'echo x > \"\$1\"' sh '$work\\cwd\\f' </dev/null" "$zigsaw"
 check "  which, given on the command line, isn't labelled after it" label_gone "$work\\cwd"
 check "  and the run's data directory is labelled" low_label "$QUASIDOCK_HOME\\data\\$BB"
 refuses_profile() {
@@ -126,12 +127,12 @@ refuses_profile() {
     [ ! -e "$USERPROFILE\\quasidock-sandbox-test" ] && no_label "$USERPROFILE"
 }
 check "low: won't label the user profile" refuses_profile
-check "low: --ephemeral writes its own data directory" z run --sandbox=low --ephemeral $BB sh -c 'echo x > "$APPDATA/f"'
+check "low: --ephemeral writes its own data directory" qd_run z --sandbox=low --ephemeral $BB sh -c 'echo x > "$APPDATA/f"'
 # BusyBox's sh waits for the last command of sh -c only if it can see its
 # parent, zigsaw, which a low-integrity process could not read.
-check "low: sh sees zigsaw as its parent" sh -c '[ "$("$0" run --sandbox=low '$BB' sh -c "echo \$PPID" </dev/null | tr -d "\r")" != 1 ]' "$zigsaw"
+check "low: sh sees zigsaw as its parent" sh -c '[ "$(bash "$QD_IMAGES_HELPER" run "$0" --sandbox=low '$BB' sh -c "echo \$PPID" </dev/null | tr -d "\r")" != 1 ]' "$zigsaw"
 check "low: sh -c's last command runs to the end, and its exit code comes through" sh -c '
-    out=$("$0" run --sandbox=low '$BB' sh -c "busybox.exe sh -c \"sleep 1; echo late; exit 7\"" </dev/null | tr -d "\r"; echo "code ${PIPESTATUS[0]}")
+    out=$(bash "$QD_IMAGES_HELPER" run "$0" --sandbox=low '$BB' sh -c "busybox.exe sh -c \"sleep 1; echo late; exit 7\"" </dev/null | tr -d "\r"; echo "code ${PIPESTATUS[0]}")
     [ "$out" = "late
 code 7" ]' "$zigsaw"
 
@@ -166,7 +167,7 @@ mkdir -p "$work\\global"
 from() {
     local d=$1
     shift
-    (cd "$d" && "$zigsaw" run --filesystem=cwd "$@" sh -c 'ls >/dev/null && echo x > quasidock-sandbox-test' </dev/null 2>&1)
+    (cd "$d" && bash "$QD_IMAGES_HELPER" run "$zigsaw" --filesystem=cwd "$@" sh -c 'ls >/dev/null && echo x > quasidock-sandbox-test' </dev/null 2>&1)
 }
 # read_only_cwd <dir>: a low run from there goes on, with its working
 # directory read-only, and says so; nothing is written or labelled.
@@ -182,15 +183,15 @@ home_run_quiet() {
     out=$(from "$home" $BB) || { echo "$out"; return 1; }
     ! grep -q labelled <<<"$out" && fails granted $BB "low $home" && [ ! -e "$QUASIDOCK_HOME\\grants\\$BB.cwd" ]
 }
-check "a run without --sandbox is low: it writes its data directory" z run $BB sh -c 'echo x > "$APPDATA/default"'
-check "  and can't write elsewhere" fails z run $BB sh -c "echo x > '$work\\outside\\default'"
+check "a run without --sandbox is low: it writes its data directory" qd_run z $BB sh -c 'echo x > "$APPDATA/default"'
+check "  and can't write elsewhere" fails qd_run z $BB sh -c "echo x > '$work\\outside\\default'"
 check "low: from your user profile, the app runs with its working directory read-only" read_only_cwd "$USERPROFILE" "it's your user profile"
 check "low: from a drive's root, too" read_only_cwd "$drive" "it's the root of a drive"
 check "low: from the app's own home, nothing is labelled or recorded" home_run_quiet
 check "an image that asks for soft says so when installed" grep -q 'permits  whatever you can write (it asks for the soft sandbox)' <<<"$soft_built"
-check "  and its runs write elsewhere" z run $SOFT sh -c "echo x > '$work\\outside\\soft1'"
+check "  and its runs write elsewhere" qd_run z $SOFT sh -c "echo x > '$work\\outside\\soft1'"
 check "  and the command line (--sandbox=low) over the image's" fails writes $SOFT low "$work\\outside\\soft6"
-"$zigsaw" rm $SOFT >/dev/null 2>&1 </dev/null
+qd_remove_app "$zigsaw" $SOFT >/dev/null 2>&1 </dev/null
 
 # --- AppContainer grants, and a low run after one ------------------------------
 
@@ -203,7 +204,7 @@ ace_gone() { fails has_ace "$1" 'S-1-15-' && fails granted $BB "$1"; }
 check "appcontainer: writes a granted path" writes $BB appcontainer "$work\\ac\\f" --filesystem="$work\\ac"
 check "  granted to the app's capability while it runs, not its package SID" capability_in_run "$work\\ac"
 check "  and revoked when the run ends" ace_gone "$work\\ac"
-check "low after appcontainer: runs, and reads what that run wrote" z run --sandbox=low --filesystem="$work\\ac" $BB cat "$work\\ac\\f"
+check "low after appcontainer: runs, and reads what that run wrote" qd_run z --sandbox=low --filesystem="$work\\ac" $BB cat "$work\\ac\\f"
 check "appcontainer: can't write elsewhere" fails writes $BB appcontainer "$work\\outside\\f"
 
 # --- While another run of the app goes on --------------------------------------
@@ -220,7 +221,7 @@ killed_leaves() {
     low_label "$work\\rw" && granted $BB "low $work\\rw"
 }
 check "a killed run leaves what it was granted" killed_leaves
-check "  which the app's next run takes back when it ends" sh -c "\"\$0\" run $BB true </dev/null && $(declare -f label_of no_label fails granted label_gone); BB=$BB; QUASIDOCK_HOME='$QUASIDOCK_HOME'; label_gone '$work\\rw'" "$zigsaw"
+check "  which the app's next run takes back when it ends" sh -c "bash '$QD_IMAGES_HELPER' run \"\$0\" $BB true </dev/null && $(declare -f label_of no_label fails granted label_gone); BB=$BB; QUASIDOCK_HOME='$QUASIDOCK_HOME'; label_gone '$work\\rw'" "$zigsaw"
 
 # --- What stands --------------------------------------------------------------
 #
@@ -250,14 +251,14 @@ sed -e "s/\"net.frippery.busybox\"/\"$FOLD\"/" \
     -e 's/"command": "busybox.exe",/&\n  "permissions": { "filesystem": ["documents", "xdg-later"] },/' \
     "$root/recipes/busybox.json" >"$work\\folders.json"
 "$zigsaw" build "$work\\folders.json" >/dev/null 2>&1 || { echo "building the folders app failed"; exit 1; }
-warns_unknown() { "$zigsaw" run $FOLD true 2>&1 </dev/null | grep -q 'xdg-later.*doesn.t know'; }
+warns_unknown() { bash "$QD_IMAGES_HELPER" run "$zigsaw" $FOLD true 2>&1 </dev/null | grep -q 'xdg-later.*doesn.t know'; }
 check "  a permission this quasidock doesn't know is left out, with a warning" warns_unknown
-"$zigsaw" rm --delete-data $FOLD >/dev/null 2>&1 </dev/null
+qd_remove_app "$zigsaw" $FOLD >/dev/null 2>&1 </dev/null
 
 # --- Registry keys an app keeps (its config's "registry") --------------------------
 #
 # A fifth app keeps a test key, and a sixth the same one. Their runs set and
-# read values with System32's reg.exe (--command=reg).
+# read values with System32's reg.exe (--entrypoint=reg).
 
 REG=test.sandbox.registry
 REG2=test.sandbox.registry2
@@ -273,13 +274,13 @@ done
 sets() {
     local sb=$1 name=$2
     shift 2
-    z run --sandbox="$sb" "$@" --command=reg $REG add "HKCU\\$key" /v "$name" /d "$sb" /f
+    qd_run z --sandbox="$sb" "$@" --entrypoint=reg $REG add "HKCU\\$key" /v "$name" /d "$sb" /f
 }
 # has <sandbox> <name> [run options...]: a run finds the value.
 has() {
     local sb=$1 name=$2
     shift 2
-    z run --sandbox="$sb" "$@" --command=reg $REG query "HKCU\\$key" /v "$name"
+    qd_run z --sandbox="$sb" "$@" --entrypoint=reg $REG query "HKCU\\$key" /v "$name"
 }
 not_in_hkcu() { ! reg query "HKCU\\$key" >/dev/null 2>&1 && ! reg query "$record" >/dev/null 2>&1; }
 in_order() {
@@ -297,7 +298,7 @@ moved_aside() {
 # Runs `sleep` in the app in the background, and waits until its run has put
 # the key in HKCU; its PID in $runner.
 start_sleeping() {
-    "$zigsaw" run "$1" sleep 60 </dev/null >/dev/null 2>&1 &
+    bash "$QD_IMAGES_HELPER" run "$zigsaw" "$1" sleep 60 </dev/null >/dev/null 2>&1 &
     runner=$!
     local i
     for i in $(seq 50); do reg query "$record" >/dev/null 2>&1 && return 0; sleep 0.2; done
@@ -315,19 +316,19 @@ killed_run() {
 other_app_waits() {
     start_sleeping $REG || return 1
     local out
-    out=$(z run --command=reg $REG2 query "HKCU\\$key" 2>&1)
+    out=$(qd_run z --entrypoint=reg $REG2 query "HKCU\\$key" 2>&1)
     local status=$?
     kill -9 $runner
     wait $runner 2>/dev/null
     [ $status -ne 0 ] && grep -q "which a run of $REG is using" <<<"$out" || { echo "$out"; return 1; }
     # Its next run settles what the killed one left, into $REG's data.
-    z run --command=reg $REG2 query "HKCU\\$key" >/dev/null 2>&1 && not_in_hkcu && has soft killed
+    qd_run z --entrypoint=reg $REG2 query "HKCU\\$key" >/dev/null 2>&1 && not_in_hkcu && has soft killed
 }
 rm_settles() {
     start_sleeping $REG || return 1
     kill -9 $runner
     wait $runner 2>/dev/null
-    "$zigsaw" rm --delete-data $REG >/dev/null 2>&1 </dev/null && not_in_hkcu && [ ! -e "$QUASIDOCK_HOME\\data\\$REG" ] && [ ! -e "$QUASIDOCK_HOME\\data\\$REG.hkcu.lock" ]
+    qd_remove_app "$zigsaw" $REG >/dev/null 2>&1 </dev/null && not_in_hkcu && [ ! -e "$QUASIDOCK_HOME\\data\\$REG" ] && [ ! -e "$QUASIDOCK_HOME\\data\\$REG.hkcu.lock" ]
 }
 
 check "registry: a value one run sets is there in the next, in each sandbox" in_order
@@ -338,7 +339,7 @@ check "a key of the same name that was there is moved aside for the run, and bac
 check "a run that didn't end leaves the key in HKCU, and the next one settles it" killed_run
 check "another app keeping the same key can't run while that app's run uses it" other_app_waits
 check "rm --delete-data settles what a run left, and leaves nothing in HKCU" rm_settles
-"$zigsaw" rm --delete-data $REG2 >/dev/null 2>&1 </dev/null
+qd_remove_app "$zigsaw" $REG2 >/dev/null 2>&1 </dev/null
 reg delete "HKCU\\$key" /f >/dev/null 2>&1
 
 # A seventh app keeps a key two levels below one that's there and empty, as
@@ -354,13 +355,13 @@ only_what_it_made() {
     # Without values, as Java leaves Prefs: reg.exe would give it an empty
     # default value.
     powershell -NoProfile -Command "New-Item -Path 'HKCU:\\$deep' -Force | Out-Null" || return 1
-    z run --command=reg $REG3 add "HKCU\\$deep\\made\\settings" /v x /d 1 /f || return 1
+    qd_run z --entrypoint=reg $REG3 add "HKCU\\$deep\\made\\settings" /v x /d 1 /f || return 1
     reg query "HKCU\\$deep" >/dev/null 2>&1 || { echo "the key that was there went"; return 1; }
     ! reg query "HKCU\\$deep\\made" >/dev/null 2>&1 || { echo "the key its run made stayed"; return 1; }
-    z run --command=reg $REG3 query "HKCU\\$deep\\made\\settings" /v x
+    qd_run z --entrypoint=reg $REG3 query "HKCU\\$deep\\made\\settings" /v x
 }
 check "taking a key back deletes the keys above it its run made, not an empty one that was there" only_what_it_made
-"$zigsaw" rm --delete-data $REG3 >/dev/null 2>&1 </dev/null
+qd_remove_app "$zigsaw" $REG3 >/dev/null 2>&1 </dev/null
 reg delete "HKCU\\$deep" /f >/dev/null 2>&1
 
 
@@ -373,9 +374,9 @@ icacls "$work\\mine" /setintegritylevel '(OI)(CI)low' >/dev/null
 check "a path labelled low by hand is written" writes $BB low "$work\\mine\\f" --filesystem="$work\\mine"
 check "  but not recorded" fails granted $BB "low $work\\mine"
 check "  and keeps its label after the run" low_label "$work\\mine"
-"$zigsaw" rm $BB >/dev/null 2>&1 </dev/null
+qd_remove_app "$zigsaw" $BB >/dev/null 2>&1 </dev/null
 check "rm leaves a label it didn't make" low_label "$work\\mine"
-"$zigsaw" rm $OTHER >/dev/null 2>&1 </dev/null
+qd_remove_app "$zigsaw" $OTHER >/dev/null 2>&1 </dev/null
 
 # --- Programs a run writes, and zigsaw's own folders ---------------------------
 #
@@ -401,10 +402,10 @@ recorded_program() { grep -qxF "$2" "$QUASIDOCK_HOME\\grants\\$1.programs"; }
 writes_program() {
     local app=$1 to=$2
     shift 2
-    z run "$@" $app sh -c "cp '$(dirname "$to")\\src.bin' '$to'" >/dev/null 2>&1
+    qd_run z "$@" $app sh -c "cp '$(dirname "$to")\\src.bin' '$to'" >/dev/null 2>&1
 }
 rewrites_in_place() {
-    z run --filesystem="$work\\prog" $PROG sh -c "cat '$work\\prog\\src.bin' > '$work\\prog\\p.exe'" && medium_program "$work\\prog\\p.exe"
+    qd_run z --filesystem="$work\\prog" $PROG sh -c "cat '$work\\prog\\src.bin' > '$work\\prog\\p.exe'" && medium_program "$work\\prog\\p.exe"
 }
 held_stays_low() {
     hold "$work\\prog" $PROG --filesystem="$work\\prog" || return 1
@@ -417,7 +418,7 @@ held_stays_low() {
     medium_program "$work\\prog\\h.exe"
 }
 rm_forgets() {
-    "$zigsaw" rm $PROG >/dev/null 2>&1 </dev/null || return 1
+    qd_remove_app "$zigsaw" $PROG >/dev/null 2>&1 </dev/null || return 1
     [ ! -e "$QUASIDOCK_HOME\\grants\\$PROG.programs" ] && medium_program "$work\\prog\\p.exe"
 }
 store_parent=$(dirname "$QUASIDOCK_HOME")
@@ -436,7 +437,7 @@ in_store_read_only() {
 warns_low_program() {
     icacls "$work\\lowexe" /setintegritylevel '(OI)(CI)L' >/dev/null && cp "$hostprobe" "$work\\lowexe\\probe.exe" || return 1
     local out
-    out=$(z run --sandbox=soft --command="$work\\lowexe\\probe.exe" $PROG 2>&1)
+    out=$(qd_run z --sandbox=soft --entrypoint="$work\\lowexe\\probe.exe" $PROG 2>&1)
     grep -q 'is labelled low integrity, so Windows starts it, and this run, at low integrity' <<<"$out" || { echo "$out"; return 1; }
 }
 low_writes() { writes_program $PROG "$work\\prog\\p.exe" --filesystem="$work\\prog" && medium_program "$work\\prog\\p.exe"; }
@@ -462,25 +463,25 @@ data="$QUASIDOCK_HOME\\data\\$PROG"
 # where that's elevated (CI's runners), as a file with no label caps nothing.
 soft_starts() {
     local out
-    out=$(z run --sandbox=soft $PROG sh -c "$1" 2>&1 | tr -d '\r' | grep '^# integrity')
+    out=$(qd_run z --sandbox=soft $PROG sh -c "$1" 2>&1 | tr -d '\r' | grep '^# integrity')
     case $out in "# integrity medium" | "# integrity high") ;; *) echo "got \"$out\""; return 1 ;; esac
 }
 data_low_written() {
-    z run $PROG sh -c "cp '$work\\prog\\src.bin' '$data\\d.exe'" >/dev/null 2>&1 || return 1
+    qd_run z $PROG sh -c "cp '$work\\prog\\src.bin' '$data\\d.exe'" >/dev/null 2>&1 || return 1
     soft_starts "'$data\\d.exe'"
 }
 data_soft_written() {
-    z run $PROG sh -c true >/dev/null 2>&1 || return 1
+    qd_run z $PROG sh -c true >/dev/null 2>&1 || return 1
     soft_starts "cp '$work\\prog\\src.bin' '$data\\s.exe' && '$data\\s.exe'"
 }
 data_relabelled() {
-    z run $PROG sh -c "echo x > '$data\\again.txt'" >/dev/null 2>&1 || return 1
+    qd_run z $PROG sh -c "echo x > '$data\\again.txt'" >/dev/null 2>&1 || return 1
     icacls "$data" | grep -qF 'Low Mandatory Level:(OI)(CI)(NW)'
 }
 data_held() {
     hold "$work\\prog" $PROG --filesystem="$work\\prog" || return 1
     local out
-    out=$(z run --sandbox=soft $PROG sh -c true 2>&1)
+    out=$(qd_run z --sandbox=soft $PROG sh -c true 2>&1)
     release
     grep -q "data folder stays labelled low integrity, as another run of it is going" <<<"$out" || { echo "$out"; return 1; }
     icacls "$data" | grep -qF 'Low Mandatory Level:(OI)(CI)(NW)'
@@ -491,7 +492,7 @@ check "low: the next low run labels the data folder again and writes there" data
 data_first_soft() {
     rm -rf "$data" || return 1
     local out
-    out=$(z run --sandbox=soft $PROG sh -c true 2>&1) || { echo "$out"; return 1; }
+    out=$(qd_run z --sandbox=soft $PROG sh -c true 2>&1) || { echo "$out"; return 1; }
     ! grep -q 'error' <<<"$out" || { echo "$out"; return 1; }
 }
 check "while another run of the app goes on, a soft run keeps the data folder's label and says so" data_held
@@ -526,8 +527,8 @@ takes_back_unexplained() {
 check "grants --take-back removes a low label" takes_back_unexplained
 relative_refused() { ! zb grants --take-back 'relative\path' >/dev/null 2>&1; }
 check "  and refuses a relative path" relative_refused
-za rm $LEDGER >/dev/null 2>&1
-zb rm $LEDGER >/dev/null 2>&1
+qd_remove_app za $LEDGER >/dev/null 2>&1
+qd_remove_app zb $LEDGER >/dev/null 2>&1
 
 rm -rf "$QUASIDOCK_HOME" "$work"
 echo
