@@ -53,6 +53,7 @@ type Store struct {
 
 var subdirs = []string{
 	"blobs/sha256",
+	"images",
 	"refs",
 	"deploy",
 	"lazy",
@@ -102,6 +103,9 @@ func Open(root string, verbose bool, ledgerKey string) (*Store, error) {
 		}
 	}
 
+	if err := s.initializeImages(); err != nil {
+		return nil, err
+	}
 	return s, nil
 }
 
@@ -287,6 +291,9 @@ func (s *Store) BlobPath(hexDigest string) string {
 }
 
 func (s *Store) HasBlob(hexDigest string) bool {
+	if h := oci.DigestHex(hexDigest); h != "" {
+		hexDigest = h
+	}
 	_, err := os.Stat(s.BlobPath(hexDigest))
 	return err == nil
 }
@@ -433,11 +440,21 @@ func (s *Store) LoadImage(id string) (*Image, error) {
 		return nil, err
 	}
 	if ref == nil {
-		return nil, fmt.Errorf("%s is not installed (see `quasidock list`)", id)
+		return nil, fmt.Errorf("%s is not cached (see `quasidock images`)", id)
 	}
+	return s.LoadImageRef(*ref)
+}
+
+// LoadImageRef acquires deployments for the selected manifest, independently of
+// whichever version is currently the app's default.
+func (s *Store) LoadImageRef(ref Ref) (*Image, error) {
+	id := ref.ID
 	img, err := s.ReadImage(id, ref.Manifest)
 	if err != nil {
 		return nil, err
+	}
+	if !strings.EqualFold(img.Config.ID, ref.ID) || img.Config.Version != ref.Version {
+		return nil, fmt.Errorf("image catalog metadata disagrees with manifest %s", ref.Manifest)
 	}
 	if len(img.Manifest.Layers) == 0 {
 		return nil, fmt.Errorf("image %s has no layers", id)
@@ -447,7 +464,7 @@ func (s *Store) LoadImage(id string) (*Image, error) {
 		return nil, err
 	}
 	return &Image{
-		Ref:         *ref,
+		Ref:         ref,
 		Manifest:    img.Manifest,
 		Config:      img.Config,
 		DeployDir:   dirs[len(dirs)-1],
@@ -560,10 +577,11 @@ func (s *Store) ReadUsableImage(manifestDigest string) (*LoadedImage, error) {
 // Refs: Installed apps
 
 type Ref struct {
-	ID       string `json:"id"`
-	Version  string `json:"version"`
-	Manifest string `json:"manifest"`
-	Source   string `json:"source,omitempty"`
+	ID           string   `json:"id"`
+	Version      string   `json:"version"`
+	Manifest     string   `json:"manifest"`
+	Source       string   `json:"source,omitempty"`
+	Repositories []string `json:"repositories,omitempty"`
 }
 
 func (s *Store) refPath(id string) string {
@@ -574,6 +592,18 @@ func (s *Store) ReadRef(id string) (*Ref, error) {
 	if !oci.IsValidID(id) {
 		return nil, nil
 	}
+	idx, err := s.ImageCatalog()
+	if err != nil {
+		return nil, err
+	}
+	ref, ok := idx.Images[idx.Defaults[strings.ToLower(id)]]
+	if !ok {
+		return nil, nil
+	}
+	return &ref, nil
+}
+
+func (s *Store) readLegacyRef(id string) (*Ref, error) {
 	data, err := os.ReadFile(s.refPath(id))
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -589,26 +619,34 @@ func (s *Store) ReadRef(id string) (*Ref, error) {
 }
 
 func (s *Store) WriteRef(ref Ref) error {
-	data, err := json.MarshalIndent(ref, "", "  ")
+	name, err := ImageName(os.Getenv("QUASIDOCK_REGISTRY"), ref.Source)
+	if err != nil {
+		name, err = ImageName(os.Getenv("QUASIDOCK_REGISTRY"), ref.ID+":"+ref.Version)
+	}
 	if err != nil {
 		return err
 	}
-	tmp := s.TmpPath("ref")
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
-		return err
-	}
-	return os.Rename(tmp, s.refPath(ref.ID))
+	return s.RegisterImage(ref, name, true)
 }
 
 func (s *Store) DeleteRef(id string) error {
-	err := os.Remove(s.refPath(id))
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-	return err
+	return s.changeImages(func(idx *ImageIndex) error { delete(idx.Defaults, strings.ToLower(id)); return nil })
 }
 
 func (s *Store) ListRefs() ([]Ref, error) {
+	idx, err := s.ImageCatalog()
+	if err != nil {
+		return nil, err
+	}
+	refs := make([]Ref, 0, len(idx.Defaults))
+	for _, digest := range idx.Defaults {
+		refs = append(refs, idx.Images[digest])
+	}
+	sort.Slice(refs, func(i, j int) bool { return refs[i].ID < refs[j].ID })
+	return refs, nil
+}
+
+func (s *Store) legacyRefs() ([]Ref, error) {
 	entries, err := os.ReadDir(s.Path("refs"))
 	if err != nil {
 		return nil, err
@@ -619,8 +657,11 @@ func (s *Store) ListRefs() ([]Ref, error) {
 			continue
 		}
 		id := strings.TrimSuffix(e.Name(), ".json")
-		r, err := s.ReadRef(id)
-		if err == nil && r != nil {
+		r, err := s.readLegacyRef(id)
+		if err != nil {
+			return nil, fmt.Errorf("reading legacy ref %s: %w", id, err)
+		}
+		if r != nil {
 			refs = append(refs, *r)
 		}
 	}
@@ -679,8 +720,17 @@ func (s *Store) Deploy(desc oci.Descriptor) (string, error) {
 		return "", err
 	}
 	if _, err := os.Stat(dest); err == nil {
-		_ = acl.Protect(dest)
-		_, _ = acl.RevokeAccess(dest, acl.Revoke{Kind: acl.RevokePackageSids})
+		// Loading another cached version can encounter layers already used by a
+		// running AppContainer. Only reset an idle deployment's sandbox ACLs.
+		idle, err := TryLock(LockPathFor(dest), true)
+		if err != nil {
+			return "", err
+		}
+		if idle != nil {
+			defer idle.Release()
+			_ = acl.Protect(dest)
+			_, _ = acl.RevokeAccess(dest, acl.Revoke{Kind: acl.RevokePackageSids})
+		}
 		return dest, nil
 	}
 
@@ -740,7 +790,7 @@ func (s *Store) DeploymentInUse(layerDigest string) bool {
 
 func (s *Store) UsedLayers(includeBuildImages bool) (map[string]struct{}, error) {
 	used := make(map[string]struct{})
-	refs, err := s.ListRefs()
+	refs, err := s.ListImages()
 	if err != nil {
 		return nil, err
 	}

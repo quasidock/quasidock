@@ -262,7 +262,7 @@ func SettleAll(ctx *context.Context) (int, error) {
 	return failed, nil
 }
 
-// UndoAll takes back everything the app's runs were given, for quasidock rm.
+// UndoAll takes back everything the app's runs were given after its last cached image is removed.
 func UndoAll(ctx *context.Context, id string) error {
 	lock, err := ctx.Store.LockGrantChanges()
 	if err != nil {

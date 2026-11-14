@@ -13,6 +13,7 @@
 
 set -u
 export MSYS_NO_PATHCONV=1
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/images.sh"
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
 work=$(cygpath -wl "$(mktemp -d)")
@@ -94,7 +95,7 @@ path_added() {
 check "PATH gains the directory, and stays as it was otherwise: its type, and the variables it names" path_added
 
 "$bin\\quasidock.exe" build "$root\\tests\\install\\app.json" >/dev/null 2>&1 || { echo "building the test app failed"; exit 1; }
-"$bin\\quasidock.exe" run $APP 12 &
+bash "$QD_IMAGES_HELPER" run "$bin\\quasidock.exe" $APP 12 &
 waiter=$!
 sleep 2
 upgrades() {
@@ -123,10 +124,10 @@ check "piped to Invoke-Expression, it installs where the environment says, and l
 refuses_with_apps() {
     local out
     out=$(install -Uninstall 2>&1) && { echo "it uninstalled"; return 1; }
-    grep -q "still installed: $APP" <<<"$out" && [ -f "$bin\\quasidock.exe" ]
+    grep -q "images are still cached:" <<<"$out" && [ -f "$bin\\quasidock.exe" ]
 }
 check "uninstalling is refused while apps are installed" refuses_with_apps
-"$bin\\quasidock.exe" rm --delete-data $APP >/dev/null 2>&1
+qd_remove_app "$bin\\quasidock.exe" $APP >/dev/null 2>&1
 uninstalls() {
     local out
     out=$(install -Uninstall 2>&1) || { echo "$out"; return 1; }

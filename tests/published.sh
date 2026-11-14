@@ -30,6 +30,7 @@
 
 set -u
 export MSYS_NO_PATHCONV=1
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/images.sh"
 unset QUASIDOCK_REGISTRY_USERNAME QUASIDOCK_REGISTRY_PASSWORD # Pulls must work anonymously.
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
@@ -108,7 +109,7 @@ smoke_args() {
 # seconds, when the run is stopped.
 stays_up_ids=" com.vscodium.codium org.notepad_plus_plus.NotepadPlusPlus org.sumatrapdfreader.SumatraPDF org.gtk.Gtk3demo com.gluonhq.SceneBuilder io.qt.Qt6 io.github.nuttyartist.notes "
 stays_up() {
-    QUASIDOCK_HOME="$pull_store" timeout 10 "$zigsaw" run "$1" >/dev/null 2>&1
+    QUASIDOCK_HOME="$pull_store" timeout 10 bash "$QD_IMAGES_HELPER" run "$zigsaw" "$1" >/dev/null 2>&1
     [ $? -eq 124 ]
 }
 # Apps whose command is a web server, which they open in the browser unless
@@ -118,7 +119,7 @@ stays_up() {
 serves_ids=" org.kanboard.Kanboard "
 serves() {
     local port=$((9100 + RANDOM % 800)) out="$logs\\$1.serve.log" server page=""
-    QUASIDOCK_HOME="$pull_store" "$zigsaw" run --ephemeral "$1" --no-browser --listen=127.0.0.1:$port >"$out" 2>&1 &
+    QUASIDOCK_HOME="$pull_store" bash "$QD_IMAGES_HELPER" run "$zigsaw" --ephemeral "$1" --no-browser --listen=127.0.0.1:$port >"$out" 2>&1 &
     server=$!
     for _ in $(seq 40); do
         page=$(curl -s -m 5 "http://127.0.0.1:$port/?controller=AuthController&action=login") && [ -n "$page" ] && break
@@ -132,8 +133,8 @@ serves() {
     echo "no login page on port $port, but \"$(grep -o '<title>[^<]*' <<<"$page" | cut -c8- | head -1)\" ($1.page.html): $(last_line "$out")"
     return 1
 }
-smoke() { QUASIDOCK_HOME="$pull_store" timeout 120 "$zigsaw" run "$@" </dev/null; }
-ref_digest() { grep -o 'sha256:[0-9a-f]*' "$1\\refs\\$2.json"; }
+smoke() { QUASIDOCK_HOME="$pull_store" timeout 120 bash "$QD_IMAGES_HELPER" run "$zigsaw" "$@" </dev/null; }
+ref_digest() { QUASIDOCK_HOME="$1" qd_manifest "$zigsaw" "$2"; }
 # all_bound <store> <manifest digest>: tests/cmd/imports on the executables
 # and DLLs of the image's own layer, the last, deployed by a run.
 all_bound() {
@@ -273,11 +274,11 @@ for name in $published_recipes; do
         [ -n "${GITHUB_STEP_SUMMARY:-}" ] && printf '| &nbsp;&nbsp;%s `%s` | %s |\n' "$step" "$(tr '|`' '/'"'" <<<"$command")" "$dur" >>"$GITHUB_STEP_SUMMARY"
     done
     built=$(ref_digest "$build_store" "$id")
-    version=$(zb list | awk -v id="$id" '$1 == id { print $2 }')
+    version=$(qd_version zb "$id")
 
     # Verbose, so the log shows where blob downloads were redirected.
     pull_log="$logs\\$id.pull.log"
-    if ! zp -v pull --yes "$id:$version" >"$pull_log" 2>&1; then
+    if ! zp --verbose pull --yes "$id:$version" >"$pull_log" 2>&1; then
         # Registries answer "not found" for a missing tag, and refuse an
         # anonymous token for a package that doesn't exist (or is private).
         if grep -qE "not found|doesn't exist, or needs credentials" "$pull_log"; then
@@ -332,7 +333,7 @@ for name in $published_recipes; do
         check "$id: the loader binds all its programs' imports" all_bound "$pull_store" "$published"
     fi
     latest_is_version() {
-        zp -v pull --yes "$id" >>"$pull_log" 2>&1 || { last_line "$pull_log"; return 1; }
+        zp --verbose pull --yes "$id" >>"$pull_log" 2>&1 || { last_line "$pull_log"; return 1; }
         local latest
         latest=$(ref_digest "$pull_store" "$id")
         [ "$latest" = "$published" ] || { echo "latest is $latest, $version is $published"; return 1; }
@@ -376,10 +377,10 @@ fi
 check "no run labelled or granted the repository" sh -c "! icacls '$root' | grep -q -e 'Mandatory Label' -e 'S-1-15-'"
 
 # Installed apps are protected against deletion, so remove them through zigsaw.
-for id in "${ids[@]}"; do zp rm --delete-data "$id" >/dev/null 2>&1; done
+for id in "${ids[@]}"; do qd_remove_app zp "$id" >/dev/null 2>&1; done
 zp prune --downloads >/dev/null 2>&1
 if [ -z "${BUILD_HOME:-}" ]; then
-    for id in "${ids[@]}"; do zb rm --delete-data "$id" >/dev/null 2>&1; done
+    for id in "${ids[@]}"; do qd_remove_app zb "$id" >/dev/null 2>&1; done
     zb prune --downloads >/dev/null 2>&1
 fi
 rm -rf "$work"

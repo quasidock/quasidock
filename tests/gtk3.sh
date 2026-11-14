@@ -36,11 +36,12 @@
 # windows on the desktop for a moment.
 set -u
 export MSYS_NO_PATHCONV=1
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/images.sh"
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
 zigsaw=${1:-$root/out/bin/quasidock.exe}
 QUASIDOCK_HOME=${GTK_HOME:-${BUILD_HOME:-}}
-if [ -z "$QUASIDOCK_HOME" ] || [ ! -f "$QUASIDOCK_HOME\\refs\\org.gtk.Gtk4.json" ] || [ ! -f "$QUASIDOCK_HOME\\refs\\org.gtk.Gtk4.Sdk.json" ]; then
+if [ -z "$QUASIDOCK_HOME" ] || ! qd_cached "$zigsaw" "org.gtk.Gtk4" || ! qd_cached "$zigsaw" "org.gtk.Gtk4.Sdk"; then
     echo "tests/gtk3.sh needs a store with org.gtk.Gtk4 and org.gtk.Gtk4.Sdk in GTK_HOME or BUILD_HOME;"
     echo "build recipes\\gtk4-sdk.json and recipes\\gtk4.json into one first."
     exit 1
@@ -82,7 +83,7 @@ check_want() {
 }
 
 z() { "$zigsaw" "$@"; }
-manifest_of() { grep -o 'sha256:[0-9a-f]*' "$QUASIDOCK_HOME\\refs\\$1.json"; }
+manifest_of() { qd_manifest "$zigsaw" "$1"; }
 # install_again <id> <recipe>: installs an app the store has again, as the
 # store got it: from the build cache, if it built it, or the registry it was
 # pulled from (as the Reproduce workflow's store pulls the published
@@ -90,7 +91,7 @@ manifest_of() { grep -o 'sha256:[0-9a-f]*' "$QUASIDOCK_HOME\\refs\\$1.json"; }
 # and registry key. Builds the recipe if the store hasn't the app.
 install_again() {
     local source=""
-    [ -f "$QUASIDOCK_HOME\\refs\\$1.json" ] && source=$(grep -o '"source": *"[^"]*"' "$QUASIDOCK_HOME\\refs\\$1.json" | cut -d'"' -f4)
+    qd_cached "$zigsaw" "$1" && source=$(qd_source "$zigsaw" "$1")
     case $source in
     "" | *.json) z build "$root\\recipes\\$2" ;;
     *) z pull --yes "$source" ;;
@@ -101,7 +102,7 @@ install_again() {
 # before (for removing what this installed at the end).
 installed_here=""
 build_image() {
-    [ -f "$QUASIDOCK_HOME\\refs\\$1.json" ] || installed_here="$installed_here $1"
+    qd_cached "$zigsaw" "$1" || installed_here="$installed_here $1"
     install_again "$1" "$2" >"$work\\$2.log" 2>&1 || echo "installing $2 failed: $(tail -1 "$work\\$2.log")"
 }
 build_image org.gtk.Gtk3.Sdk gtk3-sdk.json
@@ -119,7 +120,7 @@ check "an app builds against GTK 3's SDK image and GTK 4's, finding gtk+-3.0 wit
 cd "$work" || exit 1
 drew() {
     local out
-    out=$(timeout 60 "$zigsaw" run "$@" $APP 2>&1 | tr -d '\r')
+    out=$(timeout 60 bash "$QD_IMAGES_HELPER" run "$zigsaw" "$@" $APP 2>&1 | tr -d '\r')
     grep -q '^GTK 3\.24\.52$' <<<"$out" && grep -q '^ATK 2\.60\.7$' <<<"$out" &&
         grep -q '^FileChooser schema found$' <<<"$out" && grep -q '^icon document-open found$' <<<"$out" &&
         grep -q '^loaded it at 48x48$' <<<"$out" && grep -q '^drew a frame$' <<<"$out" || { echo "got: $(tr '\n' '|' <<<"$out")"; return 1; }
@@ -128,7 +129,7 @@ check "it runs on both runtimes, with GTK 3's schemas and legacy icons, and draw
 check "with --sandbox=soft" drew --sandbox=soft
 check "with --sandbox=appcontainer" drew --sandbox=appcontainer
 # GTK 4's runtime's variables, which GTK 3's apps have too.
-check "GLib keeps settings in a key file in the app's data" sh -c "timeout 60 \"\$0\" run $APP 2>&1 | grep -q '^settings in GKeyfileSettingsBackend'" "$zigsaw"
+check "GLib keeps settings in a key file in the app's data" sh -c "timeout 60 bash '$QD_IMAGES_HELPER' run \"\$0\" $APP 2>&1 | grep -q '^settings in GKeyfileSettingsBackend'" "$zigsaw"
 runtime_dir="$QUASIDOCK_HOME\\deploy\\$(grep -o 'sha256:[0-9a-f]*' "$QUASIDOCK_HOME\\blobs\\sha256\\$(manifest_of org.gtk.Gtk3 | cut -d: -f2)" | tail -1 | cut -d: -f2)"
 runtime_files() {
     test -f "$runtime_dir\\bin\\libgtk-3-0.dll" -a -f "$runtime_dir\\bin\\libatk-1.0-0.dll" || return 1
@@ -145,19 +146,19 @@ check "it has GTK 3's translations" test -f "$runtime_dir\\share\\locale\\de\\LC
 stays_up() {
     local seconds=$1
     shift
-    timeout "$seconds" "$zigsaw" run --env=G_DEBUG=fatal-criticals "$@" >/dev/null 2>&1
+    timeout "$seconds" bash "$QD_IMAGES_HELPER" run "$zigsaw" --env=G_DEBUG=fatal-criticals "$@" >/dev/null 2>&1
     [ $? -eq 124 ]
 }
 check "GTK 3's demo runs" stays_up 10 $DEMO
-check "its widget factory runs, without critical warnings for want of a Desktop" stays_up 10 --command=gtk3-widget-factory $DEMO
-check "with --sandbox=soft" stays_up 10 --sandbox=soft --command=gtk3-widget-factory $DEMO
-check "with --sandbox=appcontainer" stays_up 10 --sandbox=appcontainer --command=gtk3-widget-factory $DEMO
+check "its widget factory runs, without critical warnings for want of a Desktop" stays_up 10 --entrypoint=gtk3-widget-factory $DEMO
+check "with --sandbox=soft" stays_up 10 --sandbox=soft --entrypoint=gtk3-widget-factory $DEMO
+check "with --sandbox=appcontainer" stays_up 10 --sandbox=appcontainer --entrypoint=gtk3-widget-factory $DEMO
 
 # Gnumeric, on both runtimes. Built here unless the store has it, which
 # takes about 25 minutes.
 build_image $GNUMERIC gnumeric.json
 gnumeric_dir="$QUASIDOCK_HOME\\deploy\\$(grep -o 'sha256:[0-9a-f]*' "$QUASIDOCK_HOME\\blobs\\sha256\\$(manifest_of $GNUMERIC | cut -d: -f2)" | tail -1 | cut -d: -f2)"
-check "Gnumeric 1.12.62 is installed" sh -c "timeout 60 \"\$0\" run --command=ssconvert $GNUMERIC --version | tr -d '\r' | grep -qx \"ssconvert version '1.12.62'\"" "$zigsaw"
+check "Gnumeric 1.12.62 is installed" sh -c "timeout 60 bash '$QD_IMAGES_HELPER' run \"\$0\" --entrypoint=ssconvert $GNUMERIC --version | tr -d '\r' | grep -qx \"ssconvert version '1.12.62'\"" "$zigsaw"
 check "it has its translations, goffice's and libgsf's" test -f "$gnumeric_dir\\share\\locale\\de\\LC_MESSAGES\\gnumeric-1.12.62.mo" -a -f "$gnumeric_dir\\share\\locale\\de\\LC_MESSAGES\\goffice-0.10.62.mo" -a -f "$gnumeric_dir\\share\\locale\\de\\LC_MESSAGES\\libgsf.mo"
 # A CSV with a formula, to Excel, to OpenDocument and back, as ssconvert's
 # plugins (Excel's, OpenDocument's, and the text importer) read and write
@@ -165,7 +166,7 @@ check "it has its translations, goffice's and libgsf's" test -f "$gnumeric_dir\\
 printf 'item,count,double\nnails,21,=B2*2\n' >"$work\\sheet.csv"
 round_trip() {
     rm -f "$work\\sheet.xlsx" "$work\\sheet.ods" "$work\\back.csv"
-    local ss=(timeout 60 "$zigsaw" run --env=G_DEBUG=fatal-criticals "$@" --command=ssconvert $GNUMERIC)
+    local ss=(timeout 60 bash "$QD_IMAGES_HELPER" run "$zigsaw" --env=G_DEBUG=fatal-criticals "$@" --entrypoint=ssconvert $GNUMERIC)
     "${ss[@]}" sheet.csv sheet.xlsx >/dev/null 2>&1 && "${ss[@]}" sheet.xlsx sheet.ods >/dev/null 2>&1 &&
         "${ss[@]}" sheet.ods back.csv >/dev/null 2>&1 || return 1
     [ "$(tr -d '\r' <"$work\\back.csv" | tr '\n' '|')" = 'item,count,double|nails,21,42|' ] || { echo "got: $(cat "$work\\back.csv")"; return 1; }
@@ -178,7 +179,7 @@ check "with --sandbox=appcontainer" round_trip --sandbox=appcontainer
 cp "$root\\tests\\gtk\\gtk3\\charts.gnumeric" "$work\\"
 charts() {
     rm -f "$work"\\chart.png.*
-    timeout 60 "$zigsaw" run --env=G_DEBUG=fatal-criticals "$@" --command=ssconvert $GNUMERIC --export-graphs charts.gnumeric chart.png >/dev/null 2>&1 || return 1
+    timeout 60 bash "$QD_IMAGES_HELPER" run "$zigsaw" --env=G_DEBUG=fatal-criticals "$@" --entrypoint=ssconvert $GNUMERIC --export-graphs charts.gnumeric chart.png >/dev/null 2>&1 || return 1
     local n
     for n in 0 1; do
         head -c 8 "$work\\chart.png.$n" | od -A n -t x1 | tr -d ' \n' | grep -qx '89504e470d0a1a0a' || { echo "chart.png.$n isn't a PNG"; return 1; }
@@ -188,13 +189,13 @@ check "it draws a spreadsheet's charts as PNGs" charts --sandbox=low
 check "with --sandbox=appcontainer" charts --sandbox=appcontainer
 to_granted_folder() {
     rm -f "$work\\folders\\Documents\\sheet.xlsx"
-    timeout 60 "$zigsaw" run --sandbox=low --filesystem="$work\\folders\\Documents" --command=ssconvert $GNUMERIC sheet.csv "$work\\folders\\Documents\\sheet.xlsx" >/dev/null 2>&1 &&
+    timeout 60 bash "$QD_IMAGES_HELPER" run "$zigsaw" --sandbox=low --filesystem="$work\\folders\\Documents" --entrypoint=ssconvert $GNUMERIC sheet.csv "$work\\folders\\Documents\\sheet.xlsx" >/dev/null 2>&1 &&
         test -s "$work\\folders\\Documents\\sheet.xlsx"
 }
 check "at low integrity, it saves into a path granted with --filesystem" to_granted_folder
-check "Gnumeric opens a spreadsheet from a granted folder" stays_up 20 --filesystem="$work\\folders\\Documents" --command=gnumeric $GNUMERIC "$work\\folders\\Documents\\sheet.xlsx"
-check "with --sandbox=soft" stays_up 20 --sandbox=soft --filesystem="$work\\folders\\Documents" --command=gnumeric $GNUMERIC "$work\\folders\\Documents\\sheet.xlsx"
-check "with --sandbox=appcontainer" stays_up 20 --sandbox=appcontainer --filesystem="$work\\folders\\Documents" --command=gnumeric $GNUMERIC "$work\\folders\\Documents\\sheet.xlsx"
+check "Gnumeric opens a spreadsheet from a granted folder" stays_up 20 --filesystem="$work\\folders\\Documents" --entrypoint=gnumeric $GNUMERIC "$work\\folders\\Documents\\sheet.xlsx"
+check "with --sandbox=soft" stays_up 20 --sandbox=soft --filesystem="$work\\folders\\Documents" --entrypoint=gnumeric $GNUMERIC "$work\\folders\\Documents\\sheet.xlsx"
+check "with --sandbox=appcontainer" stays_up 20 --sandbox=appcontainer --filesystem="$work\\folders\\Documents" --entrypoint=gnumeric $GNUMERIC "$work\\folders\\Documents\\sheet.xlsx"
 
 # Meld, a Python app: PyGObject's runtime runs it, with GTK 3 and GTK 4
 # through their runtimes' typelibs. Built here unless the store has them
@@ -224,7 +225,7 @@ python_says() {
     case " $* " in *" --sandbox=appcontainer "*)
         [ "$(ac_if self-path-dos)" = gap ] && getpath='^Failed to find real location of ' ;;
     esac
-    out=$(timeout 60 "$zigsaw" run "$@" --command="$pygobject_dir\\python.exe" $MELD "$script" 2>&1 | tr -d '\r' |
+    out=$(timeout 60 bash "$QD_IMAGES_HELPER" run "$zigsaw" "$@" --entrypoint="$pygobject_dir\\python.exe" $MELD "$script" 2>&1 | tr -d '\r' |
         grep -v -e '^granted ' -e '^labelled ' -e '^revoked ' -e '^removed the low integrity label ' -e '^\*\* (' -e '^$' -e "$getpath" | tr '\n' '|')
     [ "$out" = "$want|" ] || { echo "got: $out"; return 1; }
 }
@@ -234,7 +235,7 @@ check "with --sandbox=soft" python_says gi3.py 'GTK 3 24 52|GtkSourceView Python
 check "with --sandbox=appcontainer" python_says gi3.py 'GTK 3 24 52|GtkSourceView Python|Pango 1.58.2' --sandbox=appcontainer
 meld_dir="$QUASIDOCK_HOME\\deploy\\$(grep -o 'sha256:[0-9a-f]*' "$QUASIDOCK_HOME\\blobs\\sha256\\$(manifest_of $MELD | cut -d: -f2)" | tail -1 | cut -d: -f2)"
 # Meld's command is pythonw.exe, which shows nothing: python.exe runs it here.
-check "Meld 3.24.1 is installed" sh -c "timeout 60 \"\$0\" run --command='$pygobject_dir\\python.exe' $MELD '$meld_dir\\bin\\meld' --version 2>&1 | tr -d '\r' | grep -qx 'meld 3.24.1'" "$zigsaw"
+check "Meld 3.24.1 is installed" sh -c "timeout 60 bash '$QD_IMAGES_HELPER' run \"\$0\" --entrypoint='$pygobject_dir\\python.exe' $MELD '$meld_dir\\bin\\meld' --version 2>&1 | tr -d '\r' | grep -qx 'meld 3.24.1'" "$zigsaw"
 rm -f "$QUASIDOCK_HOME\\data\\$MELD\\share\\meld.log"
 printf 'one\ntwo\nthree\n' >"$work\\left.txt"
 printf 'one\n2\nthree\nfour\n' >"$work\\right.txt"
@@ -253,7 +254,7 @@ meld_draws() {
     opts=("$@")
     draws=$((draws + 1))
     rm -f "$work\\meld.png"
-    timeout 90 "$zigsaw" run --env=MELD_SCREENSHOT_AND_EXIT="$work\\meld.png" "${opts[@]}" $MELD "${what[@]}" >"$work\\meld-run.txt" 2>&1
+    timeout 90 bash "$QD_IMAGES_HELPER" run "$zigsaw" --env=MELD_SCREENSHOT_AND_EXIT="$work\\meld.png" "${opts[@]}" $MELD "${what[@]}" >"$work\\meld-run.txt" 2>&1
     head -c 8 "$work\\meld.png" 2>/dev/null | od -A n -t x1 | tr -d ' \n' | grep -qx '89504e470d0a1a0a' || { meld_logs; echo "no picture"; return 1; }
     [ "$(wc -c <"$work\\meld.png")" -gt 20000 ] || { meld_logs; echo "a picture of $(wc -c <"$work\\meld.png") bytes"; return 1; }
 }
@@ -269,7 +270,7 @@ check "it compares two folders" meld_draws left right -- --sandbox=low
 # Meld's version control views run git, which MinGit's image, one of Meld's
 # runtimes, puts on its PATH: here it makes a repository, with a commit, a
 # changed file and a new one, in a run of Meld.
-git_in_meld() { (cd "$work\\repo" && timeout 60 "$zigsaw" run --command=git $MELD -c user.name=t -c user.email=t@example.com "$@" 2>&1); }
+git_in_meld() { (cd "$work\\repo" && timeout 60 bash "$QD_IMAGES_HELPER" run "$zigsaw" --entrypoint=git $MELD -c user.name=t -c user.email=t@example.com "$@" 2>&1); }
 make_repo() {
     rm -rf "$work\\repo" && mkdir "$work\\repo" || return 1
     git_in_meld init -q -b main && printf 'one\n' >"$work\\repo\\a.txt" && git_in_meld add a.txt && git_in_meld commit -q -m a || return 1
@@ -302,7 +303,7 @@ one_build() {
     local runtime layer id on=0 others=""
     for runtime in org.gtk.Gtk4 org.gtk.Gtk3; do
         layer=$(layers_of $runtime)
-        for id in $(z list | tr -d '\r' | grep -F "(runtime $runtime " | cut -d' ' -f1); do
+        for id in $(z inspect -f "{{range .Quasidock.Runtimes}}{{if eq .ID \"$runtime\"}}{{$.Quasidock.ID}}{{end}}{{end}}" $(z images -q) | tr -d '\r'); do
             grep -qxF "$id" <<<"$published_ids" || continue
             on=$((on + 1))
             layers_of "$id" | grep -qxF "$layer" || others="$others $id"
@@ -315,8 +316,8 @@ check "the published apps here are all on the same build of each GTK runtime" on
 
 cd "$root" || exit 1
 rm -rf "$docs"
-for id in $installed_here; do z rm --delete-data "$id" >/dev/null 2>&1; done
-z rm --delete-data $APP >/dev/null 2>&1
+for id in $installed_here; do qd_remove_app z "$id" >/dev/null 2>&1; done
+qd_remove_app z $APP >/dev/null 2>&1
 acprobe_rm "$zigsaw"
 rm -rf "$work"
 echo

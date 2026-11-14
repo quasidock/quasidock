@@ -25,6 +25,7 @@ var productionTargets = []binaryTarget{
 }
 
 var testTargetMap = map[string]binaryTarget{
+	"cli-fixture":  {pkg: "./tests/cmd/clifixture", exe: "quasidock-cli-fixture.exe", gui: false},
 	"ctrlc-driver": {pkg: "./tests/cmd/ctrlc", exe: "quasidock-ctrlc.exe", gui: false},
 	"argv-echo":    {pkg: "./tests/cmd/argv", exe: "quasidock-argv.exe", gui: false},
 	"acprobe":      {pkg: "./tests/cmd/acprobe", exe: "quasidock-acprobe.exe", gui: false},

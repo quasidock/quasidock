@@ -39,7 +39,7 @@ for recipe in "$@"; do
     esac
     id=$(grep -o '"id": *"[^"]*"' "$root\\recipes\\$recipe.json" | cut -d'"' -f4)
     version=$(grep -o '"version": *"[^"]*"' "$root\\recipes\\$recipe.json" | head -1 | cut -d'"' -f4)
-    if "$zigsaw" list 2>/dev/null | grep -q "^$id  *$version "; then
+    if [ "$("$zigsaw" inspect -f '{{.Quasidock.Version}}' "$id" 2>/dev/null | tr -d '\r')" = "$version" ]; then
         echo "have    $id $version"
     elif [ $mode = build ]; then
         build "$recipe"

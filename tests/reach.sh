@@ -13,6 +13,7 @@
 
 set -u
 export MSYS_NO_PATHCONV=1
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/images.sh"
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
 quasidock=${1:-$root/out/bin/quasidock.exe}
@@ -50,7 +51,7 @@ in_run() {
     while [ "$1" != -- ]; do opts+=("$1"); shift; done
     shift
     printf '@%s\r\n' "$1" >"$work\\inner.cmd"
-    "$quasidock" run "${opts[@]}" --command=cmd test.reach.outer /c "$work\\inner.cmd" 2>&1
+    bash "$QD_IMAGES_HELPER" run "$quasidock" "${opts[@]}" --entrypoint=cmd test.reach.outer /c "$work\\inner.cmd" 2>&1
 }
 
 # --- --share=host ---
@@ -75,7 +76,7 @@ check "host: it keeps the run's rights: at low in a low run" host_rights
 host_exit() {
     local code
     printf '@quasidock-host cmd /c exit 9\r\n@exit /b %%errorlevel%%\r\n' >"$work\\inner.cmd"
-    "$quasidock" run --share=host --command=cmd test.reach.outer /c "$work\\inner.cmd" >/dev/null 2>&1
+    bash "$QD_IMAGES_HELPER" run "$quasidock" --share=host --entrypoint=cmd test.reach.outer /c "$work\\inner.cmd" >/dev/null 2>&1
     code=$?
     [ "$code" = 9 ] || { echo "exit code $code"; return 1; }
 }
@@ -83,7 +84,7 @@ check "host: its exit code comes back" host_exit
 host_missing() {
     local out code
     printf '@quasidock-host quasidock-no-such-program\r\n@exit /b %%errorlevel%%\r\n' >"$work\\inner.cmd"
-    out=$("$quasidock" run --share=host --command=cmd test.reach.outer /c "$work\\inner.cmd" 2>&1)
+    out=$(bash "$QD_IMAGES_HELPER" run "$quasidock" --share=host --entrypoint=cmd test.reach.outer /c "$work\\inner.cmd" 2>&1)
     code=$?
     [ "$code" = 127 ] || { echo "exit code $code"; return 1; }
     has "$out" "isn't on your PATH" || return 1
@@ -108,12 +109,12 @@ check "host: not without it, nor in an AppContainer, which says so" host_off
 # --- an image that can't run under a sandbox ---
 warns() {
     local out
-    out=$("$quasidock" run --sandbox=appcontainer --command=cmd test.reach.outer /c ver 2>&1)
+    out=$(bash "$QD_IMAGES_HELPER" run "$quasidock" --sandbox=appcontainer --entrypoint=cmd test.reach.outer /c ver 2>&1)
     has "$out" "warning: test.reach.outer can't run under the appcontainer sandbox: the test says it can't" || return 1
     has "$out" "--sandbox=soft" || return 1
-    out=$("$quasidock" run --command=cmd test.reach.outer /c ver 2>&1)
+    out=$(bash "$QD_IMAGES_HELPER" run "$quasidock" --entrypoint=cmd test.reach.outer /c ver 2>&1)
     hasnt "$out" "can't run under" || return 1
-    out=$("$quasidock" run --sandbox=low --command=cmd test.reach.outer /c ver 2>&1)
+    out=$(bash "$QD_IMAGES_HELPER" run "$quasidock" --sandbox=low --entrypoint=cmd test.reach.outer /c ver 2>&1)
     hasnt "$out" "can't run under" || return 1
 }
 check "a run under a sandbox the image can't use warns, and others don't" warns

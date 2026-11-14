@@ -52,13 +52,14 @@ printf '# the published ones\ntop.json\napp.json\nother.json\ntool.json\ngo.json
 export REBUILD_RECIPES=$recipes
 export REBUILD_PUBLISHED=$work/published.txt
 
-# A stand-in for zigsaw: `build <file>` records which, and writes the store's ref, with
+# A stand-in for quasidock: build records an image and inspect returns its digest,
 # a digest of the recipe's bytes, so that a changed pin changes the digest. Or fails
 # on request.
 export QUASIDOCK=$work/fake-quasidock
 export FAKE_CALLS=$work/calls
 cat >"$QUASIDOCK" <<'EOF'
 #!/usr/bin/env bash
+if [ "$1" = inspect ]; then cat "$QUASIDOCK_HOME/fake-images/$4"; exit; fi
 [ "$1" = build ] || exit 9
 name=${2##*[\\/]}
 echo "$name" >>"$FAKE_CALLS"
@@ -68,13 +69,13 @@ if [ "${FAKE_FAIL:-}" = "$name" ]; then
 fi
 id=$(sed -n 's/^ *"id": *"\([^"]*\)".*/\1/p' "$2")
 hex=$(sha256sum <"$2" | cut -d' ' -f1)
-mkdir -p "$QUASIDOCK_HOME/refs"
-printf '{"manifest": "sha256:%s"}\n' "$hex" >"$QUASIDOCK_HOME/refs/$id.json"
+mkdir -p "$QUASIDOCK_HOME/fake-images"
+printf 'sha256:%s\n' "$hex" >"$QUASIDOCK_HOME/fake-images/$id"
 EOF
 chmod +x "$QUASIDOCK"
 
 words() { tr '\n' ' ' | sed 's/ $//'; }
-hex_of() { sed -n 's/.*"manifest": *"sha256:\([0-9a-f]*\)".*/\1/p' "$store/refs/$1.json"; }
+hex_of() { sed 's/^sha256://' "$store/fake-images/$1"; }
 has() { grep -qF -- "$2" "$recipes/$1.json"; }
 
 plan=$(bash "$script" --plan go.json)

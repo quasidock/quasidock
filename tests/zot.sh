@@ -21,6 +21,7 @@
 
 set -u
 export MSYS_NO_PATHCONV=1
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/images.sh"
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
 zigsaw=${QUASIDOCK:-$root\\out\\bin\\quasidock.exe}
 ZOT=dev.zotregistry.zot
@@ -39,7 +40,7 @@ fi
 z() { QUASIDOCK_HOME="$store" "$zigsaw" "$@"; }
 dir=$(mktemp -d)
 version=$(grep -o '"version": *"[^"]*"' "$root\\recipes\\zot.json" | cut -d'"' -f4)
-if ! z list 2>/dev/null | grep -q "^$ZOT  *$version "; then
+if [ "$(qd_version z "$ZOT" 2>/dev/null)" != "$version" ]; then
     echo "building zot $version in $store..."
     # Its SDK from the recipes too, as published images may not have the
     # digests the recipes pin yet.
@@ -63,9 +64,9 @@ config 5001 ', "auth": { "htpasswd": { "path": "htpasswd" } }'
 # zigsaw itself in the background, not a function or subshell running it, so
 # that `kill` below ends zigsaw.
 cd "$dir"
-QUASIDOCK_HOME="$store" "$zigsaw" run $ZOT serve zot-5000.json >zot-5000.log 2>&1 &
+QUASIDOCK_HOME="$store" bash "$QD_IMAGES_HELPER" run "$zigsaw" $ZOT serve zot-5000.json >zot-5000.log 2>&1 &
 plain=$!
-QUASIDOCK_HOME="$store" "$zigsaw" run $ZOT serve zot-5001.json >zot-5001.log 2>&1 &
+QUASIDOCK_HOME="$store" bash "$QD_IMAGES_HELPER" run "$zigsaw" $ZOT serve zot-5001.json >zot-5001.log 2>&1 &
 login=$!
 cd "$OLDPWD"
 
@@ -94,7 +95,7 @@ wait 2>/dev/null
 for _ in $(seq 20); do rm -rf "$dir" 2>/dev/null && break; sleep 0.5; done
 [ ! -e "$dir" ] || rm -rf "$dir"
 if $own_store; then
-    for id in $ZOT org.golang.go net.frippery.busybox; do z rm --delete-data $id >/dev/null 2>&1; done
+    for id in $ZOT org.golang.go net.frippery.busybox; do qd_remove_app z $id >/dev/null 2>&1; done
     z prune --downloads >/dev/null 2>&1
     rm -rf "$store"
 fi

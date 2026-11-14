@@ -21,6 +21,7 @@
 
 set -u
 export MSYS_NO_PATHCONV=1
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/images.sh"
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
 zigsaw=${1:-$root/out/bin/quasidock.exe}
@@ -85,7 +86,7 @@ recipe $RACE '"env", "QUASIDOCK_ID"' ' "exports": {},'
 proxied() {
     local out
     out=$(HTTP_PROXY=http://proxy.invalid:3128 https_proxy=http://proxy.invalid:3129 NO_PROXY=localhost \
-        z run "$@" --command=netprobe-env $APP HTTP_PROXY HTTPS_PROXY NO_PROXY ALL_PROXY | tr -d '\r')
+        qd_run z "$@" --entrypoint=netprobe-env $APP HTTP_PROXY HTTPS_PROXY NO_PROXY ALL_PROXY | tr -d '\r')
     echo "$out"
 }
 with_proxies() {
@@ -109,7 +110,7 @@ check "an AppContainer run with the network gets them too" with_proxies --share=
 race() {
     local i pids=() failed=0
     for i in 1 2 3 4 5 6 7 8; do
-        z run --sandbox=appcontainer $RACE >"$work\\race.$i.out" 2>&1 &
+        qd_run z --sandbox=appcontainer $RACE >"$work\\race.$i.out" 2>&1 &
         pids+=($!)
     done
     for i in "${!pids[@]}"; do
@@ -127,7 +128,7 @@ answers() { "$probe" ping $1 >/dev/null 2>&1; }
 # serve <run options...>: a run of the app's command, which serves, in the
 # background; $server is its zigsaw.
 serve() {
-    "$zigsaw" run "$@" $APP >"$work\\serve.out" 2>&1 &
+    bash "$QD_IMAGES_HELPER" run "$zigsaw" "$@" $APP >"$work\\serve.out" 2>&1 &
     server=$!
 }
 stop() {
@@ -159,7 +160,7 @@ served() {
 # ${port:echo}, as "<listen> <port>".
 ports() {
     local out
-    out=$(z run "$@" --command=netprobe-env $APP ECHO_LISTEN ECHO_PORT | tr -d '\r')
+    out=$(qd_run z "$@" --entrypoint=netprobe-env $APP ECHO_LISTEN ECHO_PORT | tr -d '\r')
     echo "$(sed -n 's/^ECHO_LISTEN=//p' <<<"$out") $(sed -n 's/^ECHO_PORT=//p' <<<"$out")"
 }
 same_ports() {
@@ -192,7 +193,7 @@ moved_ports() {
 check "and its placeholders" moved_ports
 unknown_service() {
     local out
-    out=$(z run --port=db=5432 $APP 2>&1) && return 1
+    out=$(qd_run z --port=db=5432 $APP 2>&1) && return 1
     grep -q 'has no service "db" or used port of that name; it has echo and upstream' <<<"$out" || { echo "$out"; return 1; }
 }
 check "--port for a service the app doesn't have fails" unknown_service
@@ -203,7 +204,7 @@ private_loopback() {
     local out i
     serve --sandbox=appcontainer
     for i in $(seq 40); do
-        out=$(z run --sandbox=appcontainer --command=netprobe-ping $APP 2>&1 | tr -d '\r') && break
+        out=$(qd_run z --sandbox=appcontainer --entrypoint=netprobe-ping $APP 2>&1 | tr -d '\r') && break
         sleep 0.25
     done
     stop
@@ -219,7 +220,7 @@ taken() {
     sleep 0.5
     serve --sandbox=appcontainer
     for i in $(seq 40); do
-        out=$(z run --sandbox=appcontainer --command=netprobe-ping $APP 2>&1 | tr -d '\r') && break
+        out=$(qd_run z --sandbox=appcontainer --entrypoint=netprobe-ping $APP 2>&1 | tr -d '\r') && break
         sleep 0.25
     done
     stop
@@ -245,13 +246,13 @@ exempt() { CheckNetIsolation.exe LoopbackExempt -s | tr -d '\r' | grep -qx "    
 pings() {
     local expected=$1 out
     shift
-    out=$(z run "$@" --command=quasidock-netprobe.exe $APP ping $host_port 2>&1 | tr -d '\r')
+    out=$(qd_run z "$@" --entrypoint=quasidock-netprobe.exe $APP ping $host_port 2>&1 | tr -d '\r')
     [ "$out" = "$expected" ] || { echo "got $out"; return 1; }
 }
 # waiting <run options...>: a run of the app that waits 3 s, in the
 # background; $waiter is its zigsaw.
 waiting() {
-    "$zigsaw" run "$@" --command=quasidock-netprobe.exe $APP wait 3000 >/dev/null 2>&1 &
+    bash "$QD_IMAGES_HELPER" run "$zigsaw" "$@" --entrypoint=quasidock-netprobe.exe $APP wait 3000 >/dev/null 2>&1 &
     waiter=$!
 }
 # becomes <exempt|!exempt>: whether the container is (or isn't) exempt within 3 s.
@@ -318,13 +319,13 @@ check "an exemption you made stays after the run" yours
 
 # The server's port is one the app uses: ${uses:upstream}.
 # upstream <run options...>: what the app's runs see as ${uses:upstream}.
-upstream() { z run "$@" --command=netprobe-env $APP UPSTREAM_PORT | tr -d '\r' | sed -n 's/^UPSTREAM_PORT=//p'; }
+upstream() { qd_run z "$@" --entrypoint=netprobe-env $APP UPSTREAM_PORT | tr -d '\r' | sed -n 's/^UPSTREAM_PORT=//p'; }
 # reaches_upstream <expected> <run options...>: a run of the app pings
 # ${uses:upstream}, and the probe says <expected>.
 reaches_upstream() {
     local expected=$1 out
     shift
-    out=$(z run "$@" --command=netprobe-upstream $APP 2>&1 | tr -d '\r')
+    out=$(qd_run z "$@" --entrypoint=netprobe-upstream $APP 2>&1 | tr -d '\r')
     [ "$out" = "$expected" ] || { echo "got $out"; return 1; }
 }
 direct_use() {
@@ -381,8 +382,8 @@ echo "On $(cmd /c ver | tr -d '\r' | grep -v '^$') (tests/netprobe.zig):"
 sed 's/^/  /' <<<"$report"
 if [ -n "${LOG_DIR:-}" ]; then echo "$report" >"$LOG_DIR\\netprobe.txt"; fi
 
-z rm --delete-data $APP >/dev/null 2>&1
-z rm --delete-data $RACE >/dev/null 2>&1
+qd_remove_app z $APP >/dev/null 2>&1
+qd_remove_app z $RACE >/dev/null 2>&1
 rm -rf "$work"
 echo "$failures check(s) failed."
 [ $failures = 0 ]

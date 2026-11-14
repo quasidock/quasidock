@@ -5,10 +5,8 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"sort"
 	"strings"
 
-	"github.com/quasidock/quasidock/internal/appcontainer"
 	"github.com/quasidock/quasidock/internal/builder"
 	"github.com/quasidock/quasidock/internal/catalog"
 	"github.com/quasidock/quasidock/internal/context"
@@ -16,11 +14,9 @@ import (
 	"github.com/quasidock/quasidock/internal/environment"
 	"github.com/quasidock/quasidock/internal/grants"
 	"github.com/quasidock/quasidock/internal/hkcu"
-	"github.com/quasidock/quasidock/internal/info"
 	"github.com/quasidock/quasidock/internal/lazy"
 	"github.com/quasidock/quasidock/internal/lifecycle"
 	"github.com/quasidock/quasidock/internal/oci"
-	"github.com/quasidock/quasidock/internal/peek"
 	"github.com/quasidock/quasidock/internal/prompt"
 	"github.com/quasidock/quasidock/internal/registry"
 	"github.com/quasidock/quasidock/internal/remote"
@@ -31,108 +27,67 @@ import (
 	"github.com/quasidock/quasidock/internal/version"
 )
 
-const usage = `usage: quasidock [-v|--verbose] <command> [options]
+const usage = `usage: quasidock [--verbose] <command> [options]
 
-commands:
+Docker-style image commands:
+  image ls | images [-q|--quiet]       list cached image references
+  image inspect | inspect [-f TEMPLATE] IMAGE [IMAGE...]
+                                       inspect local images (JSON by default)
+  image pull | pull [--lazy] <image>   cache an image, without prompting
+  image tag | tag SOURCE TARGET       name a cached image; an omitted tag is latest
+  image push | push [--sources] IMAGE  publish the exact local image
+  image rm | rmi IMAGE [IMAGE...]      untag a reference or remove a manifest ID
+  run [options] IMAGE [COMMAND] [ARG...] run an image in the foreground
+
+Quasidock extensions:
   build [--rebuild] [--clean] [--keep-build-dir] [<recipe.json> | <dir>]
-                                  build an app from a recipe, or from the quasidock.json of a
-                                  project's directory (by default the current one), and
-                                  install it; --rebuild builds even if an earlier build had
-                                  the same inputs, and --clean also starts a project's
-                                  modules without their kept work directories
-  search [<words>...]             find apps in the default registry's catalog
-  info <image>                    show what an app in a registry is, needs and may reach
-  ls <image>                      list the files of an app in a registry without pulling
-                                  it, as far as its layers' format allows (eStargz)
-  cat <image> <path>              write a file of an app in a registry to stdout, the
-                                  same way
-  pull [--lazy] <image>           install an app from a registry; --lazy installs
-                                  it before its large eStargz layers are downloaded, their
-                                  files fetched as they're first used while the rest
-                                  downloads
-  push [--sources] <app-id> [<image>]
-                                  publish an installed app to a registry; --sources also
-                                  keeps the files it was built from next to it
-  push --catalog <app-id>...      make the default registry's catalog list these apps,
-                                  as it has them
-  login [--username=<user>] [--password-stdin] <registry>
-                                  check and save a login for a registry
-  logout <registry>               delete a registry's saved login
-  run [options] <app-id> [args]   run an installed app
-  list                            list installed apps and their exported commands
-  grants [<app-id>]               list what quasidock changed outside its store for apps, in
-                                  this store and others, what stores since deleted left,
-                                  and low labels on your folders no record explains
-  grants --take-back <path>       remove a low label that no record explains
-  trust                           list the keys that images' signatures are checked against
-  trust add <registry/path> <key> check images under that path against a public key, as
-                                  ` + "`cosign generate-key-pair`" + ` makes in cosign.pub
-  trust rm <registry/path> [<fingerprint>]
-                                  stop checking them against keys added there
-  signature payload <image>       print what to sign for an image, for ` + "`cosign sign-blob`" + `
-  signature push <image> <payload file> <signature file>
-                                  put that signature beside the image, where pull looks
-  signature check <image>         say whether an image has a good signature
-  rm [--delete-data] <app-id>     uninstall an app
+                                       build a recipe and cache its image
+  image info IMAGE                    describe an image in a registry
+  image files IMAGE                   list a remote eStargz image's files
+  image cat IMAGE PATH                read a remote eStargz image's file
+  push --catalog <app-id>...           publish the default registry's catalog
+  search [<words>...]                 search that catalog
+  login [--username=USER] [--password-stdin] REGISTRY
+  logout REGISTRY
+  trust [add REGISTRY/PATH KEY | rm REGISTRY/PATH [FINGERPRINT]]
+  signature payload IMAGE
+  signature push IMAGE PAYLOAD SIGNATURE
+  signature check IMAGE
+  grants [APP-ID] | grants --take-back PATH
   prune [--dry-run] [--downloads] [--data]
-                                  delete what no installed app needs; also cached
-                                  downloads and tool caches, and the data of uninstalled
-                                  apps
-  repair                          take back what apps may no longer reach, and what stores
-                                  since deleted left
-  version                         print quasidock's version
+                                       collect unnamed images and unused files;
+                                       --data also removes orphan application data
+  repair                              settle obsolete host grants
+  version                             print quasidock's version
 
-An image is <registry>/<repository>[:tag][@digest], e.g. ghcr.io/owner/node:24.21.0,
-or <app-id>[:tag][@digest] for the app's image in the default registry, e.g.
-org.nodejs.node for ghcr.io/zigsaw-io/org.nodejs.node. QUASIDOCK_REGISTRY changes the
-default registry. push goes to the app's image there unless given one, and tags
-with the app's version unless given a tag.
+run options (before IMAGE):
+  --pull=missing|always|never          default: missing; failed pulls never use stale images
+  --entrypoint=COMMAND                override the executable and clear the default CMD
+  -e, --env NAME[=VALUE]               set or inherit an environment variable
+  --sandbox=soft|low|appcontainer      choose the Windows sandbox (default: image, then low)
+  --filesystem=<location>[:ro]         grant cwd or an absolute host path
+  --nofilesystem=LOCATION             remove an image's filesystem grant
+  --share=network|host                grant network access or quasidock-host
+  --unshare=network|host              remove that grant
+  --port=SERVICE=PORT                 override a declared service's localhost port
+  --ephemeral                         discard this run's fresh app data afterwards
+  --verbose                           print runtime diagnostics
 
-Pushing, and pulling private images, needs a login. login saves one per registry in
-Windows Credential Manager; --password-stdin reads the password from stdin. For CI
-and scripts, QUASIDOCK_REGISTRY_USERNAME and QUASIDOCK_REGISTRY_PASSWORD are used instead,
-but only for the default registry. Without either, the login ` + "`docker login`" + ` saved is
-used. From a multi-platform index, pull takes the image for windows/amd64. Blobs over
-64 MiB are pushed in chunks of QUASIDOCK_UPLOAD_CHUNK_SIZE bytes (0: in one request).
+Images use registry/repository[:tag][@sha256:...], or app-id[:tag][@digest].
+QUASIDOCK_REGISTRY changes the default registry (ghcr.io/zigsaw-io).
+A bare cached app ID selects its last successful build/pull; full sha256 IDs
+select local manifests. Explicit names and tags select exactly that reference.
+Image IDs are manifest digests. images -q prints full IDs; inspect is local-only.
+Versions share per-app data and cannot run simultaneously with different manifests.
+Use an explicit command after IMAGE to replace the image's command and default args.
+Named containers, -d, -it, --rm, -v/--mount, and -p are not supported yet.
 
-run options:
-  --command=<name>                run one of the app's exported commands, or another
-                                  executable or batch file from the app or System32
-  --sandbox=soft|low|appcontainer soft shapes the environment; low (the default, unless
-                                  the app's image asks for another) also keeps the app
-                                  from writing anywhere but its data directory and the
-                                  paths granted; appcontainer enforces all of the app's
-                                  permissions
-  --filesystem=<location>[:ro]    grant access to a host location: cwd or an absolute path
-  --nofilesystem=<location>       take away access the app grants
-  --share=network                 allow network access, and pass on your proxy variables
-  --share=host                    put quasidock-host on its PATH, which runs your own programs
-                                  in your real environment, with the run's rights (not in
-                                  an AppContainer)
-  --unshare=<what>                take away what --share gives, or the app's image asks for
-  --port=<service>=<port>         serve one of the app's services on another port
-  --env=NAME=VALUE                set an environment variable
-  --ephemeral                     use a fresh data directory, deleted afterwards
-
-What the low and appcontainer sandboxes grant on host paths stays while the app's
-permissions give it; what a command line adds goes when the app's last run ends. At
-low integrity, a working directory that's your user profile, a directory it's in, or a
-drive's root stays read-only.
-
-An app's services (info lists them) are on localhost, on the ports its config says
-or --port gives, in every sandbox.
-
-Under appcontainer, a run of an app with the network has its container exempt from
-loopback isolation while the app's runs go, so that it reaches other programs on this
-machine; with QUASIDOCK_LOOPBACK_EXEMPTION=0, quasidock never exempts one.
-
-Data lives in %QUASIDOCK_HOME%, or %LOCALAPPDATA%\quasidock when that isn't set.
+Registry credentials use Windows Credential Manager, QUASIDOCK_REGISTRY_USERNAME /
+QUASIDOCK_REGISTRY_PASSWORD (for the default registry), or Docker's saved login.
+Data lives in QUASIDOCK_HOME, or %LOCALAPPDATA%\quasidock.
 `
 
 func isFlag(arg, name string) bool {
-	if name == "verbose" && arg == "-v" {
-		return true
-	}
 	return arg == "--"+name
 }
 
@@ -219,8 +174,8 @@ func (p *settingsParser) apply(opt Option) error {
 			return fmt.Errorf("--%s takes network or host; got %q", name, val)
 		}
 	case "env":
-		if !strings.ContainsRune(val, '=') {
-			return fmt.Errorf("--env expects NAME=VALUE, got %q", val)
+		if val == "" || strings.HasPrefix(val, "=") || strings.ContainsRune(val, '\x00') {
+			return fmt.Errorf("--env expects NAME[=VALUE], got %q", val)
 		}
 		p.env = append(p.env, val)
 	case "port":
@@ -244,17 +199,28 @@ func (p *settingsParser) finish() run.Settings {
 }
 
 func parseRunOptions(ctx *context.Context, args []string) (run.Options, error) {
-	var opts run.Options
+	opts := run.Options{Pull: "missing"}
+	args = append([]string(nil), args...)
 	var parser settingsParser
 
-	flags := append(settingsFlags, "verbose")
+	flags := append(append([]string(nil), settingsFlags...), "verbose")
 	i := 0
 	for i < len(args) {
 		if args[i] == "--" {
 			i++
 			break
 		}
+		if args[i] == "-e" {
+			args[i] = "--env"
+		} else if strings.HasPrefix(args[i], "-e=") {
+			args[i] = "--env=" + args[i][3:]
+		} else if strings.HasPrefix(args[i], "-e") {
+			args[i] = "--env=" + args[i][2:]
+		}
 		if !strings.HasPrefix(args[i], "--") {
+			if strings.HasPrefix(args[i], "-") {
+				return opts, fmt.Errorf("unsupported run option %q; -v is reserved for volumes, use --verbose", args[i])
+			}
 			break
 		}
 		opt, err := readOption(args, &i, flags)
@@ -266,8 +232,15 @@ func parseRunOptions(ctx *context.Context, args []string) (run.Options, error) {
 			if ctx.Store != nil {
 				ctx.Store.Verbose = true
 			}
-		} else if opt.Name == "command" && opt.Value != nil {
-			opts.Command = opt.Value
+		} else if opt.Name == "entrypoint" && opt.Value != nil {
+			opts.Entrypoint = opt.Value
+		} else if opt.Name == "command" {
+			return opts, errors.New("--command was removed; use --entrypoint or a command after IMAGE")
+		} else if opt.Name == "pull" && opt.Value != nil {
+			if *opt.Value != "missing" && *opt.Value != "always" && *opt.Value != "never" {
+				return opts, errors.New("--pull must be missing, always or never")
+			}
+			opts.Pull = *opt.Value
 		} else {
 			if err := parser.apply(opt); err != nil {
 				return opts, err
@@ -417,72 +390,6 @@ func doLogout(ctx *context.Context, regStr string) error {
 	} else {
 		context.Note("no login is saved for %s", host)
 	}
-	return nil
-}
-
-func list(ctx *context.Context) error {
-	refs, err := ctx.Store.ListRefs()
-	if err != nil {
-		return err
-	}
-
-	fmt.Printf("%-32s %-20s %-20s %s\n", "ID", "VERSION", "MANIFEST", "EXPORTS")
-	for _, ref := range refs {
-		image, err := ctx.Store.ReadImage(ref.ID, ref.Manifest)
-		var names []string
-		if err == nil && image != nil {
-			for k := range image.Config.Exports {
-				names = append(names, k)
-			}
-			sort.Strings(names)
-		}
-		var sb strings.Builder
-		fmt.Fprintf(&sb, "%-32s %-20s %-20s %s", ref.ID, ref.Version, oci.ShortDigest(ref.Manifest), strings.Join(names, ", "))
-
-		if err == nil && image != nil {
-			cfg := image.Config
-			for _, r := range cfg.Runtimes {
-				fmt.Fprintf(&sb, "  (runtime %s %s)", r.ID, r.Version)
-			}
-			for _, k := range cfg.Registry {
-				fmt.Fprintf(&sb, "  (keeps HKCU\\%s)", k)
-			}
-			if state := lazy.Describe(ctx.Store, image.Manifest); state != nil {
-				fmt.Fprintf(&sb, "  %s", *state)
-			}
-		}
-		fmt.Println(sb.String())
-	}
-
-	_ = grants.NoteLeftovers(ctx)
-	return nil
-}
-
-func remove(ctx *context.Context, id string, deleteData bool) error {
-	ref, err := ctx.Store.ReadRef(id)
-	if err != nil || ref == nil {
-		return fmt.Errorf("%s is not installed", id)
-	}
-
-	_ = grants.UndoAll(ctx, id)
-	_ = appcontainer.DeleteProfile(id)
-	_ = services.Forget(ctx.Store, id)
-	_ = hkcu.SettleLeftovers(ctx.Store, id)
-
-	_ = ctx.Store.DeleteRef(id)
-
-	if deleted, err := ctx.Store.DeleteUnusedDeployments(ref.Manifest); err == nil && deleted {
-		context.Note("kept %s's files, which are still in use; `quasidock prune` removes them later", id)
-	}
-	if deleteData {
-		_ = store.DeleteTree(ctx.Store.Path("data", id))
-	}
-
-	withData := ""
-	if deleteData {
-		withData = " and its data"
-	}
-	context.Note("removed %s %s%s", id, ref.Version, withData)
 	return nil
 }
 
@@ -664,6 +571,9 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 		fmt.Printf("quasidock %s\n", version.Version)
 		return 0, nil
 	}
+	if replacement := map[string]string{"list": "images", "rm": "rmi", "info": "image info", "ls": "image files", "cat": "image cat", "-v": "--verbose"}[cmd]; replacement != "" {
+		return 1, fmt.Errorf("%s was removed; use quasidock %s", cmd, replacement)
+	}
 	if cmd == "login" {
 		opts, err := parseLoginOptions(rest)
 		if err != nil {
@@ -692,6 +602,11 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 		}
 		return 0, nil
 	}
+	switch cmd {
+	case "build", "image", "images", "inspect", "tag", "pull", "push", "rmi", "run", "search", "trust", "signature", "prune", "repair", "grants":
+	default:
+		return usageError()
+	}
 
 	st, err := store.Open("", ctx.Verbose, "")
 	if err != nil {
@@ -701,6 +616,14 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 	ctx.Store.Verbose = ctx.Verbose
 
 	switch cmd {
+	case "image":
+		return imageCommand(ctx, rest)
+	case "images":
+		return imageCommand(ctx, append([]string{"ls"}, rest...))
+	case "inspect", "tag", "pull", "push":
+		return imageCommand(ctx, append([]string{cmd}, rest...))
+	case "rmi":
+		return imageCommand(ctx, append([]string{"rm"}, rest...))
 	case "build":
 		var opts builder.Options
 		var recipePath *string
@@ -738,72 +661,6 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 		}
 		return 0, lifecycle.Install(ctx, img)
 
-	case "pull":
-		opts, err := parsePullOptions(rest)
-		if err != nil {
-			return usageError()
-		}
-		lock, err := ctx.Store.Lock(false)
-		if err != nil {
-			return 1, err
-		}
-		defer lock.Release()
-
-		envReg := ""
-		if ctx.Env != nil {
-			envReg = ctx.Env["QUASIDOCK_REGISTRY"]
-		}
-		img, err := remote.Fetch(ctx.Store, envReg, opts.Image, ctx.Verbose)
-		if err != nil {
-			return 1, err
-		}
-		_ = opts.Lazy
-		return 0, lifecycle.Install(ctx, img)
-
-	case "push":
-		var opts remote.PushOptions
-		makeCatalog := false
-		var names []string
-		for _, arg := range rest {
-			if isFlag(arg, "sources") {
-				opts.Sources = true
-			} else if isFlag(arg, "catalog") {
-				makeCatalog = true
-			} else if !strings.HasPrefix(arg, "-") {
-				names = append(names, arg)
-			} else {
-				return usageError()
-			}
-		}
-		if makeCatalog {
-			if opts.Sources || len(names) == 0 {
-				return usageError()
-			}
-			lock, err := ctx.Store.Lock(false)
-			if err != nil {
-				return 1, err
-			}
-			defer lock.Release()
-			envReg := ""
-			if ctx.Env != nil {
-				envReg = ctx.Env["QUASIDOCK_REGISTRY"]
-			}
-			return 0, catalog.Push(ctx.Store, envReg, names, ctx.Verbose)
-		}
-		if len(names) != 1 && len(names) != 2 {
-			return usageError()
-		}
-		lock, err := ctx.Store.Lock(false)
-		if err != nil {
-			return 1, err
-		}
-		defer lock.Release()
-		targetImg := ""
-		if len(names) == 2 {
-			targetImg = names[1]
-		}
-		return 0, remote.Push(ctx, names[0], targetImg, opts)
-
 	case "search":
 		for _, arg := range rest {
 			if strings.HasPrefix(arg, "-") {
@@ -837,87 +694,18 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 		}
 		return 0, nil
 
-	case "info":
-		if len(rest) != 1 || strings.HasPrefix(rest[0], "-") {
-			return usageError()
-		}
-		lock, err := ctx.Store.Lock(false)
-		if err != nil {
-			return 1, err
-		}
-		defer lock.Release()
-		envReg := ""
-		if ctx.Env != nil {
-			envReg = ctx.Env["QUASIDOCK_REGISTRY"]
-		}
-		return 0, info.PrintInfo(ctx.Store, envReg, rest[0], ctx.Verbose, os.Stdout)
-
-	case "ls", "cat":
-		isLs := (cmd == "ls")
-		expected := 1
-		if !isLs {
-			expected = 2
-		}
-		if len(rest) != expected {
-			return usageError()
-		}
-		for _, arg := range rest {
-			if strings.HasPrefix(arg, "-") {
-				return usageError()
-			}
-		}
-		lock, err := ctx.Store.Lock(false)
-		if err != nil {
-			return 1, err
-		}
-		defer lock.Release()
-		envReg, _ := ctx.GetEnv("QUASIDOCK_REGISTRY")
-		if isLs {
-			return 0, peek.List(ctx.Store, envReg, rest[0], ctx.Verbose, ctx.Stdout)
-		}
-		return 0, peek.Cat(ctx.Store, envReg, rest[0], rest[1], ctx.Verbose, ctx.Stdout)
-
 	case "run":
 		opts, err := parseRunOptions(ctx, rest)
 		if err != nil {
-			return usageError()
+			return 1, err
 		}
-		return run.Run(ctx, opts)
-
-	case "list":
-		if len(rest) != 0 {
-			return usageError()
-		}
-		return 0, list(ctx)
+		return runImage(ctx, opts)
 
 	case "trust":
 		return trustCommand(ctx, rest)
 
 	case "signature":
 		return signatureCommand(ctx, rest)
-
-	case "rm":
-		deleteData := false
-		var id *string
-		for _, arg := range rest {
-			if isFlag(arg, "delete-data") {
-				deleteData = true
-			} else if id == nil && !strings.HasPrefix(arg, "-") {
-				val := arg
-				id = &val
-			} else {
-				return usageError()
-			}
-		}
-		if id == nil {
-			return usageError()
-		}
-		lock, err := ctx.Store.Lock(false)
-		if err != nil {
-			return 1, err
-		}
-		defer lock.Release()
-		return 0, remove(ctx, *id, deleteData)
 
 	case "prune":
 		var opts lifecycle.PruneOptions

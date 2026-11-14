@@ -29,6 +29,7 @@
 
 set -u
 export MSYS_NO_PATHCONV=1
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/images.sh"
 
 # The sections below (`if section <name>`), in the groups the Reproduce
 # workflow runs in parallel jobs, one job a group. A group runs its sections
@@ -108,7 +109,7 @@ fails() { ! "$@"; }
 z() { "$zigsaw" "$@"; }
 deployments() { find "$QUASIDOCK_HOME/deploy" -mindepth 1 -maxdepth 1 -type d | wc -l; }
 expect_count() { local got; got=$("$1"); [ "$got" -eq "$2" ] || { echo "$1: got $got, want $2"; return 1; }; }
-manifest_of() { grep -o 'sha256:[0-9a-f]*' "$QUASIDOCK_HOME\\refs\\$1.json"; }
+manifest_of() { qd_manifest "$zigsaw" "$1"; }
 # Builds a recipe and prints its manifest digest.
 built_manifest() { z build "$1" 2>&1 | grep -o 'manifest sha256:[0-9a-f]*' | cut -d' ' -f2; }
 same_image() { [ "$(built_manifest "$1")" = "$2" ]; }
@@ -160,12 +161,12 @@ app_recipe "$BB@$bb_digest" >"$work\\app.json"
 
 check "an app with a runtime builds" z build "$work\\app.json"
 app_digest=$(manifest_of $APP)
-runs() { z run $APP a "b c" | grep -q "^args: a b c" && z run $APP | grep -q "^hello from $APP"; }
+runs() { qd_run z $APP a "b c" | grep -q "^args: a b c" && qd_run z $APP | grep -q "^hello from $APP"; }
 check "it runs its command from the runtime" runs
 path_order() {
     local path
     # (BusyBox shows PATH with '/'.)
-    path=$(z run --command=rt-bb $APP sh -c 'echo "$PATH"' | tr -d '\r' | tr '/' '\\')
+    path=$(qd_run z --entrypoint=rt-bb $APP sh -c 'echo "$PATH"' | tr -d '\r' | tr '/' '\\')
     case "$path" in
     "$QUASIDOCK_HOME\\deploy\\"*"\\tools;$QUASIDOCK_HOME\\deploy\\"*";"*System32*) ;;
     *) echo "PATH is $path"; return 1 ;;
@@ -173,12 +174,12 @@ path_order() {
 }
 check "PATH has the app's directories, then the runtime's" path_order
 check "the runtime's layer is deployed once" expect_count deployments 2
-check "list shows the runtime" sh -c "\"\$0\" list | grep '^$APP ' | grep -q '(runtime $BB FRP-'" "$zigsaw"
+check "inspect shows the runtime" sh -c "\"\$0\" inspect -f '{{range .Quasidock.Runtimes}}{{.ID}} {{.Version}}{{end}}' '$APP' | grep -q '$BB FRP-'" "$zigsaw"
 check "the same recipe builds the same image" same_image "$work\\app.json" "$app_digest"
-check "--sandbox=appcontainer runs it from the runtime" sh -c "\"\$0\" run --sandbox=appcontainer $APP y | grep -q '^args: y'" "$zigsaw"
+check "--sandbox=appcontainer runs it from the runtime" sh -c "bash '$QD_IMAGES_HELPER' run \"\$0\" --sandbox=appcontainer $APP y | grep -q '^args: y'" "$zigsaw"
 
 removed_runtime_app() {
-    z rm $BB >/dev/null 2>&1 && z prune >/dev/null 2>&1 && runs && expect_count deployments 2
+    qd_remove_app z $BB >/dev/null 2>&1 && z prune >/dev/null 2>&1 && runs && expect_count deployments 2
 }
 check "removing the runtime's app leaves the app working, and prune keeps the layer" removed_runtime_app
 check "prune keeps the runtime's image for builds" sh -c "\"\$0\" prune --dry-run 2>&1 | grep -q 'kept 1 image(s) that builds use'" "$zigsaw"
@@ -216,7 +217,7 @@ rt_digest=$(manifest_of $RT)
 rt_files() {
     local dir="$QUASIDOCK_HOME\\deploy\\$(own_layer $RT)"
     [ -f "$dir\\bin\\busybox.exe" ] && [ ! -e "$dir\\include" ] && [ ! -e "$dir\\lib" ] || { echo "files: $(cd "$dir" && find .)"; return 1; }
-    [ "$(z run $RT echo from the sdk | tr -d '\r')" = "from the sdk" ]
+    [ "$(qd_run z $RT echo from the sdk | tr -d '\r')" = "from the sdk" ]
 }
 check "it has the SDK's program without its headers and libraries, and runs it" rt_files
 records_image() { config_of $RT | tr -d ' \r\n' | grep -q "\"images\":\[\"$sdk_digest\"\]"; }
@@ -286,20 +287,20 @@ EOF
 alias_app_recipe "$TOOL@$tool_digest" >"$work\\alias\\app.json"
 check "an app with it as a runtime builds" z build "$work\\alias\\app.json"
 alias_app_digest=$(manifest_of $AAPP)
-check "the app's alias wins over its runtime's" sh -c '[ "$("$0" run '$AAPP' -c "greet hi" | tr -d "\r")" = "app: hi" ]' "$zigsaw"
-check "a runtime's alias runs, dropping what it drops" sh -c '[ "$("$0" run '$AAPP' -c "shout --quiet x" | tr -d "\r")" = "shout x" ]' "$zigsaw"
-check "an alias wins over BusyBox's applet of the same name" sh -c '[ "$("$0" run '$AAPP' -c ar | tr -d "\r")" = "tool ar" ]' "$zigsaw"
-check "an alias's exit code comes through" sh -c '[ "$("$0" run '$AAPP' -c "fail; echo \$?" | tr -d "\r")" = 7 ]' "$zigsaw"
-check "--command finds an alias" sh -c '[ "$("$0" run --command=greet '$AAPP' there | tr -d "\r")" = "app: there" ]' "$zigsaw"
-check "the app's alias runs its runtime's file, \${tool} its directory" sh -c '[ "$("$0" run '$AAPP' -c "rt x" | tr -d "\r" | tr / \\\\)" = "rt: $1\\deploy\\$2 x" ]' "$zigsaw" "$QUASIDOCK_HOME" "$(own_layer $TOOL)"
-check "the runtime's variables come with it" sh -c '[ "$("$0" run '$AAPP' -c "echo \$ALIAS_TOOL" | tr -d "\r" | tr / \\\\)" = "$1\\deploy\\$2" ]' "$zigsaw" "$QUASIDOCK_HOME" "$(own_layer $TOOL)"
+check "the app's alias wins over its runtime's" sh -c '[ "$(bash "$QD_IMAGES_HELPER" run "$0" '$AAPP' -c "greet hi" | tr -d "\r")" = "app: hi" ]' "$zigsaw"
+check "a runtime's alias runs, dropping what it drops" sh -c '[ "$(bash "$QD_IMAGES_HELPER" run "$0" '$AAPP' -c "shout --quiet x" | tr -d "\r")" = "shout x" ]' "$zigsaw"
+check "an alias wins over BusyBox's applet of the same name" sh -c '[ "$(bash "$QD_IMAGES_HELPER" run "$0" '$AAPP' -c ar | tr -d "\r")" = "tool ar" ]' "$zigsaw"
+check "an alias's exit code comes through" sh -c '[ "$(bash "$QD_IMAGES_HELPER" run "$0" '$AAPP' -c "fail; echo \$?" | tr -d "\r")" = 7 ]' "$zigsaw"
+check "--entrypoint finds an alias" sh -c '[ "$(bash "$QD_IMAGES_HELPER" run "$0" --entrypoint=greet '$AAPP' there | tr -d "\r")" = "app: there" ]' "$zigsaw"
+check "the app's alias runs its runtime's file, \${tool} its directory" sh -c '[ "$(bash "$QD_IMAGES_HELPER" run "$0" '$AAPP' -c "rt x" | tr -d "\r" | tr / \\\\)" = "rt: $1\\deploy\\$2 x" ]' "$zigsaw" "$QUASIDOCK_HOME" "$(own_layer $TOOL)"
+check "the runtime's variables come with it" sh -c '[ "$(bash "$QD_IMAGES_HELPER" run "$0" '$AAPP' -c "echo \$ALIAS_TOOL" | tr -d "\r" | tr / \\\\)" = "$1\\deploy\\$2" ]' "$zigsaw" "$QUASIDOCK_HOME" "$(own_layer $TOOL)"
 records_aliases() { config_of $AAPP | tr -d ' \r\n' | grep -q '"runtimes":{"tool":{.*"aliases":{"greet":{"command":"busybox.exe","args":\["echo","tool:"\]}'; }
 check "the app's config records the runtime's aliases" records_aliases
-check "aliases work under --sandbox=low, the last of sh -c's commands too" sh -c '[ "$("$0" run --sandbox=low '$AAPP' -c "greet x; shout --quiet y" | tr -d "\r" | tr "\n" " ")" = "app: x shout y " ]' "$zigsaw"
+check "aliases work under --sandbox=low, the last of sh -c's commands too" sh -c '[ "$(bash "$QD_IMAGES_HELPER" run "$0" --sandbox=low '$AAPP' -c "greet x; shout --quiet y" | tr -d "\r" | tr "\n" " ")" = "app: x shout y " ]' "$zigsaw"
 # In an AppContainer, BusyBox's sh doesn't see zigsaw, takes itself for an
 # orphan, and doesn't wait for its last command (README's known gaps).
-check "aliases work under --sandbox=appcontainer" sh -c '[ "$("$0" run --sandbox=appcontainer '$AAPP' -c "greet x; shout --quiet y; true" | tr -d "\r" | tr "\n" " ")" = "app: x shout y " ]' "$zigsaw"
-check "and in --ephemeral runs" sh -c '[ "$("$0" run --ephemeral '$AAPP' -c "greet e" | tr -d "\r")" = "app: e" ]' "$zigsaw"
+check "aliases work under --sandbox=appcontainer" sh -c '[ "$(bash "$QD_IMAGES_HELPER" run "$0" --sandbox=appcontainer '$AAPP' -c "greet x; shout --quiet y; true" | tr -d "\r" | tr "\n" " ")" = "app: x shout y " ]' "$zigsaw"
+check "and in --ephemeral runs" sh -c '[ "$(bash "$QD_IMAGES_HELPER" run "$0" --ephemeral '$AAPP' -c "greet e" | tr -d "\r")" = "app: e" ]' "$zigsaw"
 check "the same recipe builds the same image" same_image "$work\\alias\\app.json" "$alias_app_digest"
 
 # The SDK: the tool is its runtime. A recipe that builds with it gets the
@@ -398,7 +399,7 @@ committed() {
 check "it got the files git would commit, less what skip leaves out, and no empty directory" committed
 untouched() { [ "$(proj_state)" = "$proj_before" ] || { echo "the project's directory changed"; return 1; }; }
 check "the build wrote nothing in the project's directory" untouched
-reused() { (cd "$work" && z -v build "$proj" 2>&1) | grep -q "built before from the same inputs"; }
+reused() { (cd "$work" && z --verbose build "$proj" 2>&1) | grep -q "built before from the same inputs"; }
 check "given the directory, build reuses the image of the same files" reused
 echo changed >"$proj\\a.log"
 check "an ignored file changed, it still does" reused
@@ -407,7 +408,7 @@ rebuilds() { local d; d=$(built_manifest "$proj") && [ -n "$d" ] && [ "$d" != "$
 check "a committed file changed, it builds a new image" rebuilds
 records_files() {
     local h
-    h=$(z -v build "$proj" 2>&1 | grep -o "module files: [0-9]* files from .* (sha256 [0-9a-f]*)" | grep -o '[0-9a-f]\{64\}')
+    h=$(z --verbose build "$proj" 2>&1 | grep -o "module files: [0-9]* files from .* (sha256 [0-9a-f]*)" | grep -o '[0-9a-f]\{64\}')
     [ -n "$h" ] && config_of $PROJ | tr -d ' \r\n' | grep -q "\"sources\":\[\"$h\"\]"
 }
 check "the image's record of the build has the hash of its files" records_files
@@ -488,7 +489,7 @@ formats() {
 }
 check "prettier formats a file in the working directory" formats
 npm_prefix() {
-    [ "$(z run --command=node io.prettier.prettier -e 'console.log(process.env.NPM_CONFIG_PREFIX)' | tr -d '\r')" = "$QUASIDOCK_HOME\\data\\io.prettier.prettier\\npm" ]
+    [ "$(qd_run z --entrypoint=node io.prettier.prettier -e 'console.log(process.env.NPM_CONFIG_PREFIX)' | tr -d '\r')" = "$QUASIDOCK_HOME\\data\\io.prettier.prettier\\npm" ]
 }
 check "node's variables point into prettier's data directory" npm_prefix
 fi
@@ -522,7 +523,7 @@ hello_time=$((SECONDS - start))
 hello_digest=$(manifest_of $HELLO)
 hello_runs() {
     local out
-    out=$(z run $HELLO zigsaw | tr -d '\r')
+    out=$(qd_run z $HELLO zigsaw | tr -d '\r')
     [ "$out" = "hello, zigsaw
 built from B:/src/app/main.c
 twice 21 is 42
@@ -554,12 +555,12 @@ warm_hello() {
 start=$SECONDS
 check "a rebuild with zig's kept cache makes the same image" warm_hello
 printf '      (%d s; the first build took %d s)\n' $((SECONDS - start)) "$hello_time"
-check "zig run as an app has its cache in its data directory" sh -c "\"\$0\" run org.ziglang.zig env | grep '\.global_cache_dir' | grep -qF 'data\\\\org.ziglang.zig\\\\cache\"'" "$zigsaw"
+check "zig run as an app has its cache in its data directory" sh -c "bash '$QD_IMAGES_HELPER' run \"\$0\" org.ziglang.zig env | grep '\.global_cache_dir' | grep -qF 'data\\\\org.ziglang.zig\\\\cache\"'" "$zigsaw"
 # A toolchain's image asks for soft: at low, what it built would be labelled
 # low, and Windows starts a program labelled low at low integrity, wherever
 # it's started from.
 zig_soft() {
-    z -v run org.ziglang.zig version 2>&1 | grep -q '^sandbox  soft' || { echo "zig's run isn't soft"; return 1; }
+    qd_run z --verbose  org.ziglang.zig version 2>&1 | grep -q '^sandbox  soft' || { echo "zig's run isn't soft"; return 1; }
     ! icacls "$work" | grep -q 'Mandatory Label' || { echo "it labelled its working directory"; return 1; }
 }
 check "zig's image runs under soft unless told otherwise, and labels nothing" zig_soft
@@ -592,7 +593,7 @@ check "prune keeps tools' caches, and says so" sh -c "\"\$0\" prune --dry-run 2>
 # Builds are reused when nothing they depend on changed.
 reused() {
     local out
-    out=$(z -v build "$1" 2>&1)
+    out=$(z --verbose build "$1" 2>&1)
     grep -q 'built before from the same inputs' <<<"$out" && ! grep -q '^\[' <<<"$out"
 }
 check "an unchanged recipe isn't built again" reused "$work\\c\\hello.json"
@@ -604,13 +605,13 @@ z build "$work\\noted\\noted.json" >/dev/null 2>&1
 noted_digest=$(manifest_of test.build.noted)
 rebuilt() {
     local out
-    out=$(z -v build --rebuild "$work\\noted\\noted.json" 2>&1)
+    out=$(z --verbose build --rebuild "$work\\noted\\noted.json" 2>&1)
     ! grep -q 'built before' <<<"$out" && grep -q '^\[m 1/1\]' <<<"$out" && grep -q "manifest $noted_digest" <<<"$out"
 }
 check "--rebuild builds it anyway, to the same image" rebuilt
 local_source_changed() {
     echo two >"$work\\noted\\note.txt"
-    ! z -v build "$work\\noted\\noted.json" 2>&1 | grep -q 'built before' &&
+    ! z --verbose build "$work\\noted\\noted.json" 2>&1 | grep -q 'built before' &&
         [ "$(tr -d '\r' <"$QUASIDOCK_HOME\\deploy\\$(own_layer test.build.noted)\\x.txt")" = two ]
 }
 check "a changed local source is built again" local_source_changed
@@ -624,7 +625,7 @@ other_build() {
         [ "$(zo build "$work\\c\\hello.json" 2>&1 | grep -o 'manifest sha256:[0-9a-f]*' | cut -d' ' -f2)" = "$hello_digest" ]
 }
 check "the same recipe builds the same image in another store, at another path" other_build
-for id in $HELLO org.ziglang.zig $BB; do zo rm --delete-data $id >/dev/null 2>&1; done
+for id in $HELLO org.ziglang.zig $BB; do qd_remove_app zo $id >/dev/null 2>&1; done
 zo prune --downloads >/dev/null 2>&1
 rm -rf "$(dirname "$other_store")"
 
@@ -633,7 +634,7 @@ broken() {
     local out
     out=$(z build "$work\\broken.json" 2>&1)
     grep -q 'module m: build command 2 exited with code 3' <<<"$out" && ! grep -q '\[m 3/3\]' <<<"$out" &&
-        ! z list | grep -q '^test.build.broken ' && drive_free && no_build_root
+        ! qd_cached z test.build.broken && drive_free && no_build_root
 }
 check "a failing command is reported, and the build stops and leaves nothing behind" broken
 kept() {
@@ -685,7 +686,7 @@ check "a vendor step that makes something else fails, naming both hashes" sh -c 
 kill $httpd 2>/dev/null
 vendored_from_cache() {
     local out
-    out=$(z -v build --rebuild "$work\\vendored.json" 2>&1) || { echo "$out" | tail -3; return 1; }
+    out=$(z --verbose build --rebuild "$work\\vendored.json" 2>&1) || { echo "$out" | tail -3; return 1; }
     grep -q 'vendored files from the cache' <<<"$out" && ! grep -q '^\[m vendor' <<<"$out" &&
         [ "$(tr -d '\r' <"$QUASIDOCK_HOME\\deploy\\$(own_layer test.build.vendored)\\x.txt")" = served ]
 }
@@ -753,7 +754,7 @@ cmake_time=$((SECONDS - start))
 cmake_app_digest=$(manifest_of $CMAKEAPP)
 cmake_runs() {
     local out
-    out=$(z run $CMAKEAPP zigsaw | tr -d '\r')
+    out=$(qd_run z $CMAKEAPP zigsaw | tr -d '\r')
     [ "$out" = "hello, zigsaw
 built from B:/src/hello/main.c
 twice 21 is 42
@@ -792,7 +793,7 @@ if section llvm; then
 # library the image keeps changes with the time it's built at.
 LLVMAPP=test.build.cmake-llvm
 check "llvm-mingw.json builds llvm-mingw's image" z build "$root\\recipes\\llvm-mingw.json"
-[ -f "$QUASIDOCK_HOME\\refs\\org.cmake.cmake.json" ] || z build "$root\\recipes\\cmake.json" >/dev/null 2>&1
+qd_cached "$zigsaw" "org.cmake.cmake" || z build "$root\\recipes\\cmake.json" >/dev/null 2>&1
 mkdir -p "$work\\cmake-llvm" && cp "$(cygpath -u "$root")"/tests/build/c/*.{c,h,cpp,rc} "$(cygpath -u "$root")"/tests/build/cmake/CMakeLists.txt "$(cygpath -u "$work")/cmake-llvm/" &&
     sed -e "s/\"test.build.cmake\"/\"$LLVMAPP\"/" -e "s/\"zig\": \"org.ziglang.zig@@ZIG@\"/\"llvm\": \"com.github.mstorsjo.llvm-mingw@$(manifest_of com.github.mstorsjo.llvm-mingw)\"/" \
         -e 's|"cleanup": \["/include", "/lib"\],|"cleanup": ["/include"],|' \
@@ -802,7 +803,7 @@ check "a CMake project of C, C++ and resources builds with CMake's and llvm-ming
 llvm_app_digest=$(manifest_of $LLVMAPP)
 llvm_runs() {
     local out exe
-    out=$(z run $LLVMAPP zigsaw | tr -d '\r')
+    out=$(qd_run z $LLVMAPP zigsaw | tr -d '\r')
     [ "$out" = "hello, zigsaw
 built from B:/src/hello/main.c
 twice 21 is 42
@@ -824,7 +825,7 @@ mkdir -p "$work\\xdll" && cp "$(cygpath -u "$root")"/tests/build/xdll/*.{h,cpp} 
 check "two DLLs and a program in C++ build with llvm-mingw's image" z build "$work\\xdll\\xdll.json"
 xdll_runs() {
     local out
-    out=$(z run test.build.xdll | tr -d '\r') || { grep -v '^ok ' <<<"$out"; return 1; }
+    out=$(qd_run z test.build.xdll | tr -d '\r') || { grep -v '^ok ' <<<"$out"; return 1; }
     [ "$(grep -c '^ok ' <<<"$out")" = 19 ] || { echo "$out"; return 1; }
 }
 check "C++ works across the DLLs, each with libc++ linked in" xdll_runs
@@ -853,7 +854,7 @@ meson_time=$((SECONDS - start))
 meson_app_digest=$(manifest_of $MESONAPP)
 meson_runs() {
     local out dir="$QUASIDOCK_HOME\\deploy\\$(own_layer $MESONAPP)"
-    out=$(z run $MESONAPP zigsaw | tr -d '\r')
+    out=$(qd_run z $MESONAPP zigsaw | tr -d '\r')
     [ "$out" = "hello, zigsaw
 built from ../main.c
 twice 21 is 42
@@ -883,7 +884,7 @@ mkdir -p "$work\\make" && cp "$(cygpath -u "$root")"/tests/build/make/{Makefile,
 check "a GNU Makefile builds with make's, zig's and BusyBox's images" z build "$work\\make\\make.json"
 make_runs() {
     local out dir="$QUASIDOCK_HOME\\deploy\\$(own_layer $MAKEAPP)"
-    out=$(z run $MAKEAPP | tr -d '\r')
+    out=$(qd_run z $MAKEAPP | tr -d '\r')
     [ "$out" = "one plus two is 3" ] || { echo "got: $out"; return 1; }
     out=$(cat "$dir\\names.txt" "$dir\\shell.txt" "$dir\\sub.txt" | tr -d '\r')
     [ "$out" = "one
@@ -901,10 +902,10 @@ vswhere="$(cygpath -u "$(printenv 'ProgramFiles(x86)')")/Microsoft Visual Studio
 if [ -f "$vswhere" ]; then
     MSVC=test.build.msvc
     check "a recipe with \"host\": [\"msvc\"] builds with Visual Studio" sh -c "\"\$0\" build '$root\\tests\\build\\msvc\\hello.json' 2>&1 | grep -q 'warning: built with the host.s msvc'" "$zigsaw"
-    check "it runs" sh -c "\"\$0\" run $MSVC | grep -q '^hello from MSVC'" "$zigsaw"
+    check "it runs" sh -c "bash '$QD_IMAGES_HELPER' run \"\$0\" $MSVC | grep -q '^hello from MSVC'" "$zigsaw"
     records_host() { config_of $MSVC | tr -d ' \r\n' | grep -q '"host":{"msvc":"[0-9.]*","windows-sdk":"[0-9.]*"}'; }
     check "the config records the MSVC and Windows SDK versions" records_host
-    check "MSVC builds aren't reused" sh -c "! \"\$0\" -v build '$root\\tests\\build\\msvc\\hello.json' 2>&1 | grep -q 'built before'" "$zigsaw"
+    check "MSVC builds aren't reused" sh -c "! \"\$0\" --verbose build '$root\\tests\\build\\msvc\\hello.json' 2>&1 | grep -q 'built before'" "$zigsaw"
     check "and leave nothing behind" free_afterwards
 else
     echo "skip  MSVC: no Visual Studio installer ($vswhere)"
@@ -915,7 +916,7 @@ fi
 
 if section sqlite; then
 check "sqlite.json builds SQLite and zlib from source" z build "$root\\recipes\\sqlite.json"
-check "sqlite3 runs, with zlib" sh -c "[ \"\$(\"\$0\" run org.sqlite.sqlite3 :memory: 'select sqlite_version(), length(sqlar_uncompress(sqlar_compress(zeroblob(1000)), 1000))' | tr -d '\r')\" = '3.53.4|1000' ]" "$zigsaw"
+check "sqlite3 runs, with zlib" sh -c "[ \"\$(bash '$QD_IMAGES_HELPER' run \"\$0\" org.sqlite.sqlite3 :memory: 'select sqlite_version(), length(sqlar_uncompress(sqlar_compress(zeroblob(1000)), 1000))' | tr -d '\r')\" = '3.53.4|1000' ]" "$zigsaw"
 fi
 
 # --- 7-Zip, for sources zigsaw doesn't unpack -----------------------------------------
@@ -926,11 +927,11 @@ check "7zip.json makes 7-Zip's image from its installer, which its 7zr unpacks" 
 # in its sdk to unpack it, as recipes can for installers and .7z downloads.
 SEVENZIP=test.build.sevenzip
 mkdir -p "$work\\7z\\in" && printf '@echo hello from a .7z\r\n' >"$work\\7z\\in\\hello.cmd"
-(cd "$work\\7z\\in" && z run org.7_zip.7zip a -bd hello.7z hello.cmd >/dev/null 2>&1) && mv "$work\\7z\\in\\hello.7z" "$work\\7z\\"
+(cd "$work\\7z\\in" && qd_run z org.7_zip.7zip a -bd hello.7z hello.cmd >/dev/null 2>&1) && mv "$work\\7z\\in\\hello.7z" "$work\\7z\\"
 sed -e "s/@SEVENZIP@/$(manifest_of org.7_zip.7zip)/" -e "s/@BUSYBOX@/$bb_digest/" \
     "$root\\tests\\build\\sevenzip\\hello.json.in" >"$work\\7z\\hello.json"
 check "a recipe with 7-Zip in its sdk unpacks a .7z source" z build "$work\\7z\\hello.json"
-check "what it unpacked runs" sh -c "[ \"\$(\"\$0\" run $SEVENZIP | tr -d '\r')\" = 'hello from a .7z' ]" "$zigsaw"
+check "what it unpacked runs" sh -c "[ \"\$(bash '$QD_IMAGES_HELPER' run \"\$0\" $SEVENZIP | tr -d '\r')\" = 'hello from a .7z' ]" "$zigsaw"
 fi
 
 # --- Rust from source ---------------------------------------------------------------
@@ -950,12 +951,12 @@ check "a Rust program builds, its crates vendored, with GNU dlltool and zig's as
 rust_app_digest=$(manifest_of $RUST)
 rust_runs() {
     local out
-    out=$(z run $RUST zigsaw | tr -d '\r')
+    out=$(qd_run z $RUST zigsaw | tr -d '\r')
     [ "$out" = "hello, zigsaw, from Rust
 hello from C, zigsaw (42)
 Windows is up: true" ] || { echo "got: $out"; return 1; }
     # C's stderr, from zig's headers and Rust's C runtime.
-    [ "$(z run --env=GREET_DEBUG=1 $RUST x 2>&1 >/dev/null | tr -d '\r')" = "greet_c(x)" ]
+    [ "$(qd_run z --env=GREET_DEBUG=1 $RUST x 2>&1 >/dev/null | tr -d '\r')" = "greet_c(x)" ]
 }
 check "it runs, calling its C, and Windows through windows-sys" rust_runs
 # windows-sys's raw-dylib imports come from import libraries rustc makes
@@ -973,7 +974,7 @@ check "built again, from the vendored crates in the cache, it's the same image" 
 # not the x86_64-w64-mingw32-gcc llvm-mingw puts on PATH (whose lld has no
 # libgcc_eh), even for build scripts under --target.
 RUSTLLVM=test.build.rust-llvm
-[ -f "$QUASIDOCK_HOME\\refs\\com.github.mstorsjo.llvm-mingw.json" ] || z build "$root\\recipes\\llvm-mingw.json" >/dev/null 2>&1
+qd_cached "$zigsaw" "com.github.mstorsjo.llvm-mingw" || z build "$root\\recipes\\llvm-mingw.json" >/dev/null 2>&1
 mkdir -p "$work\\rust-llvm" && cp "$(cygpath -u "$work")"/rust/{Cargo.toml,Cargo.lock,build.rs,greet.c,main.rs} "$(cygpath -u "$work")/rust-llvm/" &&
     sed -e "s/\"test.build.rust\"/\"$RUSTLLVM\"/" -e "s/@RUST@/$(manifest_of org.rust-lang.rust)/" -e "s/@BUSYBOX@/$bb_digest/" \
         -e "s/\"zig\": \"org.ziglang.zig@@ZIG@\"/\"llvm\": \"com.github.mstorsjo.llvm-mingw@$(manifest_of com.github.mstorsjo.llvm-mingw)\"/" \
@@ -983,7 +984,7 @@ mkdir -p "$work\\rust-llvm" && cp "$(cygpath -u "$work")"/rust/{Cargo.toml,Cargo
 check "it builds with llvm-mingw's image instead of zig's" z build "$work\\rust-llvm\\hello.json"
 rust_llvm_runs() {
     local out
-    out=$(z run $RUSTLLVM zigsaw | tr -d '\r')
+    out=$(qd_run z $RUSTLLVM zigsaw | tr -d '\r')
     [ "$out" = "hello, zigsaw, from Rust
 hello from C, zigsaw (42)
 Windows is up: true" ] || { echo "got: $out"; return 1; }
@@ -1007,7 +1008,7 @@ check "a Go program builds with Go's image" z build "$work\\go\\hello.json"
 go_app_digest=$(manifest_of $GOAPP)
 go_runs() {
     local out
-    out=$(z run $GOAPP zigsaw | tr -d '\r')
+    out=$(qd_run z $GOAPP zigsaw | tr -d '\r')
     [ "$out" = "hello, zigsaw, from Go
 built from zigsaw.test/hello/main.go
 Windows is up: true" ] || { echo "got: $out"; return 1; }
@@ -1027,7 +1028,7 @@ check "a Go program with C builds with Go's and zig's images, cgo on by itself" 
 cgo_app_digest=$(manifest_of $CGO)
 cgo_runs() {
     local out
-    out=$(z run $CGO zigsaw | tr -d '\r')
+    out=$(qd_run z $CGO zigsaw | tr -d '\r')
     [ "$out" = "hello, zigsaw, from Go and C
 twice 21 is 42
 built from zigsaw.test/cgo/main.go
@@ -1061,13 +1062,13 @@ check "the runtime has dotnet.exe and the three shared frameworks, not the SDK's
 mkdir -p "$work\\dotnettiny"
 sdk_builds_cwd() {
     local out
-    out=$(cd "$work\\dotnettiny" && z run com.microsoft.dotnet.Sdk new console -n tiny -o . 2>&1 &&
-        z run com.microsoft.dotnet.Sdk run 2>&1) || { echo "$out" | tail -3; return 1; }
+    out=$(cd "$work\\dotnettiny" && qd_run z com.microsoft.dotnet.Sdk new console -n tiny -o . 2>&1 &&
+        qd_run z com.microsoft.dotnet.Sdk run 2>&1) || { echo "$out" | tail -3; return 1; }
     grep -q '^Hello, World!' <<<"$out" || { echo "$out" | tail -3; return 1; }
 }
 check "the SDK run as an app makes, builds and runs a project in the working directory" sdk_builds_cwd
 nuget_in_data() {
-    z run com.microsoft.dotnet.Sdk nuget locals global-packages --list | tr -d '\r' |
+    qd_run z com.microsoft.dotnet.Sdk nuget locals global-packages --list | tr -d '\r' |
         grep -qF "global-packages: $QUASIDOCK_HOME\\data\\com.microsoft.dotnet.Sdk\\dotnet\\.nuget\\packages"
 }
 check "NuGet keeps its packages in the SDK's data directory" nuget_in_data
@@ -1084,7 +1085,7 @@ dotnet_app_digest=$(manifest_of $DOTNETAPP)
 dotnet_runs() {
     local sb out
     for sb in soft low appcontainer; do
-        out=$(z run --sandbox=$sb $DOTNETAPP zigsaw | tr -d '\r')
+        out=$(qd_run z --sandbox=$sb $DOTNETAPP zigsaw | tr -d '\r')
         [ "$out" = "hello, zigsaw, from .NET $dotnet_version
 Built with a vendored package
 runs on $QUASIDOCK_HOME\\deploy\\$(own_layer com.microsoft.dotnet)\\shared\\Microsoft.NETCore.App\\$dotnet_version\\" ] ||
@@ -1105,7 +1106,7 @@ desktop_digest=$(manifest_of $DESKTOP)
 desktop_runs() {
     local sb out
     for sb in soft low appcontainer; do
-        out=$(z run --sandbox=$sb $DESKTOP | tr -d '\r')
+        out=$(qd_run z --sandbox=$sb $DESKTOP | tr -d '\r')
         [ "$out" = "Windows Forms: a form came up
 WPF: a window came up and drew its content" ] || { echo "$sb, got: $out"; return 1; }
     done
@@ -1135,7 +1136,7 @@ printf 'public class Tiny { public static void main(String[] a) { System.out.pri
 jdk_runs_cwd() {
     local sb out
     for sb in soft low appcontainer; do
-        out=$(cd "$work\\javatiny" && z run --sandbox=$sb org.openjdk.java.Sdk Tiny.java 2>/dev/null | tr -d '\r')
+        out=$(cd "$work\\javatiny" && qd_run z --sandbox=$sb org.openjdk.java.Sdk Tiny.java 2>/dev/null | tr -d '\r')
         [ "$out" = "home $QUASIDOCK_HOME\\data\\org.openjdk.java.Sdk\\home" ] || { echo "$sb, got: $out"; return 1; }
     done
 }
@@ -1164,7 +1165,7 @@ swing_digest=$(manifest_of $SWING)
 swing_runs() {
     local sb out
     for sb in soft low appcontainer; do
-        out=$(z run --sandbox=$sb $SWING 2>/dev/null | tr -d '\r')
+        out=$(qd_run z --sandbox=$sb $SWING 2>/dev/null | tr -d '\r')
         [ "$out" = "Swing: a window came up and drew its text" ] || { echo "$sb, got: $out"; return 1; }
     done
 }
@@ -1176,7 +1177,7 @@ check "built again, it's the same image" swing_again
 java_app_runs() {
     local id=$1 built=$2 sb out
     for sb in soft low appcontainer; do
-        out=$(z run --sandbox=$sb $id zigsaw 2>/dev/null | tr -d '\r')
+        out=$(qd_run z --sandbox=$sb $id zigsaw 2>/dev/null | tr -d '\r')
         [ "$(sed -E 's/from Java [0-9][^,]*/from Java (version)/' <<<"$out")" = "hello, zigsaw, from Java (version)$built
 Built with a vendored package
 runs on $(jre_dir)
@@ -1189,7 +1190,7 @@ home is $QUASIDOCK_HOME\\data\\$id\\home" ] || { echo "$sb, got: $out"; return 1
 # prefix lists Maven fetches from each repository into .meta, which change
 # upstream; then the build runs offline from it.
 check "maven.json builds Maven's image, on the JDK's" z build "$root\\recipes\\maven.json"
-check "  mvn runs" sh -c "'$zigsaw' run org.apache.maven -v 2>/dev/null | grep -q '^Apache Maven 3'"
+check "  mvn runs" sh -c "bash '$QD_IMAGES_HELPER' run '$zigsaw' org.apache.maven -v 2>/dev/null | grep -q '^Apache Maven 3'"
 MAVENAPP=test.build.maven
 java_fixture maven pom.xml Hello.java
 check "a Maven project builds, its dependencies and plugins vendored and the build offline" z build "$work\\maven\\hello.json"
@@ -1203,7 +1204,7 @@ check "built again, from the vendored repository in the cache, it's the same ima
 # script in Gradle's image), offline. The project has a settings plugin from
 # Gradle's plugin portal.
 check "gradle.json builds Gradle's image, on the JDK's" z build "$root\\recipes\\gradle.json"
-check "  gradle runs" sh -c "'$zigsaw' run org.gradle.gradle --version 2>/dev/null | grep -q '^Gradle 9'"
+check "  gradle runs" sh -c "bash '$QD_IMAGES_HELPER' run '$zigsaw' org.gradle.gradle --version 2>/dev/null | grep -q '^Gradle 9'"
 GRADLEAPP=test.build.gradle
 java_fixture gradle settings.gradle build.gradle Hello.java
 check "a Gradle project builds, its plugin and dependencies vendored and the build offline" z build "$work\\gradle\\hello.json"
@@ -1237,7 +1238,7 @@ mkdir -p "$work\\phpcwd"
 php_ext_runs() {
     local sb out
     for sb in soft low appcontainer; do
-        out=$(cd "$work\\phpcwd" && z run --sandbox=$sb $PHPAPP 2>&1 | tr -d '\r')
+        out=$(cd "$work\\phpcwd" && qd_run z --sandbox=$sb $PHPAPP 2>&1 | tr -d '\r')
         ! grep -q '^FAIL' <<<"$out" && [ "$(grep -c '^ok ' <<<"$out")" -eq 27 ] && grep -q '^shutdown ok$' <<<"$out" ||
             { echo "$sb: $(grep -c '^ok ' <<<"$out") ok, then: $(grep '^FAIL' <<<"$out" | head -2 | tr '\n' ' ') $(tail -3 <<<"$out" | tr '\n' ' ')"; return 1; }
     done
@@ -1250,9 +1251,9 @@ check "built again, the extension's image is the same" phpext_again
 mkdir -p "$work\\phpdir" && cp -r "$(cygpath -u "$root")"/tests/build/php/zprobe/. "$(cygpath -u "$work")/phpdir/"
 php_ext_no_recipe() {
     local out
-    out=$(cd "$work\\phpdir" && z run --command=php-ext net.php.php.Sdk build 2>&1) || { echo "$out" | tail -2; return 1; }
+    out=$(cd "$work\\phpdir" && qd_run z --entrypoint=php-ext net.php.php.Sdk build 2>&1) || { echo "$out" | tail -2; return 1; }
     # (The SDK runs under soft: PHP's run labels the directory, and says so.)
-    out=$(cd "$work\\phpdir" && z run net.php.php -d "extension=$work\\phpdir\\php_zprobe.dll" -r 'echo zprobe_config(), "\n";' 2>"$work\\stderr" | tr -d '\r')
+    out=$(cd "$work\\phpdir" && qd_run z net.php.php -d "extension=$work\\phpdir\\php_zprobe.dll" -r 'echo zprobe_config(), "\n";' 2>"$work\\stderr" | tr -d '\r')
     [ "$out" = "hello from config.w32, version info: yes" ] || { echo "got: $out $(tr '\r\n' '  ' <"$work\\stderr")"; return 1; }
 }
 check "php-ext builds it in its directory without a recipe, and PHP's runtime loads it" php_ext_no_recipe
@@ -1260,9 +1261,9 @@ fi
 
 # Removing the apps also deletes their AppContainer profiles. The images
 # builds use stay until prune --downloads, and only zigsaw can delete their
-# protected deployments. Every installed app has refs\<id>.json.
-for id in $(ls "$QUASIDOCK_HOME\\refs" | sed 's/\.json$//'); do z rm --delete-data "$id" >/dev/null 2>&1; done
-check "every app is removed" sh -c "[ -z \"\$(ls '$QUASIDOCK_HOME\\refs')\" ]"
+# protected deployments. Enumerate every cached manifest through the CLI.
+for digest in $(z images -q); do z rmi "$digest" >/dev/null 2>&1; done
+check "every image is removed" sh -c "[ -z \"\$(\"\$0\" images -q)\" ]" "$zigsaw"
 z prune --downloads --data >/dev/null 2>&1
 check "prune --downloads deletes tools' caches" sh -c "[ -z \"\$(ls '$QUASIDOCK_HOME\\cache\\tools')\" ]"
 cd / && rm -rf "$QUASIDOCK_HOME" "$work"

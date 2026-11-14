@@ -4,8 +4,8 @@
 # once, and lists the files each layer's helper fetched for the run, in the
 # order they were first asked for.
 #
-#   scripts/record-prefetch.sh <ref> [--command=<name>] [-- <args>...]
-#   scripts/record-prefetch.sh <ref> --window=<title> [--command=<name>]
+#   scripts/record-prefetch.sh <ref> [--entrypoint=<name>] [-- <args>...]
+#   scripts/record-prefetch.sh <ref> --window=<title> [--entrypoint=<name>]
 #
 # The first runs the app (or one of its commands) with the arguments and waits
 # for it to end; the second starts it, waits for a window with that title, and
@@ -27,6 +27,7 @@
 
 set -u
 export MSYS_NO_PATHCONV=1
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/images.sh"
 
 root=$(cd "$(dirname "$0")/.." && pwd)
 quasidock=${QUASIDOCK:-$(cygpath -w "$root/out/bin/quasidock.exe")}
@@ -38,7 +39,7 @@ window=
 args=()
 while [ $# -gt 0 ]; do
     case $1 in
-    --command=*) command=${1#--command=} ;;
+    --entrypoint=*) command=${1#--entrypoint=} ;;
     --window=*) window=${1#--window=} ;;
     --) shift; args=("$@"); break ;;
     -*) echo "unknown option $1" >&2; exit 2 ;;
@@ -67,7 +68,7 @@ export QUASIDOCK_GRANTS_KEY="Software\\QuasidockRecord\\$$"
 
 app=
 cleanup() {
-    [ -n "$app" ] && "$quasidock" rm --delete-data "$app" >/dev/null 2>&1
+    [ -n "$app" ] && qd_remove_app "$quasidock" "$app" >/dev/null 2>&1
     rm -f "$(cygpath -u "$gate")"
     "$quasidock" prune >/dev/null 2>&1
     reg delete "HKCU\\Software\\QuasidockRecord\\$$" /f >/dev/null 2>&1
@@ -81,8 +82,8 @@ app=$(grep -o '^installed [^ ]*' "$work\\pull.txt" | head -1 | cut -d' ' -f2)
 lazy="$store\\lazy"
 ls "$(cygpath -u "$lazy")" 2>/dev/null | grep -qE '^[0-9a-f]{64}$' || { echo "$ref has no eStargz layer to record for"; exit 1; }
 
-run=("$quasidock" run)
-[ -n "$command" ] && run+=("--command=$command")
+run=(bash "$QD_IMAGES_HELPER" run "$quasidock")
+[ -n "$command" ] && run+=("--entrypoint=$command")
 if [ -n "$window" ]; then
     "${run[@]}" "$app" >"$work\\run.txt" 2>&1 &
     runner=$!
@@ -100,7 +101,7 @@ else
 fi
 
 # Which image each layer is: the app's own, or a runtime its config names.
-manifest=$(grep -o '"manifest": *"sha256:[0-9a-f]*"' "$store\\refs\\$app.json" | grep -o '[0-9a-f]\{64\}')
+manifest=$(QUASIDOCK_HOME="$store" qd_manifest "$quasidock" "$app" | cut -d: -f2)
 config_hex=$(tr -d '\r\n ' <"$store\\blobs\\sha256\\$manifest" | grep -o '"config":{[^}]*}' | grep -o '[0-9a-f]\{64\}')
 config=$(tr -d '\r\n' <"$store\\blobs\\sha256\\$config_hex" | sed 's/ *: */:/g; s/, */,/g')
 own=$(tr -d '\r\n ' <"$store\\blobs\\sha256\\$manifest" | grep -o '"digest":"sha256:[0-9a-f]\{64\}"' | tail -1 | grep -o '[0-9a-f]\{64\}')

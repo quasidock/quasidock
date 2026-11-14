@@ -33,7 +33,8 @@
 # cache in its data directory is cold.
 
 set -u
-export MSYS_NO_PATHCONV=1 # Keep arguments like "/c" from being rewritten into paths.
+export MSYS_NO_PATHCONV=1
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/images.sh" # Keep arguments like "/c" from being rewritten into paths.
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
 zigsaw=${1:-$root/out/bin/quasidock.exe}
@@ -62,13 +63,12 @@ PUML=com.plantuml.PlantUML
 
 # --- Setup -------------------------------------------------------------------
 
-installed=$("$zigsaw" list)
 # zig and rust before ripgrep and bat, go before fzf and zot, and zig and cmake
 # before zstd, which build with them; the JDK, its JRE, Maven and Gradle before
 # PDFBox and PlantUML.
 for recipe in busybox zig rust ripgrep bat go fzf zot cmake zstd mingit node python java-sdk java maven gradle pdfbox plantuml; do
     id=$(grep -o '"id": *"[^"]*"' "$root/recipes/$recipe.json" | cut -d'"' -f4)
-    if ! grep -q "^$id " <<<"$installed"; then
+    if ! qd_cached "$zigsaw" "$id"; then
         echo "building $id..."
         out=$("$zigsaw" build "$root/recipes/$recipe.json" 2>&1) || { echo "$out"; exit 1; }
     fi
@@ -102,7 +102,7 @@ run() {
 
 # Like run, but the app reads the caller's stdin.
 run_input() {
-    timeout "$limit" "$zigsaw" run --sandbox="$sb" "$@"
+    timeout "$limit" bash "$QD_IMAGES_HELPER" run "$zigsaw" --sandbox="$sb" "$@"
     local code=$?
     [ $code -eq 124 ] && echo "error: timed out after ${limit}s"
     return $code
@@ -218,17 +218,17 @@ expect ok ok ok "runs -e" run $NODE -e 'console.log(1)'
 expect ok "$(ac_if final-path-dos self-path-dos nul)" ok "runs a script file" run $NODE a.js
 expect ok "$(ac_if final-path-dos drive-root nul)" ok "fs.realpathSync" run $NODE -e 'require("fs").realpathSync(".")'
 expect ok ok ok "fetch over https" run $NODE -e 'fetch("https://example.com").then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))'
-expect ok "$(ac_if final-path-dos self-path-dos nul)" ok "npm install" run --command=npm $NODE install --no-audit --no-fund is-number
+expect ok "$(ac_if final-path-dos self-path-dos nul)" ok "npm install" run --entrypoint=npm $NODE install --no-audit --no-fund is-number
 # The recipe points npm's global prefix at ${data}\npm and puts it on PATH.
 npm_global() {
-    run --command=npm $NODE install -g --no-audit --no-fund semver@7 &&
-        run --command=npm $NODE ls -g | grep -q semver &&
+    run --entrypoint=npm $NODE install -g --no-audit --no-fund semver@7 &&
+        run --entrypoint=npm $NODE ls -g | grep -q semver &&
         [ -f "$QUASIDOCK_HOME\\data\\$NODE\\npm\\node_modules\\semver\\package.json" ]
 }
 # npm itself lstat()s each directory of the data directory's path.
 expect ok gap ok "npm install -g into data dir" npm_global
 # Its command is semver.cmd, a batch file in ${data}\npm.
-global_bin() { [ "$(run --command=semver $NODE 1.2.3 | tr -d '\r')" = 1.2.3 ]; }
+global_bin() { [ "$(run --entrypoint=semver $NODE 1.2.3 | tr -d '\r')" = 1.2.3 ]; }
 expect ok "$(ac_if final-path-dos self-path-dos nul)" ok "global package's .cmd command" global_bin
 
 tool python
@@ -293,7 +293,7 @@ expect ok "$(ac_if self-path-dos nul)" ok "hashes a file in granted cwd" cmake_h
 tool zstd
 expect ok ok ok "runs" run $ZSTD --version
 zstd_round_trip() {
-    seq 1 1000 >a.txt && run $ZSTD -q -f a.txt -o a.zst && run --command=unzstd $ZSTD -q -f a.zst -o b.txt && cmp -s a.txt b.txt
+    seq 1 1000 >a.txt && run $ZSTD -q -f a.txt -o a.zst && run --entrypoint=unzstd $ZSTD -q -f a.zst -o b.txt && cmp -s a.txt b.txt
 }
 expect ok ok ok "compresses and restores in granted cwd" zstd_round_trip
 # (What it writes to stdout is compressed, binary.)
@@ -333,7 +333,7 @@ echo "$mismatches result(s) differ from the intended behaviour, and $gaps known 
 
 acprobe_rm "$zigsaw"
 if $own_store; then
-    for id in $BB $RG $BAT $GIT $NODE $PY $ZIG $GO $FZF $ZOT $CMAKE $ZSTD; do "$zigsaw" rm --delete-data "$id" >/dev/null 2>&1; done
+    for id in $BB $RG $BAT $GIT $NODE $PY $ZIG $GO $FZF $ZOT $CMAKE $ZSTD; do qd_remove_app "$zigsaw" "$id" >/dev/null 2>&1; done
     rm -rf "$QUASIDOCK_HOME"
 fi
 rm -rf "$work"

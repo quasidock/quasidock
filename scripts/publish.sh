@@ -39,6 +39,7 @@
 
 set -eu
 export MSYS_NO_PATHCONV=1
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/images.sh"
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
 quasidock=${QUASIDOCK:-$root/out/bin/quasidock.exe}
@@ -123,9 +124,9 @@ for recipe in "${todo[@]}"; do
     echo "== $id"
     "$quasidock" build "$recipe"
     "$quasidock" push --sources "$id"
-    "$quasidock" push "$id" "$id:latest"
-    version=$("$quasidock" list | awk -v id="$id" '$1 == id { print $2 }')
-    digest=$(grep -o 'sha256:[0-9a-f]*' "$QUASIDOCK_HOME\\refs\\$id.json")
+    qd_push "$quasidock" "$id" "$id:latest"
+    version=$(qd_version "$quasidock" "$id")
+    digest=$(qd_manifest "$quasidock" "$id")
     published+=("$id $version $digest")
 done
 
@@ -146,7 +147,7 @@ echo "== catalog"
 
 if $own_store; then
     # Installed apps are protected against deletion, so remove them through quasidock.
-    for line in "${published[@]}"; do "$quasidock" rm --delete-data "${line%% *}" >/dev/null 2>&1 || true; done
+    for line in "${published[@]}"; do qd_remove_app "$quasidock" "${line%% *}" >/dev/null 2>&1 || true; done
     "$quasidock" prune --downloads >/dev/null 2>&1 || true
     rm -rf "$QUASIDOCK_HOME"
 fi

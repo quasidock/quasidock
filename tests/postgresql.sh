@@ -31,13 +31,14 @@
 
 set -u
 export MSYS_NO_PATHCONV=1
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/images.sh"
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
 zigsaw=${1:-$root/out/bin/quasidock.exe}
 QUASIDOCK_HOME=${POSTGRES_HOME:-${BUILD_HOME:-}}
 APP=org.postgresql.PostgreSQL
 for id in $APP $APP.pgvector $APP.pg_cron $APP.PostGIS; do
-    if [ -z "$QUASIDOCK_HOME" ] || [ ! -f "$QUASIDOCK_HOME\\refs\\$id.json" ]; then
+    if [ -z "$QUASIDOCK_HOME" ] || ! qd_cached "$zigsaw" "$id"; then
         echo "tests/postgresql.sh needs a store with $id in POSTGRES_HOME or BUILD_HOME;"
         echo "build recipes\\postgresql.json, postgresql-pgvector.json, postgresql-pg-cron.json and postgresql-postgis.json into one first."
         exit 1
@@ -80,7 +81,7 @@ gap() {
 pg() {
     local command=$1
     shift
-    timeout 120 "$zigsaw" run ${SANDBOX:+--sandbox=$SANDBOX} $on_port --command=$command $APP "$@"
+    timeout 120 bash "$QD_IMAGES_HELPER" run "$zigsaw" ${SANDBOX:+--sandbox=$SANDBOX} $on_port --entrypoint=$command $APP "$@"
 }
 # sql <statement...>: psql's unaligned output, one line per row.
 sql() {
@@ -103,7 +104,7 @@ start() {
     local log="$work\\server-${SANDBOX:-low}${RUN_OPTIONS:+-options}.out" i
     rm -rf "$data\\data" "$data\\pgpass.conf" "$work\\server.exit"
     (
-        timeout 600 "$zigsaw" run ${SANDBOX:+--sandbox=$SANDBOX} ${RUN_OPTIONS:-} $on_port $APP "$@" >"$log" 2>&1
+        timeout 600 bash "$QD_IMAGES_HELPER" run "$zigsaw" ${SANDBOX:+--sandbox=$SANDBOX} ${RUN_OPTIONS:-} $on_port $APP "$@" >"$log" 2>&1
         echo $? >"$work\\server.exit"
     ) </dev/null >/dev/null 2>&1 &
     for i in $(seq 60); do
@@ -203,9 +204,9 @@ check "the cluster is UTF-8, in the builtin provider's C.UTF-8" is "UTF8|b|C.UTF
     "select pg_encoding_to_char(encoding), datlocprovider, datlocale from pg_database where datname = 'postgres'"
 check "with the server's default settings" is "100|128MB" "select current_setting('max_connections') || '|' || current_setting('shared_buffers')"
 check "its password is in the app's data" grep -q '^\*:\*:\*:postgres:[A-Za-z0-9]\{24\}$' "$data\\pgpass.conf"
-nopass() { timeout 60 "$zigsaw" run --env="PGPASSFILE=$data\\none" $on_port --command=psql $APP -X -w -c "select 1" 2>&1 | grep -q 'no password supplied'; }
+nopass() { timeout 60 bash "$QD_IMAGES_HELPER" run "$zigsaw" --env="PGPASSFILE=$data\\none" $on_port --entrypoint=psql $APP -X -w -c "select 1" 2>&1 | grep -q 'no password supplied'; }
 check "a client without it is refused" nopass
-check "a connection over TLS 1.3" sh -c "\"\$0\" run --command=psql $APP 'host=localhost port=$port sslmode=require' -XAt -c 'select ssl, version from pg_stat_ssl where pid = pg_backend_pid()' | tr -d '\r' | grep -qx 't|TLSv1.3'" "$zigsaw"
+check "a connection over TLS 1.3" sh -c "bash '$QD_IMAGES_HELPER' run \"\$0\" --entrypoint=psql $APP 'host=localhost port=$port sslmode=require' -XAt -c 'select ssl, version from pg_stat_ssl where pid = pg_backend_pid()' | tr -d '\r' | grep -qx 't|TLSv1.3'" "$zigsaw"
 check "pgcrypto hashes with OpenSSL" is "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad" \
     "create extension pgcrypto" "select encode(digest('abc', 'sha256'), 'hex')"
 check "ICU collations sort German and Swedish apart" is "aäz|azä" \
@@ -254,7 +255,7 @@ check "PostGIS: GEOS, PROJ with its proj.db, json-c, GML and a GiST index" postg
 check "PostGIS raster, on GDAL: values, statistics, reprojection, GeoTIFF and PNG" rasters
 check "PostGIS topology makes a topology with an edge" topology
 check "pg_ctl stops it from another run" stop
-tree=$(cygpath -w "$("$zigsaw" run --command=pg_config $APP --bindir 2>/dev/null | tr -d '\r')\\..")
+tree=$(cygpath -w "$(bash "$QD_IMAGES_HELPER" run "$zigsaw" --entrypoint=pg_config $APP --bindir 2>/dev/null | tr -d '\r')\\..")
 written() {
     local new
     new=$(find "$tree" -newer "$work\\start" -print 2>/dev/null | head -3)
@@ -283,7 +284,7 @@ for SANDBOX in soft appcontainer; do
     check "$SANDBOX: PostGIS raster, on GDAL" rasters
     if [ $SANDBOX = appcontainer ]; then
         # The service, which the relay publishes.
-        outside() { timeout 60 "$zigsaw" run --sandbox=soft $on_port --command=psql $APP -XAt -c "select 1" | tr -d '\r' | grep -qx 1; }
+        outside() { timeout 60 bash "$QD_IMAGES_HELPER" run "$zigsaw" --sandbox=soft $on_port --entrypoint=psql $APP -XAt -c "select 1" | tr -d '\r' | grep -qx 1; }
         check "appcontainer: a client outside the container reaches the server in it" outside
     fi
     check "$SANDBOX: pg_ctl stops it from another run" stop

@@ -1,4 +1,5 @@
 # What this Windows denies AppContainers, for the suites whose known gaps
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/images.sh"
 # depend on it (tests/matrix.sh, tests/zls.sh). Sourced, not run:
 #
 #   . "$(dirname "$0")/acprobe.sh"
@@ -19,7 +20,7 @@ acprobe_run() {
     printf '{ "id": "%s", "version": "1", "command": "quasidock-acprobe.exe", "exports": {}, "permissions": { "filesystem": ["cwd"] },\n  "modules": [{ "name": "probe", "sources": [{ "path": "quasidock-acprobe.exe" }] }] }\n' \
         $ACPROBE_ID >"$work\\acprobe\\acprobe.json"
     out=$("$zigsaw" build "$work\\acprobe\\acprobe.json" 2>&1) || { echo "$out"; exit 1; }
-    probe=$(cd "$work\\acprobe\\cwd" && "$zigsaw" run --sandbox=appcontainer $ACPROBE_ID 2>/dev/null | tr -d '\r')
+    probe=$(cd "$work\\acprobe\\cwd" && bash "$QD_IMAGES_HELPER" run "$zigsaw" --sandbox=appcontainer $ACPROBE_ID 2>/dev/null | tr -d '\r')
     grep -q '^nul ' <<<"$probe" || { echo "the AppContainer probe didn't run: $probe"; exit 1; }
 }
 
@@ -40,5 +41,5 @@ acprobe_report() {
 }
 
 acprobe_rm() {
-    "$1" rm --delete-data $ACPROBE_ID >/dev/null 2>&1
+    qd_remove_app "$1" $ACPROBE_ID >/dev/null 2>&1
 }

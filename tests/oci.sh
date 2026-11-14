@@ -20,6 +20,7 @@
 # it didn't.
 set -u
 export MSYS_NO_PATHCONV=1
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/images.sh"
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
 zigsaw=${1:-$root/out/bin/quasidock.exe}
@@ -72,12 +73,12 @@ r() {
     shift
     while [ $# -gt 0 ] && [ "$1" != -- ]; do opts+=("$1"); shift; done
     shift
-    timeout 120 "$zigsaw" run "${opts[@]}" "$app" "$@"
+    timeout 120 bash "$QD_IMAGES_HELPER" run "$zigsaw" "${opts[@]}" "$app" "$@"
 }
 installed_here=""
 for recipe in busybox go oras skopeo cosign; do
     id=$(grep -o '"id": *"[^"]*"' "$root\\recipes\\$recipe.json" | head -1 | cut -d'"' -f4)
-    [ -f "$QUASIDOCK_HOME\\refs\\$id.json" ] && continue
+    qd_cached "$zigsaw" "$id" && continue
     installed_here="$installed_here $id"
     z build "$root\\recipes\\$recipe.json" >"$work\\build-$recipe.log" 2>&1 || echo "building $recipe.json failed: $(tail -1 "$work\\build-$recipe.log")"
 done
@@ -87,12 +88,12 @@ done
 mkdir -p "$work\\cwd" && cd "$work\\cwd" || exit 1
 printf 'hello from zigsaw\n' >hello.txt
 image=$registry/oci/busybox
-digest=$(z push net.frippery.busybox "$image:1" 2>&1 | grep -o 'manifest sha256:[0-9a-f]*' | cut -d' ' -f2)
+digest=$(qd_push z net.frippery.busybox "$image:1" 2>&1 | grep -o 'manifest sha256:[0-9a-f]*' | cut -d' ' -f2)
 [ -n "$digest" ] || echo "pushing BusyBox's image to $image:1 failed"
 
 # --- ORAS -----------------------------------------------------------------------
 
-check "oras version says 1.3.6" sh -c "\"\$0\" run $ORAS version | grep -q '^Version: *1.3.6'" "$zigsaw"
+check "oras version says 1.3.6" sh -c "bash '$QD_IMAGES_HELPER' run \"\$0\" $ORAS version | grep -q '^Version: *1.3.6'" "$zigsaw"
 check "oras pushes a file from the working directory" r $ORAS -- push --plain-http "$registry/oci/files:v1" hello.txt
 pulled() {
     r $ORAS -- pull --plain-http -o pulled "$registry/oci/files:v1" >/dev/null || return 1
@@ -114,11 +115,11 @@ check "  and logged out, it's refused there" oras_logout
 
 # --- skopeo ---------------------------------------------------------------------
 
-check "skopeo --version says 1.24.1" sh -c "\"\$0\" run $SKOPEO --version | grep -q 'version 1.24.1'" "$zigsaw"
-check "skopeo lists the tags of zigsaw's image" sh -c "\"\$0\" run $SKOPEO list-tags --tls-verify=false docker://$image | grep -q '\"1\"'" "$zigsaw"
+check "skopeo --version says 1.24.1" sh -c "bash '$QD_IMAGES_HELPER' run \"\$0\" $SKOPEO --version | grep -q 'version 1.24.1'" "$zigsaw"
+check "skopeo lists the tags of zigsaw's image" sh -c "bash '$QD_IMAGES_HELPER' run \"\$0\" $SKOPEO list-tags --tls-verify=false docker://$image | grep -q '\"1\"'" "$zigsaw"
 # Not plain `inspect`: skopeo takes zigsaw's images, whose config is
 # zigsaw's own, for artifacts, and inspects only images.
-check "  shows its manifest" sh -c "\"\$0\" run $SKOPEO inspect --raw --tls-verify=false docker://$image:1 | grep -q '\"org.opencontainers.image.title\": \"net.frippery.busybox\"'" "$zigsaw"
+check "  shows its manifest" sh -c "bash '$QD_IMAGES_HELPER' run \"\$0\" $SKOPEO inspect --raw --tls-verify=false docker://$image:1 | grep -q '\"org.opencontainers.image.title\": \"net.frippery.busybox\"'" "$zigsaw"
 skopeo_copy() {
     printf '%s' "$AUTH_PASSWORD" | r $SKOPEO -- login --tls-verify=false -u "$AUTH_USER" --password-stdin "$AUTH_REGISTRY" || return 1
     r $SKOPEO -- copy --src-tls-verify=false --dest-tls-verify=false "docker://$image:1" "docker://$AUTH_REGISTRY/oci/busybox:1" || return 1
@@ -127,16 +128,16 @@ skopeo_copy() {
 check "  copies it to the registry that wants a login, with its own login" skopeo_copy
 check "  and logs out" r $SKOPEO -- logout "$AUTH_REGISTRY"
 # Its default policy (accept anything) is the image's, as copying needs one.
-check "  copies it into an OCI layout in the working directory" sh -c "\"\$0\" run $SKOPEO copy --src-tls-verify=false docker://$image:1 oci:layout >/dev/null && test -f layout/index.json" "$zigsaw"
+check "  copies it into an OCI layout in the working directory" sh -c "bash '$QD_IMAGES_HELPER' run \"\$0\" $SKOPEO copy --src-tls-verify=false docker://$image:1 oci:layout >/dev/null && test -f layout/index.json" "$zigsaw"
 # On Windows, its oci: transport takes a tag only after an absolute path.
-check "  and into one with a tag, by its full path" sh -c "\"\$0\" run $SKOPEO copy --src-tls-verify=false docker://$image:1 'oci:$work\\cwd\\tagged:1' >/dev/null && grep -q '\"org.opencontainers.image.ref.name\":\"1\"' tagged/index.json" "$zigsaw"
+check "  and into one with a tag, by its full path" sh -c "bash '$QD_IMAGES_HELPER' run \"\$0\" $SKOPEO copy --src-tls-verify=false docker://$image:1 'oci:$work\\cwd\\tagged:1' >/dev/null && grep -q '\"org.opencontainers.image.ref.name\":\"1\"' tagged/index.json" "$zigsaw"
 
 # --- cosign ---------------------------------------------------------------------
 
 # No internet for cosign: a proxy that goes nowhere, but the local registry
 # directly.
 offline=(--env=COSIGN_PASSWORD=zigsaw-test --env=HTTPS_PROXY=http://127.0.0.1:9 --env=HTTP_PROXY=http://127.0.0.1:9 --env=NO_PROXY=localhost,127.0.0.1)
-check "cosign version says v3.1.4" sh -c "\"\$0\" run $COSIGN version 2>&1 | grep -q '^GitVersion: *v3.1.4'" "$zigsaw"
+check "cosign version says v3.1.4" sh -c "bash '$QD_IMAGES_HELPER' run \"\$0\" $COSIGN version 2>&1 | grep -q '^GitVersion: *v3.1.4'" "$zigsaw"
 key_pair() {
     r $COSIGN "${offline[@]}" -- generate-key-pair >/dev/null || return 1
     test -f cosign.key && test -f cosign.pub
@@ -161,7 +162,7 @@ cosign_program=$(find "$(cygpath -u "$QUASIDOCK_HOME\\deploy")" -maxdepth 2 -ina
 signing_env=(env COSIGN_KEY="$work\\cwd\\cosign.key" COSIGN_PASSWORD=zigsaw-test COSIGN="$cosign_program" QUASIDOCK_REGISTRY="$registry/oci" QUASIDOCK="$zigsaw")
 printf '{ "id": "signed", "version": "1" }\n' >signed-recipe.json
 signs_blob() {
-    z push net.frippery.busybox "$signed:1" >/dev/null 2>&1 && z push net.frippery.busybox "$signed:latest" >/dev/null 2>&1 || return 1
+    qd_push z net.frippery.busybox "$signed:1" >/dev/null 2>&1 && qd_push z net.frippery.busybox "$signed:latest" >/dev/null 2>&1 || return 1
     "${signing_env[@]}" bash "$root\\scripts\\sign-images.sh" "$(cygpath -w "$work\\cwd\\signed-recipe.json")"
 }
 check "scripts/sign-images.sh signs with the real cosign, and pushes with zigsaw" signs_blob
@@ -197,7 +198,7 @@ wrong_passphrase() {
     grep -qF "COSIGN_PASSWORD doesn't open" <<<"$out" || { echo "$out"; return 1; }
 }
 check "  a passphrase that doesn't open the key says so, before signing anything" wrong_passphrase
-QUASIDOCK_HOME="$work\\checks" "$zigsaw" rm --delete-data net.frippery.busybox >/dev/null 2>&1
+QUASIDOCK_HOME="$work\\checks" qd_remove_app "$zigsaw" net.frippery.busybox >/dev/null 2>&1
 
 # A release, with programs that only have to be the same bytes.
 fake_release() { # <dir> <what the programs hold>
@@ -226,7 +227,7 @@ check "  and refuses one a build here doesn't" release_differs
 
 ac=(--sandbox=appcontainer)
 check "in an AppContainer, oras pushes a file from the working directory" r $ORAS "${ac[@]}" -- push --plain-http "$registry/oci/files:ac" hello.txt
-check "  skopeo lists the image's tags" sh -c "\"\$0\" run --sandbox=appcontainer $SKOPEO list-tags --tls-verify=false docker://$image | grep -q '\"1\"'" "$zigsaw"
+check "  skopeo lists the image's tags" sh -c "bash '$QD_IMAGES_HELPER' run \"\$0\" --sandbox=appcontainer $SKOPEO list-tags --tls-verify=false docker://$image | grep -q '\"1\"'" "$zigsaw"
 ac_key_pair() {
     mkdir -p ac-key && (cd ac-key && r $COSIGN "${ac[@]}" "${offline[@]}" -- generate-key-pair >/dev/null) || return 1
     test -f ac-key/cosign.key
@@ -242,13 +243,13 @@ ac_pull() {
     cmp hello.txt ac/hello.txt
 }
 check_gap "  oras pulls into the working directory" ac_pull
-check_gap "  skopeo copies into an OCI layout there" sh -c "\"\$0\" run --sandbox=appcontainer $SKOPEO copy --src-tls-verify=false docker://$image:1 oci:ac-layout >/dev/null && test -f ac-layout/index.json" "$zigsaw"
+check_gap "  skopeo copies into an OCI layout there" sh -c "bash '$QD_IMAGES_HELPER' run \"\$0\" --sandbox=appcontainer $SKOPEO copy --src-tls-verify=false docker://$image:1 oci:ac-layout >/dev/null && test -f ac-layout/index.json" "$zigsaw"
 
 check "no run labelled or granted the repository" sh -c "! icacls '$root' | grep -q -e 'Mandatory Label' -e 'S-1-15-'"
 
 cd "$root" || exit 1
-QUASIDOCK_HOME="$work\\pulled" "$zigsaw" rm --delete-data net.frippery.busybox >/dev/null 2>&1
-for id in $installed_here; do z rm --delete-data "$id" >/dev/null 2>&1; done
+QUASIDOCK_HOME="$work\\pulled" qd_remove_app "$zigsaw" net.frippery.busybox >/dev/null 2>&1
+for id in $installed_here; do qd_remove_app z "$id" >/dev/null 2>&1; done
 if [ -n "$temp_store" ]; then
     z prune --downloads --data >/dev/null 2>&1
     rm -rf "$temp_store"

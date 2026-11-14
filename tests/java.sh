@@ -25,6 +25,7 @@
 # The apps open windows on the desktop for a moment.
 set -u
 export MSYS_NO_PATHCONV=1
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/images.sh"
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
 zigsaw=${1:-$root/out/bin/quasidock.exe}
@@ -63,7 +64,7 @@ z() { "$zigsaw" "$@"; }
 # store built it before), noting whether this installed it.
 installed_here=""
 build_image() {
-    [ -f "$QUASIDOCK_HOME\\refs\\$1.json" ] || installed_here="$installed_here $1"
+    qd_cached "$zigsaw" "$1" || installed_here="$installed_here $1"
     z build "$root\\recipes\\$2" >"$work\\$2.log" 2>&1 || echo "building $2 failed: $(tail -1 "$work\\$2.log")"
 }
 build_image org.openjdk.java.Sdk java-sdk.json
@@ -88,8 +89,8 @@ pdf_round_trip() {
     local out
     cd "$work\\$1" || return 1
     printf 'hello from zigsaw\nsecond line\n' >in.txt
-    z run --sandbox=$1 $PDFBOX fromtext -i in.txt -o out.pdf >/dev/null 2>&1 || { echo "fromtext failed"; return 1; }
-    out=$(z run --sandbox=$1 $PDFBOX export:text -console -i out.pdf 2>/dev/null | tr -d '\r' | grep -v '^The encoding parameter is ignored')
+    qd_run z --sandbox=$1 $PDFBOX fromtext -i in.txt -o out.pdf >/dev/null 2>&1 || { echo "fromtext failed"; return 1; }
+    out=$(qd_run z --sandbox=$1 $PDFBOX export:text -console -i out.pdf 2>/dev/null | tr -d '\r' | grep -v '^The encoding parameter is ignored')
     [ "$out" = "hello from zigsaw
 second line" ] || { echo "got: $out"; return 1; }
 }
@@ -97,7 +98,7 @@ second line" ] || { echo "got: $out"; return 1; }
 # user.home, is in the app's data.
 renders() {
     cd "$work\\$1" || return 1
-    z run --sandbox=$1 $PDFBOX render -i out.pdf -format png -dpi 40 >/dev/null 2>&1 || { echo "render failed"; return 1; }
+    qd_run z --sandbox=$1 $PDFBOX render -i out.pdf -format png -dpi 40 >/dev/null 2>&1 || { echo "render failed"; return 1; }
     [ "$(head -c 4 out-1.png | tail -c 3)" = "PNG" ] || { echo "no PNG"; return 1; }
     [ -f "$(data $PDFBOX)\\home\\.pdfbox.cache" ] || { echo "no font cache in its data's home"; return 1; }
 }
@@ -114,7 +115,7 @@ opens_window() {
     shift 2
     # Not through z: a backgrounded function is a subshell, whose pid isn't
     # zigsaw's.
-    "$zigsaw" run "$@" >"$work\\run.log" 2>&1 &
+    bash "$QD_IMAGES_HELPER" run "$zigsaw" "$@" >"$work\\run.log" 2>&1 &
     local runner=$! status i
     # Only windows of that run count (its Windows pid; $! is Git Bash's).
     "$winwait" "$(cat /proc/$runner/winpid)" "$what" 40 --close >/dev/null
@@ -137,14 +138,14 @@ opens_window() {
 docs=$(cygpath -w "$(mktemp -d)")
 cp "$work\\soft\\out.pdf" "$docs\\doc.pdf"
 for sb in soft low appcontainer; do
-    check "its debugger opens a PDF under $sb" opens_window "$work\\$sb" "PDF Debugger - $docs\\doc.pdf" --sandbox=$sb --filesystem="$docs" --command=pdfbox-debugger $PDFBOX "$docs\\doc.pdf"
+    check "its debugger opens a PDF under $sb" opens_window "$work\\$sb" "PDF Debugger - $docs\\doc.pdf" --sandbox=$sb --filesystem="$docs" --entrypoint=pdfbox-debugger $PDFBOX "$docs\\doc.pdf"
 done
 # Java keeps the debugger's settings in HKCU\Software\JavaSoft\Prefs; the app
 # keeps its key with its data, so each run, in any sandbox, has the files the
 # others opened.
 recent_kept() {
     local out
-    out=$(z run --command=reg $PDFBOX query 'HKCU\Software\JavaSoft\Prefs\org\apache\pdfbox\debugger\recent_files_' 2>&1 | tr -d '\r')
+    out=$(qd_run z --entrypoint=reg $PDFBOX query 'HKCU\Software\JavaSoft\Prefs\org\apache\pdfbox\debugger\recent_files_' 2>&1 | tr -d '\r')
     [ "$(grep -c 'recent_files_[0-9]*_0 .*doc\.pdf' <<<"$out")" -ge 1 ] || { echo "got: $out"; return 1; }
     [ -f "$(data $PDFBOX)\\registry\\user.dat" ]
 }
@@ -159,7 +160,7 @@ draws() {
     printf '@startuml\nAlice -> Bob: hello\nBob --> Alice: from zigsaw\n@enduml\n' >seq.puml
     printf '@startuml\nclass Store\nclass App\nStore "1" *-- "many" App : deploys\n@enduml\n' >cls.puml
     rm -f seq.svg cls.svg
-    z run --sandbox=$1 $PLANTUML -tsvg seq.puml cls.puml >"$work\\puml.log" 2>&1 || { echo "failed: $(grep -v '^Picked' "$work\\puml.log" | head -1)"; return 1; }
+    qd_run z --sandbox=$1 $PLANTUML -tsvg seq.puml cls.puml >"$work\\puml.log" 2>&1 || { echo "failed: $(grep -v '^Picked' "$work\\puml.log" | head -1)"; return 1; }
     texts() { grep -o '<text[^>]*>[^<]*</text>' "$1" | sed 's/<[^>]*>//g' | tr '\n' ' '; }
     [ "$(texts seq.svg)" = "Alice Bob Alice Bob hello from zigsaw " ] || { echo "seq.svg: $(texts seq.svg | cut -c1-80)"; return 1; }
     [ "$(texts cls.svg)" = "Store App deploys 1 many " ] || { echo "cls.svg: $(texts cls.svg | cut -c1-80)"; return 1; }
@@ -168,10 +169,10 @@ for sb in soft low appcontainer; do
     check "PlantUML draws a sequence and a class diagram as SVG, under $sb" draws $sb
 done
 version=$(grep -o '"version": *"[^"]*"' "$root\\recipes\\plantuml.json" | head -1 | cut -d'"' -f4)
-check "its version names the release and its commit" sh -c "'$zigsaw' run $PLANTUML -version 2>/dev/null | tr -d '\r' | grep -q '^PlantUML version $version / [0-9a-f]\{7\} \[20'"
-check "and the dot it found is its own" sh -c "'$zigsaw' run $PLANTUML -version 2>/dev/null | tr -d '\r' | grep -q '^Installation seems OK'"
+check "its version names the release and its commit" sh -c "bash '$QD_IMAGES_HELPER' run '$zigsaw' $PLANTUML -version 2>/dev/null | tr -d '\r' | grep -q '^PlantUML version $version / [0-9a-f]\{7\} \[20'"
+check "and the dot it found is its own" sh -c "bash '$QD_IMAGES_HELPER' run '$zigsaw' $PLANTUML -version 2>/dev/null | tr -d '\r' | grep -q '^Installation seems OK'"
 for sb in soft low appcontainer; do
-    check "its window comes up, under $sb" opens_window "$work\\$sb" class:SunAwtFrame --sandbox=$sb --command=plantuml-gui $PLANTUML
+    check "its window comes up, under $sb" opens_window "$work\\$sb" class:SunAwtFrame --sandbox=$sb --entrypoint=plantuml-gui $PLANTUML
 done
 
 # --- Logisim-evolution ----------------------------------------------------------
@@ -182,7 +183,7 @@ simulates() {
     local out
     cd "$work\\$1" || return 1
     cp "$root\\tests\\java\\half-adder.circ" . || return 1
-    out=$(z run --sandbox=$1 $LOGISIM --tty table half-adder.circ 2>/dev/null | tr -d '\r')
+    out=$(qd_run z --sandbox=$1 $LOGISIM --tty table half-adder.circ 2>/dev/null | tr -d '\r')
     [ "$out" = "A B S C
 0 0 0 0
 0 1 1 0
@@ -192,14 +193,14 @@ simulates() {
 for sb in soft low appcontainer; do
     check "Logisim-evolution simulates a half adder from its command line, under $sb" simulates $sb
 done
-check "its version names the release and the time of its tag's commit" sh -c "'$zigsaw' run $LOGISIM --version 2>/dev/null | tr -d '\r' | grep -q '^(Not built from Git repo) (2026-09-12T04:03:35+0000)'"
+check "its version names the release and the time of its tag's commit" sh -c "bash '$QD_IMAGES_HELPER' run '$zigsaw' $LOGISIM --version 2>/dev/null | tr -d '\r' | grep -q '^(Not built from Git repo) (2026-09-12T04:03:35+0000)'"
 cp "$root\\tests\\java\\half-adder.circ" "$docs\\"
 for sb in soft low appcontainer; do
-    check "its window opens a circuit under $sb" opens_window "$work\\$sb" "main of half-adder" --sandbox=$sb --filesystem="$docs" --command=logisim-gui $LOGISIM "$docs\\half-adder.circ"
+    check "its window opens a circuit under $sb" opens_window "$work\\$sb" "main of half-adder" --sandbox=$sb --filesystem="$docs" --entrypoint=logisim-gui $LOGISIM "$docs\\half-adder.circ"
 done
 logisim_recent_kept() {
     local out
-    out=$(z run --command=reg $LOGISIM query 'HKCU\Software\JavaSoft\Prefs\com\cburch\logisim' 2>&1 | tr -d '\r')
+    out=$(qd_run z --entrypoint=reg $LOGISIM query 'HKCU\Software\JavaSoft\Prefs\com\cburch\logisim' 2>&1 | tr -d '\r')
     grep -q 'recent[0-9]* .*half-adder\.circ' <<<"$out" || { echo "got: $out"; return 1; }
     [ -f "$(data $LOGISIM)\\registry\\user.dat" ]
 }
@@ -216,7 +217,7 @@ done
 check "JavaFX's DLLs were loaded from the app, not unpacked into its data" sh -c "! test -e '$(data $SCENEBUILDER)\\home\\.openjfx'"
 scenebuilder_recent_kept() {
     local out
-    out=$(z run --command=reg $SCENEBUILDER query 'HKCU\Software\JavaSoft\Prefs\com\oracle\javafx\scenebuilder\app\preferences\/S/B_2.0' /v '/R/E/C/E/N/T_/I/T/E/M/S' 2>&1 | tr -d '\r')
+    out=$(qd_run z --entrypoint=reg $SCENEBUILDER query 'HKCU\Software\JavaSoft\Prefs\com\oracle\javafx\scenebuilder\app\preferences\/S/B_2.0' /v '/R/E/C/E/N/T_/I/T/E/M/S' 2>&1 | tr -d '\r')
     grep -q 'hello\.fxml' <<<"$out" || { echo "got: $out"; return 1; }
     [ -f "$(data $SCENEBUILDER)\\registry\\user.dat" ]
 }
@@ -238,7 +239,7 @@ check "no run labelled or granted the repository" sh -c "! icacls '$root' | grep
 
 cd "$root" || exit 1
 rm -rf "$docs"
-for id in $installed_here; do z rm --delete-data "$id" >/dev/null 2>&1; done
+for id in $installed_here; do qd_remove_app z "$id" >/dev/null 2>&1; done
 if [ -n "$temp_store" ]; then
     z prune --downloads --data >/dev/null 2>&1
     rm -rf "$temp_store"
