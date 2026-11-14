@@ -16,6 +16,7 @@ import (
 
 	"github.com/quasidock/quasidock/internal/acl"
 	"github.com/quasidock/quasidock/internal/format"
+	"github.com/quasidock/quasidock/internal/mounts"
 	"github.com/quasidock/quasidock/internal/oci"
 	"github.com/quasidock/quasidock/internal/win32"
 )
@@ -55,6 +56,7 @@ var subdirs = []string{
 	"blobs/sha256",
 	"images",
 	"containers",
+	"volumes",
 	"refs",
 	"deploy",
 	"lazy",
@@ -111,7 +113,7 @@ func Open(root string, verbose bool, ledgerKey string) (*Store, error) {
 }
 
 func (s *Store) FullRoot() string {
-	eval, err := filepath.EvalSymlinks(s.Root)
+	eval, err := mounts.CanonicalPath(s.Root)
 	if err == nil {
 		return eval
 	}

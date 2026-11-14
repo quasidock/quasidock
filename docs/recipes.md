@@ -78,6 +78,13 @@ container runtime (for `entrypoint`, `cmd`, `path`, and `env`):
 - `${listen:<service>}`, `${port:<service>}`: listen address and port for a declared service.
 - `${uses:<name>}`: endpoint/port for a declared service dependency in `permissions.uses`.
 
+At runtime, `run -v 'NAME:${data}'` attaches a named volume to the complete data
+tree. A target such as `${data}/workspace` preserves only that subtree; bind
+sources use the same targets. Mounts are run options rather than recipe fields.
+Mounted contents survive `--rm`, including registry state when its backing
+directory is mounted. See [persistent storage](../README.md#persistent-storage)
+for source syntax, sharing, and explicit volume cleanup.
+
 ## `permissions`
 
 - `sandbox`: `"soft"`, `"low"` (default), or `"appcontainer"`.

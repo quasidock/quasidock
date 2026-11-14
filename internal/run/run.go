@@ -19,6 +19,7 @@ import (
 	"github.com/quasidock/quasidock/internal/grants"
 	"github.com/quasidock/quasidock/internal/hkcu"
 	"github.com/quasidock/quasidock/internal/lazy"
+	"github.com/quasidock/quasidock/internal/mounts"
 	"github.com/quasidock/quasidock/internal/oci"
 	"github.com/quasidock/quasidock/internal/process"
 	"github.com/quasidock/quasidock/internal/roots"
@@ -100,6 +101,7 @@ func grantKey(spec string) string {
 }
 
 type Options struct {
+	Mounts      []mounts.Spec
 	ID          string
 	Args        []string
 	Entrypoint  *string
@@ -198,6 +200,11 @@ func Run(ctx *context.Context, opts Options) (uint32, error) {
 		storeLock.Release()
 		return 1, err
 	}
+	if err := validateMountSources(ctx, opts.Mounts, hostCwd); err != nil {
+		img.Release()
+		storeLock.Release()
+		return 1, err
+	}
 
 	var sandboxStr string
 	if opts.Settings.Sandbox != nil {
@@ -218,6 +225,7 @@ func Run(ctx *context.Context, opts Options) (uint32, error) {
 			OpenStdin:   opts.Interactive,
 		},
 		HostConfig: store.ContainerHostConfig{
+			Mounts:       append([]mounts.Spec(nil), opts.Mounts...),
 			AutoRemove:   opts.AutoRemove,
 			Sandbox:      sandboxStr,
 			Network:      opts.Settings.Network,
@@ -338,6 +346,7 @@ func Supervise(ctx *context.Context, containerID string) (uint32, error) {
 		sandboxPtr = &sb
 	}
 	opts := Options{
+		Mounts:      append([]mounts.Spec(nil), rec.HostConfig.Mounts...),
 		ID:          rec.AppID,
 		Args:        append([]string(nil), rec.RunSpec.Args...),
 		Entrypoint:  rec.RunSpec.Entrypoint,
@@ -427,6 +436,16 @@ func StopContainer(ctx *context.Context, idOrName string, timeoutSec int) (*stor
 	if !rec.State.Running && !ctx.Store.IsContainerRunning(rec.ID) {
 		return rec, nil
 	}
+	readStopped := func() (*store.ContainerRecord, error) {
+		updated, err := ctx.Store.ReadContainer(rec.ID)
+		if rec.HostConfig.AutoRemove && errors.Is(err, store.ErrContainerNotFound) {
+			rec.State.Running = false
+			rec.State.Status = "exited"
+			rec.State.Pid = 0
+			return rec, nil
+		}
+		return updated, err
+	}
 
 	if ev, err := win32.OpenEvent(StopEventName(rec.ID), win32.EVENT_MODIFY_STATE); err == nil && ev != 0 {
 		win32.SetEvent(ev)
@@ -437,7 +456,7 @@ func StopContainer(ctx *context.Context, idOrName string, timeoutSec int) (*stor
 		deadline := time.Now().Add(time.Duration(timeoutSec) * time.Second)
 		for time.Now().Before(deadline) {
 			if !ctx.Store.IsContainerRunning(rec.ID) {
-				return ctx.Store.ReadContainer(rec.ID)
+				return readStopped()
 			}
 			time.Sleep(25 * time.Millisecond)
 		}
@@ -457,11 +476,7 @@ func StopContainer(ctx *context.Context, idOrName string, timeoutSec int) (*stor
 		}
 	}
 
-	updated, err := ctx.Store.ReadContainer(rec.ID)
-	if err != nil {
-		return rec, err
-	}
-	return updated, nil
+	return readStopped()
 }
 
 func executeContainer(
@@ -578,8 +593,19 @@ func launchContainer(
 	}
 
 	dataDir := created.DataDir
-	if sandbox == oci.SandboxSoft {
+	if sandbox == oci.SandboxSoft && len(created.Mounts) == 0 {
 		_ = unlabelData(ctx, cfg.ID, dataDir)
+	}
+	mountSession, err := prepareContainerMounts(ctx, created, sandbox, hostGrants, hostCwd)
+	if mountSession != nil {
+		defer func() {
+			if e := mountSession.Close(); e != nil {
+				ctx.Note("warning: mount permissions need repair: %v", e)
+			}
+		}()
+	}
+	if err != nil {
+		return 1, false, err
 	}
 	profile := environment.NewProfile(dataDir)
 
@@ -801,11 +827,12 @@ func launchContainer(
 		}
 	case oci.SandboxLow:
 		t, err := setUpLow(ctx, cfg.ID, lowSetup{
-			dataDir: dataDir,
-			hostCwd: hostCwd,
-			grants:  hostGrants,
-			network: network,
-			own:     own,
+			dataPrepared: len(created.Mounts) > 0,
+			dataDir:      dataDir,
+			hostCwd:      hostCwd,
+			grants:       hostGrants,
+			network:      network,
+			own:          own,
 		})
 		if err != nil {
 			return 1, false, err
@@ -822,6 +849,7 @@ func launchContainer(
 			rootsPath = *rootsFile
 		}
 		sec, err := setUpAppContainer(ctx, cfg.ID, appContainerSetup{
+			dataPrepared: len(created.Mounts) > 0,
 			deployDir:    img.DeployDir,
 			runtimeDirs:  img.RuntimeDirs,
 			relayDir:     relayDir,
@@ -853,9 +881,15 @@ func launchContainer(
 		capSid, _ := appcontainer.AppCapability(cfg.ID)
 		hkcuAccess = hkcu.Access{Type: hkcu.AccessCapability, SID: capSid}
 	}
-	keysSession, err := hkcu.Enter(ctx.Store, cfg.ID, cfg.Registry, dataDir, hkcuAccess, !created.HostConfig.AutoRemove)
+	keepRegistry := !created.HostConfig.AutoRemove
+	for _, m := range created.Mounts {
+		if mounts.Within(filepath.Join(dataDir, "registry"), m.Destination) {
+			keepRegistry = true
+		}
+	}
+	keysSession, err := hkcu.Enter(ctx.Store, cfg.ID, cfg.Registry, dataDir, hkcuAccess, keepRegistry)
 	if err != nil {
-		return 1, false, err
+		return 1, false, fmt.Errorf("entering container registry: %w", err)
 	}
 	defer func() {
 		if keysSession != nil {
@@ -933,6 +967,11 @@ func launchContainer(
 	}
 
 	watcherDirs := watchedDirs(sandbox, hostGrants, hostCwd, dataDir, ctx.Env["USERPROFILE"], own)
+	if sandbox == oci.SandboxLow {
+		for _, m := range created.Mounts {
+			watcherDirs = append(watcherDirs, m.Source)
+		}
+	}
 	watcher := written.Start(watcherDirs)
 
 	hProcess, err := process.StartIn(job, process.SpawnSpec{
@@ -1210,6 +1249,7 @@ func forwardsOf(targets []services.Target) (*forward.Forwards, error) {
 }
 
 type appContainerSetup struct {
+	dataPrepared bool
 	deployDir    string
 	runtimeDirs  []string
 	relayDir     string
@@ -1247,7 +1287,9 @@ func setUpAppContainer(ctx *context.Context, id string, setup appContainerSetup)
 	if setup.rootsFile != "" {
 		wanted = append(wanted, wantedGrant{path: setup.rootsFile, access: acl.AccessReadExecute, host: false})
 	}
-	wanted = append(wanted, wantedGrant{path: setup.dataDir, access: acl.AccessFull, host: false})
+	if !setup.dataPrepared {
+		wanted = append(wanted, wantedGrant{path: setup.dataDir, access: acl.AccessFull, host: false})
+	}
 
 	for _, g := range setup.grants {
 		p := setup.hostCwd
@@ -1392,11 +1434,12 @@ func exemptLoopback(ctx *context.Context, id string, network, uses bool) (Loopba
 }
 
 type lowSetup struct {
-	dataDir string
-	hostCwd string
-	grants  []HostGrant
-	network bool
-	own     grants.Own
+	dataPrepared bool
+	dataDir      string
+	hostCwd      string
+	grants       []HostGrant
+	network      bool
+	own          grants.Own
 }
 
 func unlabelData(ctx *context.Context, id, dataDir string) error {
@@ -1423,14 +1466,16 @@ func unlabelData(ctx *context.Context, id, dataDir string) error {
 
 func setUpLow(ctx *context.Context, id string, setup lowSetup) (win32.HANDLE, error) {
 	packageSid, err := appcontainer.PackageSid(id)
-	if err == nil {
+	if err == nil && !setup.dataPrepared {
 		_, _ = acl.RevokeAccess(setup.dataDir, acl.Revoke{Kind: acl.RevokePackageSids})
 	}
 	dataStart := time.Now()
-	if changed, _ := acl.LabelLow(setup.dataDir); changed {
-		ms := time.Since(dataStart).Milliseconds()
-		if ms >= 1000 || ctx.Verbose {
-			ctx.Note("labelled %s low integrity (%d ms)", setup.dataDir, ms)
+	if !setup.dataPrepared {
+		if changed, _ := acl.LabelLow(setup.dataDir); changed {
+			ms := time.Since(dataStart).Milliseconds()
+			if ms >= 1000 || ctx.Verbose {
+				ctx.Note("labelled %s low integrity (%d ms)", setup.dataDir, ms)
+			}
 		}
 	}
 

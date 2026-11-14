@@ -16,6 +16,7 @@ import (
 	"github.com/quasidock/quasidock/internal/hkcu"
 	"github.com/quasidock/quasidock/internal/lazy"
 	"github.com/quasidock/quasidock/internal/lifecycle"
+	"github.com/quasidock/quasidock/internal/mounts"
 	"github.com/quasidock/quasidock/internal/oci"
 	"github.com/quasidock/quasidock/internal/prompt"
 	"github.com/quasidock/quasidock/internal/registry"
@@ -52,6 +53,13 @@ Docker-style image commands:
   image push | push [--sources] IMAGE  publish the exact local image
   image rm | rmi IMAGE [IMAGE...]      untag a reference or remove a manifest ID
 
+Persistent storage:
+  volume create NAME                 create a reusable named volume
+  volume ls [-q]                     list local volumes
+  volume inspect [-f TEMPLATE] NAME [NAME...]
+  volume rm NAME [NAME...]            remove unreferenced named volumes
+  volume prune [--dry-run]            collect unreferenced named volumes
+
 Quasidock extensions:
   build [--rebuild] [--clean] [--keep-build-dir] [<recipe.json> | <dir>]
                                        build a recipe and cache its image
@@ -82,6 +90,9 @@ run options (before IMAGE):
   --pull=missing|always|never          default: missing; failed pulls never use stale images
   --entrypoint=COMMAND                override the entrypoint and clear the default cmd
   -e, --env NAME[=VALUE]               set or inherit an environment variable
+  -v, --volume SOURCE:TARGET[:rw]      mount at ${data} or a data subpath
+  --mount type=volume|bind,source=SOURCE,target=TARGET
+                                       mount a writable local NTFS directory
   --sandbox=soft|low|appcontainer      choose the Windows sandbox (default: image, then low)
   --filesystem=<location>[:ro]         grant cwd or an absolute host path
   --nofilesystem=LOCATION             remove an image's filesystem grant
@@ -97,7 +108,8 @@ select local manifests. Explicit names and tags select exactly that reference.
 Image IDs are manifest digests. images -q prints full IDs; inspect is local-only.
 Each run creates a container with isolated data under containers/<id>/data.
 Use an explicit command after IMAGE to replace the image's entrypoint and default cmd.
-Bind mounts (-v/--mount) and -p are not supported yet.
+Mount targets are ${data} or ${data}/PATH. Named volumes survive container removal.
+Read-only mounts, overlapping targets, and -p are not supported yet.
 
 Registry credentials use Windows Credential Manager, QUASIDOCK_REGISTRY_USERNAME /
 QUASIDOCK_REGISTRY_PASSWORD (for the default registry), or Docker's saved login.
@@ -222,6 +234,13 @@ func parseRunOptions(ctx *context.Context, args []string) (run.Options, error) {
 			i++
 			break
 		}
+		if args[i] == "-v" {
+			args[i] = "--volume"
+		} else if strings.HasPrefix(args[i], "-v=") {
+			args[i] = "--volume=" + args[i][3:]
+		} else if strings.HasPrefix(args[i], "-v") {
+			args[i] = "--volume=" + args[i][2:]
+		}
 		if args[i] == "-e" {
 			args[i] = "--env"
 		} else if strings.HasPrefix(args[i], "-e=") {
@@ -254,7 +273,7 @@ func parseRunOptions(ctx *context.Context, args []string) (run.Options, error) {
 					}
 				}
 				if strings.ContainsRune(args[i], 'v') {
-					return opts, fmt.Errorf("unsupported run option %q; -v is reserved for volumes, use --verbose", args[i])
+					return opts, fmt.Errorf("unsupported run option %q; pass -v SOURCE:TARGET separately from boolean flag clusters", args[i])
 				}
 				return opts, fmt.Errorf("unknown run option %q", args[i])
 			}
@@ -265,6 +284,15 @@ func parseRunOptions(ctx *context.Context, args []string) (run.Options, error) {
 			return opts, err
 		}
 		switch opt.Name {
+		case "mount", "volume":
+			if opt.Value == nil {
+				return opts, errors.New("mount needs a value")
+			}
+			m, err := mounts.Parse(*opt.Value, opt.Name == "volume")
+			if err != nil {
+				return opts, err
+			}
+			opts.Mounts = append(opts.Mounts, m)
 		case "ephemeral":
 			return opts, errors.New("--ephemeral was removed; use --rm")
 		case "rm":
@@ -325,6 +353,9 @@ func parseRunOptions(ctx *context.Context, args []string) (run.Options, error) {
 	opts.ID = args[i]
 	opts.Args = args[i+1:]
 	opts.Settings = parser.finish()
+	if err := mounts.ValidateTargets(opts.Mounts); err != nil {
+		return opts, err
+	}
 	return opts, nil
 }
 
@@ -686,7 +717,7 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 		return 0, nil
 	}
 	switch cmd {
-	case "build", "container", "ps", "stop", "rm", "logs", "image", "images", "inspect", "tag", "pull", "push", "rmi", "run", "search", "trust", "signature", "prune", "repair", "grants":
+	case "build", "volume", "container", "ps", "stop", "rm", "logs", "image", "images", "inspect", "tag", "pull", "push", "rmi", "run", "search", "trust", "signature", "prune", "repair", "grants":
 	default:
 		return usageError()
 	}
@@ -699,6 +730,8 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 	ctx.Store.Verbose = ctx.Verbose
 
 	switch cmd {
+	case "volume":
+		return volumeCommand(ctx, rest)
 	case "container":
 		return containerCommand(ctx, rest)
 	case "ps":
@@ -828,6 +861,9 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 		}
 		defer lock.Release()
 		_ = hkcu.SettleLeftovers(ctx.Store, "")
+		if err := grants.RepairMounts(ctx.Store); err != nil {
+			return 1, err
+		}
 		unsettled1, _ := grants.SettleAll(ctx)
 		unsettled2, _ := grants.SettleOrphans(ctx)
 		if (unsettled1 + unsettled2) > 0 {

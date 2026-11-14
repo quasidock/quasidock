@@ -4,10 +4,11 @@ Quasidock runs sandboxed Windows programs from OCI-distributed images using a
 Docker-style CLI. It is a Go fork of [Zigsaw](https://github.com/zigsaw-io/zigsaw),
 focused on image distribution and native Windows execution.
 
-Version **0.6.0** supports Docker-style container lifecycle management (`run`, `ps`,
+Version **0.7.0** supports Docker-style container lifecycle management (`run`, `ps`,
 `logs`, `stop`, `rm`, `inspect`, `prune`), per-container isolated data, image
-management, and Quasidock images for `windows/amd64`. Dockerfiles, the Docker
-Engine API, bind mounts, and general Docker images are not supported.
+management, named volumes, local directory bind mounts, and Quasidock images for
+`windows/amd64`. Dockerfiles, the Docker Engine API, and general Docker images
+are not supported.
 
 ## Build and try it
 
@@ -114,7 +115,7 @@ boolean flags before IMAGE can be combined (for example `-it`, `-dit`).
 | Option | Behavior |
 |---|---|
 | `--name NAME` | Assign a unique container name (`[a-zA-Z0-9][a-zA-Z0-9_.-]*`) |
-| `--rm` | Delete the container, its `data/`, and its HKCU hive on normal or signaled exit |
+| `--rm` | Delete the container and its private data on exit; preserve mounted contents and mounted registry state |
 | `-d`, `--detach` | Supervise the container in the background and print its 64-hex container ID |
 | `-i`, `--interactive` | Attach host stdin when running in the foreground (otherwise stdin is `\\.\NUL`) |
 | `-t`, `--tty` | Record TTY preference on container metadata (pipe-backed streams; no ConPTY yet) |
@@ -123,14 +124,62 @@ boolean flags before IMAGE can be combined (for example `-it`, `-dit`).
 | `--pull=never` | Use only local images; a missing image is an error |
 | `-e NAME=VALUE`, `--env NAME=VALUE` | Set a variable; the last setting wins |
 | `-e NAME`, `--env NAME` | Inherit a host variable, or unset it if absent |
+| `-v SOURCE:TARGET[:rw]`, `--volume SOURCE:TARGET[:rw]` | Mount a named volume or host directory at `${data}` or a data subpath |
+| `--mount type=volume\|bind,source=SOURCE,target=TARGET` | Explicitly select a writable directory mount |
 | `--verbose` | Print runtime diagnostics |
 
 Each `run` allocates an isolated container under `containers/<id>/` with its own
 `state.json`, `container.log`, and `data/` directory (`${data}`, `HOME`, `APPDATA`,
 `LOCALAPPDATA`, `TEMP`, cache, and per-container HKCU hive). Multiple containers—
 including different versions of the same app—can run concurrently without sharing
-state. Containers persist after exit unless `--rm` is set. Bind mounts (`-v`,
-`--mount`) and Docker-style `-p` port publishing are deferred.
+state unless mounted storage is explicitly shared. Containers persist after exit
+unless `--rm` is set. Docker-style `-p` port publishing remains deferred.
+
+## Persistent storage
+
+Named volumes reuse data across containers and image versions. Mount the complete
+`${data}` tree to preserve profile, cache, and registry state, or a subpath to
+persist selected application files. Quote mount arguments with single quotes in
+PowerShell so `${data}` reaches Quasidock literally.
+
+```powershell
+quasidock volume create node-state
+quasidock run --rm -v 'node-state:${data}' node node.exe -e 'require("fs").writeFileSync(process.env.HOME + "/saved.txt", "hello")'
+quasidock run --rm -v 'node-state:${data}' node node.exe -e 'console.log(require("fs").readFileSync(process.env.HOME + "/saved.txt", "utf8"))'
+quasidock run --rm --mount 'type=bind,source=C:\work,target=${data}/workspace' node node.exe --version
+quasidock volume ls
+quasidock volume inspect -f '{{.Mountpoint}}' node-state
+quasidock volume rm node-state
+```
+
+`volume create NAME` is idempotent and volume names resolve case-insensitively.
+`run` automatically creates missing named volumes. In `-v`, absolute and explicitly
+relative paths select binds; other sources select named volumes. Bind directories
+must already exist. Relative binds resolve against the caller's original working
+directory, including detached runs. Use `--mount type=bind` to explicitly bind a
+relative directory whose name could also be a volume name. Fields containing commas
+can be CSV-quoted, for example `'type=bind,"source=C:\work, files",target=${data}/workspace'`.
+
+Mounts support writable directories on local NTFS volumes. Destinations are
+`${data}` or `${data}/PATH`; multiple destinations must be disjoint. A root mount
+cannot be combined with subpath mounts. Arbitrary absolute destinations, read-only
+mounts, files, remote shares, anonymous volumes, and volume drivers are unsupported.
+Mounts do not copy image files into new volumes. Multiple running containers may
+share storage; applications coordinate their concurrent writes. Existing HKCU key
+conflicts still apply when containers use different backing registry directories.
+
+Container inspection includes normalized `HostConfig.Mounts` and resolved
+`Mounts` with `Type`, `Name` (for volumes), `Source`, `Destination`, and `RW`.
+Named volumes live under `volumes/<name>/data`, separate from container metadata.
+Any retained container record pins its named volumes, including exited containers
+and failed launches. Remove those containers before removing their volumes.
+
+`--rm`, `rm`, `container prune`, image removal, and ordinary `prune` (including
+`--data`) preserve named volumes and bind contents. Use `volume rm NAME...` or
+`volume prune` to delete unreferenced named volumes; `volume prune --dry-run`
+reports candidates without deleting them. Bind contents are never collected.
+`repair` restores mount permissions left behind after a supervisor crash while
+preserving access required by live consumers.
 
 ## Windows sandbox and Quasidock extensions
 
@@ -156,6 +205,13 @@ Recipe builds remain available through `build [recipe.json|directory]` (using
 placeholders, vendoring, and pinned dependencies.
 
 ## Upgrading
+
+### From 0.6 to 0.7
+
+Existing containers and images need no migration. Runs without mounts retain
+isolated private data. Recipes and OCI image configurations are unchanged.
+Use 0.7 or later to manage containers with mounts; older binaries do not understand
+their mount metadata or shared permission ownership.
 
 ### From 0.5 to 0.6
 

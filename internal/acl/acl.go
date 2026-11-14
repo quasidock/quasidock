@@ -244,6 +244,67 @@ func Grants(path string, sid win32.PSID, access Access) (bool, error) {
 	return dacl.find(uint8(win32.ACCESS_ALLOWED_ACE_TYPE), sid, access.Mask(), OriginExplicit) != nil, nil
 }
 
+// ExplicitGrant snapshots only this principal's explicit allow mask. Mount
+// cleanup restores that mask rather than replacing unrelated ACL entries.
+func ExplicitGrant(path string, sid win32.PSID) (win32.DWORD, error) {
+	d, err := readDacl(path)
+	if err != nil {
+		return 0, err
+	}
+	defer d.Close()
+	var mask win32.DWORD
+	if d.acl == nil {
+		return mask, nil
+	}
+	for i := uint32(0); i < uint32(d.acl.AceCount); i++ {
+		p, err := win32.GetAce(d.acl, i)
+		if err != nil {
+			return 0, err
+		}
+		a := (*win32.ACCESS_ALLOWED_ACE)(unsafe.Pointer(p))
+		if a.Header.AceType == uint8(win32.ACCESS_ALLOWED_ACE_TYPE) && a.Header.AceFlags&uint8(win32.INHERITED_ACE) == 0 && win32.EqualSid(uintptr(unsafe.Pointer(&a.SidStart)), sid) {
+			mask |= a.Mask
+		}
+	}
+	return mask, nil
+}
+
+func RestoreGrant(path string, sid win32.PSID, mask win32.DWORD) error {
+	d, err := readDacl(path)
+	if err != nil {
+		return err
+	}
+	defer d.Close()
+	entries := d.revocations(Revoke{Kind: RevokeSids, Sids: []win32.PSID{sid}}, 0)
+	if mask != 0 {
+		entries = append(entries, win32.EXPLICIT_ACCESS_W{GrfAccessPermissions: mask, GrfAccessMode: win32.GRANT_ACCESS, GrfInheritance: win32.SUB_CONTAINERS_AND_OBJECTS_INHERIT, Trustee: win32.TRUSTEE_W{TrusteeForm: win32.TRUSTEE_IS_SID, PtstrName: sid}})
+	}
+	if len(entries) == 0 {
+		return nil
+	}
+	return d.addEntries(entries)
+}
+
+func RestoreLabel(path string, level *uint32) error {
+	if level == nil {
+		return Unlabel(path)
+	}
+	sid, err := win32.ConvertStringSidToSid(fmt.Sprintf("S-1-16-%d", *level))
+	if err != nil {
+		return err
+	}
+	defer win32.LocalFree(sid)
+	buf := make([]byte, int(unsafe.Sizeof(win32.ACL{})+unsafe.Sizeof(win32.ACCESS_ALLOWED_ACE{}))+int(win32.GetLengthSid(sid))+8)
+	sacl := (*win32.ACL)(unsafe.Pointer(&buf[0]))
+	if err := win32.InitializeAcl(sacl, win32.DWORD(len(buf)), win32.ACL_REVISION); err != nil {
+		return err
+	}
+	if err := win32.AddMandatoryAce(sacl, win32.ACL_REVISION, win32.DWORD(win32.OBJECT_INHERIT_ACE|win32.CONTAINER_INHERIT_ACE), win32.SYSTEM_MANDATORY_LABEL_NO_WRITE_UP, sid); err != nil {
+		return err
+	}
+	return writeLabel(path, sacl)
+}
+
 // IsPackageSid checks if sid is an AppContainer package SID (S-1-15-2-...).
 func IsPackageSid(sid win32.PSID) bool {
 	auth := win32.GetSidIdentifierAuthority(sid)

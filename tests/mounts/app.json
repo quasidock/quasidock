@@ -1,0 +1,10 @@
+{
+  "id": "test.mounts.fixture",
+  "version": "1",
+  "entrypoint": "fixture.exe",
+  "permissions": { "sandbox": "soft" },
+  "stages": [{
+    "name": "fixture",
+    "sources": [{ "path": "../../out/test/quasidock-cli-fixture.exe", "dest": "fixture.exe" }]
+  }]
+}
