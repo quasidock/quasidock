@@ -38,7 +38,7 @@ set -u
 export MSYS_NO_PATHCONV=1
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
-zigsaw=${1:-$root/zig-out/bin/quasidock.exe}
+zigsaw=${1:-$root/out/bin/quasidock.exe}
 QUASIDOCK_HOME=${GTK_HOME:-${BUILD_HOME:-}}
 if [ -z "$QUASIDOCK_HOME" ] || [ ! -f "$QUASIDOCK_HOME\\refs\\org.gtk.Gtk4.json" ] || [ ! -f "$QUASIDOCK_HOME\\refs\\org.gtk.Gtk4.Sdk.json" ]; then
     echo "tests/gtk3.sh needs a store with org.gtk.Gtk4 and org.gtk.Gtk4.Sdk in GTK_HOME or BUILD_HOME;"

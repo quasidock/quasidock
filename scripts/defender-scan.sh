@@ -5,7 +5,7 @@
 # version string scanned clean. A user's Windows then won't start the program, so
 # this runs before a release is published, on the bytes that would be.
 #
-#   scripts/defender-scan.sh [package directory]     (default: zig-out/release)
+#   scripts/defender-scan.sh [package directory]     (default: out/release)
 #
 # Exits 1 if Defender finds something, naming it. Where it can't scan at all, as
 # where it's turned off, this says so and exits 0: that isn't a finding about the
@@ -16,7 +16,7 @@ set -u
 export MSYS_NO_PATHCONV=1
 
 root=$(cd "$(dirname "$0")/.." && pwd)
-package=$(cygpath -aw "${1:-$root/zig-out/release}")
+package=$(cygpath -aw "${1:-$root/out/release}")
 zip="$package\\quasidock-x86_64-windows.zip"
 [ -f "$zip" ] || { echo "no $zip: run scripts/package.sh first"; exit 2; }
 

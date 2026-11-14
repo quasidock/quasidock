@@ -35,7 +35,7 @@ set -u
 export MSYS_NO_PATHCONV=1
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
-zigsaw=${1:-$root/zig-out/bin/quasidock.exe}
+zigsaw=${1:-$root/out/bin/quasidock.exe}
 QUASIDOCK_HOME=${QT_HOME:-${BUILD_HOME:-}}
 if [ -z "$QUASIDOCK_HOME" ] || [ ! -f "$QUASIDOCK_HOME\\refs\\io.qt.Qt6.json" ] || [ ! -f "$QUASIDOCK_HOME\\refs\\io.qt.Qt6.Sdk.json" ]; then
     echo "tests/qt.sh needs a store with io.qt.Qt6 and io.qt.Qt6.Sdk in QT_HOME or BUILD_HOME;"

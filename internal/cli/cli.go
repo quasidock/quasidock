@@ -46,8 +46,7 @@ commands:
                                   it, as far as its layers' format allows (eStargz)
   cat <image> <path>              write a file of an app in a registry to stdout, the
                                   same way
-  pull [--yes] [--lazy] <image>   install an app from a registry, once you agree to what it
-                                  may reach; --yes agrees without asking; --lazy installs
+  pull [--lazy] <image>           install an app from a registry; --lazy installs
                                   it before its large eStargz layers are downloaded, their
                                   files fetched as they're first used while the rest
                                   downloads
@@ -283,6 +282,33 @@ func parseRunOptions(ctx *context.Context, args []string) (run.Options, error) {
 	opts.ID = args[i]
 	opts.Args = args[i+1:]
 	opts.Settings = parser.finish()
+	return opts, nil
+}
+
+type pullOptions struct {
+	Image string
+	Lazy  bool
+}
+
+func parsePullOptions(args []string) (pullOptions, error) {
+	var opts pullOptions
+	var image *string
+	for _, arg := range args {
+		if isFlag(arg, "yes") {
+			// Accepted as a no-op for compatibility; pull is non-interactive by default.
+		} else if isFlag(arg, "lazy") {
+			opts.Lazy = true
+		} else if image == nil && !strings.HasPrefix(arg, "-") {
+			val := arg
+			image = &val
+		} else {
+			return opts, errors.New("usage error")
+		}
+	}
+	if image == nil {
+		return opts, errors.New("usage error")
+	}
+	opts.Image = *image
 	return opts, nil
 }
 
@@ -713,22 +739,8 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 		return 0, lifecycle.Install(ctx, img)
 
 	case "pull":
-		consent := remote.ConsentAsk
-		var image *string
-		lazily := false
-		for _, arg := range rest {
-			if isFlag(arg, "yes") {
-				consent = remote.ConsentGiven
-			} else if isFlag(arg, "lazy") {
-				lazily = true
-			} else if image == nil && !strings.HasPrefix(arg, "-") {
-				val := arg
-				image = &val
-			} else {
-				return usageError()
-			}
-		}
-		if image == nil {
+		opts, err := parsePullOptions(rest)
+		if err != nil {
 			return usageError()
 		}
 		lock, err := ctx.Store.Lock(false)
@@ -741,16 +753,11 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 		if ctx.Env != nil {
 			envReg = ctx.Env["QUASIDOCK_REGISTRY"]
 		}
-		img, err := remote.Fetch(ctx.Store, envReg, *image, ctx.Verbose)
+		img, err := remote.Fetch(ctx.Store, envReg, opts.Image, ctx.Verbose)
 		if err != nil {
 			return 1, err
 		}
-		if consent == remote.ConsentAsk {
-			if err := remote.AgreeTo(ctx, img.Manifest, img.Config, consent); err != nil {
-				return 1, err
-			}
-		}
-		_ = lazily
+		_ = opts.Lazy
 		return 0, lifecycle.Install(ctx, img)
 
 	case "push":

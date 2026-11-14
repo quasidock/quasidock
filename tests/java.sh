@@ -27,7 +27,7 @@ set -u
 export MSYS_NO_PATHCONV=1
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
-zigsaw=${1:-$root/zig-out/bin/quasidock.exe}
+zigsaw=${1:-$root/out/bin/quasidock.exe}
 temp_store=""
 QUASIDOCK_HOME=${JAVAAPPS_HOME:-${BUILD_HOME:-}}
 if [ -z "$QUASIDOCK_HOME" ]; then
@@ -41,7 +41,7 @@ PLANTUML=com.plantuml.PlantUML
 LOGISIM=com.github.reds.LogisimEvolution
 SCENEBUILDER=com.gluonhq.SceneBuilder
 (cd "$root" && go run ./scripts/build.go winwait) || { echo "building the window waiter failed"; exit 1; }
-winwait="$root\\zig-out\\test\\quasidock-winwait.exe"
+winwait="$root\\out\\test\\quasidock-winwait.exe"
 had_prefs=false
 reg query 'HKCU\Software\JavaSoft\Prefs' >/dev/null 2>&1 && had_prefs=true
 

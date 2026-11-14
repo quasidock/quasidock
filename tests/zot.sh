@@ -9,7 +9,7 @@
 #   e.g. tests/zot.sh bash tests/registry.sh
 #
 # zot is the zigsaw app recipes/zot.json builds, run by the zigsaw under test
-# (QUASIDOCK, default zig-out\bin\quasidock.exe), from the store in ZOT_HOME, or
+# (QUASIDOCK, default out\bin\quasidock.exe), from the store in ZOT_HOME, or
 # else BUILD_HOME (where tests/published.sh builds it), or else a temporary
 # one. If zot isn't installed there at the recipe's version, it's built
 # there first: minutes with its vendored modules in the store's downloads
@@ -22,7 +22,7 @@
 set -u
 export MSYS_NO_PATHCONV=1
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
-zigsaw=${QUASIDOCK:-$root\\zig-out\\bin\\quasidock.exe}
+zigsaw=${QUASIDOCK:-$root\\out\\bin\\quasidock.exe}
 ZOT=dev.zotregistry.zot
 
 store=${ZOT_HOME:-${BUILD_HOME:-}}

@@ -59,7 +59,7 @@ const manifestXML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 </assembly>`
 
 func main() {
-	prefix := "zig-out"
+	prefix := "out"
 	strip := false
 	var targets []string
 	var passthru []string
@@ -75,7 +75,7 @@ func main() {
 			}
 		} else if strings.HasPrefix(arg, "-p=") || strings.HasPrefix(arg, "--prefix=") {
 			prefix = arg[strings.Index(arg, "=")+1:]
-		} else if arg == "-Dstrip" || arg == "--strip" {
+		} else if arg == "--strip" {
 			strip = true
 		} else if arg == "run" {
 			isRun = true
@@ -211,6 +211,9 @@ func buildBinary(t binaryTarget, destDir string, strip bool) error {
 	var ldflags []string
 	if t.gui {
 		ldflags = append(ldflags, "-H=windowsgui")
+	}
+	if strip {
+		ldflags = append(ldflags, "-s", "-w")
 	}
 
 	buildArgs := []string{"build"}

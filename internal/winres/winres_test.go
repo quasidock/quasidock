@@ -9,7 +9,7 @@ import (
 )
 
 func TestWinres(t *testing.T) {
-	manifest, err := os.ReadFile(filepath.Join("..", "..", "src", "windows", "quasidock.manifest"))
+	manifest, err := os.ReadFile(filepath.Join("testdata", "quasidock.manifest"))
 	if err != nil {
 		t.Fatalf("reading manifest: %v", err)
 	}

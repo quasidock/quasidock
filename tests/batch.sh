@@ -14,7 +14,7 @@ export MSYS_NO_PATHCONV=1
 
 cd "$(dirname "$0")/.." || exit 1
 root=$(cygpath -w "$(pwd)")
-quasidock=${1:-$root/zig-out/bin/quasidock.exe}
+quasidock=${1:-$root/out/bin/quasidock.exe}
 go run "$(cygpath -w "$root/scripts/build.go")" argv-echo || { echo "building the argument printer failed"; exit 1; }
 
 tmp=$(cygpath -w "$(mktemp -d)")
@@ -63,7 +63,7 @@ gets_args() {
     [ "$got" = "$want" ] || { diff <(echo "$want") <(echo "$got") | head -4; return 1; }
 }
 
-check "the printer alone gets the arguments exactly (the control)" gets_args "$root\\zig-out\\test\\quasidock-argv.exe"
+check "the printer alone gets the arguments exactly (the control)" gets_args "$root\\out\\test\\quasidock-argv.exe"
 check "the app's .cmd command gets them exactly" gets_args "$quasidock" run $APP
 check "an exported .cmd gets them exactly" gets_args "$quasidock" run --command=echo-args $APP
 check "and under --sandbox=appcontainer" gets_args "$quasidock" run --sandbox=appcontainer $APP

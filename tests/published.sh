@@ -33,7 +33,7 @@ export MSYS_NO_PATHCONV=1
 unset QUASIDOCK_REGISTRY_USERNAME QUASIDOCK_REGISTRY_PASSWORD # Pulls must work anonymously.
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
-zigsaw=${1:-$root/zig-out/bin/quasidock.exe}
+zigsaw=${1:-$root/out/bin/quasidock.exe}
 work=$(cygpath -w "$(mktemp -d)")
 # Low runs (the default) label the working directory of an app with cwd: the
 # runs go from a scratch one, not the repository, nor a folder that holds the
@@ -45,7 +45,7 @@ pull_store="$work\\pulled"
 build_store=${BUILD_HOME:-$work\\built}
 # tests/cmd/imports: whether the loader binds every import of a program.
 (cd "$root" && go run ./scripts/build.go imports) || { echo "building the import checker failed"; exit 1; }
-imports="$root\\zig-out\\test\\quasidock-imports.exe"
+imports="$root\\out\\test\\quasidock-imports.exe"
 zp() { QUASIDOCK_HOME="$pull_store" "$zigsaw" "$@"; }
 zb() { QUASIDOCK_HOME="$build_store" "$zigsaw" "$@"; }
 

@@ -41,7 +41,7 @@ set -eu
 export MSYS_NO_PATHCONV=1
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
-quasidock=${QUASIDOCK:-$root/zig-out/bin/quasidock.exe}
+quasidock=${QUASIDOCK:-$root/out/bin/quasidock.exe}
 registry=${QUASIDOCK_REGISTRY:-ghcr.io/zigsaw-io}
 
 changed=

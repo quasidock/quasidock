@@ -50,21 +50,21 @@ jobs:
       - name: tests/install.sh, on the package
         shell: bash
         env:
-          PACKAGE_DIR: zig-out\release
+          PACKAGE_DIR: out\release
         run: bash tests/install.sh
 
       # Not published if Defender flags these bytes: Windows wouldn't start them
       # (docs/findings.md). Says so and goes on where it can't scan.
       - name: What Defender makes of the programs
         shell: bash
-        run: bash scripts/defender-scan.sh zig-out/release
+        run: bash scripts/defender-scan.sh out/release
 
       - name: Publish the release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          cd zig-out/release
+          cd out/release
           gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag \
               --title "quasidock ${GITHUB_REF_NAME#v}" --notes-file notes.md \
               quasidock-x86_64-windows.zip install.ps1 SHA256SUMS

@@ -23,7 +23,7 @@ set -u
 export MSYS_NO_PATHCONV=1
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
-zigsaw=${1:-$root/zig-out/bin/quasidock.exe}
+zigsaw=${1:-$root/out/bin/quasidock.exe}
 work=$(cygpath -w "$(mktemp -d)")
 QUASIDOCK_HOME="$work\\store"
 export QUASIDOCK_HOME
@@ -46,7 +46,7 @@ z() { timeout 120 "$zigsaw" "$@"; }
 
 (cd "$root" && go run ./scripts/build.go netprobe) || { echo "building the network probe failed"; exit 1; }
 probe_dir="$work\\netprobe"
-mkdir -p "$probe_dir" && cp "$root\\zig-out\\test\\quasidock-netprobe.exe" "$probe_dir\\"
+mkdir -p "$probe_dir" && cp "$root\\out\\test\\quasidock-netprobe.exe" "$probe_dir\\"
 # The report runs the probe in AppContainers of its own.
 icacls "$probe_dir" /grant '*S-1-15-2-1:(OI)(CI)RX' >/dev/null || { echo "granting the probe to AppContainers failed"; exit 1; }
 probe="$probe_dir\\quasidock-netprobe.exe"

@@ -12,7 +12,7 @@ import (
 )
 
 func TestListAndReadSampleZip(t *testing.T) {
-	samplePath := filepath.Join("..", "..", "src", "testdata", "sample.zip")
+	samplePath := filepath.Join("testdata", "sample.zip")
 	data, err := os.ReadFile(samplePath)
 	if err != nil {
 		t.Fatalf("ReadFile sample.zip failed: %v", err)

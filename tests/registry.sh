@@ -25,7 +25,7 @@ export MSYS_NO_PATHCONV=1
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
 registry=${1:-localhost:5000}
-zigsaw=${2:-$root/zig-out/bin/quasidock.exe}
+zigsaw=${2:-$root/out/bin/quasidock.exe}
 if ! curl -sf "http://${registry/localhost/127.0.0.1}/v2/" >/dev/null; then
     echo "no registry answers at $registry; start one first (see the top of this script)"
     exit 1
@@ -197,7 +197,7 @@ check "a download that breaks off goes on where it got to" resumed
 # And when the network really does it: QUASIDOCK_TEST_DOWNLOAD_BREAK doesn't reach the
 # code that asks the connection why, which panicked up to 0.70.0.
 (cd "$root" && go run ./scripts/build.go resetproxy) || echo "building the proxy failed"
-proxy="$root\\zig-out\\test\\quasidock-resetproxy.exe"
+proxy="$root\\out\\test\\quasidock-resetproxy.exe"
 upstream=${registry##*:}
 "$proxy" 5002 "$upstream" /blobs/ 100000 >/dev/null 2>&1 &
 blob_proxy=$!
@@ -429,28 +429,18 @@ check "pull tells what the app may reach before downloading it" told_first
 check "search uses the catalog kept from earlier when the registry can't be reached" offline
 check "an app can't have the id catalog" sh -c "sed 's/\"net.frippery.busybox\"/\"catalog\"/' '$root/recipes/busybox.json' > '$work\\catalog-id.json' && ! QUASIDOCK_HOME='$store_a' \"\$0\" build '$work\\catalog-id.json' >/dev/null 2>&1" "$zigsaw"
 
-# Consent: pull asks before it downloads any layer, and update asks when the
-# new version may reach more. Without a console, the answer is the next line
-# on stdin, and none at all is no.
+# Pull is non-interactive by default (like docker pull): it prints what the
+# app may reach before downloading and installs without prompting, even with
+# stdin closed. --yes remains accepted as a no-op for compatibility.
 zn() { QUASIDOCK_REGISTRY="$repo" QUASIDOCK_HOME="$work\\consent" "$zigsaw" "$@"; }
-cat_manifest=$(grep -o 'sha256:[0-9a-f]*' "$store_a\\refs\\$CAT.json" | cut -d: -f2)
-cat_layer=$(grep -o 'sha256:[0-9a-f]*' "$store_a\\blobs\\sha256\\$cat_manifest" | tail -1 | cut -d: -f2)
-unanswered() {
+pulled_non_interactive() {
     local out
-    out=$(zn pull $CAT </dev/null 2>&1) && { echo "installed"; return 1; }
-    grep -q 'permits *your Documents' <<<"$out" && grep -q 'Install it? \[Y/n\]' <<<"$out" &&
-        grep -q "^error: $CAT .* wasn't installed: nothing answered whether to go on. Run it at a console, or add --yes" <<<"$out" || { echo "$out" | tail -1; return 1; }
-    ! zn list | grep -q "^$CAT " && [ ! -e "$work\\consent\\blobs\\sha256\\$cat_layer" ]
+    out=$(zn pull $CAT </dev/null 2>&1) || { echo "$out" | tail -1; return 1; }
+    grep -q 'permits *your Documents' <<<"$out" && ! grep -q 'Install it?' <<<"$out" && zn list | grep -q "^$CAT "
 }
-declined() {
-    local out
-    out=$(echo n | zn pull $CAT 2>&1) && { echo "installed"; return 1; }
-    grep -q "^error: $CAT [^ ]* wasn't installed$" <<<"$out" && ! zn list | grep -q "^$CAT "
-}
-agreed() { printf 'maybe\ny\n' | zn pull $CAT 2>&1 | grep -q 'answer y or n' && zn list | grep -q "^$CAT "; }
-check "pull asks first; with nothing to answer it, nothing is downloaded" unanswered
-check "  answered no, it isn't installed" declined
-check "  answered yes, after an answer it can't take, it is" agreed
+pulled_with_yes() { zn pull --yes $CAT </dev/null >/dev/null 2>&1 && zn list | grep -q "^$CAT "; }
+check "pull prints permissions and installs non-interactively without --yes" pulled_non_interactive
+check "  and still accepts --yes for compatibility" pulled_with_yes
 
 # Sources next to images: push --sources keeps the files an app was built
 # from in its image's repository, and a build whose pinned source can't be
@@ -635,7 +625,7 @@ if [ -n "${AUTH_REGISTRY:-}" ]; then
     # Docker's logins: a config.json of the test's own, and a credential
     # helper that answers from the environment (tests/cmd/credhelper).
     (cd "$root" && go run ./scripts/build.go cred-helper >/dev/null 2>&1) || echo "building the credential helper failed"
-    helper_dir=$(cygpath -u "$root\\zig-out\\test")
+    helper_dir=$(cygpath -u "$root\\out\\test")
     docker_config() { printf '%s' "$1" >"$DOCKER_CONFIG\\config.json"; }
     with_helper() {
         PATH="$helper_dir:$PATH" QUASIDOCK_TEST_HELPER_SERVER="$1" QUASIDOCK_TEST_HELPER_USER="$AUTH_USER" QUASIDOCK_TEST_HELPER_SECRET="$AUTH_PASSWORD" \

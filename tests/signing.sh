@@ -12,12 +12,12 @@ set -u
 export MSYS_NO_PATHCONV=1
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
-zigsaw=${1:-$root\\zig-out\\bin\\quasidock.exe}
+zigsaw=${1:-$root\\out\\bin\\quasidock.exe}
 work=$(cygpath -wl "$(mktemp -d)")
 mkdir -p "$work\\cwd" && cd "$work\\cwd" || exit 1
 (cd "$root" && go run ./scripts/build.go p256sign resetproxy) || { echo "building the helpers failed"; exit 1; }
-signer="$root\\zig-out\\test\\quasidock-p256sign.exe"
-proxy="$root\\zig-out\\test\\quasidock-resetproxy.exe"
+signer="$root\\out\\test\\quasidock-p256sign.exe"
+proxy="$root\\out\\test\\quasidock-resetproxy.exe"
 
 export QUASIDOCK_GRANTS_KEY="Software\\QuasidockTest\\signing-$$"
 export DOCKER_CONFIG="$work\\docker"

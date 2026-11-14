@@ -22,7 +22,7 @@ set -u
 export MSYS_NO_PATHCONV=1
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
-zigsaw=${1:-$root/zig-out/bin/quasidock.exe}
+zigsaw=${1:-$root/out/bin/quasidock.exe}
 temp_store=""
 QUASIDOCK_HOME=${OCI_HOME:-${BUILD_HOME:-}}
 if [ -z "$QUASIDOCK_HOME" ]; then

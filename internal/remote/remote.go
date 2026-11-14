@@ -18,7 +18,6 @@ import (
 	"github.com/quasidock/quasidock/internal/estargz"
 	"github.com/quasidock/quasidock/internal/format"
 	"github.com/quasidock/quasidock/internal/oci"
-	"github.com/quasidock/quasidock/internal/prompt"
 	"github.com/quasidock/quasidock/internal/registry"
 	"github.com/quasidock/quasidock/internal/signature"
 	"github.com/quasidock/quasidock/internal/store"
@@ -603,6 +602,11 @@ func Fetch(st *store.Store, envRegistry, imageText string, verbose bool) (*oci.I
 		return nil, err
 	}
 
+	var sb strings.Builder
+	WriteName(&sb, *info.Config)
+	WriteContents(st, &sb, *info.Manifest, *info.Config)
+	context.PrintStderr("%s", sb.String())
+
 	reg, err := registry.New(info.Target.Ref, "pull", verbose)
 	if err != nil {
 		return nil, err
@@ -967,15 +971,6 @@ func UploadIfMissing(st *store.Store, reg *registry.Registry, desc oci.Descripto
 	return reg.FinishUpload(up.Started, desc, filePath)
 }
 
-// Consent indicates whether to ask before downloading/installing.
-type Consent int
-
-const (
-	ConsentNotAsked Consent = iota
-	ConsentAsk
-	ConsentGiven
-)
-
 func formatBytes(b uint64) string {
 	const unit = 1024
 	if b < unit {
@@ -1072,29 +1067,6 @@ func WriteLine(w io.Writer, label, value string) {
 	if len(value) > 0 {
 		fmt.Fprintf(w, "  %-9s %s\n", label, value)
 	}
-}
-
-func AgreeTo(ctx *context.Context, manifest oci.Manifest, cfg oci.AppConfig, consent Consent) error {
-	var sb strings.Builder
-	WriteName(&sb, cfg)
-	WriteContents(ctx.Store, &sb, manifest, cfg)
-	context.PrintStderr("%s", sb.String())
-	if consent != ConsentAsk {
-		return nil
-	}
-
-	ans, err := prompt.AskYesNo(ctx, "Install it?")
-	if err != nil {
-		return err
-	}
-	if ans == prompt.AnswerYes {
-		return nil
-	}
-	why := ""
-	if ans == prompt.AnswerNone {
-		why = ": nothing answered whether to go on. Run it at a console, or add --yes"
-	}
-	return fmt.Errorf("%s %s wasn't installed%s", cfg.ID, cfg.Version, why)
 }
 
 func ManifestDigest(ctx *context.Context, imageText string) (string, error) {

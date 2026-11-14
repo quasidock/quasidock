@@ -13,10 +13,10 @@
 #
 # It runs from a copy of what it needs, in a temporary directory (on TMPDIR's
 # drive) the account may write, which is deleted afterwards unless KEEP_STAGE is
-# set. That account has no Zig: the suites' helpers are built here first, and a
-# stand-in `zig` does nothing when a suite asks for them. SUITES names the
+# set. That account has no Go: the suites' helpers are built here first, and a
+# stand-in `go` does nothing when a suite asks for them. SUITES names the
 # suites to run ("none" for none). SEED_DOWNLOADS: as the suites take it; only
-# files up to 30 MB are copied. Needs Git Bash, Zig and network access.
+# files up to 30 MB are copied. Needs Git Bash, Go and network access.
 #
 # Rows that only say what happened are marked `note`: what Windows lets a
 # standard user do decides those, not zigsaw.
@@ -38,13 +38,13 @@ if [ "${1:-}" != --inner ]; then
     bash "$(cygpath -u "$repo")/scripts/package.sh" "$(cygpath -u "$stage\\package")" >"$stage\\package.log" 2>&1 ||
         { echo "packaging failed: $(tail -1 "$stage\\package.log")"; exit 1; }
     for d in tests recipes scripts go.mod; do cp -r "$(cygpath -u "$repo")/$d" "$(cygpath -u "$stage")/"; done
-    mkdir -p "$stage\\zig-out" "$stage\\tmp" "$stage\\bin" "$stage\\seed"
-    cp -r "$(cygpath -u "$repo")/zig-out/bin" "$(cygpath -u "$repo")/zig-out/test" "$(cygpath -u "$stage")/zig-out/"
+    mkdir -p "$stage\\out" "$stage\\tmp" "$stage\\bin" "$stage\\seed"
+    cp -r "$(cygpath -u "$repo")/out/bin" "$(cygpath -u "$repo")/out/test" "$(cygpath -u "$stage")/out/"
     if [ -n "${SEED_DOWNLOADS:-}" ]; then
         find "$(cygpath -u "$SEED_DOWNLOADS")" -maxdepth 1 -type f -size -30M -exec cp {} "$(cygpath -u "$stage")/seed/" \;
     fi
-    # What a suite asks of Zig: its helpers, built above.
-    printf '#!/bin/sh\ncase "$1" in version) echo 0.17.0 ;; esac\nexit 0\n' >"$stage\\bin\\zig"
+    # What a suite asks of Go: its helpers, built above.
+    printf '#!/bin/sh\nexit 0\n' >"$stage\\bin\\go"
     # A folder that's not the account's: it may write in it, as an ordinary
     # user may in a folder on a drive that lets users modify, and no more.
     mkdir -p "$stage\\not-mine"
@@ -53,7 +53,7 @@ if [ "${1:-}" != --inner ]; then
     bash=$(cygpath -w "$(command -v bash)")
     out="$stage\\inner.txt"
     : >"$out"
-    "$repo\\zig-out\\test\\quasidock-asuser.exe" "$account" "$out" "\"$bash\" --noprofile --norc \"$stage\\tests\\standard-user.sh\" --inner \"$stage\" \"${SUITES:-$default_suites}\"" &
+    "$repo\\out\\test\\quasidock-asuser.exe" "$account" "$out" "\"$bash\" --noprofile --norc \"$stage\\tests\\standard-user.sh\" --inner \"$stage\" \"${SUITES:-$default_suites}\"" &
     runner=$!
     tail -f "$out" &
     tailer=$!

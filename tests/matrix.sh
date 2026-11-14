@@ -36,7 +36,7 @@ set -u
 export MSYS_NO_PATHCONV=1 # Keep arguments like "/c" from being rewritten into paths.
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
-zigsaw=${1:-$root/zig-out/bin/quasidock.exe}
+zigsaw=${1:-$root/out/bin/quasidock.exe}
 
 own_store=false
 if [ -z "${QUASIDOCK_HOME:-}" ]; then

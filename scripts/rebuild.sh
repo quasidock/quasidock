@@ -13,7 +13,7 @@
 #
 # Building needs QUASIDOCK_HOME, the store to build in, set, so a forgetful run can't
 # build into your own store, and QUASIDOCK, the quasidock to build with, which defaults to
-# zig-out/bin/quasidock.exe. A frozen copy keeps the build cache valid while you work:
+# out/bin/quasidock.exe. A frozen copy keeps the build cache valid while you work:
 # its keys include the program.
 #
 # After each build, every recipe that pins it gets "<id>:<built version>@sha256:<digest>",
@@ -159,7 +159,7 @@ if [ "$mode" = plan ]; then
 fi
 
 [ -n "${QUASIDOCK_HOME:-}" ] || die "set QUASIDOCK_HOME to the store to build in"
-quasidock=${QUASIDOCK:-$root/zig-out/bin/quasidock.exe}
+quasidock=${QUASIDOCK:-$root/out/bin/quasidock.exe}
 store=$(cygpath -u "$QUASIDOCK_HOME" 2>/dev/null || echo "$QUASIDOCK_HOME")
 logs=${REBUILD_LOGS:-$(mktemp -d)}
 mkdir -p "$logs"

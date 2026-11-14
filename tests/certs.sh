@@ -31,7 +31,7 @@ set -u
 export MSYS_NO_PATHCONV=1
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
-zigsaw=${1:-$root/zig-out/bin/quasidock.exe}
+zigsaw=${1:-$root/out/bin/quasidock.exe}
 QUASIDOCK_HOME=${CERTS_HOME:-${BUILD_HOME:-}}
 PY=org.python.python
 NODE=org.nodejs.node
