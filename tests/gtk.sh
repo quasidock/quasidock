@@ -53,10 +53,6 @@ work=$(cygpath -w "$(mktemp -d)")
 APP=test.gtk.hello
 EDITOR=org.gnome.TextEditor
 RNOTE=com.github.flxzt.rnote
-# The user's folders the apps may use, such as Documents, are these, not
-# yours, which low and AppContainer runs would label and grant.
-for f in Desktop Documents Downloads Pictures; do mkdir -p "$work\\folders\\$f"; done
-export QUASIDOCK_USER_FOLDERS="$work\\folders"
 
 failures=0
 check() {
@@ -248,55 +244,6 @@ hunspell_only() {
 }
 check "a language neither has has no dictionary (en_ZZ would fall back to English)" hunspell_only
 
-# The runtime's extension point (org.gtk.Gtk4): an image that extends it adds
-# its share directory to XDG_DATA_DIRS in every run of an app on the
-# runtime, once installed, after the runtime's own. The dictionaries
-# (recipes/gtk4-hunspell-*.json) are such images, built here unless the
-# store has them (seconds), and removed afterwards; and so is an icon.
-installed_dicts=false
-if [ ! -f "$QUASIDOCK_HOME\\refs\\org.gtk.Gtk4.Hunspell.fr_FR.json" ] || [ ! -f "$QUASIDOCK_HOME\\refs\\org.gtk.Gtk4.Hunspell.vi_VN.json" ]; then
-    installed_dicts=true
-fi
-for lang in fr vi; do
-    z build "$root\\recipes\\gtk4-hunspell-$lang.json" >"$work\\dict-$lang.log" 2>&1 || echo "building the $lang dictionary failed: $(tail -1 "$work\\dict-$lang.log")"
-done
-dictionaries() {
-    local out
-    out=$(timeout 60 "$zigsaw" run "$@" --command=bin/spell.exe $APP fr_FR 2>&1 | tr -d '\r')
-    # Grammalecte's is fr, for every fr_*: "the" isn't French.
-    grep -q '^default fr: hunspell$' <<<"$out" && grep -q '^hunspell fr_FR: the misspelled, teh misspelled' <<<"$out" || { echo "got: $(tr '\n' '|' <<<"$out")"; return 1; }
-    out=$(timeout 60 "$zigsaw" run "$@" --command=bin/spell.exe $APP vi_VN 2>&1 | tr -d '\r')
-    grep -q '^default vi_VN: hunspell$' <<<"$out" && grep -q '^hunspell vi_VN: the ok, teh misspelled' <<<"$out" || { echo "got: $(tr '\n' '|' <<<"$out")"; return 1; }
-    # The runtime's own en_US stays.
-    timeout 60 "$zigsaw" run "$@" --command=bin/spell.exe $APP en_US 2>&1 | tr -d '\r' | grep -q '^hunspell en_US: the ok, teh misspelled, suggests the$'
-}
-check "installed, the French and Vietnamese dictionaries join the runtime's runs, with its English" dictionaries
-check "with --sandbox=soft" dictionaries --sandbox=soft
-check "with --sandbox=appcontainer" dictionaries --sandbox=appcontainer
-no_french() {
-    local out
-    out=$(timeout 60 "$zigsaw" run --noextension=org.gtk.Gtk4.Hunspell.fr_FR --command=bin/spell.exe $APP fr_FR 2>&1 | tr -d '\r')
-    grep -q '^hunspell fr_FR: no dictionary$' <<<"$out" || { echo "got: $(tr '\n' '|' <<<"$out")"; return 1; }
-}
-check "--noextension leaves one out" no_french
-# The SVG from GdkPixbuf's check above, as an app's icon.
-mkdir -p "$work\\icons" && cp "$work\\t.svg" "$work\\icons\\t.svg"
-sed -e "s/@BUSYBOX@/$(manifest_of net.frippery.busybox)/" "$root\\tests\\gtk\\icons.json.in" >"$work\\icons\\icons.json"
-z build "$work\\icons\\icons.json" >"$work\\icons.log" 2>&1 || echo "building test.gtk.icons failed: $(tail -1 "$work\\icons.log")"
-# Once, under AppContainer on Server 2025, it printed nothing; a failure
-# shows the run's exit status too.
-icon() {
-    local out code
-    out=$(timeout 60 "$zigsaw" run "$@" --command=bin/icon.exe $APP test-gtk-icon document-open-symbolic 2>&1 | tr -d '\r'; exit "${PIPESTATUS[0]}")
-    code=$?
-    [ "$code" = 0 ] && grep -q '^icon test-gtk-icon found$' <<<"$out" && grep -q '^icon document-open-symbolic found$' <<<"$out" || { echo "got (exit $code): $(tr '\n' '|' <<<"$out")"; return 1; }
-}
-check "an icon an extension has is in GTK's icon theme, beside the runtime's" icon
-check "with --sandbox=soft" icon --sandbox=soft
-check "with --sandbox=appcontainer" icon --sandbox=appcontainer
-z rm --delete-data test.gtk.icons >/dev/null 2>&1
-check "removed, it isn't" sh -c "timeout 60 \"\$0\" run --command=bin/icon.exe $APP test-gtk-icon 2>&1 | tr -d '\r' | grep -q '^icon test-gtk-icon missing$'" "$zigsaw"
-
 # Building without a recipe: the SDK's exports, from the store's bin, as
 # cc, pkg-config and meson; the program then runs on the runtime.
 mkdir -p "$work\\loose" && for f in hello.c soup.c svg.c spell.c font.c icon.c meson.build; do cp "$work\\$f" "$work\\loose\\"; done
@@ -378,9 +325,9 @@ check "it runs" stays_up 15 $EDITOR --standalone
 check "with --sandbox=soft" stays_up 15 --sandbox=soft $EDITOR --standalone
 check "with --sandbox=appcontainer" stays_up 15 --sandbox=appcontainer $EDITOR --standalone
 echo "a note" >"$docs\\note.txt"
-check "it opens a file it's given with --file" stays_up 15 --command=gnome-text-editor --file="$docs\\note.txt" $EDITOR --standalone
-check "with --sandbox=soft" stays_up 15 --sandbox=soft --command=gnome-text-editor --file="$docs\\note.txt" $EDITOR --standalone
-check "with --sandbox=appcontainer" stays_up 15 --sandbox=appcontainer --command=gnome-text-editor --file="$docs\\note.txt" $EDITOR --standalone
+check "it opens a file it's given" stays_up 15 --filesystem="$docs" --command=gnome-text-editor $EDITOR --standalone "$docs\\note.txt"
+check "with --sandbox=soft" stays_up 15 --sandbox=soft --filesystem="$docs" --command=gnome-text-editor $EDITOR --standalone "$docs\\note.txt"
+check "with --sandbox=appcontainer" stays_up 15 --sandbox=appcontainer --filesystem="$docs" --command=gnome-text-editor $EDITOR --standalone "$docs\\note.txt"
 
 # Gaphor (recipes/gaphor.json), a Python app on the runtime and PyGObject's,
 # with libadwaita and GtkSourceView 5, its packages from PyPI through a
@@ -470,9 +417,9 @@ check "Rnote runs" stays_up 15 $RNOTE
 check "with --sandbox=soft" stays_up 15 --sandbox=soft $RNOTE
 check "with --sandbox=appcontainer" stays_up 15 --sandbox=appcontainer $RNOTE
 cp "$work\\notes.rnote" "$docs\\notes.rnote"
-check "it opens a document it's given with --file" stays_up 20 --command=rnote --file="$docs\\notes.rnote" $RNOTE
-check "with --sandbox=soft" stays_up 20 --sandbox=soft --command=rnote --file="$docs\\notes.rnote" $RNOTE
-check "with --sandbox=appcontainer" stays_up 20 --sandbox=appcontainer --command=rnote --file="$docs\\notes.rnote" $RNOTE
+check "it opens a document it's given" stays_up 20 --filesystem="$docs" --command=rnote $RNOTE "$docs\\notes.rnote"
+check "with --sandbox=soft" stays_up 20 --sandbox=soft --filesystem="$docs" --command=rnote $RNOTE "$docs\\notes.rnote"
+check "with --sandbox=appcontainer" stays_up 20 --sandbox=appcontainer --filesystem="$docs" --command=rnote $RNOTE "$docs\\notes.rnote"
 
 # Pinta (recipes/no-publish/pinta.json), a C# app, on the runtime and .NET's,
 # built with .NET's SDK image. Microsoft's licence doesn't let the .NET images
@@ -495,10 +442,10 @@ check "with --sandbox=soft" stays_up 15 --sandbox=soft $PINTA
 check "with --sandbox=appcontainer" stays_up 15 --sandbox=appcontainer $PINTA
 # A 4x4 PNG.
 printf '%s' 'iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAIAAAAmkwkpAAAAEElEQVR42mM4EaABRwzEcQASUhQB/GAXigAAAABJRU5ErkJggg==' | base64 -d >"$docs\\picture.png"
-check "it opens an image it's given with --file" stays_up 20 --command=pinta --file="$docs\\picture.png" $PINTA
-check "with --sandbox=soft" stays_up 20 --sandbox=soft --command=pinta --file="$docs\\picture.png" $PINTA
-check "with --sandbox=appcontainer" stays_up 20 --sandbox=appcontainer --command=pinta --file="$docs\\picture.png" $PINTA
-check "the documents' directory was granted to none of the apps" sh -c "! icacls '$docs' | grep -q -e 'Mandatory Label' -e 'S-1-15-'"
+check "it opens an image it's given" stays_up 20 --filesystem="$docs" --command=pinta $PINTA "$docs\\picture.png"
+check "with --sandbox=soft" stays_up 20 --sandbox=soft --filesystem="$docs" --command=pinta $PINTA "$docs\\picture.png"
+check "with --sandbox=appcontainer" stays_up 20 --sandbox=appcontainer --filesystem="$docs" --command=pinta $PINTA "$docs\\picture.png"
+check "the documents' directory grant was revoked after the runs" sh -c "! icacls '$docs' | grep -q -e 'Mandatory Label' -e 'S-1-15-'"
 
 # GTK built with the machine's MSVC (recipes/gtk4-msvc.json), if the store
 # has it: it isn't published, and needs Visual Studio to build.
@@ -527,7 +474,6 @@ $installed_dotnet && { z rm --delete-data com.microsoft.dotnet >/dev/null 2>&1; 
 $installed_rnote && z rm --delete-data $RNOTE >/dev/null 2>&1
 $installed_editor && z rm --delete-data $EDITOR >/dev/null 2>&1
 $installed_gaphor && z rm --delete-data $GAPHOR >/dev/null 2>&1
-$installed_dicts && { z rm --delete-data org.gtk.Gtk4.Hunspell.fr_FR >/dev/null 2>&1; z rm --delete-data org.gtk.Gtk4.Hunspell.vi_VN >/dev/null 2>&1; }
 z rm --delete-data $APP >/dev/null 2>&1
 rm -rf "$work"
 echo

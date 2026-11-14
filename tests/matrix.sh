@@ -45,12 +45,6 @@ if [ -z "${QUASIDOCK_HOME:-}" ]; then
 fi
 export QUASIDOCK_HOME
 work=$(cygpath -w "$(mktemp -d)")
-# The user's folders apps may use (PDFBox's and PlantUML's Desktop,
-# Documents and Downloads) are these, not yours, which low and AppContainer
-# runs would label and grant.
-for f in Desktop Documents Downloads; do mkdir -p "$work\\folders\\$f"; done
-export QUASIDOCK_USER_FOLDERS="$work\\folders"
-
 BB=net.frippery.busybox
 RG=com.github.BurntSushi.ripgrep
 BAT=com.github.sharkdp.bat

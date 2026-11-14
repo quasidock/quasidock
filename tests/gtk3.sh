@@ -50,10 +50,7 @@ work=$(cygpath -w "$(mktemp -d)")
 APP=test.gtk.hello3
 DEMO=org.gtk.Gtk3demo
 GNUMERIC=org.gnome.Gnumeric
-# The user's folders the apps may use, such as Documents, are these, not
-# yours, which low and AppContainer runs would label and grant.
-for f in Desktop Documents Downloads; do mkdir -p "$work\\folders\\$f"; done
-export QUASIDOCK_USER_FOLDERS="$work\\folders"
+mkdir -p "$work\\folders\\Documents"
 
 failures=0
 check() {
@@ -189,21 +186,15 @@ charts() {
 }
 check "it draws a spreadsheet's charts as PNGs" charts --sandbox=low
 check "with --sandbox=appcontainer" charts --sandbox=appcontainer
-# Gnumeric may use the user's Documents: here, the test's.
-to_documents() {
+to_granted_folder() {
     rm -f "$work\\folders\\Documents\\sheet.xlsx"
-    timeout 60 "$zigsaw" run --sandbox=low --command=ssconvert $GNUMERIC sheet.csv "$work\\folders\\Documents\\sheet.xlsx" >/dev/null 2>&1 &&
+    timeout 60 "$zigsaw" run --sandbox=low --filesystem="$work\\folders\\Documents" --command=ssconvert $GNUMERIC sheet.csv "$work\\folders\\Documents\\sheet.xlsx" >/dev/null 2>&1 &&
         test -s "$work\\folders\\Documents\\sheet.xlsx"
 }
-check "at low integrity, it saves into the user's Documents, which it may use" to_documents
-# A directory of documents that no run has been granted, unlike the work
-# directory, which runs with the cwd permission are.
-docs=$(cygpath -w "$(mktemp -d)")
-cp "$work\\sheet.xlsx" "$docs\\sheet.xlsx"
-check "Gnumeric opens a spreadsheet it's given with --file" stays_up 20 --command=gnumeric --file="$docs\\sheet.xlsx" $GNUMERIC
-check "with --sandbox=soft" stays_up 20 --sandbox=soft --command=gnumeric --file="$docs\\sheet.xlsx" $GNUMERIC
-check "with --sandbox=appcontainer" stays_up 20 --sandbox=appcontainer --command=gnumeric --file="$docs\\sheet.xlsx" $GNUMERIC
-check "the documents' directory was granted to none of the apps" sh -c "! icacls '$docs' | grep -q -e 'Mandatory Label' -e 'S-1-15-'"
+check "at low integrity, it saves into a path granted with --filesystem" to_granted_folder
+check "Gnumeric opens a spreadsheet from a granted folder" stays_up 20 --filesystem="$work\\folders\\Documents" --command=gnumeric $GNUMERIC "$work\\folders\\Documents\\sheet.xlsx"
+check "with --sandbox=soft" stays_up 20 --sandbox=soft --filesystem="$work\\folders\\Documents" --command=gnumeric $GNUMERIC "$work\\folders\\Documents\\sheet.xlsx"
+check "with --sandbox=appcontainer" stays_up 20 --sandbox=appcontainer --filesystem="$work\\folders\\Documents" --command=gnumeric $GNUMERIC "$work\\folders\\Documents\\sheet.xlsx"
 
 # Meld, a Python app: PyGObject's runtime runs it, with GTK 3 and GTK 4
 # through their runtimes' typelibs. Built here unless the store has them

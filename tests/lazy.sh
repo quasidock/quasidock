@@ -36,8 +36,6 @@ fi
 mkdir -p "$work\\cwd" && cd "$work\\cwd" || exit 1
 
 export QUASIDOCK_GRANTS_KEY="Software\\QuasidockTest\\lazy-$$"
-export QUASIDOCK_USER_FOLDERS="$work\\folders"
-mkdir -p "$QUASIDOCK_USER_FOLDERS"
 # The fixture's layer is small: lazy all the same.
 export QUASIDOCK_TEST_LAZY_MIN=1
 

@@ -58,7 +58,6 @@ var subdirs = []string{
 	"lazy",
 	"data",
 	"grants",
-	"overrides",
 	"ports",
 	"relay",
 	"host",

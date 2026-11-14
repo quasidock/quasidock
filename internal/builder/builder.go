@@ -630,9 +630,9 @@ func computeToolVars(tools []Tool, rootsFile string) ([]environment.Var, error) 
 	for i < len(tools) {
 		t := tools[i]
 		for _, rt := range tools[i+1 : i+1+t.Brings] {
-			environment.Expand(&vars, rt.Placeholders(rootsFile), rt.Env, nil)
+			environment.Expand(&vars, rt.Placeholders(rootsFile), rt.Env)
 		}
-		environment.Expand(&vars, t.Placeholders(rootsFile), t.Env, nil)
+		environment.Expand(&vars, t.Placeholders(rootsFile), t.Env)
 		i += 1 + t.Brings
 	}
 	return vars, nil
@@ -877,7 +877,7 @@ func (b *BuildRoot) runCommands(ctx *context.Context, m recipe.Module, step stri
 		environment.Set(&vars, "NO_PROXY", "")
 	}
 
-	environment.Expand(&vars, oci.Placeholders{App: "", Data: ""}, m.Env, nil)
+	environment.Expand(&vars, oci.Placeholders{App: "", Data: ""}, m.Env)
 	envBuilt, err := environment.Build(ctx.Env, environment.Spec{
 		ID:         b.id,
 		Profile:    b.profile,

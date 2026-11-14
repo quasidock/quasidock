@@ -1321,16 +1321,12 @@ func DescribePermissions(p Permissions) string {
 	if p.Sandbox == SandboxSoft {
 		parts = append(parts, "whatever you can write (it asks for the soft sandbox)")
 	}
-	if p.Commands != nil && *p.Commands {
-		parts = append(parts, "the commands of your quasidock apps")
-	}
 	if p.Host != nil && *p.Host {
 		parts = append(parts, "your own programs, in your real environment (quasidock-host)")
 	}
 	if p.Network {
 		parts = append(parts, "the network")
 	}
-	var rwFolders, roFolders []string
 	for _, spec := range p.Filesystem {
 		g := ParseFsGrant(spec)
 		if g == nil {
@@ -1346,21 +1342,9 @@ func DescribePermissions(p Permissions) string {
 		case FsGrantPath:
 			parts = append(parts, fmt.Sprintf("%s%s", g.Where.Path, access))
 		case FsGrantFolder:
-			folderName := strings.Title(string(g.Where.Folder))
-			if g.ReadOnly {
-				roFolders = append(roFolders, folderName)
-			} else {
-				rwFolders = append(rwFolders, folderName)
-			}
 		case FsGrantUnknown:
 			parts = append(parts, fmt.Sprintf("%q, which this quasidock doesn't know", g.Where.Path))
 		}
-	}
-	if len(rwFolders) > 0 {
-		parts = append(parts, fmt.Sprintf("your %s", JoinAnd(rwFolders)))
-	}
-	if len(roFolders) > 0 {
-		parts = append(parts, fmt.Sprintf("your %s (read-only)", JoinAnd(roFolders)))
 	}
 	if len(parts) == 0 {
 		return "nothing outside its own files"
@@ -1410,7 +1394,7 @@ func AddedAccess(before, after AccessInfo) AccessInfo {
 	var fs []string
 	for _, spec := range after.Permissions.Filesystem {
 		want := ParseFsGrant(spec)
-		if want == nil {
+		if want == nil || want.Where.Type == FsGrantFolder {
 			continue
 		}
 		had := false

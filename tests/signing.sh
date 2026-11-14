@@ -20,9 +20,8 @@ signer="$root\\zig-out\\test\\quasidock-p256sign.exe"
 proxy="$root\\zig-out\\test\\quasidock-resetproxy.exe"
 
 export QUASIDOCK_GRANTS_KEY="Software\\QuasidockTest\\signing-$$"
-export QUASIDOCK_USER_FOLDERS="$work\\folders"
 export DOCKER_CONFIG="$work\\docker"
-mkdir -p "$DOCKER_CONFIG" "$QUASIDOCK_USER_FOLDERS"
+mkdir -p "$DOCKER_CONFIG"
 : "${AUTH_REGISTRY:?run this with tests/zot.sh}"
 
 failures=0

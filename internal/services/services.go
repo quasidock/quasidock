@@ -13,10 +13,21 @@ import (
 
 	"github.com/quasidock/quasidock/internal/net"
 	"github.com/quasidock/quasidock/internal/oci"
-	"github.com/quasidock/quasidock/internal/override"
 	"github.com/quasidock/quasidock/internal/store"
 	"github.com/quasidock/quasidock/internal/win32"
 )
+
+func ParsePort(value string) (string, uint16, bool) {
+	eq := strings.IndexByte(value, '=')
+	if eq <= 0 {
+		return "", 0, false
+	}
+	portNum, err := strconv.ParseUint(value[eq+1:], 10, 16)
+	if err != nil || portNum == 0 {
+		return "", 0, false
+	}
+	return value[:eq], uint16(portNum), true
+}
 
 type Ports struct {
 	Service oci.Service
@@ -28,7 +39,7 @@ func Resolve(st *store.Store, cfg oci.AppConfig, uses []oci.Use, moved []string,
 	services := cfg.Permissions.Services
 
 	for _, m := range moved {
-		pName, _, ok := override.ParsePort(m)
+		pName, _, ok := ParsePort(m)
 		if !ok {
 			return nil, fmt.Errorf("--port expects <service>=<port>; got %q", m)
 		}
@@ -60,7 +71,7 @@ func Resolve(st *store.Store, cfg oci.AppConfig, uses []oci.Use, moved []string,
 	for i, s := range services {
 		port := s.Port
 		for _, m := range moved {
-			if pName, pPort, ok := override.ParsePort(m); ok {
+			if pName, pPort, ok := ParsePort(m); ok {
 				if strings.EqualFold(pName, s.Name) {
 					port = pPort
 				}
@@ -95,14 +106,11 @@ func namesOf(services []oci.Service, uses []oci.Use) string {
 	return "; it has " + oci.JoinAnd(names)
 }
 
-func UsedBy(cfg oci.AppConfig, extensions []oci.AppConfig) []oci.Use {
+func UsedBy(cfg oci.AppConfig) []oci.Use {
 	var list []oci.Use
 	addUses(&list, cfg.Permissions.Uses)
 	for _, r := range cfg.Runtimes {
 		addUses(&list, r.Uses)
-	}
-	for _, e := range extensions {
-		addUses(&list, e.Permissions.Uses)
 	}
 	return list
 }
@@ -133,7 +141,7 @@ func Targets(uses []oci.Use, moved []string) []Target {
 	for i, u := range uses {
 		port := u.Port
 		for _, m := range moved {
-			if pName, pPort, ok := override.ParsePort(m); ok {
+			if pName, pPort, ok := ParsePort(m); ok {
 				if strings.EqualFold(pName, u.Name) {
 					port = pPort
 				}

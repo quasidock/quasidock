@@ -41,9 +41,6 @@ if [ -n "${SEED_DOWNLOADS:-}" ]; then
         cp -n "$(cygpath -u "$SEED_DOWNLOADS")"/* "$(cygpath -u "$QUASIDOCK_HOME")/cache/downloads/"
 fi
 work=$(cygpath -w "$(mktemp -d)")
-folders="$work\\folders"
-for f in Desktop Documents Downloads Music Pictures Videos; do mkdir -p "$folders\\$f"; done
-export QUASIDOCK_USER_FOLDERS="$folders"
 
 CHROMIUM=io.github.ungoogled_software.ungoogled_chromium
 CODIUM=com.vscodium.codium
@@ -144,9 +141,10 @@ runner=
 winpid=
 # start <id> <command> <sandbox> <file> [args]: runs the app in the background.
 start() {
-    local id=$1 cmd=$2 sandbox=$3 file=$4
+    local id=$1 cmd=$2 sandbox=$3 file=$4 dir
     shift 4
-    "$zigsaw" run --sandbox=$sandbox --command=$cmd --file="$file" $id "$@" >"$work\\run.log" 2>&1 &
+    dir=$(cygpath -w "$(dirname "$(cygpath -u "$file")")")
+    "$zigsaw" run --sandbox=$sandbox --command=$cmd --filesystem="$dir" $id "$@" "$file" >"$work\\run.log" 2>&1 &
     runner=$!
     # Only windows of that run count (its Windows pid; $! is Git Bash's).
     winpid=$(cat /proc/$runner/winpid)
@@ -212,13 +210,13 @@ opens() {
     window "$title" $limit || return 1
     finish "$title"
 }
-row "Chromium opens a page given with --file, and draws WebGL" ok fails fails \
+row "Chromium opens a page, and draws WebGL" ok fails fails \
     opens $CHROMIUM chromium "$page" 'webgl-ok' 30 --
-row "VSCodium opens a file given with --file" ok fails fails \
+row "VSCodium opens a file" ok fails fails \
     opens $CODIUM codium "$note" 'zigsaw-note.txt - ' 30 --
 # What docs/published-apps.md offers those who'd rather confine its extensions
 # and terminal. In an AppContainer, Node's realpath stops it first.
-row "VSCodium opens a file given with --file, told --no-sandbox" ok gap ok \
+row "VSCodium opens a file, told --no-sandbox" ok gap ok \
     opens $CODIUM codium "$note" 'zigsaw-note.txt - ' 30 --no-sandbox --
 
 # confined <id> <command> <file> <title> <sandbox>: Windows says the app's
@@ -243,10 +241,11 @@ check "VSCodium's renderer is confined under its image's sandbox" confined $CODI
 # hands_over <id> <command> <first file> <first title> <second file> <second title>:
 # a second run gives its file to the running instance, and ends.
 hands_over() {
-    local id=$1 cmd=$2 one=$3 first=$4 two=$5 second=$6 i
+    local id=$1 cmd=$2 one=$3 first=$4 two=$5 second=$6 i dir2
     start $id $cmd soft "$one"
     window "$first" 30 || return 1
-    "$zigsaw" run --sandbox=soft --command=$cmd --file="$two" $id >"$work\\second.log" 2>&1 &
+    dir2=$(cygpath -w "$(dirname "$(cygpath -u "$two")")")
+    "$zigsaw" run --sandbox=soft --command=$cmd --filesystem="$dir2" $id "$two" >"$work\\second.log" 2>&1 &
     local other=$!
     for i in $(seq 75); do
         kill -0 $other 2>/dev/null || break
@@ -383,9 +382,10 @@ check "VSCodium's terminal runs a task, with git and quasidock-host on its PATH,
 # saves <sandbox>: a small extension edits a file and saves it, through the
 # editor's own file service.
 saves() {
-    local i saved="$work\\saved-$1.txt"
+    local i saved="$work\\saved-$1.txt" dir
     printf 'before\n' >"$saved"
-    "$zigsaw" run --sandbox=$1 --env="QUASIDOCK_SAVER_FILE=$saved" --file="$saved" $CODIUM "--extensionDevelopmentPath=$root\\tests\\chromium\\saver" ${2:-} >"$work\\run.log" 2>&1 &
+    dir=$(cygpath -w "$(dirname "$(cygpath -u "$saved")")")
+    "$zigsaw" run --sandbox=$1 --filesystem="$dir" --env="QUASIDOCK_SAVER_FILE=$saved" $CODIUM "--extensionDevelopmentPath=$root\\tests\\chromium\\saver" ${2:-} "$saved" >"$work\\run.log" 2>&1 &
     runner=$!
     winpid=$(cat /proc/$runner/winpid)
     window "saved-$1.txt - " 30 || return 1

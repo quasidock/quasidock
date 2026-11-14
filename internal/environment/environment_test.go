@@ -98,31 +98,25 @@ func TestBuildPassesProxiesThroughForAppsWithNetwork(t *testing.T) {
 	}
 }
 
-func TestJoin(t *testing.T) {
+func TestExpand(t *testing.T) {
 	var env []Var
-	Join(&env, "SCAN", `C:\a\conf.d`)
-	Join(&env, "scan", `C:\b\conf.d;c:\A\conf.d;;C:\c`)
 	Set(&env, "OTHER", "x")
-
-	if env[0].Value != `C:\a\conf.d;C:\b\conf.d;C:\c` {
-		t.Errorf("joined value = %q; want %q", env[0].Value, `C:\a\conf.d;C:\b\conf.d;C:\c`)
-	}
 
 	vars := map[string]string{
 		"Scan":  `${app}\d`,
 		"OTHER": `${app}`,
 	}
 	placeholders := oci.Placeholders{App: `D:\x`}
-	err := Expand(&env, placeholders, vars, []string{"SCAN"})
+	err := Expand(&env, placeholders, vars)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if env[0].Value != `C:\a\conf.d;C:\b\conf.d;C:\c;D:\x\d` {
-		t.Errorf("expanded SCAN = %q", env[0].Value)
+	if env[0].Value != `D:\x` {
+		t.Errorf("expanded OTHER = %q", env[0].Value)
 	}
-	if env[1].Value != `D:\x` {
-		t.Errorf("expanded OTHER = %q", env[1].Value)
+	if env[1].Value != `D:\x\d` {
+		t.Errorf("expanded Scan = %q", env[1].Value)
 	}
 }
 

@@ -40,10 +40,6 @@ PDFBOX=org.apache.pdfbox
 PLANTUML=com.plantuml.PlantUML
 LOGISIM=com.github.reds.LogisimEvolution
 SCENEBUILDER=com.gluonhq.SceneBuilder
-# The user's folders the apps may use, such as Documents, are these, not
-# yours, which low and AppContainer runs would label and grant.
-for f in Desktop Documents Downloads; do mkdir -p "$work\\folders\\$f"; done
-export QUASIDOCK_USER_FOLDERS="$work\\folders"
 (cd "$root" && go run ./scripts/build.go winwait) || { echo "building the window waiter failed"; exit 1; }
 winwait="$root\\zig-out\\test\\quasidock-winwait.exe"
 had_prefs=false
@@ -141,9 +137,8 @@ opens_window() {
 docs=$(cygpath -w "$(mktemp -d)")
 cp "$work\\soft\\out.pdf" "$docs\\doc.pdf"
 for sb in soft low appcontainer; do
-    check "its debugger opens a PDF given with --file, under $sb" opens_window "$work\\$sb" "PDF Debugger - $docs\\doc.pdf" --sandbox=$sb --command=pdfbox-debugger --file="$docs\\doc.pdf" $PDFBOX
+    check "its debugger opens a PDF under $sb" opens_window "$work\\$sb" "PDF Debugger - $docs\\doc.pdf" --sandbox=$sb --filesystem="$docs" --command=pdfbox-debugger $PDFBOX "$docs\\doc.pdf"
 done
-check "the documents' directory was granted to none of the runs" sh -c "! icacls '$docs' | grep -q -e 'Mandatory Label' -e 'S-1-15-'"
 # Java keeps the debugger's settings in HKCU\Software\JavaSoft\Prefs; the app
 # keeps its key with its data, so each run, in any sandbox, has the files the
 # others opened.
@@ -200,7 +195,7 @@ done
 check "its version names the release and the time of its tag's commit" sh -c "'$zigsaw' run $LOGISIM --version 2>/dev/null | tr -d '\r' | grep -q '^(Not built from Git repo) (2026-09-12T04:03:35+0000)'"
 cp "$root\\tests\\java\\half-adder.circ" "$docs\\"
 for sb in soft low appcontainer; do
-    check "its window opens a circuit given with --file, under $sb" opens_window "$work\\$sb" "main of half-adder" --sandbox=$sb --command=logisim-gui --file="$docs\\half-adder.circ" $LOGISIM
+    check "its window opens a circuit under $sb" opens_window "$work\\$sb" "main of half-adder" --sandbox=$sb --filesystem="$docs" --command=logisim-gui $LOGISIM "$docs\\half-adder.circ"
 done
 logisim_recent_kept() {
     local out
@@ -214,7 +209,7 @@ check "its recent files are kept in a hive in its data" logisim_recent_kept
 
 cp "$root\\tests\\java\\hello.fxml" "$docs\\"
 for sb in soft low appcontainer; do
-    check "its window opens a layout given with --file, under $sb" opens_window "$work\\$sb" hello.fxml --sandbox=$sb --file="$docs\\hello.fxml" $SCENEBUILDER
+    check "its window opens a layout under $sb" opens_window "$work\\$sb" hello.fxml --sandbox=$sb --filesystem="$docs" $SCENEBUILDER "$docs\\hello.fxml"
 done
 # JavaFX loads its DLLs from the bin folder beside its jars before it unpacks
 # them into user.home, and the app's jars have none to unpack.

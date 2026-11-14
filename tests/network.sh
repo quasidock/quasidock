@@ -190,9 +190,6 @@ moved_ports() {
     [ "$got" = "$moved $moved" ] || { echo "got $got"; return 1; }
 }
 check "and its placeholders" moved_ports
-z override --port=echo=$saved $APP >/dev/null 2>&1
-check "and so does an override" served $saved --sandbox=appcontainer
-z override --reset $APP >/dev/null 2>&1
 unknown_service() {
     local out
     out=$(z run --port=db=5432 $APP 2>&1) && return 1

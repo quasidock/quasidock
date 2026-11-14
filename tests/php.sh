@@ -148,50 +148,6 @@ check "yaml's and zstd's images have their library's licence, and not its header
 about() { z run $APCU | tr -d '\r' | grep -q '^This image is the PHP extension apcu, for PHP 8.5.12'; }
 check "an extension image run as an app says what it is" about
 
-# Installed, the extensions join PHP's runs, through the runtime's
-# extension point: redis after igbinary, which it needs and links with.
-EXTS='["apcu", "xdebug", "igbinary", "redis", "ssh2", "yaml", "zstd"]'
-loaded() {
-    z run "$@" -r 'foreach ('"$EXTS"' as $e) echo extension_loaded($e) ? $e : "-", " "; echo implode(" ", array_map("basename", array_map("trim", explode(",", (string) php_ini_scanned_files())))), "\n";' 2>/dev/null | tr -d '\r'
-}
-joins() {
-    local sb out
-    for sb in soft low appcontainer; do
-        out=$(cd "$work\\cwd" && loaded --sandbox=$sb $PHP)
-        [ "$out" = "apcu xdebug igbinary redis ssh2 yaml zstd apcu.ini igbinary.ini redis.ini ssh2.ini xdebug.ini yaml.ini zstd.ini" ] || { echo "$sb, got: $out"; return 1; }
-    done
-}
-check "installed, the seven extensions join PHP's runs, redis after igbinary, under soft, low and appcontainer" joins
-left_out() {
-    local out
-    out=$(cd "$work\\cwd" && loaded --noextension=$IGBINARY $PHP)
-    [ "$out" = "apcu xdebug - - ssh2 yaml zstd apcu.ini ssh2.ini xdebug.ini yaml.ini zstd.ini" ] || { echo "got: $out"; return 1; }
-    (cd "$work\\cwd" && z run --noextension=$IGBINARY $PHP -r '' 2>&1) | grep -qF "$REDIS doesn't join this run: it needs $IGBINARY" || { echo "no note about redis"; return 1; }
-}
-check "--noextension leaves igbinary out, and redis, which needs it, with a note" left_out
-uses_libs() {
-    local out
-    out=$(cd "$work\\cwd" && z run $PHP -r '$r = new Redis(); $r->setOption(Redis::OPT_SERIALIZER, Redis::SERIALIZER_IGBINARY); echo $r->_unserialize($r->_serialize(["x" => 42]))["x"], " ", function_exists("ssh2_connect") ? "ssh2" : "-", " ", xdebug_info("mode") ? "xdebug" : "-", "\n";' 2>&1 | tr -d '\r')
-    [ "$out" = "42 ssh2 xdebug" ] || { echo "got: $out"; return 1; }
-}
-check "redis serializes with igbinary's DLL" uses_libs
-built_in_libs() {
-    local out
-    out=$(cd "$work\\cwd" && z run $PHP -r 'echo yaml_parse(yaml_emit(["x" => [1, 2]]))["x"][1], " ", zstd_uncompress(zstd_compress(str_repeat("z", 1000))) === str_repeat("z", 1000) ? "zstd" : "-", "\n";' 2>&1 | tr -d '\r')
-    [ "$out" = "2 zstd" ] || { echo "got: $out"; return 1; }
-    (cd "$work\\cwd" && z run $PHP --ri zstd 2>&1) | tr -d '\r' | grep -qx 'Zstd library => external' || { echo "zstd's library isn't the one its recipe built"; return 1; }
-}
-check "yaml and zstd work with the libraries their recipes built (zstd's external, not its bundled copy)" built_in_libs
-# Xdebug's traces and profiles go to the run's TEMP, in the app's data, which
-# a low-integrity run may write, unlike Xdebug's default, C:\Windows\Temp.
-traces() {
-    local sb out
-    for sb in soft low appcontainer; do
-        out=$(cd "$work\\cwd" && z run --sandbox=$sb --env=XDEBUG_MODE=trace $PHP -r '$f = xdebug_start_trace(); xdebug_stop_trace(); echo str_starts_with($f, ini_get("xdebug.output_dir")) && is_file($f) ? "ok" : "no trace in " . ini_get("xdebug.output_dir"), "\n";' 2>&1 | tr -d '\r' | grep -E '^(ok|no trace)')
-        [ "$out" = ok ] || { echo "$sb, got: $out"; return 1; }
-    done
-}
-check "Xdebug writes its traces to the run's TEMP, under soft, low and appcontainer" traces
 
 # APCu's tests, from its release tarball, which its build left in the
 # store's downloads.
@@ -313,19 +269,19 @@ consumer_runs() {
     local sb out
     for sb in soft low appcontainer; do
         out=$(cd "$work\\consumer" && z run --sandbox=$sb $CONSUMER | tr -d '\r')
-        [ "$out" = "ini apcu.ini xdebug.ini igbinary.ini redis.ini ssh2.ini yaml.ini zstd.ini app.ini
+        [ "$out" = "ini apcu.ini xdebug.ini app.ini
 loaded apcu xdebug
 apcu works
 xdebug mode develop, debugger not connected" ] || { echo "$sb, got: $out"; return 1; }
     done
 }
-check "it loads both through their .ini files, the installed others, then its own, under soft, low and appcontainer" consumer_runs
+check "it loads both through their .ini files, then its own, under soft, low and appcontainer" consumer_runs
 # Xdebug connects to the listener, a DBGp client run by PHP's runtime, which
 # takes the connection and tells it to run.
 debugs() {
     local sb=$1 port out heard
     port=$((9100 + RANDOM % 800))
-    (cd "$work\\consumer" && "$zigsaw" run --command=php --noextension=$XDEBUG $PHP listener.php $port 10 >"$work\\listener.out" 2>&1) &
+    (cd "$work\\consumer" && "$zigsaw" run --command=php $PHP listener.php $port 10 >"$work\\listener.out" 2>&1) &
     local listener=$!
     for _ in 1 2 3 4 5 6 7 8 9 10; do grep -q listening "$work\\listener.out" 2>/dev/null && break; sleep 0.5; done
     # Xdebug's image uses port 9003, dbgp, which --port moves.

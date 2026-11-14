@@ -262,13 +262,6 @@ written() {
 }
 check "nothing was written in the deployment" written
 
-RUN_OPTIONS=--noextension=$APP.pg_cron
-check "with --noextension=…pg_cron, a server starts without it" start
-check "  and preloads nothing, while pgvector still joins" is "|1" \
-    "create extension vector" "select current_setting('shared_preload_libraries') || '|' || count(*) from pg_extension where extname = 'vector'"
-check "  and pg_ctl stops it" stop
-unset RUN_OPTIONS
-
 for SANDBOX in soft appcontainer; do
     check "$SANDBOX: postgresql makes a cluster and serves it" start -c 'plperl.on_init=$main::booted = 47;'
     check "$SANDBOX: with the server's default settings" is "100|128MB" "select current_setting('max_connections') || '|' || current_setting('shared_buffers')"

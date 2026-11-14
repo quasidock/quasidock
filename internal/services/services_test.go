@@ -23,24 +23,13 @@ func TestUsedBy(t *testing.T) {
 				Uses: []oci.Use{
 					{Name: "db", Port: 5433},
 					{Name: "cache", Port: 6379},
+					{Name: "dbgp", Port: 9003},
 				},
 			},
 		},
 	}
 
-	ext := oci.AppConfig{
-		ID:      "ext",
-		Version: "1",
-		Command: "x.exe",
-		Permissions: oci.Permissions{
-			Uses: []oci.Use{
-				{Name: "dbgp", Port: 9003},
-				{Name: "cache", Port: 1},
-			},
-		},
-	}
-
-	used := UsedBy(cfg, []oci.AppConfig{ext})
+	used := UsedBy(cfg)
 	if len(used) != 3 {
 		t.Fatalf("len(used) = %d; want 3", len(used))
 	}
@@ -65,6 +54,18 @@ func TestUsedBy(t *testing.T) {
 	placeholders := UsePlaceholders(targets)
 	if placeholders[2].Port != "9100" {
 		t.Errorf("placeholders[2].Port = %q", placeholders[2].Port)
+	}
+}
+
+func TestParsePort(t *testing.T) {
+	name, port, ok := ParsePort("postgresql=5433")
+	if !ok || name != "postgresql" || port != 5433 {
+		t.Fatalf("unexpected ParsePort: %s %d %v", name, port, ok)
+	}
+	for _, bad := range []string{"postgresql", "=5433", "pg=0", "pg=65536", "pg=x"} {
+		if _, _, ok := ParsePort(bad); ok {
+			t.Fatalf("expected false for %s", bad)
+		}
 	}
 }
 

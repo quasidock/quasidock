@@ -6,7 +6,6 @@ import (
 	"github.com/quasidock/quasidock/internal/context"
 	"github.com/quasidock/quasidock/internal/grants"
 	"github.com/quasidock/quasidock/internal/oci"
-	"github.com/quasidock/quasidock/internal/override"
 	"github.com/quasidock/quasidock/internal/store"
 )
 
@@ -56,12 +55,6 @@ func Install(ctx *context.Context, image *oci.Image) error {
 	for alias, r := range cfg.Runtimes {
 		ctx.Note("  runtime  %s: %s %s", alias, r.ID, r.Version)
 	}
-	for name, p := range cfg.Extensions {
-		ctx.Note("  point    %s %s: installed extensions of it join its runs", name, p.Version)
-	}
-	if cfg.Extends != nil {
-		ctx.Note("  extends  %s %s: joins the runs of what has it", cfg.Extends.Point, cfg.Extends.Version)
-	}
 	ownL := oci.OwnLayer(&image.Manifest)
 	ctx.Note("  layer    %s (%d bytes)", ownL.Digest, ownL.Size)
 
@@ -90,11 +83,6 @@ func Install(ctx *context.Context, image *oci.Image) error {
 		if len(cfg.Registry) > 0 {
 			ctx.Note("  keeps    %s with its data", oci.DescribeRegistry(cfg.Registry))
 		}
-	}
-
-	saved, err := override.Load(ctx.Store, cfg.ID)
-	if err == nil && !saved.IsEmpty() {
-		ctx.Note("  override %s", saved.String())
 	}
 
 	if _, err := grants.SettleUnlessRunning(ctx, cfg.ID); err != nil {

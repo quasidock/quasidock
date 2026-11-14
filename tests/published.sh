@@ -35,10 +35,6 @@ unset QUASIDOCK_REGISTRY_USERNAME QUASIDOCK_REGISTRY_PASSWORD # Pulls must work 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
 zigsaw=${1:-$root/zig-out/bin/quasidock.exe}
 work=$(cygpath -w "$(mktemp -d)")
-# Apps that may use the user's folders, such as Documents, find none here,
-# rather than yours.
-export QUASIDOCK_USER_FOLDERS="$work\\no-folders"
-mkdir -p "$QUASIDOCK_USER_FOLDERS"
 # Low runs (the default) label the working directory of an app with cwd: the
 # runs go from a scratch one, not the repository, nor a folder that holds the
 # stores (their programs would then start at low integrity).

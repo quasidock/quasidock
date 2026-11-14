@@ -35,9 +35,6 @@ fi
 export QUASIDOCK_HOME
 work=$(cygpath -w "$(mktemp -d)")
 FILES=community.files.Files
-# The user's folders Files may use are these, not yours.
-for f in Desktop Documents Downloads Music Pictures Videos; do mkdir -p "$work\\folders\\$f"; done
-export QUASIDOCK_USER_FOLDERS="$work\\folders"
 
 failures=0
 check() {

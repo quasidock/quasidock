@@ -153,7 +153,7 @@ func RestoreUser(m map[string]string) error {
 	return nil
 }
 
-func Expand(env *[]Var, placeholders oci.Placeholders, vars map[string]string, joined []string) error {
+func Expand(env *[]Var, placeholders oci.Placeholders, vars map[string]string) error {
 	// Sort keys for deterministic expansion order
 	keys := make([]string, 0, len(vars))
 	for k := range vars {
@@ -163,51 +163,9 @@ func Expand(env *[]Var, placeholders oci.Placeholders, vars map[string]string, j
 
 	for _, k := range keys {
 		val := placeholders.Expand(vars[k])
-		shouldJoin := false
-		for _, j := range joined {
-			if strings.EqualFold(j, k) {
-				shouldJoin = true
-				break
-			}
-		}
-		if shouldJoin {
-			Join(env, k, val)
-		} else {
-			Set(env, k, val)
-		}
+		Set(env, k, val)
 	}
 	return nil
-}
-
-func Join(env *[]Var, name, value string) {
-	for i := range *env {
-		if strings.EqualFold((*env)[i].Name, name) {
-			existing := strings.Split((*env)[i].Value, ";")
-			newEntries := strings.Split(value, ";")
-			for _, entry := range newEntries {
-				if entry == "" {
-					continue
-				}
-				have := false
-				for _, h := range existing {
-					if strings.EqualFold(h, entry) {
-						have = true
-						break
-					}
-				}
-				if !have {
-					if (*env)[i].Value != "" {
-						(*env)[i].Value += ";" + entry
-					} else {
-						(*env)[i].Value = entry
-					}
-					existing = append(existing, entry)
-				}
-			}
-			return
-		}
-	}
-	*env = append(*env, Var{Name: name, Value: value})
 }
 
 func Set(env *[]Var, name, value string) {

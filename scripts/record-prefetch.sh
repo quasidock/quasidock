@@ -61,11 +61,9 @@ fi
 store="$work\\store"
 gate="$work\\gate"
 touch "$(cygpath -u "$gate")"
-mkdir -p "$(cygpath -u "$work\\folders")"
 export QUASIDOCK_HOME="$store"
 export QUASIDOCK_TEST_LAZY_MIN=1 QUASIDOCK_TEST_LAZY_GATE="$gate" QUASIDOCK_TEST_LAZY_NO_HYDRATE=1
 export QUASIDOCK_GRANTS_KEY="Software\\QuasidockRecord\\$$"
-export QUASIDOCK_USER_FOLDERS="$work\\folders"
 
 app=
 cleanup() {

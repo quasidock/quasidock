@@ -31,7 +31,7 @@ if [ "${1:-}" != --inner ]; then
     account=$(cygpath -aw "$1")
     user=$(head -1 "$1" | tr -d '\r')
     repo=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
-    (cd "$repo" && go run ./scripts/build.go all asuser gui-fixture argv-echo hostprobe ctrlc-driver netprobe cred-helper imports acprobe procprobe p256sign) ||
+    (cd "$repo" && go run ./scripts/build.go all asuser argv-echo hostprobe ctrlc-driver netprobe cred-helper imports acprobe procprobe p256sign) ||
         { echo "building quasidock failed"; exit 1; }
     stage=$(cygpath -wl "$(mktemp -d)")
     icacls "$stage" /grant "$user:(OI)(CI)M" >/dev/null || { echo "$user can't be given $stage"; exit 1; }
@@ -81,7 +81,7 @@ stage_u=$(cygpath -u "$stage")
 export PATH="$stage_u/bin:$PATH"
 export TMPDIR="$stage_u/tmp" TMP="$stage\\tmp" TEMP="$stage\\tmp"
 export SEED_DOWNLOADS="$stage\\seed"
-unset QUASIDOCK_HOME QUASIDOCK_USER_FOLDERS QUASIDOCK_GRANTS_KEY
+unset QUASIDOCK_HOME QUASIDOCK_GRANTS_KEY
 work="$stage\\tmp\\first"
 mkdir -p "$work"
 cd "$work" || exit 1
@@ -167,61 +167,11 @@ check "Credential Manager can be reached (a logout)" logs_in
 
 # --- Your folders, for real, as this account's are throwaway ------------------------
 
-mkdir -p "$docs"
-# A label an earlier run of this left, if it stopped halfway.
-z grants --take-back "$docs" >/dev/null 2>&1
-real_docs_for_a_run() {
-    z run --filesystem=documents $BB sh -c 'echo one > "$USERPROFILE/Documents/su-one.txt"; true' &&
-        [ -f "$docs\\su-one.txt" ] && no_label "$docs"
-}
-check "a run told --filesystem=documents writes the real Documents, and its label goes with the run" real_docs_for_a_run
-real_docs_kept() {
-    z override --filesystem=documents $BB && z run $BB sh -c 'echo two > "$USERPROFILE/Documents/su-two.txt"; true' &&
-        [ -f "$docs\\su-two.txt" ] && low_label "$docs"
-}
-check "with an override, the label stays" real_docs_kept
-listed() { z grants | grep -qF "low label on $docs: its permissions name it"; }
-check "  and grants says so, and why" listed
-in_the_record() { reg query 'HKCU\Software\Quasidock\Grants' | grep -qF "|$BB|low $docs"; }
-check "  and the record outside the store has it" in_the_record
-override_back() { z override --reset $BB && no_label "$docs"; }
-check "taking the override back takes the label back" override_back
-
-other="$stage\\tmp\\other-store"
-zo() { QUASIDOCK_HOME="$other" "$zigsaw" "$@" </dev/null; }
-guard_leaves_out() {
-    zo pull --yes $BB >/dev/null 2>&1 || return 1
-    local out
-    out=$(zo run --filesystem=documents $BB sh -c '[ ! -e "$USERPROFILE/Documents/su-one.txt" ]; echo left $?' 2>&1 | tr -d '\r')
-    grep -q 'left 0' <<<"$out" && grep -q "isn't your default one" <<<"$out" && no_label "$docs"
-}
-check "a store elsewhere leaves your real folders out, and says how to let it" guard_leaves_out
-guard_permission_too() {
-    zo override --filesystem=documents $BB >/dev/null 2>&1 && zo run $BB true >/dev/null 2>&1 && no_label "$docs"
-}
-check "  from its permissions too, without labelling them" guard_permission_too
-opt_in() {
-    zo override --global --real-folders >/dev/null 2>&1 &&
-        zo run $BB sh -c 'echo three > "$USERPROFILE/Documents/su-three.txt"; true' >/dev/null 2>&1 &&
-        [ -f "$docs\\su-three.txt" ] && low_label "$docs"
-}
-check "  until --real-folders, once" opt_in
-deleted_store() {
-    # Its deployments are read-only, so what's left of it is them.
-    rm -rf "$other" 2>/dev/null
-    [ ! -e "$other\\grants" ] || { echo "its grants are still there"; return 1; }
-    low_label "$docs" || { echo "the label went with the store"; return 1; }
-    z grants | grep -q 'Stores since deleted' && z grants | grep -qF "low label on $docs" || return 1
-    z list 2>&1 >/dev/null | grep -q 'stores since deleted are still in place'
-}
-check "that store deleted by hand: its label stays, and grants and list say so" deleted_store
-repaired() { z repair >/dev/null 2>&1 && no_label "$docs" && ! z grants | grep -q 'Stores since deleted'; }
-check "  and repair takes it back" repaired
 unexplained() {
     icacls "$docs" /setintegritylevel '(OI)(CI)L' >/dev/null || return 1
-    z grants | grep -q 'Not explained' && z grants --take-back "$docs" >/dev/null 2>&1 && no_label "$docs"
+    z grants --take-back "$docs" >/dev/null 2>&1 && no_label "$docs"
 }
-check "a label no record has is Not explained, and --take-back removes it" unexplained
+check "grants --take-back removes a low label" unexplained
 
 # --- A second drive -----------------------------------------------------------------
 #
@@ -286,7 +236,7 @@ for s in $suites; do
     case $s in
     # But for MSVC: Windows' WebCache process, which starts during its build in an
     # account nobody has signed in to, stays and holds files in the build's profile.
-    build-base) SECTIONS="runtimes images extensions aliases projects prettier sevenzip" timeout 1200 bash tests/build.sh 2>&1 ;;
+    build-base) SECTIONS="runtimes images aliases projects prettier sevenzip" timeout 1200 bash tests/build.sh 2>&1 ;;
     *) timeout 1200 bash "tests/$s.sh" 2>&1 ;;
     esac | tr -d '\r' | tee "$stage\\$s.txt" | grep -E '^FAIL|^      |check\(s\) failed|^[0-9]+ (failed|known)'
     code=${PIPESTATUS[0]}

@@ -13,14 +13,11 @@ import (
 	"github.com/quasidock/quasidock/internal/appcontainer"
 	"github.com/quasidock/quasidock/internal/context"
 	"github.com/quasidock/quasidock/internal/environment"
-	"github.com/quasidock/quasidock/internal/extensions"
-	"github.com/quasidock/quasidock/internal/folders"
 	"github.com/quasidock/quasidock/internal/forward"
 	"github.com/quasidock/quasidock/internal/grants"
 	"github.com/quasidock/quasidock/internal/hkcu"
 	"github.com/quasidock/quasidock/internal/lazy"
 	"github.com/quasidock/quasidock/internal/oci"
-	"github.com/quasidock/quasidock/internal/override"
 	"github.com/quasidock/quasidock/internal/process"
 	"github.com/quasidock/quasidock/internal/roots"
 	"github.com/quasidock/quasidock/internal/services"
@@ -29,12 +26,83 @@ import (
 	"github.com/quasidock/quasidock/internal/written"
 )
 
+// Settings holds per-run option overrides passed on the command line.
+type Settings struct {
+	Sandbox      *oci.Sandbox
+	Filesystem   []string
+	NoFilesystem []string
+	Network      *bool
+	Host         *bool
+	Env          []string
+	Ports        []string
+	Ephemeral    *bool
+}
+
+// SandboxOf returns the sandbox chosen for a run from settings and image permissions.
+func SandboxOf(s Settings, p oci.Permissions) oci.Sandbox {
+	if s.Sandbox != nil {
+		return *s.Sandbox
+	}
+	if p.Sandbox != "" {
+		return p.Sandbox
+	}
+	return oci.SandboxLow
+}
+
+// FilesystemFor applies per-run filesystem grants and removals over base image permissions.
+func (s Settings) FilesystemFor(base []string) []string {
+	return without(mergeList(base, s.Filesystem), s.NoFilesystem)
+}
+
+func mergeList(base, added []string) []string {
+	out := append([]string(nil), base...)
+	for _, a := range added {
+		ak := grantKey(a)
+		replaced := false
+		for i, existing := range out {
+			if grantKey(existing) == ak {
+				out[i] = a
+				replaced = true
+				break
+			}
+		}
+		if !replaced {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
+func without(base, removed []string) []string {
+	if len(removed) == 0 {
+		return base
+	}
+	drop := make(map[string]bool, len(removed))
+	for _, r := range removed {
+		drop[grantKey(r)] = true
+	}
+	out := make([]string, 0, len(base))
+	for _, b := range base {
+		if !drop[grantKey(b)] {
+			out = append(out, b)
+		}
+	}
+	return out
+}
+
+func grantKey(spec string) string {
+	s := strings.TrimSuffix(strings.TrimSuffix(spec, ":ro"), ":rw")
+	if filepath.IsAbs(s) {
+		return strings.ToLower(filepath.Clean(s))
+	}
+	return s
+}
+
 type Options struct {
 	ID       string
 	Args     []string
 	Command  *string
-	Files    []string
-	Settings override.Settings
+	Settings Settings
 }
 
 type HostGrant struct {
@@ -77,13 +145,8 @@ func Run(ctx *context.Context, opts Options) (uint32, error) {
 	defer img.Release()
 	cfg := img.Config
 
-	saved, err := override.LoadFor(ctx.Store, cfg.ID)
-	if err != nil {
-		storeLock.Release()
-		return 1, err
-	}
-	settings := override.Merge(saved, opts.Settings)
-	sandbox := override.SandboxOf(settings, cfg.Permissions)
+	settings := opts.Settings
+	sandbox := SandboxOf(settings, cfg.Permissions)
 	WarnUnsupported(cfg, sandbox, ctx.Note)
 
 	network := cfg.Permissions.Network
@@ -92,7 +155,6 @@ func Run(ctx *context.Context, opts Options) (uint32, error) {
 	}
 
 	var hostGrants []HostGrant
-	var folderGrants []folders.Grant
 	cwdGranted := false
 
 	fsSpecs := settings.FilesystemFor(cfg.Permissions.Filesystem)
@@ -110,7 +172,7 @@ func Run(ctx *context.Context, opts Options) (uint32, error) {
 			p := g.Where.Path
 			hostGrants = append(hostGrants, HostGrant{Path: &p, ReadOnly: g.ReadOnly})
 		case oci.FsGrantFolder:
-			folderGrants = append(folderGrants, folders.Grant{Folder: g.Where.Folder, ReadOnly: g.ReadOnly})
+			// Named user-folder grants are ignored without folder junction linking.
 		default:
 			ctx.Note("warning: %s asks for the filesystem permission %q, which this quasidock doesn't know, and leaves out; a newer quasidock may", cfg.ID, spec)
 		}
@@ -121,15 +183,6 @@ func Run(ctx *context.Context, opts Options) (uint32, error) {
 		storeLock.Release()
 		return 1, err
 	}
-	files, err := openedFiles(hostCwd, opts.Files)
-	if err != nil {
-		storeLock.Release()
-		return 1, err
-	}
-	for i := range files {
-		f := files[i]
-		hostGrants = append(hostGrants, HostGrant{Path: &f, ReadOnly: false})
-	}
 
 	var runDir *store.RunDir
 	if settings.Ephemeral != nil && *settings.Ephemeral {
@@ -139,17 +192,6 @@ func Run(ctx *context.Context, opts Options) (uint32, error) {
 			return 1, err
 		}
 		defer runDir.Delete()
-	}
-
-	found, err := extensions.Find(ctx.Store, cfg, settings.NoExtension)
-	if err != nil {
-		storeLock.Release()
-		return 1, err
-	}
-	for _, s := range found.Skipped {
-		if s.Warn || ctx.Verbose {
-			ctx.Note("note: %s doesn't join this run: %s", s.ID, s.Reason)
-		}
 	}
 
 	if sandbox == oci.SandboxSoft && runDir == nil {
@@ -181,12 +223,12 @@ func Run(ctx *context.Context, opts Options) (uint32, error) {
 	}
 
 	cacheDir := filepath.Join(dataDir, "cache")
-	if usesCache(cfg, found.Loaded) {
+	if usesCache(cfg) {
 		_ = os.MkdirAll(cacheDir, 0o755)
 	}
 
 	var rootsFile *string
-	if usesRoots(cfg, found.Loaded) {
+	if usesRoots(cfg) {
 		rf, err := roots.File(ctx.Store)
 		if err == nil {
 			rootsFile = &rf
@@ -198,8 +240,7 @@ func Run(ctx *context.Context, opts Options) (uint32, error) {
 		systemRoot = `C:\Windows`
 	}
 
-	extConfigs := extensionConfigs(found.Loaded)
-	used := services.UsedBy(cfg, extConfigs)
+	used := services.UsedBy(cfg)
 	targets := services.Targets(used, settings.Ports)
 	servicePorts, err := services.Resolve(ctx.Store, cfg, used, settings.Ports, sandbox)
 	if err != nil {
@@ -244,19 +285,6 @@ func Run(ctx *context.Context, opts Options) (uint32, error) {
 		appPath = append(appPath, pDirs...)
 	}
 
-	extOwn := make([]oci.Placeholders, len(found.Loaded))
-	for i, e := range found.Loaded {
-		extOwn[i] = oci.Placeholders{
-			App:   e.Dir,
-			Data:  dataDir,
-			Cache: cacheDir,
-			Roots: rootsPath,
-			Uses:  uses,
-		}
-		pDirs, _ := environment.PathDirs(extOwn[i], e.Config.Path)
-		appPath = append(appPath, pDirs...)
-	}
-
 	cmd, err := resolveCommand(placeholders, cfg, opts.Command, appPath, systemRoot)
 	if err != nil {
 		return 1, err
@@ -264,7 +292,6 @@ func Run(ctx *context.Context, opts Options) (uint32, error) {
 	var allArgs []string
 	allArgs = append(allArgs, cmd.Args...)
 	allArgs = append(allArgs, opts.Args...)
-	allArgs = append(allArgs, files...)
 
 	exe := cmd.Exe
 	if cmd.Batch {
@@ -284,17 +311,13 @@ func Run(ctx *context.Context, opts Options) (uint32, error) {
 		commandLine = process.BuildCommandLine(exe, allArgs)
 	}
 
-	joined := extensions.Joined(found.Points)
 	var appEnv []environment.Var
 	for i, r := range rt.own {
 		alias := rt.aliases[i]
 		rCfg := cfg.Runtimes[alias]
-		_ = environment.Expand(&appEnv, r, rCfg.Env, joined)
+		_ = environment.Expand(&appEnv, r, rCfg.Env)
 	}
-	for i, e := range found.Loaded {
-		_ = environment.Expand(&appEnv, extOwn[i], e.Config.Env, joined)
-	}
-	_ = environment.Expand(&appEnv, placeholders, cfg.Env, joined)
+	_ = environment.Expand(&appEnv, placeholders, cfg.Env)
 
 	sharedPathDirs := sharedPath(ctx, cfg, settings, sandbox)
 	envVars, err := environment.Build(ctx.Env, environment.Spec{
@@ -311,24 +334,10 @@ func Run(ctx *context.Context, opts Options) (uint32, error) {
 		return 1, err
 	}
 
-	hostFolders, err := folders.Apply(ctx.Store, dataDir, envVars, folderGrants, ctx.Verbose)
-	if err == nil {
-		for _, f := range hostFolders {
-			pathCopy := f.Path
-			hostGrants = append(hostGrants, HostGrant{Path: &pathCopy, ReadOnly: f.ReadOnly})
-		}
-	}
-
 	if ctx.Verbose {
 		ctx.Note("app      %s %s (%s)", cfg.ID, cfg.Version, img.Ref.Manifest)
 		for alias, r := range cfg.Runtimes {
 			ctx.Note("runtime  %s: %s %s", alias, r.ID, r.Version)
-		}
-		for _, e := range found.Loaded {
-			ctx.Note("extension %s %s (%s)", e.ID, e.Version, e.Dir)
-		}
-		if !saved.IsEmpty() {
-			ctx.Note("override %v", saved)
 		}
 		netStr := "off"
 		if network {
@@ -433,9 +442,6 @@ func Run(ctx *context.Context, opts Options) (uint32, error) {
 		token = t
 		defer win32.CloseHandle(token)
 	case oci.SandboxAppContainer:
-		var allRuntimeDirs []string
-		allRuntimeDirs = append(allRuntimeDirs, img.RuntimeDirs...)
-		allRuntimeDirs = append(allRuntimeDirs, extensionDirs(found.Loaded)...)
 		relayDir := ""
 		if relayExe != "" {
 			relayDir = filepath.Dir(relayExe)
@@ -446,7 +452,7 @@ func Run(ctx *context.Context, opts Options) (uint32, error) {
 		}
 		sec, err := setUpAppContainer(ctx, cfg.ID, appContainerSetup{
 			deployDir:    img.DeployDir,
-			runtimeDirs:  allRuntimeDirs,
+			runtimeDirs:  img.RuntimeDirs,
 			relayDir:     relayDir,
 			rootsFile:    rootsPath,
 			dataDir:      dataDir,
@@ -577,7 +583,7 @@ func WarnUnsupported(cfg oci.AppConfig, sandbox oci.Sandbox, note func(string, .
 	note("warning: %s can't run under the %v sandbox: %s; its image asks for --sandbox=%v", cfg.ID, sandbox, *why, pref)
 }
 
-func sharedPath(ctx *context.Context, cfg oci.AppConfig, settings override.Settings, sandbox oci.Sandbox) []string {
+func sharedPath(ctx *context.Context, cfg oci.AppConfig, settings Settings, sandbox oci.Sandbox) []string {
 	var dirs []string
 	host := false
 	if settings.Host != nil {
@@ -685,25 +691,6 @@ func forwardsOf(targets []services.Target) (*forward.Forwards, error) {
 		connect[i] = t.Connect
 	}
 	return forward.Open(ports, connect)
-}
-
-func openedFiles(hostCwd string, named []string) ([]string, error) {
-	files := make([]string, len(named))
-	for i, name := range named {
-		p := filepath.Join(hostCwd, name)
-		fi, err := os.Stat(p)
-		if err != nil {
-			if os.IsNotExist(err) {
-				return nil, fmt.Errorf("--file=%s: there's no such file", name)
-			}
-			return nil, fmt.Errorf("--file=%s: %w", name, err)
-		}
-		if fi.IsDir() {
-			return nil, fmt.Errorf("--file=%s is a directory; --filesystem=%s grants one", name, p)
-		}
-		files[i] = p
-	}
-	return files, nil
 }
 
 type appContainerSetup struct {
@@ -1109,7 +1096,7 @@ func runtimeDirs(cfg oci.AppConfig, dirs []string, dataDir, cacheDir string, roo
 	return runtimesInfo{dirs: named, own: own, aliases: aliasesList}
 }
 
-func usesCache(cfg oci.AppConfig, exts []extensions.Extension) bool {
+func usesCache(cfg oci.AppConfig) bool {
 	if oci.UsesCache(cfg.Path, cfg.Env) {
 		return true
 	}
@@ -1118,15 +1105,10 @@ func usesCache(cfg oci.AppConfig, exts []extensions.Extension) bool {
 			return true
 		}
 	}
-	for _, e := range exts {
-		if oci.UsesCache(e.Config.Path, e.Config.Env) {
-			return true
-		}
-	}
 	return false
 }
 
-func usesRoots(cfg oci.AppConfig, exts []extensions.Extension) bool {
+func usesRoots(cfg oci.AppConfig) bool {
 	if oci.UsesRoots(cfg.Env, cfg.Args) {
 		return true
 	}
@@ -1140,28 +1122,7 @@ func usesRoots(cfg oci.AppConfig, exts []extensions.Extension) bool {
 			return true
 		}
 	}
-	for _, e := range exts {
-		if oci.UsesRoots(e.Config.Env, e.Config.Args) {
-			return true
-		}
-	}
 	return false
-}
-
-func extensionConfigs(exts []extensions.Extension) []oci.AppConfig {
-	out := make([]oci.AppConfig, len(exts))
-	for i, e := range exts {
-		out[i] = e.Config
-	}
-	return out
-}
-
-func extensionDirs(exts []extensions.Extension) []string {
-	out := make([]string, len(exts))
-	for i, e := range exts {
-		out[i] = e.Dir
-	}
-	return out
 }
 
 type Command struct {

@@ -20,7 +20,6 @@ import (
 	"github.com/quasidock/quasidock/internal/lazy"
 	"github.com/quasidock/quasidock/internal/lifecycle"
 	"github.com/quasidock/quasidock/internal/oci"
-	"github.com/quasidock/quasidock/internal/override"
 	"github.com/quasidock/quasidock/internal/peek"
 	"github.com/quasidock/quasidock/internal/prompt"
 	"github.com/quasidock/quasidock/internal/registry"
@@ -62,12 +61,6 @@ commands:
   logout <registry>               delete a registry's saved login
   run [options] <app-id> [args]   run an installed app
   list                            list installed apps and their exported commands
-  override [options] <app-id>     save run options that every run of the app gets;
-                                  --show shows them, --reset removes them
-  override [options] --global     the same for every app, below each app's own; also
-                                  --real-folders lets the apps of a store that isn't your
-                                  default one use your real folders, --noreal-folders
-                                  stops them
   grants [<app-id>]               list what quasidock changed outside its store for apps, in
                                   this store and others, what stores since deleted left,
                                   and low labels on your folders no record explains
@@ -103,21 +96,16 @@ but only for the default registry. Without either, the login ` + "`docker login`
 used. From a multi-platform index, pull takes the image for windows/amd64. Blobs over
 64 MiB are pushed in chunks of QUASIDOCK_UPLOAD_CHUNK_SIZE bytes (0: in one request).
 
-run options (override takes them too, except --command and --file):
+run options:
   --command=<name>                run one of the app's exported commands, or another
                                   executable or batch file from the app or System32
-  --file=<path>                   have the app open a file of yours: grants it that
-                                  file for the run, and adds its path to the app's
-                                  arguments
   --sandbox=soft|low|appcontainer soft shapes the environment; low (the default, unless
                                   the app's image asks for another) also keeps the app
                                   from writing anywhere but its data directory and the
                                   paths granted; appcontainer enforces all of the app's
                                   permissions
-  --filesystem=<location>[:ro]    grant access to a host location: cwd, an absolute path,
-                                  or one of your folders: desktop, documents, downloads,
-                                  music, pictures, videos
-  --nofilesystem=<location>       take away access the app or an override grants
+  --filesystem=<location>[:ro]    grant access to a host location: cwd or an absolute path
+  --nofilesystem=<location>       take away access the app grants
   --share=network                 allow network access, and pass on your proxy variables
   --share=host                    put quasidock-host on its PATH, which runs your own programs
                                   in your real environment, with the run's rights (not in
@@ -125,15 +113,12 @@ run options (override takes them too, except --command and --file):
   --unshare=<what>                take away what --share gives, or the app's image asks for
   --port=<service>=<port>         serve one of the app's services on another port
   --env=NAME=VALUE                set an environment variable
-  --noextension=<id>              leave out an installed extension, which otherwise
-                                  joins the runs of what it extends
-  --extension=<id>                have an extension an override leaves out join again
   --ephemeral                     use a fresh data directory, deleted afterwards
 
 What the low and appcontainer sandboxes grant on host paths stays while the app's
-permissions and overrides give it; what a command line adds goes when the app's
-last run ends. At low integrity, a working directory that's your user profile, a
-directory it's in, or a drive's root stays read-only.
+permissions give it; what a command line adds goes when the app's last run ends. At
+low integrity, a working directory that's your user profile, a directory it's in, or a
+drive's root stays read-only.
 
 An app's services (info lists them) are on localhost, on the ports its config says
 or --port gives, in every sandbox.
@@ -142,8 +127,7 @@ Under appcontainer, a run of an app with the network has its container exempt fr
 loopback isolation while the app's runs go, so that it reaches other programs on this
 machine; with QUASIDOCK_LOOPBACK_EXEMPTION=0, quasidock never exempts one.
 
-Data lives in %QUASIDOCK_HOME%, or %LOCALAPPDATA%\quasidock when that isn't set. Apps of a
-store elsewhere don't get your real folders until ` + "`override --global --real-folders`" + `.
+Data lives in %QUASIDOCK_HOME%, or %LOCALAPPDATA%\quasidock when that isn't set.
 `
 
 func isFlag(arg, name string) bool {
@@ -182,12 +166,10 @@ func readOption(args []string, i *int, flags []string) (Option, error) {
 }
 
 type settingsParser struct {
-	settings     override.Settings
+	settings     run.Settings
 	filesystem   []string
 	nofilesystem []string
 	env          []string
-	noextension  []string
-	extension    []string
 	ports        []string
 }
 
@@ -216,8 +198,8 @@ func (p *settingsParser) apply(opt Option) error {
 		p.settings.Sandbox = &sb
 	case "filesystem", "nofilesystem":
 		g := oci.ParseFsGrant(val)
-		if g == nil || g.Where.Type == oci.FsGrantUnknown {
-			return fmt.Errorf("--%s must be cwd, one of your folders (%s) or an absolute path; got %q", name, oci.UserFolderList, val)
+		if g == nil || g.Where.Type == oci.FsGrantUnknown || g.Where.Type == oci.FsGrantFolder {
+			return fmt.Errorf("--%s must be cwd or an absolute path; got %q", name, val)
 		}
 		if name == "filesystem" {
 			p.filesystem = append(p.filesystem, val)
@@ -242,17 +224,8 @@ func (p *settingsParser) apply(opt Option) error {
 			return fmt.Errorf("--env expects NAME=VALUE, got %q", val)
 		}
 		p.env = append(p.env, val)
-	case "noextension", "extension":
-		if !oci.IsValidID(val) {
-			return fmt.Errorf("--%s takes an extension's id; got %q", name, val)
-		}
-		if name[0] == 'n' {
-			p.noextension = append(p.noextension, val)
-		} else {
-			p.extension = append(p.extension, val)
-		}
 	case "port":
-		if _, _, ok := override.ParsePort(val); !ok {
+		if _, _, ok := services.ParsePort(val); !ok {
 			return fmt.Errorf("--port expects <service>=<port>, a port from 1 to 65535; got %q", val)
 		}
 		p.ports = append(p.ports, val)
@@ -262,13 +235,11 @@ func (p *settingsParser) apply(opt Option) error {
 	return nil
 }
 
-func (p *settingsParser) finish() override.Settings {
+func (p *settingsParser) finish() run.Settings {
 	s := p.settings
 	s.Filesystem = p.filesystem
 	s.NoFilesystem = p.nofilesystem
 	s.Env = p.env
-	s.NoExtension = p.noextension
-	s.Extension = p.extension
 	s.Ports = p.ports
 	return s
 }
@@ -276,7 +247,6 @@ func (p *settingsParser) finish() override.Settings {
 func parseRunOptions(ctx *context.Context, args []string) (run.Options, error) {
 	var opts run.Options
 	var parser settingsParser
-	var files []string
 
 	flags := append(settingsFlags, "verbose")
 	i := 0
@@ -299,11 +269,6 @@ func parseRunOptions(ctx *context.Context, args []string) (run.Options, error) {
 			}
 		} else if opt.Name == "command" && opt.Value != nil {
 			opts.Command = opt.Value
-		} else if opt.Name == "file" && opt.Value != nil {
-			if *opt.Value == "" {
-				return opts, errors.New("--file needs a file's path")
-			}
-			files = append(files, *opt.Value)
 		} else {
 			if err := parser.apply(opt); err != nil {
 				return opts, err
@@ -317,7 +282,6 @@ func parseRunOptions(ctx *context.Context, args []string) (run.Options, error) {
 
 	opts.ID = args[i]
 	opts.Args = args[i+1:]
-	opts.Files = files
 	opts.Settings = parser.finish()
 	return opts, nil
 }
@@ -430,148 +394,6 @@ func doLogout(ctx *context.Context, regStr string) error {
 	return nil
 }
 
-func overrideApp(ctx *context.Context, args []string) error {
-	var parser settingsParser
-	var id *string
-	reset := false
-	global := false
-	var realFolders *bool
-
-	flags := append(settingsFlags, "show", "reset", "global", "real-folders", "noreal-folders")
-	i := 0
-	for i < len(args) {
-		if !strings.HasPrefix(args[i], "--") {
-			if id != nil {
-				return errors.New("usage error")
-			}
-			val := args[i]
-			id = &val
-			i++
-			continue
-		}
-		opt, err := readOption(args, &i, flags)
-		if err != nil {
-			return err
-		}
-		if opt.Value == nil && opt.Name == "reset" {
-			reset = true
-		} else if opt.Value == nil && opt.Name == "global" {
-			global = true
-		} else if opt.Value == nil && opt.Name == "show" {
-			// Show is default
-		} else if opt.Value == nil && opt.Name == "real-folders" {
-			t := true
-			realFolders = &t
-		} else if opt.Value == nil && opt.Name == "noreal-folders" {
-			f := false
-			realFolders = &f
-		} else if err := parser.apply(opt); err != nil {
-			return fmt.Errorf("--%s can't be saved as an override", opt.Name)
-		}
-		i++
-	}
-
-	if global == (id != nil) {
-		return errors.New("usage error")
-	}
-	appID := ""
-	if id != nil {
-		appID = *id
-	}
-	whose := appID
-	if whose == "" {
-		whose = "every app"
-	}
-	if realFolders != nil && appID != "" {
-		return errors.New("--real-folders is for a whole store: use it with --global")
-	}
-
-	newSettings := parser.finish()
-	newSettings.RealFolders = realFolders
-
-	if reset {
-		if !newSettings.IsEmpty() {
-			return fmt.Errorf("--reset removes all of %s's overrides; add new ones separately", whose)
-		}
-		_ = override.Delete(ctx.Store, appID)
-		if appID != "" {
-			context.Note("%s has no overrides now", appID)
-		} else {
-			context.Note("there are no store-wide overrides now")
-		}
-		return settleGrants(ctx, id)
-	}
-
-	saved, _ := override.Load(ctx.Store, appID)
-	if newSettings.IsEmpty() {
-		if saved.IsEmpty() {
-			if appID != "" {
-				context.Note("%s has no overrides", appID)
-			} else {
-				context.Note("there are no store-wide overrides")
-			}
-			return nil
-		}
-		fmt.Printf("%s\n", saved.Format())
-		return nil
-	}
-
-	var ref *store.Ref
-	if appID != "" {
-		var err error
-		ref, err = ctx.Store.ReadRef(appID)
-		if err != nil || ref == nil {
-			return fmt.Errorf("%s is not installed", appID)
-		}
-	}
-
-	merged := override.Merge(saved, newSettings)
-	if err := override.Save(ctx.Store, appID, merged); err != nil {
-		return err
-	}
-
-	if ref != nil && newSettings.Sandbox != nil {
-		if image, err := ctx.Store.ReadImage(ref.ID, ref.Manifest); err == nil && image != nil {
-			run.WarnUnsupported(image.Config, *newSettings.Sandbox, context.Note)
-		}
-	}
-
-	if appID != "" {
-		if merged.IsEmpty() {
-			context.Note("%s has no overrides now", appID)
-		} else {
-			context.Note("%s now runs with %s", appID, merged.Format())
-		}
-	} else {
-		if merged.IsEmpty() {
-			context.Note("there are no store-wide overrides now")
-		} else {
-			context.Note("every app now runs with %s, unless its own overrides choose otherwise", merged.Format())
-		}
-	}
-	return settleGrants(ctx, id)
-}
-
-func settleGrants(ctx *context.Context, id *string) error {
-	var ids []string
-	if id != nil {
-		ids = []string{*id}
-	} else {
-		gids, err := ctx.Store.ListGrantIds()
-		if err != nil {
-			return err
-		}
-		ids = gids
-	}
-	for _, a := range ids {
-		ok, _ := grants.SettleUnlessRunning(ctx, a)
-		if !ok {
-			context.Note("%s is running: what the change takes back goes when its last run ends", a)
-		}
-	}
-	return nil
-}
-
 func list(ctx *context.Context) error {
 	refs, err := ctx.Store.ListRefs()
 	if err != nil {
@@ -596,17 +418,8 @@ func list(ctx *context.Context) error {
 			for _, r := range cfg.Runtimes {
 				fmt.Fprintf(&sb, "  (runtime %s %s)", r.ID, r.Version)
 			}
-			for name := range cfg.Extensions {
-				fmt.Fprintf(&sb, "  (extension point %s)", name)
-			}
-			if cfg.Extends != nil {
-				fmt.Fprintf(&sb, "  (extends %s %s)", cfg.Extends.Point, cfg.Extends.Version)
-			}
 			for _, k := range cfg.Registry {
 				fmt.Fprintf(&sb, "  (keeps HKCU\\%s)", k)
-			}
-			if saved, err := override.Load(ctx.Store, ref.ID); err == nil && !saved.IsEmpty() {
-				fmt.Fprintf(&sb, "  (override %s)", saved.Format())
 			}
 			if state := lazy.Describe(ctx.Store, image.Manifest); state != nil {
 				fmt.Fprintf(&sb, "  %s", *state)
@@ -637,7 +450,6 @@ func remove(ctx *context.Context, id string, deleteData bool) error {
 	}
 	if deleteData {
 		_ = store.DeleteTree(ctx.Store.Path("data", id))
-		_ = override.Delete(ctx.Store, id)
 	}
 
 	withData := ""
@@ -1070,14 +882,6 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 			return usageError()
 		}
 		return 0, list(ctx)
-
-	case "override":
-		lock, err := ctx.Store.Lock(false)
-		if err != nil {
-			return 1, err
-		}
-		defer lock.Release()
-		return 0, overrideApp(ctx, rest)
 
 	case "trust":
 		return trustCommand(ctx, rest)

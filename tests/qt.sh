@@ -47,10 +47,7 @@ work=$(cygpath -w "$(mktemp -d)")
 APP=test.qt.hello
 FLAMESHOT=org.flameshot.Flameshot
 NOTES=io.github.nuttyartist.notes
-# The user's folders the apps may use, such as Pictures, are these, not
-# yours, which low and AppContainer runs would label and grant.
-for f in Documents Pictures; do mkdir -p "$work\\folders\\$f"; done
-export QUASIDOCK_USER_FOLDERS="$work\\folders"
+mkdir -p "$work\\folders\\Pictures"
 
 failures=0
 check() {
@@ -243,7 +240,7 @@ check "with --sandbox=appcontainer" stays_up 15 --sandbox=appcontainer $FLAMESHO
 pictures="$work\\folders\\Pictures"
 screenshot() {
     rm -f "$pictures"/*.png
-    timeout 60 "$zigsaw" run "$@" $FLAMESHOT full --path "$pictures" >"$work\\shot.log" 2>&1 || { tail -3 "$work\\shot.log"; return 1; }
+    timeout 60 "$zigsaw" run --filesystem="$pictures" "$@" $FLAMESHOT full --path "$pictures" >"$work\\shot.log" 2>&1 || { tail -3 "$work\\shot.log"; return 1; }
     local png
     png=$(ls "$pictures"/*.png 2>/dev/null | head -1)
     [ -n "$png" ] || { echo "no PNG in Pictures: $(tail -1 "$work\\shot.log")"; return 1; }

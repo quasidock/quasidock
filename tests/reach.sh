@@ -117,13 +117,6 @@ warns() {
     hasnt "$out" "can't run under" || return 1
 }
 check "a run under a sandbox the image can't use warns, and others don't" warns
-override_warns() {
-    local out
-    out=$("$quasidock" override --sandbox=appcontainer test.reach.outer 2>&1)
-    has "$out" "can't run under the appcontainer sandbox" || return 1
-    "$quasidock" override --reset test.reach.outer >/dev/null 2>&1
-}
-check "so does saving it as an override" override_warns
 
 cd "$root" || exit 1
 check "no run labelled or granted the repository" sh -c "! icacls '$root' | grep -q -e 'Mandatory Label' -e 'S-1-15-'"

@@ -36,10 +36,10 @@ export MSYS_NO_PATHCONV=1
 # sections took on a runner in iteration 33, without the setup every group
 # has (BusyBox's image), and with zig's image where a group builds with it.
 groups=(
-    "base: runtimes images extensions aliases projects prettier msvc sevenzip" # 2
-    "zig: commands sqlite"                                                     # 7
-    "cmake-meson: cmake llvm meson make"                                       # 7
-    "langs: rust go dotnet java php"                                           # 9
+    "base: runtimes images aliases projects prettier msvc sevenzip" # 2
+    "zig: commands sqlite"                                          # 7
+    "cmake-meson: cmake llvm meson make"                            # 7
+    "langs: rust go dotnet java php"                                # 9
 )
 if [ "${1:-}" = --groups ]; then
     printf '%s\n' "${groups[@]%%:*}"
@@ -70,10 +70,6 @@ QUASIDOCK_HOME=$(cygpath -w "$(mktemp -d)")
 export QUASIDOCK_HOME
 work=$(cygpath -w "$(mktemp -d)")
 bin="$QUASIDOCK_HOME\\bin"
-# Apps that may use the user's folders, as 7-Zip's Documents, find none here,
-# rather than yours.
-export QUASIDOCK_USER_FOLDERS="$work\\no-folders"
-mkdir -p "$QUASIDOCK_USER_FOLDERS"
 # tests/cmd/imports: whether the loader binds every import of a program.
 (cd "$root" && go run ./scripts/build.go imports) || { echo "building the import checker failed"; exit 1; }
 imports="$root\\zig-out\\test\\quasidock-imports.exe"
@@ -245,100 +241,6 @@ search_paths() {
     esac
 }
 check "a building module gets them under dest; PATH starts with B:\\prefix\\bin, PKG_CONFIG_PATH and CMAKE_PREFIX_PATH name the prefix, then the SDK" search_paths
-fi
-
-# --- extension points -----------------------------------------------------------------
-
-if section extensions; then
-# A runtime, BusyBox, with an extension point that joins EXT_DIRS; images
-# that extend it, each adding its directory: a, b (which needs c), c, and old
-# (for another version of the point); an app with the runtime that adds a
-# directory of its own; another that lists a as a runtime itself.
-XRT=test.ext.rt
-XAPP=test.ext.app
-mkdir -p "$work\\ext" && cp "$QUASIDOCK_HOME\\deploy\\$(own_layer $BB)\\busybox.exe" "$work\\ext\\" &&
-    for x in a b c old app; do echo "marker $x" >"$work\\ext\\marker-$x.txt"; done
-cat >"$work\\ext\\rt.json" <<EOF
-{ "id": "$XRT", "version": "1", "command": "busybox.exe", "exports": {},
-  "env": { "EXT_DIRS": "\${app}\\\\base" },
-  "extensions": { "$XRT": { "version": "1", "join": ["EXT_DIRS"] } },
-  "modules": [{ "name": "m", "sources": [{ "path": "busybox.exe" }] }] }
-EOF
-# ext_recipe <name> <point version> [<needs>]
-ext_recipe() {
-    local needs=""
-    [ -n "${3:-}" ] && needs=", \"needs\": [\"$3\"]"
-    cat <<EOF
-{ "id": "test.ext.$1", "version": "1", "command": "marker.txt", "exports": {},
-  "env": { "EXT_DIRS": "\${app}", "EXT_$(echo "$1" | tr a-z A-Z)": "\${app}" },
-  "extends": { "point": "$XRT", "version": "$2"$needs },
-  "modules": [{ "name": "m", "sources": [{ "path": "marker-$1.txt", "dest": "marker.txt" }] }] }
-EOF
-}
-ext_recipe a 1 >"$work\\ext\\a.json"
-ext_recipe b 1 test.ext.c >"$work\\ext\\b.json"
-ext_recipe c 1 >"$work\\ext\\c.json"
-ext_recipe old 0 >"$work\\ext\\old.json"
-builds_ext() {
-    local r
-    for r in rt a b c old; do z build "$work\\ext\\$r.json" >/dev/null 2>&1 || { z build "$work\\ext\\$r.json" 2>&1 | tail -1; return 1; }; done
-}
-check "a runtime with an extension point and four extensions build" builds_ext
-xrt_digest=$(manifest_of $XRT)
-xa_digest=$(manifest_of test.ext.a)
-cat >"$work\\ext\\app.json" <<EOF
-{ "id": "$XAPP", "version": "1", "command": "\${rt}\\\\busybox.exe", "exports": {},
-  "env": { "EXT_DIRS": "\${app}\\\\own" },
-  "runtimes": { "rt": "$XRT@$xrt_digest" },
-  "modules": [{ "name": "m", "sources": [{ "path": "marker-app.txt", "dest": "marker.txt" }] }] }
-EOF
-check "an app with the runtime builds" z build "$work\\ext\\app.json"
-dir_of() { echo "$QUASIDOCK_HOME\\deploy\\$(own_layer "$1")"; }
-# ext_dirs <run args...>: EXT_DIRS as a run of BusyBox's sh shows it, with '\'.
-ext_dirs() { z run "$@" sh -c 'echo "$EXT_DIRS"' 2>/dev/null | tr -d '\r' | tr '/' '\\'; }
-expect_dirs() {
-    local want=$1 got
-    shift
-    got=$(ext_dirs "$@")
-    [ "$got" = "$want" ] || { echo "EXT_DIRS is $got"; return 1; }
-}
-xa=$(dir_of test.ext.a) xb=$(dir_of test.ext.b) xc=$(dir_of test.ext.c)
-# Run itself, the runtime is the app, whose own entries come last.
-check "a run of the runtime has its extensions, each after those it needs, the old one left out" \
-    expect_dirs "$xa;$xc;$xb;$(dir_of $XRT)\\base" $XRT
-check "it says why the old one doesn't join" sh -c "\"\$0\" run $XRT true 2>&1 | grep -qF 'test.ext.old doesn'\''t join this run: it was built for $XRT 0, and this is 1'" "$zigsaw"
-check "an app with the runtime has them too, then its own entry" \
-    expect_dirs "$(dir_of $XRT)\\base;$xa;$xc;$xb;$(dir_of $XAPP)\\own" $XAPP
-check "list shows the point and what extends it" sh -c "\"\$0\" list | grep '^$XRT ' | grep -q '(extension point $XRT)' && \"\$0\" list | grep '^test.ext.a ' | grep -q '(extends $XRT 1)'" "$zigsaw"
-ext_var() { [ "$(z run $XAPP sh -c 'cat "$EXT_A/marker.txt"' 2>/dev/null | tr -d '\r')" = "marker a" ]; }
-check "an extension's own variables are set, with \${app} its directory" ext_var
-check "--noextension leaves one out, and what needs it" \
-    expect_dirs "$(dir_of $XRT)\\base;$xa;$(dir_of $XAPP)\\own" --noextension=test.ext.c $XAPP
-overridden() {
-    z override --noextension=test.ext.a $XAPP >/dev/null 2>&1 &&
-        expect_dirs "$(dir_of $XRT)\\base;$xc;$xb;$(dir_of $XAPP)\\own" $XAPP &&
-        expect_dirs "$(dir_of $XRT)\\base;$xa;$xc;$xb;$(dir_of $XAPP)\\own" --extension=test.ext.a $XAPP &&
-        z override --extension=test.ext.a $XAPP 2>&1 | grep -q 'has no overrides now' &&
-        z override $XAPP 2>&1 | grep -q 'has no overrides'
-}
-check "an override leaves one out; --extension has it join again, and saves nothing" overridden
-# An app with a as a runtime of its own: that one, not the installed one.
-sed -e "s/\"id\": \"$XAPP\"/\"id\": \"test.ext.app2\"/" -e "s/\"runtimes\": {/\"runtimes\": { \"a\": \"test.ext.a@$xa_digest\",/" "$work\\ext\\app.json" >"$work\\ext\\app2.json"
-check "an app that lists an extension as a runtime builds" z build "$work\\ext\\app2.json"
-check "it has that extension once, as its runtime" \
-    expect_dirs "$xa;$(dir_of $XRT)\\base;$xc;$xb;$(dir_of test.ext.app2)\\own" test.ext.app2
-sandboxed_ext() {
-    local sb
-    for sb in low appcontainer; do
-        # (`; true`: in an AppContainer, sh may not wait for its last command, gaps.md.)
-        [ "$(z run --sandbox=$sb $XAPP sh -c 'cat "$EXT_A/marker.txt"; true' 2>/dev/null | tr -d '\r')" = "marker a" ] || { echo "$sb: can't read test.ext.a's file"; return 1; }
-    done
-}
-check "the low and appcontainer sandboxes can read an extension's files" sandboxed_ext
-removed_ext() { z rm test.ext.a >/dev/null 2>&1 && expect_dirs "$xc;$xb;$(dir_of $XRT)\\base" $XRT; }
-check "an extension removed doesn't join any more" removed_ext
-printf '{ "id": "test.ext.bad", "version": "1", "command": "marker.txt", "exports": {}, "extends": { "point": "%s", "version": "1" }, "runtimes": { "rt": "%s@%s" },\n  "modules": [{ "name": "m", "sources": [{ "path": "marker-a.txt", "dest": "marker.txt" }] }] }\n' $XRT $XRT "$xrt_digest" >"$work\\ext\\bad.json"
-check "an extension with runtimes is refused" sh -c "\"\$0\" build '$work\\ext\\bad.json' 2>&1 | grep -q 'an extension can.t have runtimes'" "$zigsaw"
 fi
 
 # --- aliases in runs, and SDKs with runtimes ------------------------------------------
@@ -1343,17 +1245,6 @@ php_ext_runs() {
 check "PHP loads it, and its 27 checks pass, under soft, low and appcontainer" php_ext_runs
 phpext_again() { [ "$(rebuilt_manifest "$work\\php\\zprobe.json")" = "$phpext_digest" ]; }
 check "built again, the extension's image is the same" phpext_again
-# Installed, it extends PHP's runtime: PHP loads it without listing it.
-zprobe_joins() {
-    local php='echo extension_loaded("zprobe") ? zprobe_libs() : "not loaded", "\n";' out
-    # (What zigsaw notes, as a first low run's label, goes to stderr.)
-    out=$(cd "$work\\phpcwd" && z run net.php.php -r "$php" 2>"$work\\stderr" | tr -d '\r')
-    # (Which versions they are moves with PHP's.)
-    [ "$(sed -E 's/[0-9]+(\.[0-9]+)+/N/g' <<<"$out")" = "zlib N crc 3610a686, from libxml2, OpenSSL N" ] || { echo "installed: $out $(tr '\r\n' '  ' <"$work\\stderr")"; return 1; }
-    out=$(cd "$work\\phpcwd" && z run --noextension=$PHPEXT net.php.php -r "$php" 2>"$work\\stderr" | tr -d '\r')
-    [ "$out" = "not loaded" ] || { echo "left out: $out $(tr '\r\n' '  ' <"$work\\stderr")"; return 1; }
-}
-check "installed, PHP's runs load it through PHP's extension point, unless left out" zprobe_joins
 # Without a recipe: the SDK's php-ext in the extension's directory, and PHP's
 # runtime loading the DLL from there.
 mkdir -p "$work\\phpdir" && cp -r "$(cygpath -u "$root")"/tests/build/php/zprobe/. "$(cygpath -u "$work")/phpdir/"
@@ -1361,7 +1252,7 @@ php_ext_no_recipe() {
     local out
     out=$(cd "$work\\phpdir" && z run --command=php-ext net.php.php.Sdk build 2>&1) || { echo "$out" | tail -2; return 1; }
     # (The SDK runs under soft: PHP's run labels the directory, and says so.)
-    out=$(cd "$work\\phpdir" && z run --noextension=$PHPEXT net.php.php -d "extension=$work\\phpdir\\php_zprobe.dll" -r 'echo zprobe_config(), "\n";' 2>"$work\\stderr" | tr -d '\r')
+    out=$(cd "$work\\phpdir" && z run net.php.php -d "extension=$work\\phpdir\\php_zprobe.dll" -r 'echo zprobe_config(), "\n";' 2>"$work\\stderr" | tr -d '\r')
     [ "$out" = "hello from config.w32, version info: yes" ] || { echo "got: $out $(tr '\r\n' '  ' <"$work\\stderr")"; return 1; }
 }
 check "php-ext builds it in its directory without a recipe, and PHP's runtime loads it" php_ext_no_recipe

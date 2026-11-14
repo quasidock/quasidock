@@ -1036,23 +1036,6 @@ func WriteContents(st *store.Store, w io.Writer, manifest oci.Manifest, cfg oci.
 		}
 	}
 
-	if len(cfg.Extensions) > 0 {
-		var pts []string
-		for name, p := range cfg.Extensions {
-			pts = append(pts, fmt.Sprintf("%s %s", name, p.Version))
-		}
-		sort.Strings(pts)
-		WriteLine(w, "points", fmt.Sprintf("%s (installed extensions of it join its runs)", strings.Join(pts, ", ")))
-	}
-
-	if cfg.Extends != nil {
-		needsStr := ""
-		if len(cfg.Extends.Needs) > 0 {
-			needsStr = ", after " + oci.JoinAnd(cfg.Extends.Needs)
-		}
-		WriteLine(w, "extends", fmt.Sprintf("%s %s%s", cfg.Extends.Point, cfg.Extends.Version, needsStr))
-	}
-
 	var cmds []string
 	for k := range cfg.Exports {
 		cmds = append(cmds, k)
