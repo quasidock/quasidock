@@ -960,7 +960,8 @@ func launchContainer(
 		}
 		return 1, false, err
 	}
-	defer win32.CloseHandle(job)
+	child := process.Child{Job: job}
+	defer child.Close()
 
 	if relayExe != "" {
 		startRelay(ctx, cfg.ID, job, relayExe, published, forwards, security, envBlock)
@@ -1046,7 +1047,7 @@ func launchContainer(
 		win32.SetEvent(readyEvent)
 	}
 
-	child := process.Child{Job: job, Process: hProcess}
+	child.Process = hProcess
 	code, _, err := child.WaitOrStop(stopEvent, 10000)
 	pipeWG.Wait()
 
@@ -1625,25 +1626,21 @@ func runtimeDirs(cfg oci.AppConfig, dirs []string, dataDir, cacheDir string, roo
 	named := make([]oci.DirPlaceholder, 0, len(dirs))
 	own := make([]oci.Placeholders, 0, len(dirs))
 	aliasesList := make([]string, 0, len(dirs))
-	idx := 0
-	for alias := range cfg.From {
-		if idx < len(dirs) {
-			dir := dirs[idx]
-			named = append(named, oci.DirPlaceholder{Alias: alias, Path: dir})
-			rootsStr := ""
-			if rootsFile != nil {
-				rootsStr = *rootsFile
-			}
-			own = append(own, oci.Placeholders{
-				App:   dir,
-				Data:  dataDir,
-				Cache: cacheDir,
-				Roots: rootsStr,
-				Uses:  uses,
-			})
-			aliasesList = append(aliasesList, alias)
-			idx++
+	for _, runtime := range oci.RuntimeDirectories(cfg.From, dirs) {
+		alias, dir := runtime.Alias, runtime.Path
+		named = append(named, oci.DirPlaceholder{Alias: alias, Path: dir})
+		rootsStr := ""
+		if rootsFile != nil {
+			rootsStr = *rootsFile
 		}
+		own = append(own, oci.Placeholders{
+			App:   dir,
+			Data:  dataDir,
+			Cache: cacheDir,
+			Roots: rootsStr,
+			Uses:  uses,
+		})
+		aliasesList = append(aliasesList, alias)
 	}
 	return runtimesInfo{dirs: named, own: own, aliases: aliasesList}
 }

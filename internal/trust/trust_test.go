@@ -3,8 +3,10 @@ package trust
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/quasidock/quasidock/internal/signature"
 	"github.com/quasidock/quasidock/internal/store"
 )
 
@@ -14,13 +16,13 @@ func TestUnderPrefix(t *testing.T) {
 		repo   string
 		want   bool
 	}{
-		{"ghcr.io/zigsaw-io", "ghcr.io/zigsaw-io/org.nodejs.node", true},
-		{"ghcr.io/zigsaw-io/", "ghcr.io/zigsaw-io/org.nodejs.node", true},
-		{"GHCR.io/zigsaw-io", "ghcr.io/zigsaw-io/org.nodejs.node", true},
+		{"ghcr.io/quasidock/quasidock", "ghcr.io/quasidock/quasidock/node", true},
+		{"ghcr.io/quasidock/quasidock/", "ghcr.io/quasidock/quasidock/node", true},
+		{"GHCR.io/quasidock/quasidock", "ghcr.io/quasidock/quasidock/node", true},
 		{"localhost:5000", "localhost:5000/a/b", true},
 		{"ghcr.io/me/app", "ghcr.io/me/app", true},
-		{"ghcr.io/zigsaw-io", "ghcr.io/zigsaw-iox/app", false},
-		{"ghcr.io/zigsaw-io", "ghcr.io/other/app", false},
+		{"ghcr.io/quasidock/quasidock", "ghcr.io/quasidock/quasidock-other/app", false},
+		{"ghcr.io/quasidock/quasidock", "ghcr.io/other/app", false},
 		{"ghcr.io/me/app", "ghcr.io/me", false},
 		{"", "ghcr.io/me", false},
 		{"/", "ghcr.io/me", false},
@@ -35,18 +37,35 @@ func TestUnderPrefix(t *testing.T) {
 }
 
 func TestBuiltInKeys(t *testing.T) {
-	if len(PublishedKeys) != 2 {
-		t.Fatalf("expected 2 published keys, got %d", len(PublishedKeys))
-	}
 	allKeys, err := All(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(allKeys) != 2 {
-		t.Fatalf("expected 2 named keys, got %d", len(allKeys))
+	want := 0
+	if strings.TrimSpace(QuasidockPublicKey) != "" {
+		want = 1
 	}
-	if allKeys[0].Key.Fingerprint == allKeys[1].Key.Fingerprint {
-		t.Errorf("expected different fingerprints for built-in keys")
+	if len(allKeys) != want {
+		t.Fatalf("expected %d named keys, got %d", want, len(allKeys))
+	}
+	if want == 1 {
+		key, err := signature.Parse([]byte(QuasidockPublicKey))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if allKeys[0].Prefix != QuasidockPrefix || !allKeys[0].BuiltIn || allKeys[0].Key.Fingerprint != key.Fingerprint {
+			t.Fatalf("expected the bundled Quasidock key, got %+v", allKeys[0])
+		}
+	}
+	keys, err := ForImage(nil, QuasidockPrefix+"/busybox")
+	if err != nil || len(keys) != want {
+		t.Fatalf("Quasidock image: got %d keys, want %d: %v", len(keys), want, err)
+	}
+	for _, repository := range []string{"ghcr.io/zigsaw-io/busybox", "ghcr.io/quasidock/busybox", "ghcr.io/quasidock/other/busybox", "ghcr.io/quasidock/quasidock-other/busybox", "ghcr.io/other/busybox"} {
+		keys, err := ForImage(nil, repository)
+		if err != nil || len(keys) != 0 {
+			t.Errorf("%s: expected no built-in trust, got %d keys: %v", repository, len(keys), err)
+		}
 	}
 }
 

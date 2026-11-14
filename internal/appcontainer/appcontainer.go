@@ -10,7 +10,7 @@ const (
 	mutexProfiles   = "Local\\quasidock-appcontainer"
 	mutexExemptions = "Local\\quasidock-loopback"
 
-	CapabilityInternetClient            = "S-1-15-3-1"
+	CapabilityInternetClient             = "S-1-15-3-1"
 	CapabilityPrivateNetworkClientServer = "S-1-15-3-3"
 )
 

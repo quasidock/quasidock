@@ -10,9 +10,9 @@
     "filesystem": ["cwd:ro"]
   },
   "sdk": {
-    "rust": "rust:1.99.0@sha256:e7e9706485bba88759915d9509993d0e41d340d7d8dfec6426fce1feda9a10e2",
-    "zig": "zig:0.17.0@sha256:93ec2b6b36708ae80ffac87872e70dafaee350cd2d49a95dd2fa5847d0a10449",
-    "busybox": "busybox:FRP-6075-g169694ebd@sha256:db9d39727bfdd4d176b5878c0a125daa8a2396ea21e0f01a6a372f53d9d97e5d"
+    "rust": "rust:1.99.0@sha256:62344d25e7c11b393e6094386eca31bc4f8f0bdbe45845fc61fe58700f112f8d",
+    "zig": "zig:0.17.0@sha256:56fc3e4f42c25dbf70236aedb053606311cb2d4b582ad4d1e26e76036c08eab1",
+    "busybox": "busybox:FRP-6075-g169694ebd@sha256:baca1ecd27b7b5ffe54402d4f8b6e36802d9db5e0e4cb2b7ab13104031045c50"
   },
   "stages": [
     {
@@ -23,7 +23,7 @@
       "vendor": {
         "commands": ["cargo vendor --locked vendor >/dev/null"],
         "dir": "vendor",
-        "sha256": "33bdae3f7c06990f47ef6a7c877b51099074f65fd62d3b88924818a804005e6f"
+        "sha256": "9a65f01421cf29a9d6f622d69787ebd33e7207da7ecf27f330dd2b581c4bf892"
       },
       "build": [
         "cargo build --offline --locked --release --config 'source.crates-io.replace-with=\"vendored\"' --config 'source.vendored.directory=\"vendor\"'",

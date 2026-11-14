@@ -129,7 +129,7 @@ need_zig() {
 }
 
 # Every section but a few builds with BusyBox's image, or runs it.
-z build "$root\\recipes\\busybox.json" >/dev/null 2>&1 || { echo "building busybox failed"; exit 1; }
+z build "$root\\recipes\\busybox.json" || { echo "building busybox failed"; exit 1; }
 bb_digest=$(manifest_of $BB)
 
 # --- runtimes ---------------------------------------------------------------------

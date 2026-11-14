@@ -8,7 +8,7 @@
   "entrypoint": "about.bat",
   "path": ["bin"],
   "env": { "GI_GIR_PATH": "${app}\\share\\gir-1.0" },
-  "sdk": { "gtksdk": "gtk4-sdk:4.24.1@sha256:31b88a3d1d0a4530f3a31cf558d7c6c6c58e04a42ced0d7aeb28d0cf501de104" },
+  "sdk": { "gtksdk": "gtk4-sdk:4.24.1@sha256:7c063e56d0148fbc2ea019ddce1b4368d0aee279ff30b5417bad3e8ad78ca682" },
   "stages": [
     {
       "name": "about",

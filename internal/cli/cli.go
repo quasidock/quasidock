@@ -102,7 +102,7 @@ run options (before IMAGE):
   --verbose                           print runtime diagnostics
 
 Images use registry/repository[:tag][@sha256:...], or app-id[:tag][@digest].
-QUASIDOCK_REGISTRY changes the default registry (ghcr.io/zigsaw-io).
+QUASIDOCK_REGISTRY changes the default registry (ghcr.io/quasidock/quasidock).
 A bare cached app ID selects its last successful build/pull; full sha256 IDs
 select local manifests. Explicit names and tags select exactly that reference.
 Image IDs are manifest digests. images -q prints full IDs; inspect is local-only.

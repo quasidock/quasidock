@@ -24,10 +24,10 @@
     "filesystem": ["cwd"]
   },
   "registry": ["Software\\JavaSoft\\Prefs\\com\\oracle\\javafx\\scenebuilder"],
-  "from": { "java": "java-sdk:25.0.5_8@sha256:e0e6bf207799725067178eca9c1df29a564d47a618319aae46b23ee72e821418" },
+  "from": { "java": "java-sdk:25.0.5_8@sha256:8febd72d8cddbf9ca931a3b95d4714dd190f86428adba1b70deffa2fcf81c23d" },
   "sdk": {
-    "maven": "maven:3.10.0@sha256:05d74d8cf97a8ad0adafb3594488d660a9aad616bf189ac17bea1b1d8cd73043",
-    "busybox": "busybox:FRP-6075-g169694ebd@sha256:db9d39727bfdd4d176b5878c0a125daa8a2396ea21e0f01a6a372f53d9d97e5d"
+    "maven": "maven:3.10.0@sha256:50dfb31e20a15df21eca3f40aca42e05009ef4066997d755eeca16ecc19d4d3f",
+    "busybox": "busybox:FRP-6075-g169694ebd@sha256:baca1ecd27b7b5ffe54402d4f8b6e36802d9db5e0e4cb2b7ab13104031045c50"
   },
   "stages": [
     {
@@ -45,7 +45,7 @@
           "rm -rf vendor/.meta"
         ],
         "dir": "vendor",
-        "sha256": "28c699520fd30ef3883805bcff62fb4326ee925d323480cef9f092aa7251dde3"
+        "sha256": "06d9ab31a1adb4a941703e9570ec991d34b3f8c7408460e90523ee67052ee4dc"
       },
       "env": { "JDK_JAVA_OPTIONS": "-Duser.timezone=UTC" },
       "build": [

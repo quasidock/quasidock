@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # Builds recipes and publishes them as images, each tagged with its app's
-# version and "latest", to the default registry (ghcr.io/zigsaw-io) or the
+# version and "latest", to the default registry (ghcr.io/quasidock/quasidock) or the
 # one in QUASIDOCK_REGISTRY; then the registry's catalog of the apps, which
 # `quasidock search` reads.
 #
 #   scripts/publish.sh [--skip-unchanged[=REV]] [recipe.json...]
 #                                  (default: those in published-recipes.txt)
+#   scripts/publish.sh --stage ci-RUN_ID APP-ID   stage an already-built image
 #
 # With --skip-unchanged, only new or changed recipes are built and published,
 # as git sees them: a recipe is changed if it, a file in the directory
@@ -43,7 +44,26 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/images.sh"
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
 quasidock=${QUASIDOCK:-$root/out/bin/quasidock.exe}
-registry=${QUASIDOCK_REGISTRY:-ghcr.io/zigsaw-io}
+registry=${QUASIDOCK_REGISTRY:-ghcr.io/quasidock/quasidock}
+
+# CI workers stage already-built allowlisted images. Signing and promotion are
+# separate steps; a worker must never move version, latest, or catalog tags.
+if [ "${1:-}" = --stage ]; then
+    [ $# -eq 3 ] || { echo 'usage: publish.sh --stage TAG APP-ID' >&2; exit 2; }
+    stage=$2 id=$3 found=false
+    [[ $stage =~ ^ci-[0-9]+$ ]] || { echo 'error: staging tags must be ci-RUN_ID' >&2; exit 2; }
+    while IFS= read -r file; do
+        file=${file%$'\r'}
+        case $file in ''|'#'*) continue ;; esac
+        candidate=$(grep -o '"id": *"[^"]*"' "$root/recipes/$file" | head -1 | cut -d'"' -f4)
+        [ "$candidate" != "$id" ] || found=true
+    done <"$root/scripts/published-recipes.txt"
+    $found || { echo "error: $id is not in the publish allowlist" >&2; exit 1; }
+    target="$registry/$id:$stage"
+    "$quasidock" tag "$id" "$target"
+    "$quasidock" push --sources "$target"
+    exit
+fi
 
 changed=
 skipped=()
@@ -82,7 +102,7 @@ done
 # What's published here gets signed, as pull warns about what isn't: better found out
 # now than after an hour of building.
 sign=false
-if [ "$registry" = ghcr.io/zigsaw-io ]; then
+if [ "$registry" = ghcr.io/quasidock/quasidock ]; then
     sign=true
     [ -n "${COSIGN_KEY:-}" ] && [ -f "$COSIGN_KEY" ] ||
         { echo "error: COSIGN_KEY must name the key that signs what's published here: see scripts/signing-key.sh" >&2; exit 1; }
@@ -166,7 +186,8 @@ case $registry in
 ghcr.io/*)
     echo
     echo "New packages on ghcr.io are private, the catalog's too (\"catalog\"). Make each one public under"
-    echo "https://github.com/orgs/${registry#ghcr.io/}/packages -> the package -> Package settings."
+    owner=${registry#ghcr.io/}
+    echo "https://github.com/orgs/${owner%%/*}/packages -> the package -> Package settings."
     ;;
 esac
 

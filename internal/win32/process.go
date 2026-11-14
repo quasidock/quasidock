@@ -6,23 +6,23 @@ import (
 )
 
 var (
-	procSetEnvironmentVariableW = modKernel32.NewProc("SetEnvironmentVariableW")
-	procExitProcess             = modKernel32.NewProc("ExitProcess")
-	procCreateProcessWithLogonW = modAdvapi32.NewProc("CreateProcessWithLogonW")
-	procIsProcessInJob          = modKernel32.NewProc("IsProcessInJob")
-	procAssignProcessToJobObject = modKernel32.NewProc("AssignProcessToJobObject")
-	procResumeThread            = modKernel32.NewProc("ResumeThread")
-	procCreateToolhelp32Snapshot = modKernel32.NewProc("CreateToolhelp32Snapshot")
-	procProcess32FirstW          = modKernel32.NewProc("Process32FirstW")
-	procProcess32NextW           = modKernel32.NewProc("Process32NextW")
-	procIsTokenRestricted        = modAdvapi32.NewProc("IsTokenRestricted")
+	procSetEnvironmentVariableW   = modKernel32.NewProc("SetEnvironmentVariableW")
+	procExitProcess               = modKernel32.NewProc("ExitProcess")
+	procCreateProcessWithLogonW   = modAdvapi32.NewProc("CreateProcessWithLogonW")
+	procIsProcessInJob            = modKernel32.NewProc("IsProcessInJob")
+	procAssignProcessToJobObject  = modKernel32.NewProc("AssignProcessToJobObject")
+	procResumeThread              = modKernel32.NewProc("ResumeThread")
+	procCreateToolhelp32Snapshot  = modKernel32.NewProc("CreateToolhelp32Snapshot")
+	procProcess32FirstW           = modKernel32.NewProc("Process32FirstW")
+	procProcess32NextW            = modKernel32.NewProc("Process32NextW")
+	procIsTokenRestricted         = modAdvapi32.NewProc("IsTokenRestricted")
 	procNtQueryInformationProcess = modNtdll.NewProc("NtQueryInformationProcess")
 )
 
 const (
-	LOGON_WITH_PROFILE DWORD = 1
-	CREATE_SUSPENDED   DWORD = 0x00000004
-	TH32CS_SNAPPROCESS DWORD = 0x00000002
+	LOGON_WITH_PROFILE            DWORD = 1
+	CREATE_SUSPENDED              DWORD = 0x00000004
+	TH32CS_SNAPPROCESS            DWORD = 0x00000002
 	ProcessCommandLineInformation int32 = 60
 )
 

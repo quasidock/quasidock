@@ -31,6 +31,7 @@ on:
 
 permissions:
   contents: read
+  packages: read
 
 # A newer push to the same branch or pull request makes an older run moot.
 concurrency:
@@ -45,11 +46,17 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: '1.26'
       - name: Local images, containers, mounts, and sandbox integration
-        run: go test -count=1 ./internal/store ./internal/cli ./internal/environment ./internal/mounts ./internal/grants ./internal/hkcu ./internal/run
+        run: go test -count=1 ./internal/store ./internal/cli ./internal/environment ./internal/mounts ./internal/grants ./internal/hkcu ./internal/run ./internal/publishing ./cmd/quasidock-publish
+
+      - name: Candidate publishing contract, offline
+        shell: bash
+        run: |
+          bash tests/publish.sh
+          bash tests/pins.sh
 
   # Requests to the registry, no building: Linux is enough.
   pins:
@@ -113,7 +120,7 @@ jobs:
           echo "build=$build" | tee -a "$GITHUB_OUTPUT"
 
   published:
-    needs: groups
+    needs: [groups, pins]
     name: published (${{ matrix.group }})
     strategy:
       fail-fast: false
@@ -137,7 +144,7 @@ jobs:
           persist-credentials: false
           submodules: true
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: '1.26'
 
@@ -146,6 +153,13 @@ jobs:
         run: |
           t=$RUNNER_TEMP
           printf '%s\n' "TMP=$t" "TEMP=$t" "BUILD_HOME=$t\\store" "LOG_DIR=$t\\logs" >>"$GITHUB_ENV"
+
+      - name: Seed BusyBox sources from GHCR
+        env:
+          QUASIDOCK_HOME: ${{ runner.temp }}\store
+          QUASIDOCK_REGISTRY_USERNAME: ${{ github.actor }}
+          QUASIDOCK_REGISTRY_PASSWORD: ${{ github.token }}
+        run: go run ./cmd/quasidock-publish seed-busybox
 
       - name: Build quasidock
         run: go run ./scripts/build.go
@@ -171,6 +185,7 @@ jobs:
           retention-days: 14
 
   suites:
+    needs: pins
     runs-on: windows-2025
     # The suites took 6 minutes after iteration 32, in the job that had built
     # their apps.
@@ -181,7 +196,7 @@ jobs:
           persist-credentials: false
           submodules: true
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: '1.26'
 
@@ -190,6 +205,13 @@ jobs:
         run: |
           t=$RUNNER_TEMP
           printf '%s\n' "TMP=$t" "TEMP=$t" "BUILD_HOME=$t\\store" "SEED_DOWNLOADS=$t\\store\\cache\\downloads" "LOG_DIR=$t\\logs" >>"$GITHUB_ENV"
+
+      - name: Seed BusyBox sources from GHCR
+        env:
+          QUASIDOCK_HOME: ${{ runner.temp }}\store
+          QUASIDOCK_REGISTRY_USERNAME: ${{ github.actor }}
+          QUASIDOCK_REGISTRY_PASSWORD: ${{ github.token }}
+        run: go run ./cmd/quasidock-publish seed-busybox
 
       - name: Build quasidock
         run: go run ./scripts/build.go
@@ -372,6 +394,7 @@ jobs:
   # Run as a real standard user, which the runner's own account isn't: it's
   # elevated. It makes one, that lasts as long as the runner does.
   standard-user:
+    needs: pins
     runs-on: windows-2025
     timeout-minutes: 45
     steps:
@@ -380,7 +403,7 @@ jobs:
           persist-credentials: false
           submodules: true
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: '1.26'
 
@@ -398,6 +421,15 @@ jobs:
           printf '%s\n' "TMP=$t" "TEMP=$t" "LOG_DIR=$t\\logs" >>"$GITHUB_ENV"
           mkdir -p "$t/logs"
 
+      - name: Seed BusyBox sources from GHCR
+        env:
+          QUASIDOCK_HOME: ${{ runner.temp }}\seed-store
+          QUASIDOCK_REGISTRY_USERNAME: ${{ github.actor }}
+          QUASIDOCK_REGISTRY_PASSWORD: ${{ github.token }}
+        run: |
+          go run ./cmd/quasidock-publish seed-busybox
+          "SEED_DOWNLOADS=$env:QUASIDOCK_HOME\cache\downloads" >> $env:GITHUB_ENV
+
       - name: tests/standard-user.sh
         shell: bash
         run: bash tests/standard-user.sh "$RUNNER_TEMP/account.txt" 2>&1 | tee "$(cygpath -u "$LOG_DIR")/standard-user.txt"
@@ -411,7 +443,7 @@ jobs:
           if-no-files-found: ignore
 
   build:
-    needs: groups
+    needs: [groups, pins]
     name: build (${{ matrix.group }})
     strategy:
       fail-fast: false
@@ -425,7 +457,7 @@ jobs:
           persist-credentials: false
           submodules: true
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: '1.26'
 
@@ -444,6 +476,15 @@ jobs:
               echo "::error::internal/version/version.go has no valid version, $version"
               exit 1
           fi
+
+      - name: Seed BusyBox sources from GHCR
+        env:
+          QUASIDOCK_HOME: ${{ runner.temp }}\store
+          QUASIDOCK_REGISTRY_USERNAME: ${{ github.actor }}
+          QUASIDOCK_REGISTRY_PASSWORD: ${{ github.token }}
+        run: |
+          go run ./cmd/quasidock-publish seed-busybox
+          "SEED_DOWNLOADS=$env:QUASIDOCK_HOME\cache\downloads" >> $env:GITHUB_ENV
 
       - name: Unit tests
         if: matrix.group == 'base'

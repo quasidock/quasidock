@@ -20,7 +20,13 @@
     "network": true,
     "filesystem": ["cwd"]
   },
-  "from": { "java": "java-sdk:25.0.5_8@sha256:e0e6bf207799725067178eca9c1df29a564d47a618319aae46b23ee72e821418" },
+  "from": { "java": "java-sdk:25.0.5_8@sha256:8febd72d8cddbf9ca931a3b95d4714dd190f86428adba1b70deffa2fcf81c23d" },
+  "env": { "QUASIDOCK_GRADLE_JAVA": "${java}\\bin\\java.exe" },
+  "path": ["sdk-bin", "."],
+  "sdk": {
+    "zig": "zig:0.17.0@sha256:56fc3e4f42c25dbf70236aedb053606311cb2d4b582ad4d1e26e76036c08eab1",
+    "busybox": "busybox:FRP-6075-g169694ebd@sha256:baca1ecd27b7b5ffe54402d4f8b6e36802d9db5e0e4cb2b7ab13104031045c50"
+  },
   "stages": [
     {
       "name": "gradle",
@@ -33,6 +39,18 @@
       "sources": [
         { "path": "gradle/zigsaw-offline.gradle", "dest": "init.d/zigsaw-offline.gradle" },
         { "path": "gradle/GradleVendor.java", "dest": "zigsaw/GradleVendor.java" }
+      ]
+    },
+    {
+      "name": "sdk-commands",
+      "sources": [
+        { "path": "sdk-tools/launcher.c", "dest": "launcher.c" },
+        { "path": "gradle/commands.h", "dest": "commands.h" }
+      ],
+      "build": [
+        "mkdir -p \"$PREFIX/sdk-bin\"",
+        "cc.exe -O2 -municode -s -Wl,-Brepro launcher.c -o \"$PREFIX/sdk-bin/gradle.exe\"",
+        "cp \"$PREFIX/sdk-bin/gradle.exe\" \"$PREFIX/sdk-bin/gradle-vendor.exe\""
       ]
     }
   ]

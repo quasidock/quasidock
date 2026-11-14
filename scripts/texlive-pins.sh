@@ -14,7 +14,8 @@
 # recipe along with the version (<release>.<repository revision>). A package
 # updated while it runs fails it; run it again.
 #
-# MIRROR is the tlnet URL the recipe pins (default: MIT's CTAN mirror);
+# TEXLIVE_SNAPSHOT is a YYYY/MM/DD snapshot (default: yesterday, UTC).
+# MIRROR overrides its tlnet URL (default: texlive.info's immutable archive);
 # SCHEME the scheme (default scheme-small); TEXLIVE_PINS_CACHE keeps the
 # downloads between runs (default: texlive-pins in TMPDIR). Needs curl, xz
 # and Git Bash, not quasidock.
@@ -23,7 +24,8 @@ set -eu
 export MSYS_NO_PATHCONV=1
 
 root=$(cd "$(dirname "$0")/.." && pwd)
-mirror=${MIRROR:-https://mirrors.mit.edu/CTAN/systems/texlive/tlnet}
+snapshot=${TEXLIVE_SNAPSHOT:-$(date -u -d yesterday +%Y/%m/%d)}
+mirror=${MIRROR:-https://texlive.info/tlnet-archive/$snapshot/tlnet}
 mirror=${mirror%/}
 scheme=${SCHEME:-scheme-small}
 cache=${TEXLIVE_PINS_CACHE:-${TMPDIR:-/tmp}/texlive-pins}
@@ -128,7 +130,7 @@ sed -i 's|"dest": "install-tl" }|"dest": "install-tl", "strip": 1 }|' "$cache/so
         "tlpdbopt_install_docfiles 0" "tlpdbopt_install_srcfiles 0" "tlpdbopt_post_code 1" "tlpdbopt_w32_multi_user 0"
 } >"$root/recipes/texlive/texlive.profile"
 
-epoch=$(($(date -u +%s) / 86400 * 86400))
+epoch=$(date -u -d "${snapshot//\//-} 00:00:00" +%s)
 awk -v version="$release.$revision" -v epoch="$epoch" -v sources="$cache/sources.json" '
 /^ *@SOURCES@$/ { while ((getline l <sources) > 0) print l; next }
 { gsub(/@VERSION@/, version); gsub(/@EPOCH@/, epoch); print }' "$template" >"$out"

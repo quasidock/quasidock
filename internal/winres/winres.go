@@ -220,13 +220,13 @@ func buildCOFF(versionData, manifestData []byte) ([]byte, error) {
 	// Total metadata size = 128 + 32 = 160 bytes.
 
 	offsetRoot := uint32(0)
-	offsetTypeVersion := offsetRoot + 16 + 2*8 // 32
-	offsetTypeManifest := offsetTypeVersion + 16 + 8 // 56
-	offsetIDVersion := offsetTypeManifest + 16 + 8   // 80
-	offsetIDManifest := offsetIDVersion + 16 + 8     // 104
-	offsetDataEntryVersion := offsetIDManifest + 16 + 8 // 128
+	offsetTypeVersion := offsetRoot + 16 + 2*8             // 32
+	offsetTypeManifest := offsetTypeVersion + 16 + 8       // 56
+	offsetIDVersion := offsetTypeManifest + 16 + 8         // 80
+	offsetIDManifest := offsetIDVersion + 16 + 8           // 104
+	offsetDataEntryVersion := offsetIDManifest + 16 + 8    // 128
 	offsetDataEntryManifest := offsetDataEntryVersion + 16 // 144
-	offsetRawData := offsetDataEntryManifest + 16 // 160
+	offsetRawData := offsetDataEntryManifest + 16          // 160
 
 	// Raw data alignment to 8 bytes
 	rawVersionOffset := offsetRawData
@@ -309,14 +309,14 @@ func buildCOFF(versionData, manifestData []byte) ([]byte, error) {
 	// Section Header (40 bytes)
 	sec := make([]byte, 40)
 	copy(sec[0:8], []byte(".rsrc\x00\x00\x00"))
-	binary.LittleEndian.PutUint32(sec[8:12], 0)                // VirtualSize
-	binary.LittleEndian.PutUint32(sec[12:16], 0)               // VirtualAddress
-	binary.LittleEndian.PutUint32(sec[16:20], totalSectionSize) // SizeOfRawData
+	binary.LittleEndian.PutUint32(sec[8:12], 0)                  // VirtualSize
+	binary.LittleEndian.PutUint32(sec[12:16], 0)                 // VirtualAddress
+	binary.LittleEndian.PutUint32(sec[16:20], totalSectionSize)  // SizeOfRawData
 	binary.LittleEndian.PutUint32(sec[20:24], offsetSectionData) // PointerToRawData
 	binary.LittleEndian.PutUint32(sec[24:28], offsetRelocs)      // PointerToRelocations
-	binary.LittleEndian.PutUint32(sec[28:32], 0)                // PointerToLinenumbers
-	binary.LittleEndian.PutUint16(sec[32:34], 2)                // NumberOfRelocations
-	binary.LittleEndian.PutUint16(sec[34:36], 0)                // NumberOfLinenumbers
+	binary.LittleEndian.PutUint32(sec[28:32], 0)                 // PointerToLinenumbers
+	binary.LittleEndian.PutUint16(sec[32:34], 2)                 // NumberOfRelocations
+	binary.LittleEndian.PutUint16(sec[34:36], 0)                 // NumberOfLinenumbers
 	// IMAGE_SCN_CNT_INITIALIZED_DATA | IMAGE_SCN_MEM_READ | IMAGE_SCN_MEM_WRITE
 	binary.LittleEndian.PutUint32(sec[36:40], 0x40000040)
 	coff.Write(sec)
@@ -330,13 +330,13 @@ func buildCOFF(versionData, manifestData []byte) ([]byte, error) {
 	reloc1 := make([]byte, 10)
 	binary.LittleEndian.PutUint32(reloc1[0:4], offsetDataEntryVersion) // rva of Version Data Entry's OffsetToData
 	binary.LittleEndian.PutUint32(reloc1[4:8], 0)                      // Symbol 0 (.rsrc)
-	binary.LittleEndian.PutUint16(reloc1[8:10], 3)                      // IMAGE_REL_AMD64_ADDR32NB
+	binary.LittleEndian.PutUint16(reloc1[8:10], 3)                     // IMAGE_REL_AMD64_ADDR32NB
 	coff.Write(reloc1)
 
 	reloc2 := make([]byte, 10)
 	binary.LittleEndian.PutUint32(reloc2[0:4], offsetDataEntryManifest) // rva of Manifest Data Entry's OffsetToData
 	binary.LittleEndian.PutUint32(reloc2[4:8], 0)                       // Symbol 0 (.rsrc)
-	binary.LittleEndian.PutUint16(reloc2[8:10], 3)                       // IMAGE_REL_AMD64_ADDR32NB
+	binary.LittleEndian.PutUint16(reloc2[8:10], 3)                      // IMAGE_REL_AMD64_ADDR32NB
 	coff.Write(reloc2)
 
 	// Symbol Table (1 symbol: 18 bytes)

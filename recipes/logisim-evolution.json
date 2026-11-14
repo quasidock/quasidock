@@ -10,10 +10,10 @@
     "filesystem": ["cwd"]
   },
   "registry": ["Software\\JavaSoft\\Prefs\\com\\cburch\\logisim"],
-  "from": { "java": "java:25.0.5_8@sha256:95555a36dec93c035655f66162ec5b557feaecb14c4cab3320a9181a93f1c823" },
+  "from": { "java": "java:25.0.5_8@sha256:cf6e3c25a745b91bd94d4aebff340702f7ef7e6935f1f91c9ef322daec09291d" },
   "sdk": {
-    "gradle": "gradle:9.8.1@sha256:8050cb2afa977601b0969f067a1eb460c3f5fa147911bd599c89307136b843c8",
-    "busybox": "busybox:FRP-6075-g169694ebd@sha256:db9d39727bfdd4d176b5878c0a125daa8a2396ea21e0f01a6a372f53d9d97e5d"
+    "gradle": "gradle:9.8.1@sha256:b9fb24491d6aac1653495cc256175dede16d1ec68a689e211503307950b5e1c3",
+    "busybox": "busybox:FRP-6075-g169694ebd@sha256:baca1ecd27b7b5ffe54402d4f8b6e36802d9db5e0e4cb2b7ab13104031045c50"
   },
   "stages": [
     {
@@ -24,7 +24,7 @@
       "vendor": {
         "commands": ["gradle -g gradle-home shadowJar", "gradle-vendor gradle-home vendor"],
         "dir": "vendor",
-        "sha256": "e780a6a296e1df3987e950f5ce9627fb63c97d8789ad2ccf61fff1fc6211ac5c"
+        "sha256": "deb7845550bf95202fa4f195795ce4966d64913f63c5f9f54fa43ed9f18ebbe7"
       },
       "build": [
         "sed -i -e 's/val now = Date()/val now = Date(1789185815000L)/' -e 's/val nowIso = SimpleDateFormat(.*/val nowIso = \"2026-09-12T04:03:35+0000\"/' -e 's/val currentMillis = Date().time/val currentMillis = now.time/' -e 's/val buildYear = SimpleDateFormat(\"yyyy\").format(now)/val buildYear = \"2026\"/' build.gradle.kts",

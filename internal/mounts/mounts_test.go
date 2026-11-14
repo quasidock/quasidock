@@ -62,6 +62,11 @@ func TestJunctionCleanupPreservesBackingData(t *testing.T) {
 			if err := os.MkdirAll(source, 0o755); err != nil {
 				t.Fatal(err)
 			}
+			// Temp directories may use Windows short names; compare resolved paths.
+			canonicalSource, err := CanonicalDir(source)
+			if err != nil {
+				t.Fatal(err)
+			}
 			if err := os.MkdirAll(data, 0o755); err != nil {
 				t.Fatal(err)
 			}
@@ -78,7 +83,7 @@ func TestJunctionCleanupPreservesBackingData(t *testing.T) {
 			if err := os.MkdirAll(filepath.Join(m.Destination, "registry"), 0o755); err != nil {
 				t.Fatal(err)
 			}
-			if resolved, err := CanonicalDir(filepath.Join(m.Destination, "registry")); err != nil || resolved != filepath.Join(source, "registry") {
+			if resolved, err := CanonicalDir(filepath.Join(m.Destination, "registry")); err != nil || resolved != filepath.Join(canonicalSource, "registry") {
 				t.Fatalf("canonical directory beneath junction: %s %v", resolved, err)
 			}
 			if b, err := os.ReadFile(filepath.Join(m.Destination, "sentinel")); err != nil || string(b) != "keep me" {

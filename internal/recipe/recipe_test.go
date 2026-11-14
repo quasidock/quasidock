@@ -282,6 +282,25 @@ func TestGlobMatch(t *testing.T) {
 	}
 }
 
+func TestSourceMirrorsRequirePinnedRegistryImages(t *testing.T) {
+	for _, tc := range []struct {
+		mirror string
+		valid  bool
+	}{
+		{"ghcr.io/old/app@sha256:" + strings.Repeat("a", 64), true},
+		{"ghcr.io/old/app:latest", false},
+		{"app@sha256:" + strings.Repeat("a", 64), false},
+		{"https://example.com/archive.tar.xz", false},
+		{"ghcr.io/old/app@sha256:bad", false},
+	} {
+		data := `{"id":"app","version":"1","entrypoint":"app.exe","source_mirrors":["` + tc.mirror + `"],"stages":[{"name":"main","sources":[{"path":"app.exe"}]}]}`
+		_, err := Parse("app.json", []byte(data))
+		if (err == nil) != tc.valid {
+			t.Fatalf("source mirror %q: %v", tc.mirror, err)
+		}
+	}
+}
+
 func TestAllRecipesParse(t *testing.T) {
 	var files []string
 	for _, pattern := range []string{"../../recipes/*.json", "../../recipes/no-publish/*.json"} {

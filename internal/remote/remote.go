@@ -580,7 +580,13 @@ func fetchInfo(st *store.Store, envRegistry, imageText string, verbose, verify b
 		}
 	}
 	if cfgBytes == nil {
-		tmp, err := os.CreateTemp("", "quasidock-cfg-*.json")
+		// PutBlobFile commits with a rename, so cached downloads must start on
+		// the store's filesystem rather than a possibly different TEMP drive.
+		tmpDir := ""
+		if st != nil {
+			tmpDir = st.Path("tmp")
+		}
+		tmp, err := os.CreateTemp(tmpDir, "quasidock-cfg-*.json")
 		if err != nil {
 			return Info{}, err
 		}
@@ -1240,8 +1246,10 @@ func PushSignature(ctx *context.Context, imageText string, payload []byte, text 
 	}
 
 	manifest := oci.Manifest{
-		Config: cfgDesc,
-		Layers: layers,
+		SchemaVersion: 2,
+		MediaType:     oci.MediaTypeManifest,
+		Config:        cfgDesc,
+		Layers:        layers,
 	}
 	mBytes, err := json.Marshal(manifest)
 	if err != nil {
@@ -1324,5 +1332,8 @@ func Push(ctx *context.Context, imageText string, opts PushOptions) error {
 		return err
 	}
 	context.Note("pushed %s %s to %s\n  manifest %s", id, installed.Version, ref.String(), installed.Manifest)
+	if opts.Sources {
+		return pushSources(ctx, reg, image.Config, installed.Manifest, installed.Source)
+	}
 	return nil
 }

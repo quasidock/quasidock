@@ -4,7 +4,7 @@ Quasidock runs sandboxed Windows programs from OCI-distributed images using a
 Docker-style CLI. It is a Go fork of [Zigsaw](https://github.com/zigsaw-io/zigsaw),
 focused on image distribution and native Windows execution.
 
-Version **0.7.0** supports Docker-style container lifecycle management (`run`, `ps`,
+Version **0.8.0** supports Docker-style container lifecycle management (`run`, `ps`,
 `logs`, `stop`, `rm`, `inspect`, `prune`), per-container isolated data, image
 management, named volumes, local directory bind mounts, and Quasidock images for
 `windows/amd64`. Dockerfiles, the Docker Engine API, and general Docker images
@@ -46,7 +46,7 @@ executables, without downloaded applications.
 
 References are `registry/repository[:tag][@sha256:...]`, or
 `app-id[:tag][@digest]` in the default registry. The default is
-`ghcr.io/zigsaw-io`; `QUASIDOCK_REGISTRY` changes it. An omitted remote tag is
+`ghcr.io/quasidock/quasidock`; `QUASIDOCK_REGISTRY` changes it. An omitted remote tag is
 `latest`. Full `sha256:...` IDs select cached manifests locally.
 
 Multiple versions coexist. A bare cached app ID selects its last successful
@@ -205,6 +205,18 @@ Recipe builds remain available through `build [recipe.json|directory]` (using
 placeholders, vendoring, and pinned dependencies.
 
 ## Upgrading
+
+### From 0.7 to 0.8
+
+The default registry is now `ghcr.io/quasidock/quasidock`. Explicit references, registry
+overrides, cached image selections, and existing containers remain intact; no
+store migration is required. To select another registry, set `QUASIDOCK_REGISTRY`.
+
+Maintainers publish all distributable recipe images with the manual **Publish
+images** workflow. Bootstrap produces candidate images and a reviewable pin patch;
+publish mode verifies committed pins before updating release tags and the catalog.
+See [publishing setup and rollout](docs/publishing.md), including the signing key
+and one-time public package settings. Complete that rollout before releasing 0.8.
 
 ### From 0.6 to 0.7
 
