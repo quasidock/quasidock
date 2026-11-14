@@ -4,6 +4,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"time"
@@ -40,6 +41,26 @@ func main() {
 				os.Exit(3)
 			}
 			fmt.Print(string(data))
+			return
+		case "stdin":
+			data, err := io.ReadAll(os.Stdin)
+			if err != nil || len(data) == 0 {
+				os.Exit(4)
+			}
+			_, _ = os.Stdout.Write(data)
+			return
+		case "log":
+			if len(args) > 1 {
+				fmt.Fprintln(os.Stdout, args[1])
+			}
+			if len(args) > 2 {
+				fmt.Fprintln(os.Stderr, args[2])
+			}
+			return
+		case "lines":
+			for _, line := range args[1:] {
+				fmt.Fprintln(os.Stdout, line)
+			}
 			return
 		}
 	}

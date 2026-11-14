@@ -3,9 +3,11 @@ package run
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 	"unsafe"
 
@@ -35,7 +37,6 @@ type Settings struct {
 	Host         *bool
 	Env          []string
 	Ports        []string
-	Ephemeral    *bool
 }
 
 // SandboxOf returns the sandbox chosen for a run from settings and image permissions.
@@ -99,12 +100,30 @@ func grantKey(spec string) string {
 }
 
 type Options struct {
-	ID         string
-	Args       []string
-	Entrypoint *string
-	Pull       string
-	Image      *store.Ref
-	Settings   Settings
+	ID          string
+	Args        []string
+	Entrypoint  *string
+	Pull        string
+	Image       *store.Ref
+	Name        string
+	Detach      bool
+	AutoRemove  bool
+	Interactive bool
+	TTY         bool
+	ContainerID string
+	Settings    Settings
+}
+
+// ReadyEventName returns the named manual-reset Win32 event signaled by a
+// detached container supervisor once the container process has launched.
+func ReadyEventName(id string) string {
+	return `Local\quasidock-ctr-ready-` + id
+}
+
+// StopEventName returns the named manual-reset Win32 event signaled to ask a
+// running container to stop gracefully before force termination.
+func StopEventName(id string) string {
+	return `Local\quasidock-ctr-stop-` + id
 }
 
 type HostGrant struct {
@@ -126,6 +145,8 @@ func Run(ctx *context.Context, opts Options) (uint32, error) {
 		return 1, err
 	}
 	defer storeLock.Release()
+
+	imageRef := opts.ID
 	selected := opts.Image
 	if selected == nil {
 		selected, err = ctx.Store.ResolveLocalImage(ctx.Env["QUASIDOCK_REGISTRY"], opts.ID)
@@ -137,6 +158,9 @@ func Run(ctx *context.Context, opts Options) (uint32, error) {
 		if err != nil {
 			return 1, err
 		}
+	}
+	if imageRef == "" {
+		imageRef = selected.ID
 	}
 	opts.ID = selected.ID
 
@@ -158,11 +182,366 @@ func Run(ctx *context.Context, opts Options) (uint32, error) {
 		storeLock.Release()
 		return 1, err
 	}
+
+	fsSpecs := opts.Settings.FilesystemFor(img.Config.Permissions.Filesystem)
+	for _, spec := range fsSpecs {
+		if g := oci.ParseFsGrant(spec); g == nil {
+			img.Release()
+			storeLock.Release()
+			return 1, ctx.Fail("invalid filesystem permission %q", spec)
+		}
+	}
+
+	hostCwd, err := os.Getwd()
+	if err != nil {
+		img.Release()
+		storeLock.Release()
+		return 1, err
+	}
+
+	var sandboxStr string
+	if opts.Settings.Sandbox != nil {
+		sandboxStr = string(*opts.Settings.Sandbox)
+	}
+	rec := store.ContainerRecord{
+		Image:      selected.Manifest,
+		ImageRef:   imageRef,
+		AppID:      img.Config.ID,
+		AppVersion: img.Config.Version,
+		Args:       append([]string(nil), opts.Args...),
+		Config: store.ContainerConfig{
+			Image:       imageRef,
+			Cmd:         append([]string(nil), opts.Args...),
+			Env:         append([]string(nil), opts.Settings.Env...),
+			Tty:         opts.TTY,
+			AttachStdin: !opts.Detach && opts.Interactive,
+			OpenStdin:   opts.Interactive,
+		},
+		HostConfig: store.ContainerHostConfig{
+			AutoRemove:   opts.AutoRemove,
+			Sandbox:      sandboxStr,
+			Network:      opts.Settings.Network,
+			Host:         opts.Settings.Host,
+			Filesystem:   append([]string(nil), opts.Settings.Filesystem...),
+			NoFilesystem: append([]string(nil), opts.Settings.NoFilesystem...),
+			Ports:        append([]string(nil), opts.Settings.Ports...),
+		},
+		RunSpec: store.ContainerRunSpec{
+			Args:       append([]string(nil), opts.Args...),
+			Entrypoint: opts.Entrypoint,
+			Env:        append([]string(nil), opts.Settings.Env...),
+			HostCwd:    hostCwd,
+		},
+	}
+	if opts.Entrypoint != nil {
+		rec.Config.Entrypoint = []string{*opts.Entrypoint}
+	}
+
+	created, err := ctx.Store.CreateContainer(opts.Name, rec)
+	if err != nil {
+		img.Release()
+		storeLock.Release()
+		return 1, err
+	}
+	opts.ContainerID = created.ID
+
+	if opts.Detach {
+		img.Release()
+		storeLock.Release()
+		return detachContainer(ctx, created, opts.AutoRemove, hostCwd)
+	}
+
+	storeLock.Release()
+	return executeContainer(ctx, created, selected, img, lazyLayers, failuresBefore, opts, hostCwd, false, 0)
+}
+
+func detachContainer(ctx *context.Context, created *store.ContainerRecord, autoRemove bool, hostCwd string) (uint32, error) {
+	readyEvent, err := win32.CreateEvent(ReadyEventName(created.ID), true, false)
+	if err != nil {
+		if autoRemove {
+			_ = ctx.Store.RemoveContainer(created.ID)
+		}
+		return 1, fmt.Errorf("creating container ready event: %w", err)
+	}
+	defer win32.CloseHandle(readyEvent)
+
+	exePath, err := os.Executable()
+	if err != nil {
+		if autoRemove {
+			_ = ctx.Store.RemoveContainer(created.ID)
+		}
+		return 1, err
+	}
+	var supArgs []string
+	if ctx.Verbose {
+		supArgs = append(supArgs, "--verbose")
+	}
+	supArgs = append(supArgs, "container-supervisor", ctx.Store.Root, created.ID)
+	cmdline := process.BuildCommandLine(exePath, supArgs)
+	det, err := process.StartDetached(exePath, cmdline, hostCwd)
+	if err != nil {
+		if autoRemove {
+			_ = ctx.Store.RemoveContainer(created.ID)
+		}
+		return 1, fmt.Errorf("starting detached supervisor: %w", err)
+	}
+	defer win32.CloseHandle(det.Process)
+
+	waitRes := win32.WaitForMultipleObjects([]win32.HANDLE{det.Process, readyEvent}, false, 30000)
+	switch waitRes {
+	case win32.WAIT_OBJECT_0 + 1:
+		rec, readErr := ctx.Store.ReadContainer(created.ID)
+		if readErr == nil && rec != nil && rec.State.Error != "" {
+			if autoRemove {
+				_ = ctx.Store.RemoveContainer(created.ID)
+			}
+			return 1, errors.New(rec.State.Error)
+		}
+		out := ctx.Stdout
+		if out == nil {
+			out = os.Stdout
+		}
+		fmt.Fprintln(out, created.ID)
+		return 0, nil
+	case win32.WAIT_OBJECT_0:
+		rec, readErr := ctx.Store.ReadContainer(created.ID)
+		if autoRemove {
+			_ = ctx.Store.RemoveContainer(created.ID)
+		}
+		if readErr == nil && rec != nil && rec.State.Error != "" {
+			return 1, errors.New(rec.State.Error)
+		}
+		return 1, errors.New("container supervisor exited before container started")
+	case win32.WAIT_TIMEOUT:
+		if autoRemove {
+			_ = ctx.Store.RemoveContainer(created.ID)
+		}
+		return 1, fmt.Errorf("timed out waiting for container %s to start", created.ShortID())
+	default:
+		if autoRemove {
+			_ = ctx.Store.RemoveContainer(created.ID)
+		}
+		return 1, fmt.Errorf("waiting for detached container %s: %d", created.ShortID(), waitRes)
+	}
+}
+
+// Supervise executes a previously created container in the background under a
+// detached supervisor process.
+func Supervise(ctx *context.Context, containerID string) (uint32, error) {
+	rec, err := ctx.Store.ReadContainer(containerID)
+	if err != nil {
+		return 1, err
+	}
+	var sandboxPtr *oci.Sandbox
+	if rec.HostConfig.Sandbox != "" {
+		sb := oci.Sandbox(rec.HostConfig.Sandbox)
+		sandboxPtr = &sb
+	}
+	opts := Options{
+		ID:          rec.AppID,
+		Args:        append([]string(nil), rec.RunSpec.Args...),
+		Entrypoint:  rec.RunSpec.Entrypoint,
+		Detach:      true,
+		AutoRemove:  rec.HostConfig.AutoRemove,
+		Interactive: rec.Config.OpenStdin,
+		TTY:         rec.Config.Tty,
+		ContainerID: rec.ID,
+		Name:        rec.BareName(),
+		Settings: Settings{
+			Sandbox:      sandboxPtr,
+			Filesystem:   append([]string(nil), rec.HostConfig.Filesystem...),
+			NoFilesystem: append([]string(nil), rec.HostConfig.NoFilesystem...),
+			Network:      rec.HostConfig.Network,
+			Host:         rec.HostConfig.Host,
+			Env:          append([]string(nil), rec.RunSpec.Env...),
+			Ports:        append([]string(nil), rec.HostConfig.Ports...),
+		},
+	}
+
+	readyEvent, _ := win32.OpenEvent(ReadyEventName(containerID), win32.EVENT_MODIFY_STATE)
+	if readyEvent != 0 {
+		defer win32.CloseHandle(readyEvent)
+	}
+
+	storeLock, err := ctx.Store.Lock(false)
+	if err != nil {
+		recordLaunchFailure(ctx.Store, rec.ID, err)
+		return 1, err
+	}
+	selected, err := ctx.Store.ResolveLocalImage("", rec.Image)
+	if err != nil {
+		storeLock.Release()
+		recordLaunchFailure(ctx.Store, rec.ID, err)
+		return 1, err
+	}
+	lazyLayers, err := lazyLayersOf(ctx, selected.Manifest)
+	if err != nil {
+		storeLock.Release()
+		recordLaunchFailure(ctx.Store, rec.ID, err)
+		return 1, err
+	}
+	_ = lazy.EnsureServed(ctx.Store, lazyLayers, ctx.Verbose)
+	failuresBefore := make([]int, len(lazyLayers))
+	for i, l := range lazyLayers {
+		hex := oci.DigestHex(l.Digest)
+		fails, _ := lazy.FailedFetches(ctx.Store, hex, 0)
+		failuresBefore[i] = len(fails)
+	}
+	img, err := ctx.Store.LoadImageRef(*selected)
+	if err != nil {
+		storeLock.Release()
+		recordLaunchFailure(ctx.Store, rec.ID, err)
+		return 1, err
+	}
+	storeLock.Release()
+
+	hostCwd := rec.RunSpec.HostCwd
+	if hostCwd == "" {
+		hostCwd, _ = os.Getwd()
+	}
+	return executeContainer(ctx, rec, selected, img, lazyLayers, failuresBefore, opts, hostCwd, true, readyEvent)
+}
+
+func recordLaunchFailure(st *store.Store, id string, err error) {
+	if err == nil {
+		return
+	}
+	_, _ = st.UpdateContainer(id, func(c *store.ContainerRecord) error {
+		c.State.Running = false
+		c.State.Status = "created"
+		c.State.Pid = 0
+		c.State.ExitCode = 1
+		c.State.Error = err.Error()
+		c.State.FinishedAt = time.Now().UTC().Format(time.RFC3339Nano)
+		return nil
+	})
+}
+
+// StopContainer asks a running container to stop gracefully and force-terminates
+// its process if timeoutSec expires first.
+func StopContainer(ctx *context.Context, idOrName string, timeoutSec int) (*store.ContainerRecord, error) {
+	rec, err := ctx.Store.ResolveContainer(idOrName)
+	if err != nil {
+		return nil, err
+	}
+	if !rec.State.Running && !ctx.Store.IsContainerRunning(rec.ID) {
+		return rec, nil
+	}
+
+	if ev, err := win32.OpenEvent(StopEventName(rec.ID), win32.EVENT_MODIFY_STATE); err == nil && ev != 0 {
+		win32.SetEvent(ev)
+		win32.CloseHandle(ev)
+	}
+
+	if timeoutSec > 0 {
+		deadline := time.Now().Add(time.Duration(timeoutSec) * time.Second)
+		for time.Now().Before(deadline) {
+			if !ctx.Store.IsContainerRunning(rec.ID) {
+				return ctx.Store.ReadContainer(rec.ID)
+			}
+			time.Sleep(25 * time.Millisecond)
+		}
+	}
+
+	if ctx.Store.IsContainerRunning(rec.ID) && rec.State.Pid != 0 {
+		if h, err := win32.OpenProcess(win32.PROCESS_TERMINATE|win32.SYNCHRONIZE, false, win32.DWORD(rec.State.Pid)); err == nil && h != 0 {
+			_ = win32.TerminateProcess(h, 1)
+			win32.CloseHandle(h)
+		}
+		deadline := time.Now().Add(5 * time.Second)
+		for time.Now().Before(deadline) {
+			if !ctx.Store.IsContainerRunning(rec.ID) {
+				break
+			}
+			time.Sleep(25 * time.Millisecond)
+		}
+	}
+
+	updated, err := ctx.Store.ReadContainer(rec.ID)
+	if err != nil {
+		return rec, err
+	}
+	return updated, nil
+}
+
+func executeContainer(
+	ctx *context.Context,
+	created *store.ContainerRecord,
+	selected *store.Ref,
+	img *store.Image,
+	lazyLayers []oci.Descriptor,
+	failuresBefore []int,
+	opts Options,
+	hostCwd string,
+	detached bool,
+	readyEvent win32.HANDLE,
+) (uint32, error) {
+	runLock, err := store.OpenLock(ctx.Store.ContainerRunLockPath(created.ID), true, false)
+	if err != nil {
+		img.Release()
+		recordLaunchFailure(ctx.Store, created.ID, err)
+		return 1, err
+	}
+
+	var code uint32 = 1
+	var launched bool
+	var runErr error
+
+	defer func() {
+		now := time.Now().UTC().Format(time.RFC3339Nano)
+		if launched {
+			_, _ = ctx.Store.UpdateContainer(created.ID, func(c *store.ContainerRecord) error {
+				c.State.Running = false
+				c.State.Status = "exited"
+				c.State.Pid = 0
+				c.State.ExitCode = int(code)
+				c.State.FinishedAt = now
+				if runErr != nil {
+					c.State.Error = runErr.Error()
+				}
+				return nil
+			})
+		} else {
+			_, _ = ctx.Store.UpdateContainer(created.ID, func(c *store.ContainerRecord) error {
+				c.State.Running = false
+				c.State.Status = "created"
+				c.State.Pid = 0
+				c.State.ExitCode = 1
+				c.State.FinishedAt = now
+				if runErr != nil {
+					c.State.Error = runErr.Error()
+				}
+				return nil
+			})
+		}
+		runLock.Release()
+		if created.HostConfig.AutoRemove && (launched || !detached) {
+			_ = hkcu.SettleLeftovers(ctx.Store, img.Config.ID)
+			_ = ctx.Store.RemoveContainer(created.ID)
+		}
+	}()
+
+	code, launched, runErr = launchContainer(ctx, created, selected, img, lazyLayers, failuresBefore, opts, hostCwd, detached, readyEvent)
+	return code, runErr
+}
+
+func launchContainer(
+	ctx *context.Context,
+	created *store.ContainerRecord,
+	selected *store.Ref,
+	img *store.Image,
+	lazyLayers []oci.Descriptor,
+	failuresBefore []int,
+	opts Options,
+	hostCwd string,
+	detached bool,
+	readyEvent win32.HANDLE,
+) (uint32, bool, error) {
 	defer img.Release()
 	cfg := img.Config
 	appLease, imageLease, err := ctx.Store.BeginImageRun(*selected)
 	if err != nil {
-		return 1, err
+		return 1, false, err
 	}
 	defer imageLease.Release()
 	runs := &grants.Session{ID: cfg.ID, LockPath: ctx.Store.RunsLockPath(cfg.ID), Lock: appLease}
@@ -184,8 +563,7 @@ func Run(ctx *context.Context, opts Options) (uint32, error) {
 	for _, spec := range fsSpecs {
 		g := oci.ParseFsGrant(spec)
 		if g == nil {
-			storeLock.Release()
-			return 1, ctx.Fail("invalid filesystem permission %q", spec)
+			return 1, false, ctx.Fail("invalid filesystem permission %q", spec)
 		}
 		switch g.Where.Type {
 		case oci.FsGrantCwd:
@@ -201,31 +579,9 @@ func Run(ctx *context.Context, opts Options) (uint32, error) {
 		}
 	}
 
-	hostCwd, err := os.Getwd()
-	if err != nil {
-		storeLock.Release()
-		return 1, err
-	}
-
-	var runDir *store.RunDir
-	if settings.Ephemeral != nil && *settings.Ephemeral {
-		runDir, err = ctx.Store.MakeRunDir()
-		if err != nil {
-			storeLock.Release()
-			return 1, err
-		}
-		defer runDir.Delete()
-	}
-
-	if sandbox == oci.SandboxSoft && runDir == nil {
-		_ = unlabelData(ctx, cfg.ID)
-	}
-
-	storeLock.Release()
-
-	dataDir := ctx.Store.Path("data", cfg.ID)
-	if runDir != nil {
-		dataDir = runDir.Path
+	dataDir := created.DataDir
+	if sandbox == oci.SandboxSoft {
+		_ = unlabelData(ctx, cfg.ID, dataDir)
 	}
 	profile := environment.NewProfile(dataDir)
 
@@ -260,14 +616,14 @@ func Run(ctx *context.Context, opts Options) (uint32, error) {
 	targets := services.Targets(used, settings.Ports)
 	servicePorts, err := services.Resolve(ctx.Store, cfg, used, settings.Ports, sandbox)
 	if err != nil {
-		return 1, err
+		return 1, false, err
 	}
 
 	reach := LoopbackOpen
 	if sandbox == oci.SandboxAppContainer {
 		reach, err = exemptLoopback(ctx, cfg.ID, network, len(targets) > 0)
 		if err != nil {
-			return 1, err
+			return 1, false, err
 		}
 	}
 
@@ -303,7 +659,7 @@ func Run(ctx *context.Context, opts Options) (uint32, error) {
 
 	cmd, err := commandForRun(placeholders, cfg, opts, appPath, systemRoot)
 	if err != nil {
-		return 1, err
+		return 1, false, err
 	}
 	var allArgs []string
 	allArgs = append(allArgs, cmd.Args...)
@@ -318,9 +674,9 @@ func Run(ctx *context.Context, opts Options) (uint32, error) {
 		commandLine, err = process.BuildBatchCommandLine(exe, cmd.Exe, allArgs)
 		if err != nil {
 			if errors.Is(err, process.ErrInvalidBatchArgument) {
-				return 1, ctx.Fail("%s is a batch file, and cmd.exe can't pass it an argument with a line break or a NUL character", cmd.Exe)
+				return 1, false, ctx.Fail("%s is a batch file, and cmd.exe can't pass it an argument with a line break or a NUL character", cmd.Exe)
 			}
-			return 1, ctx.Fail("%s can't be run as a batch file: %v", cmd.Exe, err)
+			return 1, false, ctx.Fail("%s can't be run as a batch file: %v", cmd.Exe, err)
 		}
 	} else {
 		commandLine = process.BuildCommandLine(exe, allArgs)
@@ -346,7 +702,7 @@ func Run(ctx *context.Context, opts Options) (uint32, error) {
 		Proxies:    network,
 	})
 	if err != nil {
-		return 1, err
+		return 1, false, err
 	}
 
 	if ctx.Verbose {
@@ -454,7 +810,7 @@ func Run(ctx *context.Context, opts Options) (uint32, error) {
 			own:     own,
 		})
 		if err != nil {
-			return 1, err
+			return 1, false, err
 		}
 		token = t
 		defer win32.CloseHandle(token)
@@ -480,7 +836,7 @@ func Run(ctx *context.Context, opts Options) (uint32, error) {
 			own:          own,
 		})
 		if err != nil {
-			return 1, err
+			return 1, false, err
 		}
 		security = sec
 	}
@@ -499,9 +855,9 @@ func Run(ctx *context.Context, opts Options) (uint32, error) {
 		capSid, _ := appcontainer.AppCapability(cfg.ID)
 		hkcuAccess = hkcu.Access{Type: hkcu.AccessCapability, SID: capSid}
 	}
-	keysSession, err := hkcu.Enter(ctx.Store, cfg.ID, cfg.Registry, dataDir, hkcuAccess, runDir == nil)
+	keysSession, err := hkcu.Enter(ctx.Store, cfg.ID, cfg.Registry, dataDir, hkcuAccess, !created.HostConfig.AutoRemove)
 	if err != nil {
-		return 1, err
+		return 1, false, err
 	}
 	defer func() {
 		if keysSession != nil {
@@ -515,12 +871,62 @@ func Run(ctx *context.Context, opts Options) (uint32, error) {
 
 	envBlock, err := environment.EncodeBlock(envVars)
 	if err != nil {
-		return 1, err
+		return 1, false, err
+	}
+
+	stopEvent, err := win32.CreateEvent(StopEventName(created.ID), true, false)
+	if err != nil {
+		return 1, false, fmt.Errorf("creating container stop event: %w", err)
+	}
+	defer win32.CloseHandle(stopEvent)
+
+	logFile, err := os.OpenFile(created.LogPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return 1, false, fmt.Errorf("opening container log: %w", err)
+	}
+	defer func() {
+		if logFile != nil {
+			_ = logFile.Close()
+		}
+	}()
+
+	const pipeSize = 64 * 1024
+	outRead, outWrite, err := win32.CreatePipe(nil, pipeSize)
+	if err != nil {
+		return 1, false, err
+	}
+	errRead, errWrite, err := win32.CreatePipe(nil, pipeSize)
+	if err != nil {
+		win32.CloseHandle(outRead)
+		win32.CloseHandle(outWrite)
+		return 1, false, err
+	}
+
+	var stdinHandle win32.HANDLE
+	var nulIn win32.HANDLE
+	if !detached && opts.Interactive {
+		stdinHandle = win32.GetStdHandle(win32.STD_INPUT_HANDLE)
+	} else {
+		nulIn = openNulRead()
+		stdinHandle = nulIn
+	}
+	stdio := [3]win32.HANDLE{stdinHandle, outWrite, errWrite}
+
+	var creationFlags win32.DWORD
+	if detached {
+		creationFlags = win32.CREATE_NEW_PROCESS_GROUP
 	}
 
 	job, err := process.NewJob()
 	if err != nil {
-		return 1, err
+		win32.CloseHandle(outRead)
+		win32.CloseHandle(outWrite)
+		win32.CloseHandle(errRead)
+		win32.CloseHandle(errWrite)
+		if nulIn != 0 {
+			win32.CloseHandle(nulIn)
+		}
+		return 1, false, err
 	}
 	defer win32.CloseHandle(job)
 
@@ -532,22 +938,80 @@ func Run(ctx *context.Context, opts Options) (uint32, error) {
 	watcher := written.Start(watcherDirs)
 
 	hProcess, err := process.StartIn(job, process.SpawnSpec{
-		Exe:         exe,
-		CommandLine: commandLine,
-		EnvBlock:    envBlock,
-		Cwd:         cwd,
-		Security:    security,
-		Token:       token,
+		Exe:           exe,
+		CommandLine:   commandLine,
+		EnvBlock:      envBlock,
+		Cwd:           cwd,
+		Security:      security,
+		Token:         token,
+		Stdio:         &stdio,
+		CreationFlags: creationFlags,
 	})
+	win32.CloseHandle(outWrite)
+	win32.CloseHandle(errWrite)
+	if nulIn != 0 {
+		win32.CloseHandle(nulIn)
+	}
 	if err != nil {
+		win32.CloseHandle(outRead)
+		win32.CloseHandle(errRead)
 		if watcher != nil {
 			_, _ = watcher.Stop()
 		}
-		return 1, err
+		return 1, false, err
+	}
+
+	var logMu sync.Mutex
+	logW := lockedWriter{mu: &logMu, w: logFile}
+	var outDst io.Writer = logW
+	var errDst io.Writer = logW
+	if !detached {
+		stdout := ctx.Stdout
+		if stdout == nil {
+			stdout = os.Stdout
+		}
+		stderr := ctx.Stderr
+		if stderr == nil {
+			stderr = os.Stderr
+		}
+		outDst = io.MultiWriter(stdout, logW)
+		errDst = io.MultiWriter(stderr, logW)
+	}
+
+	var pipeWG sync.WaitGroup
+	pipeWG.Add(2)
+	go func() {
+		defer pipeWG.Done()
+		pumpPipe(outRead, outDst)
+	}()
+	go func() {
+		defer pipeWG.Done()
+		pumpPipe(errRead, errDst)
+	}()
+
+	pid := uint32(win32.GetProcessId(hProcess))
+	startedAt := time.Now().UTC().Format(time.RFC3339Nano)
+	_, _ = ctx.Store.UpdateContainer(created.ID, func(c *store.ContainerRecord) error {
+		c.Path = cmd.Exe
+		c.Args = append([]string(nil), allArgs...)
+		c.Config.WorkingDir = cwd
+		c.State = store.ContainerState{
+			Status:    "running",
+			Running:   true,
+			Pid:       pid,
+			ExitCode:  0,
+			StartedAt: startedAt,
+			Launched:  true,
+		}
+		return nil
+	})
+	if readyEvent != 0 {
+		win32.SetEvent(readyEvent)
 	}
 
 	child := process.Child{Job: job, Process: hProcess}
-	code, err := child.Wait()
+	code, _, err := child.WaitOrStop(stopEvent, 10000)
+	pipeWG.Wait()
 
 	if code != 0 {
 		for i, l := range lazyLayers {
@@ -563,7 +1027,48 @@ func Run(ctx *context.Context, opts Options) (uint32, error) {
 		written.Finish(ctx.Store, cfg.ID, watcher)
 	}
 
-	return code, err
+	return code, true, err
+}
+
+type lockedWriter struct {
+	mu *sync.Mutex
+	w  io.Writer
+}
+
+func (l lockedWriter) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.w.Write(p)
+}
+
+func pumpPipe(pipeRead win32.HANDLE, dst io.Writer) {
+	defer win32.CloseHandle(pipeRead)
+	buf := make([]byte, 32*1024)
+	for {
+		n, err := win32.ReadFile(pipeRead, buf)
+		if n > 0 && dst != nil {
+			_, _ = dst.Write(buf[:n])
+		}
+		if err != nil || n == 0 {
+			return
+		}
+	}
+}
+
+func openNulRead() win32.HANDLE {
+	h, err := win32.CreateFile(
+		`\\.\NUL`,
+		win32.GENERIC_READ,
+		win32.FILE_SHARE_READ|win32.FILE_SHARE_WRITE,
+		nil,
+		win32.OPEN_EXISTING,
+		0,
+		0,
+	)
+	if err != nil {
+		return 0
+	}
+	return h
 }
 
 func lazyLayersOf(ctx *context.Context, digest string) ([]oci.Descriptor, error) {
@@ -896,8 +1401,7 @@ type lowSetup struct {
 	own     grants.Own
 }
 
-func unlabelData(ctx *context.Context, id string) error {
-	dataDir := ctx.Store.Path("data", id)
+func unlabelData(ctx *context.Context, id, dataDir string) error {
 	if _, err := os.Stat(dataDir); err != nil {
 		return nil
 	}
@@ -906,15 +1410,7 @@ func unlabelData(ctx *context.Context, id string) error {
 		return nil
 	}
 	below, _ := acl.BelowMedium()
-	var lock *store.Lock
-	if !below {
-		lock, _ = store.TryLock(ctx.Store.RunsLockPath(id), true)
-		if lock == nil {
-			ctx.Note("warning: %s's data folder stays labelled low integrity, as another run of it is going: programs this run writes there start at low integrity", id)
-			return nil
-		}
-		defer lock.Release()
-	} else {
+	if below {
 		ctx.Note("warning: %s's data folder stays labelled low integrity, as quasidock runs at low integrity here: programs this run writes there start at low integrity", id)
 		return nil
 	}

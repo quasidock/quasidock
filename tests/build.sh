@@ -300,7 +300,7 @@ check "aliases work under --sandbox=low, the last of sh -c's commands too" sh -c
 # In an AppContainer, BusyBox's sh doesn't see zigsaw, takes itself for an
 # orphan, and doesn't wait for its last command (README's known gaps).
 check "aliases work under --sandbox=appcontainer" sh -c '[ "$(bash "$QD_IMAGES_HELPER" run "$0" --sandbox=appcontainer '$AAPP' -c "greet x; shout --quiet y; true" | tr -d "\r" | tr "\n" " ")" = "app: x shout y " ]' "$zigsaw"
-check "and in --ephemeral runs" sh -c '[ "$(bash "$QD_IMAGES_HELPER" run "$0" --ephemeral '$AAPP' -c "greet e" | tr -d "\r")" = "app: e" ]' "$zigsaw"
+check "and in --rm runs" sh -c '[ "$(bash "$QD_IMAGES_HELPER" run "$0" --rm '$AAPP' -c "greet e" | tr -d "\r")" = "app: e" ]' "$zigsaw"
 check "the same recipe builds the same image" same_image "$work\\alias\\app.json" "$alias_app_digest"
 
 # The SDK: the tool is its runtime. A recipe that builds with it gets the

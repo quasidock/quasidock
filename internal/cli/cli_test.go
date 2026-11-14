@@ -53,6 +53,23 @@ func TestParseRunOptions(t *testing.T) {
 	if opts.Settings.Network == nil || !*opts.Settings.Network {
 		t.Fatalf("expected network share to be true")
 	}
+
+	opts2, err := parseRunOptions(context.New(), []string{
+		"--name", "web1",
+		"--rm",
+		"-dit",
+		"org.example.app",
+		"serve",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error with container flags: %v", err)
+	}
+	if opts2.Name != "web1" || !opts2.AutoRemove || !opts2.Detach || !opts2.Interactive || !opts2.TTY {
+		t.Fatalf("unexpected container run flags: %+v", opts2)
+	}
+	if opts2.ID != "org.example.app" || len(opts2.Args) != 1 || opts2.Args[0] != "serve" {
+		t.Fatalf("unexpected image/args: %+v", opts2)
+	}
 }
 
 func TestParseRunOptionsRejectsRemovedFlags(t *testing.T) {
@@ -62,11 +79,16 @@ func TestParseRunOptionsRejectsRemovedFlags(t *testing.T) {
 		{"--nofilesystem=downloads", "org.example.app"},
 		{"--extension=org.example.ext", "org.example.app"},
 		{"--noextension=org.example.ext", "org.example.app"},
+		{"--ephemeral", "org.example.app"},
 	}
 	for _, tc := range cases {
 		ctx := context.New()
-		if _, err := parseRunOptions(ctx, tc); err == nil {
+		_, err := parseRunOptions(ctx, tc)
+		if err == nil {
 			t.Fatalf("expected error for %v, got nil", tc)
+		}
+		if tc[0] == "--ephemeral" && !strings.Contains(err.Error(), "--rm") {
+			t.Fatalf("--ephemeral error should mention --rm, got %v", err)
 		}
 	}
 }

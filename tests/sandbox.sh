@@ -117,9 +117,9 @@ check "low: can't write a read-only grant" fails writes $BB low "$work\\ro\\f" -
 check "  which isn't labelled" no_label "$work\\ro"
 check "low: can't write elsewhere" fails writes $BB low "$work\\outside\\f"
 check "low: reads elsewhere (not enforced)" qd_run z --sandbox=low $BB cat "$work\\outside\\secret.txt"
-check "low: writes cwd with the cwd permission" sh -c "cd '$work\\cwd' && bash '$QD_IMAGES_HELPER' run \"\$0\" --sandbox=low --filesystem=cwd $BB sh -c 'echo x > \"\$1\"' sh '$work\\cwd\\f' </dev/null" "$zigsaw"
+check "low: writes cwd with the cwd permission" sh -c "cd '$work\\cwd' && bash '$QD_IMAGES_HELPER' run \"\$0\" --name low-cwd --sandbox=low --filesystem=cwd $BB sh -c 'echo x > \"\$1\"' sh '$work\\cwd\\f' </dev/null" "$zigsaw"
 check "  which, given on the command line, isn't labelled after it" label_gone "$work\\cwd"
-check "  and the run's data directory is labelled" low_label "$QUASIDOCK_HOME\\data\\$BB"
+check "  and the run's data directory is labelled" low_label "$(qd_container_data "$zigsaw" low-cwd)"
 refuses_profile() {
     local out
     out=$(writes $BB low "$USERPROFILE\\quasidock-sandbox-test" --filesystem="$USERPROFILE" 2>&1) && return 1
@@ -127,7 +127,7 @@ refuses_profile() {
     [ ! -e "$USERPROFILE\\quasidock-sandbox-test" ] && no_label "$USERPROFILE"
 }
 check "low: won't label the user profile" refuses_profile
-check "low: --ephemeral writes its own data directory" qd_run z --sandbox=low --ephemeral $BB sh -c 'echo x > "$APPDATA/f"'
+check "low: --rm writes its own data directory" qd_run z --sandbox=low --rm $BB sh -c 'echo x > "$APPDATA/f"'
 # BusyBox's sh waits for the last command of sh -c only if it can see its
 # parent, zigsaw, which a low-integrity process could not read.
 check "low: sh sees zigsaw as its parent" sh -c '[ "$(bash "$QD_IMAGES_HELPER" run "$0" --sandbox=low '$BB' sh -c "echo \$PPID" </dev/null | tr -d "\r")" != 1 ]' "$zigsaw"
@@ -179,7 +179,9 @@ read_only_cwd() {
 }
 drive=${work:0:3}
 home_run_quiet() {
-    local home="$QUASIDOCK_HOME\\data\\$BB\\home" out
+    qd_run z --name home-ref $BB true >/dev/null || return 1
+    local home out
+    home="$(qd_container_data "$zigsaw" home-ref)\\home"
     out=$(from "$home" $BB) || { echo "$out"; return 1; }
     ! grep -q labelled <<<"$out" && fails granted $BB "low $home" && [ ! -e "$QUASIDOCK_HOME\\grants\\$BB.cwd" ]
 }
@@ -284,12 +286,19 @@ has() {
 }
 not_in_hkcu() { ! reg query "HKCU\\$key" >/dev/null 2>&1 && ! reg query "$record" >/dev/null 2>&1; }
 in_order() {
-    sets soft a && has low a && sets low b && has appcontainer b && sets appcontainer c && has soft c
+    local sb
+    for sb in soft low appcontainer; do
+        qd_run z --sandbox="$sb" --name "reg-$sb" --entrypoint=cmd $REG /c "reg add HKCU\\$key /v $sb /d $sb /f >NUL && reg query HKCU\\$key /v $sb >NUL" || return 1
+    done
 }
-ephemeral_starts_empty() { fails has soft a --ephemeral && sets soft e --ephemeral && fails has soft e && has soft a; }
+rm_leaves_nothing() {
+    ! z container inspect reg-rm >/dev/null 2>&1 &&
+        qd_run z --sandbox=soft --rm --name reg-rm --entrypoint=cmd $REG /c "reg add HKCU\\$key /v e /d soft /f >NUL && reg query HKCU\\$key /v e >NUL" &&
+        ! z container inspect reg-rm >/dev/null 2>&1 && not_in_hkcu
+}
 moved_aside() {
     reg add "HKCU\\$key" /v native /d 1 /f >/dev/null || return 1
-    fails has soft native && has soft a || { reg delete "HKCU\\$key" /f >/dev/null 2>&1; return 1; }
+    fails has soft native && sets soft a || { reg delete "HKCU\\$key" /f >/dev/null 2>&1; return 1; }
     reg query "HKCU\\$key" /v native >/dev/null && ! reg query "HKCU\\$key" /v a >/dev/null 2>&1
     local status=$?
     reg delete "HKCU\\$key" /f >/dev/null 2>&1
@@ -311,7 +320,7 @@ killed_run() {
     kill -9 $runner
     wait $runner 2>/dev/null
     reg query "$record" >/dev/null 2>&1 || { echo "the record went with the run"; return 1; }
-    has soft killed && not_in_hkcu
+    sets soft settled && not_in_hkcu
 }
 other_app_waits() {
     start_sleeping $REG || return 1
@@ -321,24 +330,24 @@ other_app_waits() {
     kill -9 $runner
     wait $runner 2>/dev/null
     [ $status -ne 0 ] && grep -q "which a run of $REG is using" <<<"$out" || { echo "$out"; return 1; }
-    # Its next run settles what the killed one left, into $REG's data.
-    qd_run z --entrypoint=reg $REG2 query "HKCU\\$key" >/dev/null 2>&1 && not_in_hkcu && has soft killed
+    # Its next run settles what the killed one left.
+    qd_run z $REG2 true >/dev/null 2>&1 && not_in_hkcu
 }
 rm_settles() {
     start_sleeping $REG || return 1
     kill -9 $runner
     wait $runner 2>/dev/null
-    qd_remove_app "$zigsaw" $REG >/dev/null 2>&1 </dev/null && not_in_hkcu && [ ! -e "$QUASIDOCK_HOME\\data\\$REG" ] && [ ! -e "$QUASIDOCK_HOME\\data\\$REG.hkcu.lock" ]
+    qd_remove_app "$zigsaw" $REG >/dev/null 2>&1 </dev/null && not_in_hkcu && ! z container inspect reg-soft >/dev/null 2>&1
 }
 
-check "registry: a value one run sets is there in the next, in each sandbox" in_order
-check "  in a hive in the app's data" test -f "$QUASIDOCK_HOME\\data\\$REG\\registry\\user.dat"
+check "registry: a container reads what it sets, in each sandbox" in_order
+check "  in a hive in the container's data" test -f "$(qd_container_data "$zigsaw" reg-soft)\\registry\\user.dat"
 check "  and HKCU has neither the key nor zigsaw's record of it between runs" not_in_hkcu
-check "--ephemeral: starts without the app's keys, and leaves them as they were" ephemeral_starts_empty
+check "--rm: runs with its own keys and leaves nothing behind" rm_leaves_nothing
 check "a key of the same name that was there is moved aside for the run, and back after" moved_aside
 check "a run that didn't end leaves the key in HKCU, and the next one settles it" killed_run
 check "another app keeping the same key can't run while that app's run uses it" other_app_waits
-check "rm --delete-data settles what a run left, and leaves nothing in HKCU" rm_settles
+check "rm settles what a run left, and leaves nothing in HKCU" rm_settles
 qd_remove_app "$zigsaw" $REG2 >/dev/null 2>&1 </dev/null
 reg delete "HKCU\\$key" /f >/dev/null 2>&1
 
@@ -355,10 +364,10 @@ only_what_it_made() {
     # Without values, as Java leaves Prefs: reg.exe would give it an empty
     # default value.
     powershell -NoProfile -Command "New-Item -Path 'HKCU:\\$deep' -Force | Out-Null" || return 1
-    qd_run z --entrypoint=reg $REG3 add "HKCU\\$deep\\made\\settings" /v x /d 1 /f || return 1
+    qd_run z --name deep-reg --entrypoint=reg $REG3 add "HKCU\\$deep\\made\\settings" /v x /d 1 /f || return 1
     reg query "HKCU\\$deep" >/dev/null 2>&1 || { echo "the key that was there went"; return 1; }
     ! reg query "HKCU\\$deep\\made" >/dev/null 2>&1 || { echo "the key its run made stayed"; return 1; }
-    qd_run z --entrypoint=reg $REG3 query "HKCU\\$deep\\made\\settings" /v x
+    test -f "$(qd_container_data "$zigsaw" deep-reg)\\registry\\user.dat"
 }
 check "taking a key back deletes the keys above it its run made, not an empty one that was there" only_what_it_made
 qd_remove_app "$zigsaw" $REG3 >/dev/null 2>&1 </dev/null

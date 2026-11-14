@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/quasidock/quasidock/internal/context"
+	"github.com/quasidock/quasidock/internal/hkcu"
 	"github.com/quasidock/quasidock/internal/lazy"
 	"github.com/quasidock/quasidock/internal/oci"
 	"github.com/quasidock/quasidock/internal/roots"
@@ -33,6 +34,11 @@ type tally struct {
 func (t *tally) add(b uint64) {
 	t.count++
 	t.bytes += b
+}
+
+// FormatBytes formats a byte count in human-readable IEC units.
+func FormatBytes(b uint64) string {
+	return formatBytes(b)
 }
 
 func formatBytes(b uint64) string {
@@ -116,6 +122,13 @@ func deleteStaleLocks(dir string) {
 
 // Prune deletes what no installed app needs.
 func Prune(ctx *context.Context, opts PruneOptions) error {
+	prunedContainers, containerBytes, containersRunning, err := ctx.Store.PruneContainers(opts.DryRun)
+	if err != nil {
+		return err
+	}
+	if !opts.DryRun && len(prunedContainers) > 0 {
+		_ = hkcu.SettleLeftovers(ctx.Store, "")
+	}
 	collected, err := ctx.Store.PruneImages(opts.DryRun)
 	if err != nil {
 		return err
@@ -357,7 +370,9 @@ func Prune(ctx *context.Context, opts PruneOptions) error {
 		one      string
 		many     string
 	}
+	containersTally := tally{count: len(prunedContainers), bytes: containerBytes}
 	parts := []partInfo{
+		{containersTally, true, "stopped container", "stopped containers"},
 		{blobs, true, "blob", "blobs"},
 		{deployments, true, "deployment", "deployments"},
 		{tmp, true, "temporary item", "temporary items"},
@@ -396,11 +411,14 @@ func Prune(ctx *context.Context, opts PruneOptions) error {
 		context.Note("%s %s", freeVerb, formatBytes(freed))
 	}
 
+	if containersRunning > 0 {
+		context.Note("kept %d running container(s); stop them first to prune them", containersRunning)
+	}
 	if deploymentsInUse > 0 {
 		context.Note("kept %d unused deployment(s) that a running app still uses; prune again once it exits", deploymentsInUse)
 	}
 	if tmpInUse > 0 {
-		context.Note("kept the data of %d running --ephemeral app(s)", tmpInUse)
+		context.Note("kept %d temporary item(s) still in use", tmpInUse)
 	}
 	if !opts.Data && len(orphans) > 0 {
 		context.Note("kept data of apps that aren't installed: %s; --data deletes it", strings.Join(orphans, ", "))
