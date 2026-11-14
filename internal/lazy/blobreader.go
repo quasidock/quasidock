@@ -21,7 +21,7 @@ const (
 	DemandPiece     uint64 = 4 << 20 // 4 MiB
 	BackgroundPiece uint64 = 8 << 20 // 8 MiB
 	QuietDuration          = 1000 * time.Millisecond
-	MapMagic               = "ZIGBLOB1"
+	MapMagic               = "QDBLOB01"
 )
 
 var (

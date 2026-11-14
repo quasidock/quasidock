@@ -20,7 +20,7 @@ export MSYS_NO_PATHCONV=1
 
 root=$(cd "$(dirname "$0")/.." && pwd)
 root_w=$(cygpath -w "$root")
-quasidock=${QUASIDOCK:-$root_w\\zig-out\\bin\\quasidock.exe}
+quasidock=${QUASIDOCK:-$root_w\\out\\bin\\quasidock.exe}
 # shellcheck source=scripts/sign-lib.sh
 . "$root/scripts/sign-lib.sh"
 

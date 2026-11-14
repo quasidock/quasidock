@@ -30,7 +30,7 @@ set -u
 export MSYS_NO_PATHCONV=1
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
-zigsaw=${1:-$root/zig-out/bin/quasidock.exe}
+zigsaw=${1:-$root/out/bin/quasidock.exe}
 QUASIDOCK_HOME=${PHP_HOME:-${BUILD_HOME:-}}
 if [ -z "$QUASIDOCK_HOME" ]; then
     echo "tests/php.sh needs a store in PHP_HOME or BUILD_HOME; it builds PHP's images there unless it has them."

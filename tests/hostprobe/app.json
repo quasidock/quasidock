@@ -7,7 +7,7 @@
     {
       "name": "probe",
       "sources": [
-        { "path": "../../zig-out/test/quasidock-hostprobe.exe", "dest": "hostprobe.exe" }
+        { "path": "../../out/test/quasidock-hostprobe.exe", "dest": "hostprobe.exe" }
       ]
     }
   ]

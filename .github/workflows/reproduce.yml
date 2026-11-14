@@ -33,7 +33,7 @@ name: Reproduce
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   pull_request:
   workflow_dispatch:
   schedule:
@@ -161,7 +161,7 @@ jobs:
       # 48's apps job did, and left nothing to read).
       - name: Upload the logs
         if: ${{ always() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: logs-published-${{ matrix.group }}
           path: ${{ runner.temp }}\logs
@@ -351,12 +351,12 @@ jobs:
         env:
           QUASIDOCK_HOME: ${{ runner.temp }}\store
         run: |
-          zig-out/bin/quasidock.exe grants | tee "$(cygpath -u "$LOG_DIR")/grants.txt"
+          out/bin/quasidock.exe grants | tee "$(cygpath -u "$LOG_DIR")/grants.txt"
           ! grep -q 'Not explained' "$(cygpath -u "$LOG_DIR")/grants.txt"
 
       - name: Upload the logs
         if: ${{ failure() || cancelled() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: logs-suites
           path: ${{ runner.temp }}\logs
@@ -397,7 +397,7 @@ jobs:
 
       - name: Upload the logs
         if: ${{ failure() || cancelled() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: logs-standard-user
           path: ${{ runner.temp }}\logs
@@ -450,7 +450,7 @@ jobs:
 
       - name: Upload the logs
         if: ${{ failure() || cancelled() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: logs-gtk-suites
           path: ${{ runner.temp }}\logs
@@ -499,7 +499,7 @@ jobs:
 
       - name: Upload the logs
         if: ${{ failure() || cancelled() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: logs-qt-suites
           path: ${{ runner.temp }}\logs
@@ -527,9 +527,6 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.26'
-#      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
-#        with:
-#          version: 0.17.0
 
       - name: Paths for the steps below
         shell: bash
@@ -564,7 +561,7 @@ jobs:
 
       - name: Upload the logs
         if: ${{ failure() || cancelled() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: logs-build-${{ matrix.group }}
           path: ${{ runner.temp }}\logs

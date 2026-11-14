@@ -41,7 +41,7 @@ set -u
 export MSYS_NO_PATHCONV=1
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
-zigsaw=${1:-$root/zig-out/bin/quasidock.exe}
+zigsaw=${1:-$root/out/bin/quasidock.exe}
 QUASIDOCK_HOME=${GTK_HOME:-${BUILD_HOME:-}}
 if [ -z "$QUASIDOCK_HOME" ] || [ ! -f "$QUASIDOCK_HOME\\refs\\org.gtk.Gtk4.json" ] || [ ! -f "$QUASIDOCK_HOME\\refs\\org.gtk.Gtk4.Sdk.json" ]; then
     echo "tests/gtk.sh needs a store with org.gtk.Gtk4 and org.gtk.Gtk4.Sdk in GTK_HOME or BUILD_HOME;"
@@ -171,7 +171,7 @@ sdk_manifest="$QUASIDOCK_HOME\\blobs\\sha256\\$(manifest_of org.gtk.Gtk4.Sdk | c
 sdk="$QUASIDOCK_HOME\\deploy\\$(grep -o 'sha256:[0-9a-f]*' "$sdk_manifest" | tail -1 | cut -d: -f2)"
 rsvg_convert() {
     (cd "$root" && go run ./scripts/build.go imports) >/dev/null || return 1
-    "$root\\zig-out\\test\\quasidock-imports.exe" "$sdk\\bin\\rsvg-convert.exe" || return 1
+    "$root\\out\\test\\quasidock-imports.exe" "$sdk\\bin\\rsvg-convert.exe" || return 1
     # Piped: given a file as stdin, rsvg-convert reads only its first two
     # bytes, run by zigsaw or not.
     cat "$work\\t.svg" | timeout 60 "$zigsaw" run --command=bin/rsvg-convert.exe org.gtk.Gtk4.Sdk | head -c 8 | od -A n -t x1 | tr -d ' \n' | grep -qx '89504e470d0a1a0a'
@@ -380,7 +380,7 @@ rnote_dir="$QUASIDOCK_HOME\\deploy\\$(grep -o 'sha256:[0-9a-f]*' "$rnote_manifes
 rnote_imports() {
     timeout 60 "$zigsaw" run --command=rnote-cli $RNOTE --version | tr -d '\r' | grep -qx 'rnote-cli 0\.14\.2' || return 1
     (cd "$root" && go run ./scripts/build.go imports) >/dev/null || return 1
-    "$root\\zig-out\\test\\quasidock-imports.exe" "$rnote_dir\\bin\\rnote.exe" "$rnote_dir\\bin\\rnote-cli.exe"
+    "$root\\out\\test\\quasidock-imports.exe" "$rnote_dir\\bin\\rnote.exe" "$rnote_dir\\bin\\rnote-cli.exe"
 }
 check "Rnote 0.14.2 is installed, and its programs bind all their imports" rnote_imports
 check "it has its translations" test -f "$rnote_dir\\share\\locale\\de\\LC_MESSAGES\\rnote.mo"
@@ -456,7 +456,7 @@ if [ -f "$QUASIDOCK_HOME\\refs\\$MSVC.json" ]; then
     msvc_self_contained() {
         test -f "$msvc_dir\\bin\\vcruntime140.dll" || { echo "no vcruntime140.dll"; return 1; }
         (cd "$root" && go run ./scripts/build.go imports) >/dev/null || return 1
-        "$root\\zig-out\\test\\quasidock-imports.exe" "$msvc_dir\\bin\\gtk4-demo.exe" "$msvc_dir\\bin\\adwaita-1-demo.exe"
+        "$root\\out\\test\\quasidock-imports.exe" "$msvc_dir\\bin\\gtk4-demo.exe" "$msvc_dir\\bin\\adwaita-1-demo.exe"
     }
     check "it has the Visual C++ runtime with it, and its demos bind all their imports" msvc_self_contained
     check "its demo runs" stays_up 15 $MSVC

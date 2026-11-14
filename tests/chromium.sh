@@ -27,7 +27,7 @@ set -u
 export MSYS_NO_PATHCONV=1
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
-zigsaw=${1:-$root/zig-out/bin/quasidock.exe}
+zigsaw=${1:-$root/out/bin/quasidock.exe}
 own_store=false
 QUASIDOCK_HOME=${CHROMIUM_HOME:-${BUILD_HOME:-}}
 if [ -z "$QUASIDOCK_HOME" ]; then
@@ -48,8 +48,8 @@ CODIUM=com.vscodium.codium
 . "$(dirname "$0")/acprobe.sh"
 
 (cd "$root" && go run ./scripts/build.go winwait procprobe) || { echo "building the window waiter and the process probe failed"; exit 1; }
-winwait="$root\\zig-out\\test\\quasidock-winwait.exe"
-procprobe="$root\\zig-out\\test\\quasidock-procprobe.exe"
+winwait="$root\\out\\test\\quasidock-winwait.exe"
+procprobe="$root\\out\\test\\quasidock-procprobe.exe"
 
 installed=()
 for recipe in recipes\\no-publish\\ungoogled-chromium recipes\\vscodium; do

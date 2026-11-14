@@ -9,7 +9,7 @@
 #
 # The first runs the app (or one of its commands) with the arguments and waits
 # for it to end; the second starts it, waits for a window with that title, and
-# closes it (zig-out/test/quasidock-winwait.exe, `go run ./scripts/build.go`). A run in
+# closes it (out/test/quasidock-winwait.exe, `go run ./scripts/build.go`). A run in
 # the current directory may need the app's permission for it.
 #
 # Prints, for each layer that was fetched from, its image's id and a
@@ -21,7 +21,7 @@
 # The store goes in RECORD_WORK (a directory on NTFS, not a Dev Drive: lazy
 # pulls need Cloud Files), or a temporary one, and is removed at the end, as
 # are the registry keys it made. QUASIDOCK is the quasidock to use,
-# zig-out/bin/quasidock.exe by default. Every eStargz layer is pulled lazily,
+# out/bin/quasidock.exe by default. Every eStargz layer is pulled lazily,
 # small ones too, its download held back, and an image that already has a
 # list has it ignored, so that what the run reads is what it fetches.
 
@@ -29,8 +29,8 @@ set -u
 export MSYS_NO_PATHCONV=1
 
 root=$(cd "$(dirname "$0")/.." && pwd)
-quasidock=${QUASIDOCK:-$(cygpath -w "$root/zig-out/bin/quasidock.exe")}
-winwait=$(cygpath -w "$root/zig-out/test/quasidock-winwait.exe")
+quasidock=${QUASIDOCK:-$(cygpath -w "$root/out/bin/quasidock.exe")}
+winwait=$(cygpath -w "$root/out/test/quasidock-winwait.exe")
 
 ref=
 command=

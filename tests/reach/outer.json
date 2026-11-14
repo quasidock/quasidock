@@ -5,6 +5,6 @@
   "permissions": { "sandbox": "soft", "unsupported": { "appcontainer": "the test says it can't" } },
   "exports": {},
   "modules": [
-    { "name": "argv", "sources": [{ "path": "../../zig-out/test/quasidock-argv.exe", "dest": "argv.exe" }] }
+    { "name": "argv", "sources": [{ "path": "../../out/test/quasidock-argv.exe", "dest": "argv.exe" }] }
   ]
 }

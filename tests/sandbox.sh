@@ -18,7 +18,7 @@ set -u
 export MSYS_NO_PATHCONV=1
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
-zigsaw=${1:-$root/zig-out/bin/quasidock.exe}
+zigsaw=${1:-$root/out/bin/quasidock.exe}
 QUASIDOCK_HOME=$(cygpath -w "$(mktemp -d)")
 export QUASIDOCK_HOME
 work=$(cygpath -w "$(mktemp -d)")
@@ -92,7 +92,7 @@ release() {
 }
 
 (cd "$root" && go run ./scripts/build.go hostprobe) || { echo "building the host probe failed"; exit 1; }
-hostprobe="$root\\zig-out\\test\\quasidock-hostprobe.exe"
+hostprobe="$root\\out\\test\\quasidock-hostprobe.exe"
 "$zigsaw" build "$root/recipes/busybox.json" >/dev/null 2>&1 || { echo "building busybox failed"; exit 1; }
 sed "s/\"net.frippery.busybox\"/\"$OTHER\"/" "$root/recipes/busybox.json" >"$work\\other.json"
 "$zigsaw" build "$work\\other.json" >/dev/null 2>&1 || { echo "building the second app failed"; exit 1; }

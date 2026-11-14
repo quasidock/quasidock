@@ -17,16 +17,16 @@
 # have placeholders (NTFS, not a Dev Drive): LAZY_WORK, or a temporary one. With
 # LAZY_DEV_DRIVE, a directory on a Dev Drive, one row checks the real refusal.
 # SEED_DOWNLOADS: another store's cache\downloads with BusyBox's download, as
-# frippery.org refuses everyone. Builds zig-out\test\quasidock-jobprobe.exe. Takes
+# frippery.org refuses everyone. Builds out\test\quasidock-jobprobe.exe. Takes
 # about a minute.
 
 set -u
 export MSYS_NO_PATHCONV=1
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
-zigsaw=${1:-$root\\zig-out\\bin\\quasidock.exe}
+zigsaw=${1:-$root\\out\\bin\\quasidock.exe}
 (cd "$(cygpath -u "$root")" && go run ./scripts/build.go jobprobe) || { echo "building the job probe failed"; exit 1; }
-jobprobe="$root\\zig-out\\test\\quasidock-jobprobe.exe"
+jobprobe="$root\\out\\test\\quasidock-jobprobe.exe"
 if [ -n "${LAZY_WORK:-}" ]; then
     work="$LAZY_WORK\\lazy-$$"
     mkdir -p "$(cygpath -u "$work")"

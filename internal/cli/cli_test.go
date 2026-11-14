@@ -101,3 +101,35 @@ func TestIsFlag(t *testing.T) {
 		t.Fatal("usage text missing --filesystem description")
 	}
 }
+
+func TestParsePullOptions(t *testing.T) {
+	opts, err := parsePullOptions([]string{"--yes", "--lazy", "net.frippery.busybox"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if opts.Image != "net.frippery.busybox" || !opts.Lazy {
+		t.Fatalf("unexpected options: %+v", opts)
+	}
+
+	optsNoYes, err := parsePullOptions([]string{"net.frippery.busybox"})
+	if err != nil {
+		t.Fatalf("unexpected error without --yes: %v", err)
+	}
+	if optsNoYes.Image != "net.frippery.busybox" || optsNoYes.Lazy {
+		t.Fatalf("unexpected options without --yes: %+v", optsNoYes)
+	}
+
+	for _, bad := range [][]string{
+		{},
+		{"--unknown", "net.frippery.busybox"},
+		{"app1", "app2"},
+	} {
+		if _, err := parsePullOptions(bad); err == nil {
+			t.Fatalf("expected error for %v, got nil", bad)
+		}
+	}
+
+	if !strings.Contains(usage, "pull [--lazy] <image>") {
+		t.Fatal("usage text missing updated pull description")
+	}
+}

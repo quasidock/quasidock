@@ -13,13 +13,13 @@
 # the recipe instead. After --build, recipes are built, so that their
 # downloads are in the store's cache\downloads, for the suites'
 # SEED_DOWNLOADS. Uses the store in QUASIDOCK_HOME (required) and the zigsaw in
-# ZIGSAW (default zig-out\bin\quasidock.exe); apps installed there already are
+# ZIGSAW (default out\bin\quasidock.exe); apps installed there already are
 # left as they are.
 
 set -u
 export MSYS_NO_PATHCONV=1
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
-zigsaw=${QUASIDOCK:-$root\\zig-out\\bin\\quasidock.exe}
+zigsaw=${QUASIDOCK:-$root\\out\\bin\\quasidock.exe}
 [ -n "${QUASIDOCK_HOME:-}" ] || { echo "QUASIDOCK_HOME isn't set"; exit 2; }
 export QUASIDOCK_HOME
 log=$(mktemp)

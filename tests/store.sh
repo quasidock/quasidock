@@ -12,7 +12,7 @@ set -u
 export MSYS_NO_PATHCONV=1
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
-quasidock=${1:-$root/zig-out/bin/quasidock.exe}
+quasidock=${1:-$root/out/bin/quasidock.exe}
 QUASIDOCK_HOME=$(cygpath -w "$(mktemp -d)")
 export QUASIDOCK_HOME
 work=$(cygpath -w "$(mktemp -d)")

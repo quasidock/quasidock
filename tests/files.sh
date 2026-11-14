@@ -25,7 +25,7 @@ set -u
 export MSYS_NO_PATHCONV=1
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
-zigsaw=${1:-$root/zig-out/bin/quasidock.exe}
+zigsaw=${1:-$root/out/bin/quasidock.exe}
 QUASIDOCK_HOME=${FILES_HOME:-${BUILD_HOME:-}}
 if [ -z "$QUASIDOCK_HOME" ]; then
     echo "tests/files.sh needs a store in FILES_HOME or BUILD_HOME; it builds .NET's images and Files there"

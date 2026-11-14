@@ -15,7 +15,7 @@ set -u
 export MSYS_NO_PATHCONV=1
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
-quasidock=${1:-$root/zig-out/bin/quasidock.exe}
+quasidock=${1:-$root/out/bin/quasidock.exe}
 work=$(cygpath -w "$(mktemp -d)")
 QUASIDOCK_HOME="$work\\store"
 export QUASIDOCK_HOME
@@ -38,7 +38,7 @@ check() {
 has() { grep -qF -- "$2" <<<"$1" || { echo "no \"$2\" in: $1"; return 1; }; }
 hasnt() { ! grep -qF -- "$2" <<<"$1" || { echo "\"$2\" in: $1"; return 1; }; }
 
-(cd "$root" && go run ./scripts/build.go argv-echo) || { echo "building the test programs failed"; exit 1; }
+(cd "$root" && go run ./scripts/build.go argv-echo hostprobe) || { echo "building the test programs failed"; exit 1; }
 cd "$scratch" || exit 1
 for app in outer; do
     "$quasidock" build "$root\\tests\\reach\\$app.json" >/dev/null 2>&1 || { echo "building $app failed"; exit 1; }
@@ -66,9 +66,9 @@ host_env() {
 check "host: the program gets your real environment, under soft and low" host_env
 host_rights() {
     local out
-    out=$(in_run --sandbox=low --share=host -- "quasidock-host \"$root\\zig-out\\test\\quasidock-hostprobe.exe\"")
+    out=$(in_run --sandbox=low --share=host -- "quasidock-host \"$root\\out\\test\\quasidock-hostprobe.exe\"")
     has "$out" "# integrity low" || return 1
-    out=$(in_run --share=host -- "quasidock-host \"$root\\zig-out\\test\\quasidock-hostprobe.exe\"")
+    out=$(in_run --share=host -- "quasidock-host \"$root\\out\\test\\quasidock-hostprobe.exe\"")
     hasnt "$out" "# integrity low" || return 1
 }
 check "host: it keeps the run's rights: at low in a low run" host_rights

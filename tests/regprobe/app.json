@@ -6,7 +6,7 @@
     {
       "name": "probe",
       "sources": [
-        { "path": "../../zig-out/test/quasidock-regprobe.exe", "dest": "regprobe.exe" }
+        { "path": "../../out/test/quasidock-regprobe.exe", "dest": "regprobe.exe" }
       ]
     }
   ]

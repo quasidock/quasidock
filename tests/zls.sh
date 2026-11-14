@@ -24,7 +24,7 @@ export MSYS_NO_PATHCONV=1
 export LC_ALL=C
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
-zigsaw=${1:-$root/zig-out/bin/quasidock.exe}
+zigsaw=${1:-$root/out/bin/quasidock.exe}
 temp_store=""
 QUASIDOCK_HOME=${ZLS_HOME:-${BUILD_HOME:-}}
 if [ -z "$QUASIDOCK_HOME" ]; then

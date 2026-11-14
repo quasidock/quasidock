@@ -65,14 +65,14 @@ section() {
 }
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
-zigsaw=${1:-$root/zig-out/bin/quasidock.exe}
+zigsaw=${1:-$root/out/bin/quasidock.exe}
 QUASIDOCK_HOME=$(cygpath -w "$(mktemp -d)")
 export QUASIDOCK_HOME
 work=$(cygpath -w "$(mktemp -d)")
 bin="$QUASIDOCK_HOME\\bin"
 # tests/cmd/imports: whether the loader binds every import of a program.
 (cd "$root" && go run ./scripts/build.go imports) || { echo "building the import checker failed"; exit 1; }
-imports="$root\\zig-out\\test\\quasidock-imports.exe"
+imports="$root\\out\\test\\quasidock-imports.exe"
 # Apps run from the work directory: a low run labels the directory of an app
 # with cwd, and the repository's programs, zigsaw too, would start at low
 # integrity after that.

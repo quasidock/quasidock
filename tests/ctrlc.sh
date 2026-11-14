@@ -15,7 +15,7 @@ export MSYS_NO_PATHCONV=1
 
 cd "$(dirname "$0")/.." || exit 1
 root=$(cygpath -w "$(pwd)")
-quasidock=${1:-$root/zig-out/bin/quasidock.exe}
+quasidock=${1:-$root/out/bin/quasidock.exe}
 go run "$(cygpath -w "$root/scripts/build.go")" ctrlc-driver || { echo "building the test driver failed"; exit 1; }
 
 own_store=false
@@ -34,7 +34,7 @@ if [ -n "${SEED_DOWNLOADS:-}" ]; then
 fi
 
 "$quasidock" build "$root/recipes/node.json" >/dev/null 2>&1 || { echo "building node failed"; exit 1; }
-"$root/zig-out/test/quasidock-ctrlc.exe" "$quasidock" "$QUASIDOCK_HOME" "$work"
+"$root/out/test/quasidock-ctrlc.exe" "$quasidock" "$QUASIDOCK_HOME" "$work"
 status=$?
 
 if $own_store; then
