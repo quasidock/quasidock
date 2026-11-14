@@ -5,6 +5,7 @@
 # beside its image, under a tag of its own, and no digest moves.
 #
 #   scripts/sign-images.sh [recipe.json...]    (default: those in published-recipes.txt)
+#   scripts/sign-images.sh --images IMAGE...  sign exact candidate references
 #
 # COSIGN_KEY names the key: a cosign.key from scripts/signing-key.sh. Its passphrase is
 # asked for once, unless COSIGN_PASSWORD has it. Older versions aren't signed: they're
@@ -28,7 +29,13 @@ check_key
 cosign=$(find_cosign)
 ask_passphrase
 
-if [ $# -eq 0 ]; then
+images=()
+if [ "${1:-}" = --images ]; then
+    shift
+    [ $# -gt 0 ] || { echo 'usage: sign-images.sh --images IMAGE...' >&2; exit 2; }
+    images=("$@")
+    set --
+elif [ $# -eq 0 ]; then
     for name in $(grep -v '^#' "$root/scripts/published-recipes.txt" | tr -d '\r'); do set -- "$@" "$root/recipes/$name"; done
 fi
 field() { grep -o "\"$1\": *\"[^\"]*\"" "$2" | head -1 | cut -d'"' -f4; }
@@ -42,7 +49,10 @@ for recipe in "$@"; do
     id=$(field id "$recipe")
     version=$(field version "$recipe")
     for tag in "$version" latest; do
-        image="$id:$tag"
+        images+=("$id:$tag")
+    done
+done
+for image in "${images[@]}"; do
         if "$quasidock" signature check "$image" >/dev/null 2>&1; then
             already=$((already + 1))
             continue
@@ -51,6 +61,5 @@ for recipe in "$@"; do
         sign_blob "$work_w\\payload" "$work_w\\signature"
         "$quasidock" signature push "$image" "$work_w\\payload" "$work_w\\signature"
         signed=$((signed + 1))
-    done
 done
 echo "$signed signed, $already signed already."

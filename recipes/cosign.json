@@ -11,8 +11,8 @@
     "filesystem": ["cwd"]
   },
   "sdk": {
-    "go": "go:1.27.3@sha256:fb6554b0d89f578112c72b92c87a05583980578328180762571770884b3bc162",
-    "busybox": "busybox:FRP-6075-g169694ebd@sha256:db9d39727bfdd4d176b5878c0a125daa8a2396ea21e0f01a6a372f53d9d97e5d"
+    "go": "go:1.27.3@sha256:7ce8afd12dc7371e8f546f455036b941fdfdcbbaa81cefb3c320ea693d951ccc",
+    "busybox": "busybox:FRP-6075-g169694ebd@sha256:baca1ecd27b7b5ffe54402d4f8b6e36802d9db5e0e4cb2b7ab13104031045c50"
   },
   "stages": [
     {
@@ -32,7 +32,7 @@
           "rm -rf vendor packages.txt embeds.txt files.txt && mv minimal/vendor vendor && rmdir minimal"
         ],
         "dir": "vendor",
-        "sha256": "95a09a66a9b053f22e70245a2aecc3fd4e4acebcd6dd23e269f004c8e9f4ca16"
+        "sha256": "9a90994f4ee99c8bc01954b5e234679b0de10d2fae7b42a98b492fc5415b9d55"
       },
       "build": [
         "go build -mod=vendor -ldflags '-s -w -buildid= -X sigs.k8s.io/release-utils/version.gitVersion=v3.1.4 -X sigs.k8s.io/release-utils/version.gitCommit=0e48502cf5ef34e2e60bbd3617aa19945712f705 -X sigs.k8s.io/release-utils/version.gitTreeState=clean -X sigs.k8s.io/release-utils/version.buildDate=2026-10-20T17:33:02Z' -o \"$PREFIX/cosign.exe\" ./cmd/cosign",

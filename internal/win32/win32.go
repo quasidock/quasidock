@@ -26,9 +26,9 @@ const (
 	INVALID_HANDLE_VALUE HANDLE = ^uintptr(0)
 	INVALID_SOCKET       SOCKET = ^uintptr(0)
 
-	INFINITE      DWORD = 0xFFFFFFFF
-	WAIT_OBJECT_0 DWORD = 0
-	WAIT_TIMEOUT  DWORD = 0x102
+	INFINITE       DWORD = 0xFFFFFFFF
+	WAIT_OBJECT_0  DWORD = 0
+	WAIT_TIMEOUT   DWORD = 0x102
 	WAIT_ABANDONED DWORD = 0x80
 
 	EVENT_MODIFY_STATE DWORD = 0x0002
@@ -69,26 +69,26 @@ const (
 	FILE_READ_ATTRIBUTES DWORD = 0x80
 	FILE_LIST_DIRECTORY  DWORD = 0x1
 
-	STARTF_USESTDHANDLES    DWORD = 0x00000100
-	STARTF_TITLEISLINKNAME  DWORD = 0x00000800
+	STARTF_USESTDHANDLES   DWORD = 0x00000100
+	STARTF_TITLEISLINKNAME DWORD = 0x00000800
 
-	DETACHED_PROCESS            DWORD = 0x00000008
-	CREATE_NEW_PROCESS_GROUP    DWORD = 0x00000200
-	CREATE_NEW_CONSOLE          DWORD = 0x00000010
-	CREATE_NO_WINDOW            DWORD = 0x08000000
-	CREATE_UNICODE_ENVIRONMENT  DWORD = 0x00000400
+	DETACHED_PROCESS             DWORD = 0x00000008
+	CREATE_NEW_PROCESS_GROUP     DWORD = 0x00000200
+	CREATE_NEW_CONSOLE           DWORD = 0x00000010
+	CREATE_NO_WINDOW             DWORD = 0x08000000
+	CREATE_UNICODE_ENVIRONMENT   DWORD = 0x00000400
 	EXTENDED_STARTUPINFO_PRESENT DWORD = 0x00080000
-	CREATE_BREAKAWAY_FROM_JOB   DWORD = 0x01000000
+	CREATE_BREAKAWAY_FROM_JOB    DWORD = 0x01000000
 
-	PROC_THREAD_ATTRIBUTE_HANDLE_LIST          uintptr = 0x00020002
+	PROC_THREAD_ATTRIBUTE_HANDLE_LIST           uintptr = 0x00020002
 	PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES uintptr = 0x00020009
-	PROC_THREAD_ATTRIBUTE_JOB_LIST             uintptr = 0x0002000D
+	PROC_THREAD_ATTRIBUTE_JOB_LIST              uintptr = 0x0002000D
 
 	JobObjectBasicAccountingInformation int32 = 1
-	JobObjectExtendedLimitInformation    int32 = 9
+	JobObjectExtendedLimitInformation   int32 = 9
 
 	JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE DWORD = 0x00002000
-	JOB_OBJECT_LIMIT_BREAKAWAY_OK     DWORD = 0x00000800
+	JOB_OBJECT_LIMIT_BREAKAWAY_OK      DWORD = 0x00000800
 
 	TOKEN_ASSIGN_PRIMARY DWORD = 0x0001
 
@@ -96,15 +96,15 @@ const (
 	PROCESS_QUERY_INFORMATION         DWORD = 0x0400
 	PROCESS_QUERY_LIMITED_INFORMATION DWORD = 0x1000
 	SYNCHRONIZE                       DWORD = 0x00100000
-	TOKEN_DUPLICATE      DWORD = 0x0002
-	TOKEN_QUERY          DWORD = 0x0008
-	TOKEN_ADJUST_DEFAULT DWORD = 0x0080
+	TOKEN_DUPLICATE                   DWORD = 0x0002
+	TOKEN_QUERY                       DWORD = 0x0008
+	TOKEN_ADJUST_DEFAULT              DWORD = 0x0080
 
-	TokenUser            int32 = 1
-	TokenIntegrityLevel  int32 = 25
-	TokenIsAppContainer  int32 = 29
+	TokenUser             int32 = 1
+	TokenIntegrityLevel   int32 = 25
+	TokenIsAppContainer   int32 = 29
 	SecurityImpersonation int32 = 2
-	TokenPrimary         int32 = 1
+	TokenPrimary          int32 = 1
 
 	SE_GROUP_INTEGRITY DWORD = 0x00000020
 	SE_GROUP_ENABLED   DWORD = 0x00000004
@@ -117,8 +117,8 @@ const (
 	LowIntegritySidString    = "S-1-16-4096"
 	MediumIntegritySidString = "S-1-16-8192"
 
-	LABEL_SECURITY_INFORMATION      DWORD = 0x00000010
-	DACL_SECURITY_INFORMATION       DWORD = 0x00000004
+	LABEL_SECURITY_INFORMATION         DWORD = 0x00000010
+	DACL_SECURITY_INFORMATION          DWORD = 0x00000004
 	SYSTEM_MANDATORY_LABEL_NO_WRITE_UP DWORD = 0x1
 	ACCESS_ALLOWED_ACE_TYPE            uint8 = 0x0
 	ACCESS_DENIED_ACE_TYPE             uint8 = 0x1
@@ -141,10 +141,10 @@ const (
 	TRUSTEE_IS_SID                     int32 = 0
 	TRUSTEE_IS_UNKNOWN                 int32 = 0
 
-	FILE_ALL_ACCESS            DWORD = 0x001F01FF
-	FILE_GENERIC_READ_EXECUTE  DWORD = 0x001200A9
-	FILE_MODIFY                DWORD = 0x00010156
-	WRITE_OWNER                DWORD = 0x00080000
+	FILE_ALL_ACCESS           DWORD = 0x001F01FF
+	FILE_GENERIC_READ_EXECUTE DWORD = 0x001200A9
+	FILE_MODIFY               DWORD = 0x00010156
+	WRITE_OWNER               DWORD = 0x00080000
 
 	HKEY_CLASSES_ROOT  HKEY = 0x80000000
 	HKEY_CURRENT_USER  HKEY = 0x80000001
@@ -162,14 +162,14 @@ const (
 	REG_DWORD     DWORD = 4
 	REG_MULTI_SZ  DWORD = 7
 
-	ERROR_SUCCESS          = 0
-	ERROR_FILE_NOT_FOUND   = 2
-	ERROR_PATH_NOT_FOUND   = 3
-	ERROR_ACCESS_DENIED    = 5
+	ERROR_SUCCESS           = 0
+	ERROR_FILE_NOT_FOUND    = 2
+	ERROR_PATH_NOT_FOUND    = 3
+	ERROR_ACCESS_DENIED     = 5
 	ERROR_SHARING_VIOLATION = 32
-	ERROR_NOT_FOUND        = 1168
-	ERROR_NO_MORE_ITEMS    = 259
-	ERROR_BROKEN_PIPE      = 109
+	ERROR_NOT_FOUND         = 1168
+	ERROR_NO_MORE_ITEMS     = 259
+	ERROR_BROKEN_PIPE       = 109
 
 	FSCTL_SET_REPARSE_POINT DWORD = 0x000900A4
 	FSCTL_GET_REPARSE_POINT DWORD = 0x000900A8
@@ -177,18 +177,18 @@ const (
 
 	IO_REPARSE_TAG_MOUNT_POINT DWORD = 0xA0000003
 
-	AF_INET   int32 = 2
-	AF_INET6  int32 = 23
-	AF_UNIX   int32 = 1
-	SOCK_STREAM int32 = 1
-	IPPROTO_TCP int32 = 6
-	SOL_SOCKET  int32 = 0xFFFF
-	SO_REUSEADDR int32 = 0x0004
+	AF_INET             int32 = 2
+	AF_INET6            int32 = 23
+	AF_UNIX             int32 = 1
+	SOCK_STREAM         int32 = 1
+	IPPROTO_TCP         int32 = 6
+	SOL_SOCKET          int32 = 0xFFFF
+	SO_REUSEADDR        int32 = 0x0004
 	SO_EXCLUSIVEADDRUSE int32 = ^int32(0x0004)
-	FIONBIO     int32 = -2147195266 // (int32)0x8004667E
-	SD_RECEIVE  int32 = 0
-	SD_SEND     int32 = 1
-	SD_BOTH     int32 = 2
+	FIONBIO             int32 = -2147195266 // (int32)0x8004667E
+	SD_RECEIVE          int32 = 0
+	SD_SEND             int32 = 1
+	SD_BOTH             int32 = 2
 
 	SO_ERROR            int32 = 0x1007
 	WSA_FLAG_OVERLAPPED DWORD = 0x01
@@ -212,12 +212,12 @@ const (
 	CRED_TYPE_GENERIC          DWORD = 1
 	CRED_PERSIST_LOCAL_MACHINE DWORD = 2
 
-	CERT_STORE_PROV_SYSTEM_W       uintptr = 10
-	CERT_STORE_READONLY_FLAG       DWORD   = 0x00008000
-	CERT_SYSTEM_STORE_CURRENT_USER DWORD   = 1 << 16
-	CERT_SYSTEM_STORE_LOCAL_MACHINE DWORD  = 2 << 16
+	CERT_STORE_PROV_SYSTEM_W        uintptr = 10
+	CERT_STORE_READONLY_FLAG        DWORD   = 0x00008000
+	CERT_SYSTEM_STORE_CURRENT_USER  DWORD   = 1 << 16
+	CERT_SYSTEM_STORE_LOCAL_MACHINE DWORD   = 2 << 16
 
-	SHCNE_ASSOCCHANGED int32 = 0x08000000
+	SHCNE_ASSOCCHANGED int32  = 0x08000000
 	SHCNF_IDLIST       uint32 = 0
 )
 
@@ -350,14 +350,14 @@ type ACL struct {
 }
 
 type ACE_HEADER struct {
-	AceType uint8
+	AceType  uint8
 	AceFlags uint8
-	AceSize uint16
+	AceSize  uint16
 }
 
 type ACCESS_ALLOWED_ACE struct {
-	Header ACE_HEADER
-	Mask   DWORD
+	Header   ACE_HEADER
+	Mask     DWORD
 	SidStart DWORD
 }
 
@@ -494,116 +494,116 @@ var (
 	modCrypt32  = syscall.NewLazyDLL("crypt32.dll")
 	modNtdll    = syscall.NewLazyDLL("ntdll.dll")
 
-	modNetIso = syscall.NewLazyDLL("api-ms-win-net-isolation-l1-1-0.dll")
+	modNetIso  = syscall.NewLazyDLL("api-ms-win-net-isolation-l1-1-0.dll")
 	modSecBase = syscall.NewLazyDLL("api-ms-win-security-base-l1-2-2.dll")
 )
 
 // Procs
 var (
-	procGetLastError               = modKernel32.NewProc("GetLastError")
-	procCloseHandle                = modKernel32.NewProc("CloseHandle")
-	procGetStdHandle               = modKernel32.NewProc("GetStdHandle")
-	procSetStdHandle               = modKernel32.NewProc("SetStdHandle")
-	procSetHandleInformation       = modKernel32.NewProc("SetHandleInformation")
-	procCreateFileW                = modKernel32.NewProc("CreateFileW")
-	procReadFile                   = modKernel32.NewProc("ReadFile")
-	procWriteFile                  = modKernel32.NewProc("WriteFile")
-	procCreatePipe                 = modKernel32.NewProc("CreatePipe")
-	procGetFileType                = modKernel32.NewProc("GetFileType")
-	procGetModuleFileNameW         = modKernel32.NewProc("GetModuleFileNameW")
-	procGetSystemDirectoryW        = modKernel32.NewProc("GetSystemDirectoryW")
-	procLoadLibraryExW             = modKernel32.NewProc("LoadLibraryExW")
-	procGetProcAddress             = modKernel32.NewProc("GetProcAddress")
-	procGetSystemTimeAsFileTime    = modKernel32.NewProc("GetSystemTimeAsFileTime")
-	procCreateProcessW             = modKernel32.NewProc("CreateProcessW")
+	procGetLastError                      = modKernel32.NewProc("GetLastError")
+	procCloseHandle                       = modKernel32.NewProc("CloseHandle")
+	procGetStdHandle                      = modKernel32.NewProc("GetStdHandle")
+	procSetStdHandle                      = modKernel32.NewProc("SetStdHandle")
+	procSetHandleInformation              = modKernel32.NewProc("SetHandleInformation")
+	procCreateFileW                       = modKernel32.NewProc("CreateFileW")
+	procReadFile                          = modKernel32.NewProc("ReadFile")
+	procWriteFile                         = modKernel32.NewProc("WriteFile")
+	procCreatePipe                        = modKernel32.NewProc("CreatePipe")
+	procGetFileType                       = modKernel32.NewProc("GetFileType")
+	procGetModuleFileNameW                = modKernel32.NewProc("GetModuleFileNameW")
+	procGetSystemDirectoryW               = modKernel32.NewProc("GetSystemDirectoryW")
+	procLoadLibraryExW                    = modKernel32.NewProc("LoadLibraryExW")
+	procGetProcAddress                    = modKernel32.NewProc("GetProcAddress")
+	procGetSystemTimeAsFileTime           = modKernel32.NewProc("GetSystemTimeAsFileTime")
+	procCreateProcessW                    = modKernel32.NewProc("CreateProcessW")
 	procInitializeProcThreadAttributeList = modKernel32.NewProc("InitializeProcThreadAttributeList")
-	procUpdateProcThreadAttribute  = modKernel32.NewProc("UpdateProcThreadAttribute")
-	procDeleteProcThreadAttributeList = modKernel32.NewProc("DeleteProcThreadAttributeList")
-	procWaitForSingleObject        = modKernel32.NewProc("WaitForSingleObject")
-	procWaitForMultipleObjects     = modKernel32.NewProc("WaitForMultipleObjects")
-	procCreateMutexW               = modKernel32.NewProc("CreateMutexW")
-	procReleaseMutex               = modKernel32.NewProc("ReleaseMutex")
-	procCreateEventW               = modKernel32.NewProc("CreateEventW")
-	procOpenEventW                 = modKernel32.NewProc("OpenEventW")
-	procSetEvent                   = modKernel32.NewProc("SetEvent")
-	procOpenProcess                = modKernel32.NewProc("OpenProcess")
-	procGetCurrentProcessId        = modKernel32.NewProc("GetCurrentProcessId")
-	procGetProcessId               = modKernel32.NewProc("GetProcessId")
-	procGetCurrentProcess          = modKernel32.NewProc("GetCurrentProcess")
-	procGetExitCodeProcess         = modKernel32.NewProc("GetExitCodeProcess")
-	procTerminateProcess           = modKernel32.NewProc("TerminateProcess")
-	procCreateJobObjectW           = modKernel32.NewProc("CreateJobObjectW")
-	procSetInformationJobObject    = modKernel32.NewProc("SetInformationJobObject")
-	procQueryInformationJobObject  = modKernel32.NewProc("QueryInformationJobObject")
-	procTerminateJobObject         = modKernel32.NewProc("TerminateJobObject")
-	procDeviceIoControl            = modKernel32.NewProc("DeviceIoControl")
-	procGetFileAttributesW         = modKernel32.NewProc("GetFileAttributesW")
-	procCreateDirectoryW           = modKernel32.NewProc("CreateDirectoryW")
-	procRemoveDirectoryW           = modKernel32.NewProc("RemoveDirectoryW")
-	procMoveFileExW                = modKernel32.NewProc("MoveFileExW")
-	procDefineDosDeviceW           = modKernel32.NewProc("DefineDosDeviceW")
-	procQueryDosDeviceW            = modKernel32.NewProc("QueryDosDeviceW")
-	procSleep                      = modKernel32.NewProc("Sleep")
-	procGetConsoleMode             = modKernel32.NewProc("GetConsoleMode")
-	procSetConsoleMode             = modKernel32.NewProc("SetConsoleMode")
-	procSetConsoleCtrlHandler      = modKernel32.NewProc("SetConsoleCtrlHandler")
-	procReadConsoleW               = modKernel32.NewProc("ReadConsoleW")
-	procGetConsoleOutputCP         = modKernel32.NewProc("GetConsoleOutputCP")
-	procSetConsoleOutputCP         = modKernel32.NewProc("SetConsoleOutputCP")
-	procLocalFree                  = modKernel32.NewProc("LocalFree")
-	procReadDirectoryChangesW      = modKernel32.NewProc("ReadDirectoryChangesW")
-	procCreateIoCompletionPort     = modKernel32.NewProc("CreateIoCompletionPort")
-	procGetQueuedCompletionStatus  = modKernel32.NewProc("GetQueuedCompletionStatus")
-	procPostQueuedCompletionStatus = modKernel32.NewProc("PostQueuedCompletionStatus")
-	procCancelIoEx                 = modKernel32.NewProc("CancelIoEx")
-	procLockFileEx                 = modKernel32.NewProc("LockFileEx")
-	procUnlockFileEx               = modKernel32.NewProc("UnlockFileEx")
+	procUpdateProcThreadAttribute         = modKernel32.NewProc("UpdateProcThreadAttribute")
+	procDeleteProcThreadAttributeList     = modKernel32.NewProc("DeleteProcThreadAttributeList")
+	procWaitForSingleObject               = modKernel32.NewProc("WaitForSingleObject")
+	procWaitForMultipleObjects            = modKernel32.NewProc("WaitForMultipleObjects")
+	procCreateMutexW                      = modKernel32.NewProc("CreateMutexW")
+	procReleaseMutex                      = modKernel32.NewProc("ReleaseMutex")
+	procCreateEventW                      = modKernel32.NewProc("CreateEventW")
+	procOpenEventW                        = modKernel32.NewProc("OpenEventW")
+	procSetEvent                          = modKernel32.NewProc("SetEvent")
+	procOpenProcess                       = modKernel32.NewProc("OpenProcess")
+	procGetCurrentProcessId               = modKernel32.NewProc("GetCurrentProcessId")
+	procGetProcessId                      = modKernel32.NewProc("GetProcessId")
+	procGetCurrentProcess                 = modKernel32.NewProc("GetCurrentProcess")
+	procGetExitCodeProcess                = modKernel32.NewProc("GetExitCodeProcess")
+	procTerminateProcess                  = modKernel32.NewProc("TerminateProcess")
+	procCreateJobObjectW                  = modKernel32.NewProc("CreateJobObjectW")
+	procSetInformationJobObject           = modKernel32.NewProc("SetInformationJobObject")
+	procQueryInformationJobObject         = modKernel32.NewProc("QueryInformationJobObject")
+	procTerminateJobObject                = modKernel32.NewProc("TerminateJobObject")
+	procDeviceIoControl                   = modKernel32.NewProc("DeviceIoControl")
+	procGetFileAttributesW                = modKernel32.NewProc("GetFileAttributesW")
+	procCreateDirectoryW                  = modKernel32.NewProc("CreateDirectoryW")
+	procRemoveDirectoryW                  = modKernel32.NewProc("RemoveDirectoryW")
+	procMoveFileExW                       = modKernel32.NewProc("MoveFileExW")
+	procDefineDosDeviceW                  = modKernel32.NewProc("DefineDosDeviceW")
+	procQueryDosDeviceW                   = modKernel32.NewProc("QueryDosDeviceW")
+	procSleep                             = modKernel32.NewProc("Sleep")
+	procGetConsoleMode                    = modKernel32.NewProc("GetConsoleMode")
+	procSetConsoleMode                    = modKernel32.NewProc("SetConsoleMode")
+	procSetConsoleCtrlHandler             = modKernel32.NewProc("SetConsoleCtrlHandler")
+	procReadConsoleW                      = modKernel32.NewProc("ReadConsoleW")
+	procGetConsoleOutputCP                = modKernel32.NewProc("GetConsoleOutputCP")
+	procSetConsoleOutputCP                = modKernel32.NewProc("SetConsoleOutputCP")
+	procLocalFree                         = modKernel32.NewProc("LocalFree")
+	procReadDirectoryChangesW             = modKernel32.NewProc("ReadDirectoryChangesW")
+	procCreateIoCompletionPort            = modKernel32.NewProc("CreateIoCompletionPort")
+	procGetQueuedCompletionStatus         = modKernel32.NewProc("GetQueuedCompletionStatus")
+	procPostQueuedCompletionStatus        = modKernel32.NewProc("PostQueuedCompletionStatus")
+	procCancelIoEx                        = modKernel32.NewProc("CancelIoEx")
+	procLockFileEx                        = modKernel32.NewProc("LockFileEx")
+	procUnlockFileEx                      = modKernel32.NewProc("UnlockFileEx")
 
 	// advapi32
-	procOpenProcessToken           = modAdvapi32.NewProc("OpenProcessToken")
-	procDuplicateTokenEx           = modAdvapi32.NewProc("DuplicateTokenEx")
-	procSetTokenInformation        = modAdvapi32.NewProc("SetTokenInformation")
-	procGetTokenInformation        = modAdvapi32.NewProc("GetTokenInformation")
-	procCreateProcessAsUserW       = modAdvapi32.NewProc("CreateProcessAsUserW")
-	procInitializeAcl              = modAdvapi32.NewProc("InitializeAcl")
-	procAddMandatoryAce            = modAdvapi32.NewProc("AddMandatoryAce")
-	procDeleteAce                  = modAdvapi32.NewProc("DeleteAce")
-	procGetAce                     = modAdvapi32.NewProc("GetAce")
-	procFreeSid                    = modAdvapi32.NewProc("FreeSid")
-	procEqualSid                   = modAdvapi32.NewProc("EqualSid")
-	procGetLengthSid               = modAdvapi32.NewProc("GetLengthSid")
-	procGetSidIdentifierAuthority  = modAdvapi32.NewProc("GetSidIdentifierAuthority")
-	procGetSidSubAuthorityCount    = modAdvapi32.NewProc("GetSidSubAuthorityCount")
-	procGetSidSubAuthority         = modAdvapi32.NewProc("GetSidSubAuthority")
-	procConvertStringSidToSidW     = modAdvapi32.NewProc("ConvertStringSidToSidW")
-	procConvertSidToStringSidW     = modAdvapi32.NewProc("ConvertSidToStringSidW")
-	procGetNamedSecurityInfoW      = modAdvapi32.NewProc("GetNamedSecurityInfoW")
-	procSetNamedSecurityInfoW      = modAdvapi32.NewProc("SetNamedSecurityInfoW")
-	procSetSecurityInfo            = modAdvapi32.NewProc("SetSecurityInfo")
-	procSetEntriesInAclW           = modAdvapi32.NewProc("SetEntriesInAclW")
-	procRegCreateKeyExW            = modAdvapi32.NewProc("RegCreateKeyExW")
-	procRegOpenKeyExW              = modAdvapi32.NewProc("RegOpenKeyExW")
-	procRegCloseKey                = modAdvapi32.NewProc("RegCloseKey")
-	procRegSetValueExW             = modAdvapi32.NewProc("RegSetValueExW")
-	procRegQueryValueExW           = modAdvapi32.NewProc("RegQueryValueExW")
-	procRegEnumKeyExW              = modAdvapi32.NewProc("RegEnumKeyExW")
-	procRegQueryInfoKeyW           = modAdvapi32.NewProc("RegQueryInfoKeyW")
-	procRegDeleteTreeW             = modAdvapi32.NewProc("RegDeleteTreeW")
-	procRegDeleteKeyW              = modAdvapi32.NewProc("RegDeleteKeyW")
-	procRegDeleteValueW            = modAdvapi32.NewProc("RegDeleteValueW")
-	procRegEnumValueW              = modAdvapi32.NewProc("RegEnumValueW")
-	procRegLoadAppKeyW             = modAdvapi32.NewProc("RegLoadAppKeyW")
-	procCredReadW                  = modAdvapi32.NewProc("CredReadW")
-	procCredWriteW                 = modAdvapi32.NewProc("CredWriteW")
-	procCredDeleteW                = modAdvapi32.NewProc("CredDeleteW")
-	procCredFree                   = modAdvapi32.NewProc("CredFree")
+	procOpenProcessToken          = modAdvapi32.NewProc("OpenProcessToken")
+	procDuplicateTokenEx          = modAdvapi32.NewProc("DuplicateTokenEx")
+	procSetTokenInformation       = modAdvapi32.NewProc("SetTokenInformation")
+	procGetTokenInformation       = modAdvapi32.NewProc("GetTokenInformation")
+	procCreateProcessAsUserW      = modAdvapi32.NewProc("CreateProcessAsUserW")
+	procInitializeAcl             = modAdvapi32.NewProc("InitializeAcl")
+	procAddMandatoryAce           = modAdvapi32.NewProc("AddMandatoryAce")
+	procDeleteAce                 = modAdvapi32.NewProc("DeleteAce")
+	procGetAce                    = modAdvapi32.NewProc("GetAce")
+	procFreeSid                   = modAdvapi32.NewProc("FreeSid")
+	procEqualSid                  = modAdvapi32.NewProc("EqualSid")
+	procGetLengthSid              = modAdvapi32.NewProc("GetLengthSid")
+	procGetSidIdentifierAuthority = modAdvapi32.NewProc("GetSidIdentifierAuthority")
+	procGetSidSubAuthorityCount   = modAdvapi32.NewProc("GetSidSubAuthorityCount")
+	procGetSidSubAuthority        = modAdvapi32.NewProc("GetSidSubAuthority")
+	procConvertStringSidToSidW    = modAdvapi32.NewProc("ConvertStringSidToSidW")
+	procConvertSidToStringSidW    = modAdvapi32.NewProc("ConvertSidToStringSidW")
+	procGetNamedSecurityInfoW     = modAdvapi32.NewProc("GetNamedSecurityInfoW")
+	procSetNamedSecurityInfoW     = modAdvapi32.NewProc("SetNamedSecurityInfoW")
+	procSetSecurityInfo           = modAdvapi32.NewProc("SetSecurityInfo")
+	procSetEntriesInAclW          = modAdvapi32.NewProc("SetEntriesInAclW")
+	procRegCreateKeyExW           = modAdvapi32.NewProc("RegCreateKeyExW")
+	procRegOpenKeyExW             = modAdvapi32.NewProc("RegOpenKeyExW")
+	procRegCloseKey               = modAdvapi32.NewProc("RegCloseKey")
+	procRegSetValueExW            = modAdvapi32.NewProc("RegSetValueExW")
+	procRegQueryValueExW          = modAdvapi32.NewProc("RegQueryValueExW")
+	procRegEnumKeyExW             = modAdvapi32.NewProc("RegEnumKeyExW")
+	procRegQueryInfoKeyW          = modAdvapi32.NewProc("RegQueryInfoKeyW")
+	procRegDeleteTreeW            = modAdvapi32.NewProc("RegDeleteTreeW")
+	procRegDeleteKeyW             = modAdvapi32.NewProc("RegDeleteKeyW")
+	procRegDeleteValueW           = modAdvapi32.NewProc("RegDeleteValueW")
+	procRegEnumValueW             = modAdvapi32.NewProc("RegEnumValueW")
+	procRegLoadAppKeyW            = modAdvapi32.NewProc("RegLoadAppKeyW")
+	procCredReadW                 = modAdvapi32.NewProc("CredReadW")
+	procCredWriteW                = modAdvapi32.NewProc("CredWriteW")
+	procCredDeleteW               = modAdvapi32.NewProc("CredDeleteW")
+	procCredFree                  = modAdvapi32.NewProc("CredFree")
 
 	// userenv
-	procCreateAppContainerProfile             = modUserenv.NewProc("CreateAppContainerProfile")
+	procCreateAppContainerProfile                 = modUserenv.NewProc("CreateAppContainerProfile")
 	procDeriveAppContainerSidFromAppContainerName = modUserenv.NewProc("DeriveAppContainerSidFromAppContainerName")
-	procDeleteAppContainerProfile             = modUserenv.NewProc("DeleteAppContainerProfile")
-	procCreateEnvironmentBlock                = modUserenv.NewProc("CreateEnvironmentBlock")
-	procDestroyEnvironmentBlock               = modUserenv.NewProc("DestroyEnvironmentBlock")
+	procDeleteAppContainerProfile                 = modUserenv.NewProc("DeleteAppContainerProfile")
+	procCreateEnvironmentBlock                    = modUserenv.NewProc("CreateEnvironmentBlock")
+	procDestroyEnvironmentBlock                   = modUserenv.NewProc("DestroyEnvironmentBlock")
 
 	// api-ms-win-net-isolation
 	procNetworkIsolationGetAppContainerConfig = modNetIso.NewProc("NetworkIsolationGetAppContainerConfig")
@@ -613,41 +613,41 @@ var (
 	procDeriveCapabilitySidsFromName = modSecBase.NewProc("DeriveCapabilitySidsFromName")
 
 	// ws2_32
-	procWSAStartup         = modWs2_32.NewProc("WSAStartup")
-	procWSAGetLastError    = modWs2_32.NewProc("WSAGetLastError")
-	procWSASocketW         = modWs2_32.NewProc("WSASocketW")
-	procClosesocket        = modWs2_32.NewProc("closesocket")
-	procBind               = modWs2_32.NewProc("bind")
-	procListen             = modWs2_32.NewProc("listen")
-	procAccept             = modWs2_32.NewProc("accept")
-	procConnect            = modWs2_32.NewProc("connect")
-	procSend               = modWs2_32.NewProc("send")
-	procRecv               = modWs2_32.NewProc("recv")
-	procShutdown           = modWs2_32.NewProc("shutdown")
-	procSetsockopt         = modWs2_32.NewProc("setsockopt")
-	procGetsockopt         = modWs2_32.NewProc("getsockopt")
-	procGetsockname        = modWs2_32.NewProc("getsockname")
-	procIoctlsocket        = modWs2_32.NewProc("ioctlsocket")
-	procSelect             = modWs2_32.NewProc("select")
+	procWSAStartup          = modWs2_32.NewProc("WSAStartup")
+	procWSAGetLastError     = modWs2_32.NewProc("WSAGetLastError")
+	procWSASocketW          = modWs2_32.NewProc("WSASocketW")
+	procClosesocket         = modWs2_32.NewProc("closesocket")
+	procBind                = modWs2_32.NewProc("bind")
+	procListen              = modWs2_32.NewProc("listen")
+	procAccept              = modWs2_32.NewProc("accept")
+	procConnect             = modWs2_32.NewProc("connect")
+	procSend                = modWs2_32.NewProc("send")
+	procRecv                = modWs2_32.NewProc("recv")
+	procShutdown            = modWs2_32.NewProc("shutdown")
+	procSetsockopt          = modWs2_32.NewProc("setsockopt")
+	procGetsockopt          = modWs2_32.NewProc("getsockopt")
+	procGetsockname         = modWs2_32.NewProc("getsockname")
+	procIoctlsocket         = modWs2_32.NewProc("ioctlsocket")
+	procSelect              = modWs2_32.NewProc("select")
 	procWSADuplicateSocketW = modWs2_32.NewProc("WSADuplicateSocketW")
 
 	// ole32 & shell32 & user32 & crypt32
-	procCoInitializeEx          = modOle32.NewProc("CoInitializeEx")
-	procCoUninitialize          = modOle32.NewProc("CoUninitialize")
-	procCoCreateInstance        = modOle32.NewProc("CoCreateInstance")
-	procCoTaskMemFree           = modOle32.NewProc("CoTaskMemFree")
-	procSHGetKnownFolderPath    = modShell32.NewProc("SHGetKnownFolderPath")
-	procSHChangeNotify          = modShell32.NewProc("SHChangeNotify")
-	procShell_NotifyIconW       = modShell32.NewProc("Shell_NotifyIconW")
+	procCoInitializeEx               = modOle32.NewProc("CoInitializeEx")
+	procCoUninitialize               = modOle32.NewProc("CoUninitialize")
+	procCoCreateInstance             = modOle32.NewProc("CoCreateInstance")
+	procCoTaskMemFree                = modOle32.NewProc("CoTaskMemFree")
+	procSHGetKnownFolderPath         = modShell32.NewProc("SHGetKnownFolderPath")
+	procSHChangeNotify               = modShell32.NewProc("SHChangeNotify")
+	procShell_NotifyIconW            = modShell32.NewProc("Shell_NotifyIconW")
 	procSHQueryUserNotificationState = modShell32.NewProc("SHQueryUserNotificationState")
-	procMessageBoxW             = modUser32.NewProc("MessageBoxW")
-	procCertOpenStore           = modCrypt32.NewProc("CertOpenStore")
-	procCertCloseStore          = modCrypt32.NewProc("CertCloseStore")
-	procCertEnumCertificatesInStore = modCrypt32.NewProc("CertEnumCertificatesInStore")
-	procCertGetEnhancedKeyUsage = modCrypt32.NewProc("CertGetEnhancedKeyUsage")
+	procMessageBoxW                  = modUser32.NewProc("MessageBoxW")
+	procCertOpenStore                = modCrypt32.NewProc("CertOpenStore")
+	procCertCloseStore               = modCrypt32.NewProc("CertCloseStore")
+	procCertEnumCertificatesInStore  = modCrypt32.NewProc("CertEnumCertificatesInStore")
+	procCertGetEnhancedKeyUsage      = modCrypt32.NewProc("CertGetEnhancedKeyUsage")
 
 	// ntdll
-	procNtQueryInformationFile  = modNtdll.NewProc("NtQueryInformationFile")
+	procNtQueryInformationFile = modNtdll.NewProc("NtQueryInformationFile")
 )
 
 // WTF-8 / UTF-16 conversions preserving unpaired surrogates
@@ -1386,18 +1386,18 @@ func UnlockFileEx(h HANDLE, reserved DWORD, numberOfBytesToUnlockLow DWORD, numb
 
 // CryptoAPI constants and functions
 const (
-	CERT_SYSTEM_STORE_LOCAL_MACHINE_ID     = 2
-	CERT_SYSTEM_STORE_LOCAL_MACHINE_ENTERPRISE_ID = 7
+	CERT_SYSTEM_STORE_LOCAL_MACHINE_ID              = 2
+	CERT_SYSTEM_STORE_LOCAL_MACHINE_ENTERPRISE_ID   = 7
 	CERT_SYSTEM_STORE_LOCAL_MACHINE_GROUP_POLICY_ID = 8
-	CERT_SYSTEM_STORE_CURRENT_USER_ID      = 1
-	CERT_SYSTEM_STORE_CURRENT_USER_GROUP_POLICY_ID = 9
-	CERT_SYSTEM_STORE_SERVICES_ID          = 5
-	CERT_SYSTEM_STORE_USERS_ID             = 6
-	CERT_SYSTEM_STORE_LOCATION_SHIFT       = 16
-	CERT_FIND_PROP_ONLY_ENHKEY_USAGE_FLAG  = 0x4
-	CERT_FIND_EXT_ONLY_ENHKEY_USAGE_FLAG   = 0x2
-	CRYPT_E_NOT_FOUND                      = 0x80092004
-	X509_ASN_ENCODING                      = 0x1
+	CERT_SYSTEM_STORE_CURRENT_USER_ID               = 1
+	CERT_SYSTEM_STORE_CURRENT_USER_GROUP_POLICY_ID  = 9
+	CERT_SYSTEM_STORE_SERVICES_ID                   = 5
+	CERT_SYSTEM_STORE_USERS_ID                      = 6
+	CERT_SYSTEM_STORE_LOCATION_SHIFT                = 16
+	CERT_FIND_PROP_ONLY_ENHKEY_USAGE_FLAG           = 0x4
+	CERT_FIND_EXT_ONLY_ENHKEY_USAGE_FLAG            = 0x2
+	CRYPT_E_NOT_FOUND                               = 0x80092004
+	X509_ASN_ENCODING                               = 0x1
 )
 
 func CertSystemStore(location DWORD) DWORD {

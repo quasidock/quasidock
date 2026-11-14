@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/quasidock/quasidock/internal/context"
+	"github.com/quasidock/quasidock/internal/grants"
 	"github.com/quasidock/quasidock/internal/hkcu"
 	"github.com/quasidock/quasidock/internal/lifecycle"
 	"github.com/quasidock/quasidock/internal/run"
@@ -257,9 +258,12 @@ func containerRemove(ctx *context.Context, args []string) error {
 			}
 		}
 		_ = hkcu.SettleLeftovers(ctx.Store, rec.AppID)
-		if err := ctx.Store.RemoveContainer(rec.ID); err != nil {
+		if err := ctx.Store.RemoveContainer(rec.ID); err != nil && !(rec.HostConfig.AutoRemove && errors.Is(err, store.ErrContainerNotFound)) {
 			errs = append(errs, err)
 			continue
+		}
+		if err := grants.RepairMounts(ctx.Store); err != nil {
+			errs = append(errs, err)
 		}
 		fmt.Fprintln(ctx.Stdout, target)
 	}
@@ -366,6 +370,9 @@ func containerPrune(ctx *context.Context, args []string) error {
 		return errors.New("usage: quasidock container prune [-f]")
 	}
 	removed, freed, _, err := ctx.Store.PruneContainers(false)
+	if err == nil {
+		err = grants.RepairMounts(ctx.Store)
+	}
 	if err != nil {
 		return err
 	}

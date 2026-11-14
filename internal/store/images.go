@@ -12,7 +12,7 @@ import (
 	"github.com/quasidock/quasidock/internal/registry"
 )
 
-const DefaultImageRegistry = "ghcr.io/zigsaw-io"
+const DefaultImageRegistry = "ghcr.io/quasidock/quasidock"
 
 var ErrImageNotFound = errors.New("image is not cached")
 

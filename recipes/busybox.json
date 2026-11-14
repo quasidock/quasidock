@@ -2,6 +2,7 @@
   "id": "busybox",
   "version": "FRP-6075-g169694ebd",
   "entrypoint": "busybox.exe",
+  "source_mirrors": ["ghcr.io/quasidock/busybox@sha256:baca1ecd27b7b5ffe54402d4f8b6e36802d9db5e0e4cb2b7ab13104031045c50"],
   "stages": [
     {
       "name": "busybox",

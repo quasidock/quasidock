@@ -10,7 +10,7 @@
     "filesystem": ["cwd"]
   },
   "registry": ["Software\\7-Zip"],
-  "sdk": { "busybox": "busybox:FRP-6075-g169694ebd@sha256:db9d39727bfdd4d176b5878c0a125daa8a2396ea21e0f01a6a372f53d9d97e5d" },
+  "sdk": { "busybox": "busybox:FRP-6075-g169694ebd@sha256:baca1ecd27b7b5ffe54402d4f8b6e36802d9db5e0e4cb2b7ab13104031045c50" },
   "cleanup": ["/Uninstall.exe", "/7-zip.dll", "/7-zip32.dll"],
   "stages": [
     {

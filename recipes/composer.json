@@ -10,12 +10,29 @@
     "network": true,
     "filesystem": ["cwd"]
   },
-  "from": { "php": "php:8.5.12-1@sha256:8a904f33897e35b52209736681644209e013e7ff27e6dede93bada047a36c8b6" },
+  "from": { "php": "php:8.5.12-1@sha256:12e0c8ba350be5cbc974ed42cf87358136479e8b8b5960e7ea9720643c445df5" },
+  "env": { "QUASIDOCK_COMPOSER_PHP": "${php}\\php.exe" },
+  "path": ["sdk-bin", "."],
+  "sdk": {
+    "zig": "zig:0.17.0@sha256:56fc3e4f42c25dbf70236aedb053606311cb2d4b582ad4d1e26e76036c08eab1",
+    "busybox": "busybox:FRP-6075-g169694ebd@sha256:baca1ecd27b7b5ffe54402d4f8b6e36802d9db5e0e4cb2b7ab13104031045c50"
+  },
   "stages": [
     {
       "name": "composer",
       "sources": [
         { "url": "https://getcomposer.org/download/2.10.3/composer.phar", "sha256": "7a2d379d5b8ffdaa028580ef26494c36d2feef4b178d3dd1473a4dbc5e17c8d6", "dest": "composer.phar" }
+      ]
+    },
+    {
+      "name": "sdk-commands",
+      "sources": [
+        { "path": "sdk-tools/launcher.c", "dest": "launcher.c" },
+        { "path": "composer/commands.h", "dest": "commands.h" }
+      ],
+      "build": [
+        "mkdir -p \"$PREFIX/sdk-bin\"",
+        "cc.exe -O2 -municode -s -Wl,-Brepro launcher.c -o \"$PREFIX/sdk-bin/composer.exe\""
       ]
     }
   ]

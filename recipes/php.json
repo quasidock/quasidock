@@ -16,7 +16,7 @@
     {
       "name": "php",
       "sources": [
-        { "image": "php-sdk:8.5.12-1@sha256:2e0bfb6e3555a368c25ec5b318f508fed836f8a032ed35b0560e642aa102ae2a" }
+        { "image": "php-sdk:8.5.12-1@sha256:096d38c8de072d9097e58b560ce8a9cde0003fcd42b4825ce6268d1dbc005236" }
       ]
     }
   ]

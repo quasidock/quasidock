@@ -4,6 +4,7 @@ package testregistry
 
 import (
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -80,6 +81,14 @@ func (r *Registry) serve(w http.ResponseWriter, req *http.Request) {
 			data, err := io.ReadAll(req.Body)
 			if err != nil {
 				http.Error(w, err.Error(), 400)
+				return
+			}
+			var manifest struct {
+				SchemaVersion int    `json:"schemaVersion"`
+				MediaType     string `json:"mediaType"`
+			}
+			if json.Unmarshal(data, &manifest) != nil || manifest.SchemaVersion != 2 || manifest.MediaType != "application/vnd.oci.image.manifest.v1+json" {
+				http.Error(w, "invalid OCI manifest", http.StatusBadRequest)
 				return
 			}
 			d := Digest(data)

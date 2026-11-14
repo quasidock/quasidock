@@ -488,5 +488,9 @@ func Prune(st *store.Store, installed []string) error {
 }
 
 func Forget(st *store.Store, id string) error {
-	return os.Remove(PortsPath(st, id))
+	err := os.Remove(PortsPath(st, id))
+	if os.IsNotExist(err) {
+		return nil
+	}
+	return err
 }

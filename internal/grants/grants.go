@@ -7,9 +7,11 @@ import (
 	"strings"
 
 	"github.com/quasidock/quasidock/internal/acl"
+	"github.com/quasidock/quasidock/internal/appcontainer"
 	"github.com/quasidock/quasidock/internal/context"
 	"github.com/quasidock/quasidock/internal/oci"
 	"github.com/quasidock/quasidock/internal/store"
+	"github.com/quasidock/quasidock/internal/win32"
 )
 
 // Own tracks the store root and quasidock executable directory so no run may write to them.
@@ -264,6 +266,11 @@ func SettleAll(ctx *context.Context) (int, error) {
 
 // UndoAll takes back everything the app's runs were given after its last cached image is removed.
 func UndoAll(ctx *context.Context, id string) error {
+	guard, err := LockMountSources(ctx.Store)
+	if err != nil {
+		return err
+	}
+	defer guard.Close()
 	lock, err := ctx.Store.LockGrantChanges()
 	if err != nil {
 		return err
@@ -279,10 +286,22 @@ func UndoAll(ctx *context.Context, id string) error {
 			if !store.Exists(g.Path) {
 				continue
 			}
+			protected, err := guard.Protected(g.Path)
+			if err != nil {
+				return err
+			}
+			if protected {
+				continue
+			}
 			if g.Kind == store.GrantLow {
 				_ = acl.Unlabel(g.Path)
 			} else {
-				_, _ = acl.RevokeAccess(g.Path, acl.Revoke{Kind: acl.RevokePackageSids})
+				capability, err := appcontainer.AppCapability(id)
+				if err != nil {
+					return err
+				}
+				_, _ = acl.RevokeAccess(g.Path, acl.Revoke{Kind: acl.RevokeSids, Sids: []win32.PSID{capability}})
+				win32.LocalFree(capability)
 			}
 		}
 	}
@@ -322,6 +341,25 @@ func Show(ctx *context.Context, only *string) error {
 			fmt.Printf("    %s\n", g.String())
 		}
 	}
+	guard, err := LockMountSources(ctx.Store)
+	if err != nil {
+		return err
+	}
+	sources, err := readMountSources(ctx.Store)
+	if err != nil {
+		guard.Close()
+		return err
+	}
+	for _, source := range sources {
+		for _, owner := range source.Owners {
+			if IsWithin(owner.Lock, ctx.Store.FullRoot()) && (only == nil || strings.EqualFold(*only, owner.AppID)) && store.IsLocked(owner.Lock) {
+				fmt.Printf("  %s: active container storage %s\n", owner.AppID, source.Path)
+				any = true
+				break
+			}
+		}
+	}
+	guard.Close()
 	if !any {
 		if only != nil {
 			fmt.Println("Nothing recorded for that app.")
@@ -336,7 +374,17 @@ func TakeBackLabel(ctx *context.Context, path string) error {
 	if !filepath.IsAbs(path) {
 		return fmt.Errorf("--take-back takes an absolute path; got %q", path)
 	}
+	guard, err := LockMountSources(ctx.Store)
+	if err != nil {
+		return err
+	}
+	defer guard.Close()
+	protected, err := guard.Protected(path)
+	if err != nil {
+		return err
+	}
+	if protected {
+		return fmt.Errorf("%s is used by a running container; stop it first", path)
+	}
 	return acl.Unlabel(path)
 }
-
-

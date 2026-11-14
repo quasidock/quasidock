@@ -6,16 +6,19 @@
   "homepage": "https://www.php.net/",
   "license": "PHP-3.01",
   "entrypoint": "php.exe",
-  "env": { "PHPRC": "${app}", "SSL_CERT_FILE": "${roots}" },
+  "env": {
+    "PHPRC": "${app}",
+    "SSL_CERT_FILE": "${roots}"
+  },
   "permissions": {
     "sandbox": "soft",
     "network": true,
     "filesystem": ["cwd"]
   },
   "from": {
-    "zig": "zig:0.17.0@sha256:93ec2b6b36708ae80ffac87872e70dafaee350cd2d49a95dd2fa5847d0a10449",
-    "busybox": "busybox:FRP-6075-g169694ebd@sha256:db9d39727bfdd4d176b5878c0a125daa8a2396ea21e0f01a6a372f53d9d97e5d",
-    "node": "node:24.22.2@sha256:cab43fbbd7944f841db320f6cb3530df85afe92709fe93c240db4f0ca75ff4b4"
+    "zig": "zig:0.17.0@sha256:56fc3e4f42c25dbf70236aedb053606311cb2d4b582ad4d1e26e76036c08eab1",
+    "busybox": "busybox:FRP-6075-g169694ebd@sha256:baca1ecd27b7b5ffe54402d4f8b6e36802d9db5e0e4cb2b7ab13104031045c50",
+    "node": "node:24.22.2@sha256:2a86a90b9beab4b7894fc1d0d76e015220c1c4243858a6118ad0066c772a07a8"
   },
   "cleanup": [
     "/dev/php8.lib",
@@ -51,6 +54,7 @@
     "*.exp",
     "*.pdb"
   ],
+  "path": ["sdk-bin", "."],
   "stages": [
     {
       "name": "php",
@@ -71,15 +75,15 @@
         { "url": "https://downloads.php.net/~windows/php-sdk/deps/vs17/x64/libxml2-2.11.9-8-vs17-x64.zip", "sha256": "be1f55cb950b19400caa33b95fb8463fde4d5da4602d2eb53c6bae4c4530a1e2", "dest": "dev/deps" },
         { "url": "https://downloads.php.net/~windows/php-sdk/deps/vs17/x64/libiconv-1.19-vs17-x64.zip", "sha256": "4fd0048d0985c6f32ff933187c360571b0380cb20690ae501ce233fb376360d1", "dest": "dev/deps" },
         { "url": "https://downloads.php.net/~windows/php-sdk/deps/vs17/x64/openssl-3.5.9-vs17-x64.zip", "sha256": "889b08e67ff0f7aae59f58619f4f73da7b4998ae2b6f96e1a4b0acaf89d6c280", "dest": "dev/deps" },
-        { "url": "https://downloads.php.net/~windows/php-sdk/deps/vs17/x64/libssh2-1.11.1-10-vs17-x64.zip", "sha256": "41b6faddea9a2c32176538f2884a9581967d07ab93291274ead94ab477fc37a9", "dest": "dev/deps" },
+        { "url": "https://downloads.php.net/~windows/php-sdk/deps/vs17/x64/libssh2-1.11.1-10-vs17-x64.zip", "sha256": "6d957ebde3401ec86855ede9d942b34c4cf8fd0e9eb61813c6fdc5504c57ef09", "dest": "dev/deps" },
         { "url": "https://downloads.php.net/~windows/php-sdk/deps/vs17/x64/sqlite3-3.53.4-vs17-x64.zip", "sha256": "abb5e36fc76803b4df9a63ab56b931f37058d62c9e6303172015ff4f101ef4cd", "dest": "dev/deps" },
         { "url": "https://downloads.php.net/~windows/php-sdk/deps/vs17/x64/libsodium-1.0.22-vs17-x64.zip", "sha256": "33a2b29fdc9e2dc6771839d0e4ca4f8a9cf0f578e6aaee0b1c0e85b5977d4bb8", "dest": "dev/deps" },
         { "url": "https://downloads.php.net/~windows/php-sdk/deps/vs17/x64/nghttp2-1.70.0-vs17-x64.zip", "sha256": "51e21698b80f4e1a151508656f6ca7caf13adfef65dfefbc160645cf9c1129f1", "dest": "dev/deps" },
         { "url": "https://downloads.php.net/~windows/php-sdk/deps/vs17/x64/libpq-16.15-4-vs17-x64.zip", "sha256": "f16404405334143bfc5cbcc16d30d6723a29e82758e900bb2fa7e6f67a6eee28", "dest": "dev/deps" },
         { "url": "https://downloads.php.net/~windows/php-sdk/deps/vs17/x64/ICU-77.1-1-vs17-x64.zip", "sha256": "1d9fbe44a9a505f4e20c75549f8e48c5b9841171d9538a1b6375b201afdb76a2", "dest": "dev/deps" },
         { "url": "https://downloads.php.net/~windows/php-sdk/deps/vs17/x64/brotli-1.2.1-vs17-x64.zip", "sha256": "f82e5af774bd7e0810bdaef2571107aff9621f5da998c56fc64a53982505d5b3", "dest": "dev/deps" },
-        { "url": "https://downloads.php.net/~windows/php-sdk/deps/vs17/x64/glib-2.90.1-vs17-x64.zip", "sha256": "0434c377d431f35dad36a00c8b4ed99284de743246afaf11b665b0284fc0fe72", "dest": "dev/deps" },
-        { "url": "https://downloads.php.net/~windows/php-sdk/deps/vs17/x64/libenchant2-2.8.21-1-vs17-x64.zip", "sha256": "7b13e4a8a2b60bd5ed6aab4c54148aee3cba250fb66f969a9f4d0ce1129a67f5", "dest": "dev/deps" },
+        { "url": "https://downloads.php.net/~windows/php-sdk/deps/vs17/x64/glib-2.90.1-vs17-x64.zip", "sha256": "303b5ce9832e422a879ec62b10f8f02e71d951fdc9a7477dcba81204e984f141", "dest": "dev/deps" },
+        { "url": "https://downloads.php.net/~windows/php-sdk/deps/vs17/x64/libenchant2-2.8.21-1-vs17-x64.zip", "sha256": "ae50677480f35e19219aa9e1740bc2c3074d28276a0367b44decb6af23811f16", "dest": "dev/deps" },
         { "url": "https://downloads.php.net/~windows/php-sdk/deps/vs17/x64/libsasl-2.1.28-5-vs17-x64.zip", "sha256": "96638496e6a36dcb8c561cc5350481c19dcb8268141d5f6fa0da4e1859882f82", "dest": "dev/deps" }
       ]
     },
@@ -91,6 +95,17 @@
         { "path": "php-sdk/zig-php.c", "dest": "dev/zigsaw/zig-php.c" },
         { "path": "php-sdk/php-ext.php", "dest": "dev/zigsaw/php-ext.php" },
         { "path": "php-sdk/config-w32.js", "dest": "dev/zigsaw/config-w32.js" }
+      ]
+    },
+    {
+      "name": "sdk-commands",
+      "sources": [
+        { "path": "sdk-tools/launcher.c", "dest": "launcher.c" },
+        { "path": "php-sdk/commands.h", "dest": "commands.h" }
+      ],
+      "build": [
+        "mkdir -p \"$PREFIX/sdk-bin\"",
+        "cc.exe -O2 -municode -s -Wl,-Brepro launcher.c -o \"$PREFIX/sdk-bin/php-ext.exe\""
       ]
     }
   ]

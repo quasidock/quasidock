@@ -1,11 +1,31 @@
 package oci_test
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/quasidock/quasidock/internal/oci"
 )
+
+func TestRuntimeLayersAndDirectoriesDoNotDependOnMapOrder(t *testing.T) {
+	a, b, own := "sha256:"+strings.Repeat("a", 64), "sha256:"+strings.Repeat("b", 64), "sha256:"+strings.Repeat("c", 64)
+	cfg := oci.AppConfig{From: map[string]oci.Runtime{"alpha": {Layer: a}, "beta": {Layer: b}}}
+	m := oci.Manifest{Layers: []oci.Descriptor{{MediaType: oci.MediaTypeLayerTar, Digest: b}, {MediaType: oci.MediaTypeLayerTar, Digest: a}, {MediaType: oci.MediaTypeLayerTar, Digest: own}}}
+	for range 25 {
+		if err := oci.ValidateLayers("cached", &m, &cfg); err != nil {
+			t.Fatal(err)
+		}
+		dirs := oci.RuntimeDirectories(cfg.From, []string{filepath.Join("deploy", oci.DigestHex(b)), filepath.Join("deploy", oci.DigestHex(a))})
+		if len(dirs) != 2 || dirs[0].Alias != "alpha" || filepath.Base(dirs[0].Path) != oci.DigestHex(a) || dirs[1].Alias != "beta" || filepath.Base(dirs[1].Path) != oci.DigestHex(b) {
+			t.Fatalf("misassigned runtime directories: %+v", dirs)
+		}
+	}
+	m.Layers[0].Digest = a
+	if err := oci.ValidateLayers("duplicate", &m, &cfg); err == nil {
+		t.Fatal("accepted duplicate layers in place of a runtime")
+	}
+}
 
 func TestValidID(t *testing.T) {
 	valid := []string{"node", "busybox", "app-1", "a.b_c", "org.nodejs.node"}

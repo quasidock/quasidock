@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -192,14 +194,37 @@ func ValidateLayers(what string, m *Manifest, c *AppConfig) error {
 	if len(m.Layers) != expectedLayers {
 		return fmt.Errorf("%s has %d layer(s), but its config accounts for %d: one per base image, and the app's own", what, len(m.Layers), expectedLayers)
 	}
-	idx := 0
+	available := map[string]int{}
+	for _, layer := range m.Layers[:len(m.Layers)-1] {
+		available[layer.Digest]++
+	}
 	for alias, r := range c.From {
-		if r.Layer != m.Layers[idx].Digest {
+		if available[r.Layer] == 0 {
 			return fmt.Errorf("%s: base image %s's layer %s isn't in its manifest's place for it", what, alias, r.Layer)
 		}
-		idx++
+		available[r.Layer]--
 	}
 	return nil
+}
+
+// RuntimeDirectories matches deployed layers by digest, including cached images
+// whose historical runtime layers were emitted in a different map order.
+func RuntimeDirectories(from map[string]Runtime, dirs []string) []DirPlaceholder {
+	var result []DirPlaceholder
+	for i, alias := range slices.Sorted(maps.Keys(from)) {
+		if i >= len(dirs) {
+			break
+		}
+		dir := dirs[i]
+		for _, candidate := range dirs {
+			if filepath.Base(candidate) == DigestHex(from[alias].Layer) {
+				dir = candidate
+				break
+			}
+		}
+		result = append(result, DirPlaceholder{Alias: alias, Path: dir})
+	}
+	return result
 }
 
 func OwnLayer(m *Manifest) Descriptor {

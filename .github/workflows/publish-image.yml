@@ -1,0 +1,123 @@
+name: Build and stage one image
+on:
+  workflow_call:
+    inputs:
+      recipe:
+        required: true
+        type: string
+      mode:
+        required: true
+        type: string
+    secrets:
+      COSIGN_PRIVATE_KEY:
+        required: true
+      COSIGN_PASSWORD:
+        required: true
+permissions:
+  actions: read
+  contents: read
+  packages: write
+jobs:
+  image:
+    runs-on: windows-2025
+    timeout-minutes: 180
+    env:
+      QUASIDOCK_REGISTRY: ghcr.io/quasidock/quasidock
+      QUASIDOCK: ${{ github.workspace }}\out\bin\quasidock.exe
+      PUBLISH_RECIPE: ${{ inputs.recipe }}
+      PUBLISH_MODE: ${{ inputs.mode }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Isolate the build store
+        run: '"QUASIDOCK_HOME=$env:RUNNER_TEMP\build-store" >> $env:GITHUB_ENV'
+      - uses: actions/download-artifact@v8
+        with:
+          name: publish-programs
+          path: out/bin
+      - name: Seed BusyBox sources from GHCR
+        env:
+          QUASIDOCK_REGISTRY_USERNAME: ${{ github.actor }}
+          QUASIDOCK_REGISTRY_PASSWORD: ${{ github.token }}
+        run: out/bin/quasidock-publish.exe seed-busybox
+      - name: Download completed dependency reports
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p out/dependencies out/reports out/logs
+          # Root images have no dependency reports yet. Download only reports
+          # actually required by this recipe, so failed downloads never hide.
+          out/bin/quasidock-publish.exe dependencies "$PUBLISH_RECIPE" >out/dependencies.txt
+          while IFS= read -r id; do
+            gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --name "publish-report-$id" --dir "out/dependencies/$id"
+          done <out/dependencies.txt
+      - name: Prepare exact dependency pins and build
+        id: build
+        shell: bash
+        env:
+          QUASIDOCK_REGISTRY_USERNAME: ${{ github.actor }}
+          QUASIDOCK_REGISTRY_PASSWORD: ${{ github.token }}
+        run: |
+          work=$(cygpath -w "$RUNNER_TEMP/prepared")
+          out/bin/quasidock-publish.exe prepare "$PUBLISH_RECIPE" "$PUBLISH_MODE" out/dependencies "$work" out/prepared.txt
+          cat out/prepared.txt >>"$GITHUB_OUTPUT"
+          recipe=$(sed -n 's/^recipe=//p' out/prepared.txt | tr -d '\r')
+          # Native Windows children can deadlock on Git Bash's tee pipe.
+          # Keep their output on a regular file, as tests/published.sh does.
+          out/bin/quasidock.exe build "$recipe" >out/logs/build.log 2>&1 || { cat out/logs/build.log; exit 1; }
+          cat out/logs/build.log
+          out/bin/quasidock-publish.exe record "$PUBLISH_RECIPE" "$recipe" out/reports >>"$GITHUB_OUTPUT"
+      - name: Stage image and source artifacts
+        shell: bash
+        env:
+          IMAGE_ID: ${{ steps.build.outputs.id }}
+          QUASIDOCK_REGISTRY_USERNAME: ${{ github.actor }}
+          QUASIDOCK_REGISTRY_PASSWORD: ${{ github.token }}
+        run: bash scripts/publish.sh --stage "ci-$GITHUB_RUN_ID" "$IMAGE_ID"
+      - name: Sign exact staged digest with the Quasidock key
+        shell: bash
+        env:
+          IMAGE_ID: ${{ steps.build.outputs.id }}
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+          QUASIDOCK_REGISTRY_USERNAME: ${{ github.actor }}
+          QUASIDOCK_REGISTRY_PASSWORD: ${{ github.token }}
+        run: |
+          export COSIGN_KEY="$RUNNER_TEMP/quasidock-cosign.key"
+          trap 'rm -f "$COSIGN_KEY" "$RUNNER_TEMP/actual.pub"' EXIT
+          printf '%s\n' "$COSIGN_PRIVATE_KEY" >"$COSIGN_KEY"
+          unset COSIGN_PRIVATE_KEY
+          export COSIGN="$GITHUB_WORKSPACE/out/bin/cosign.exe"
+          "$COSIGN" public-key --key "$(cygpath -w "$COSIGN_KEY")" >"$RUNNER_TEMP/actual.pub"
+          diff -u <(tr -d '\r' <internal/trust/quasidock.pub) <(tr -d '\r' <"$RUNNER_TEMP/actual.pub")
+          bash scripts/sign-images.sh --images "ghcr.io/quasidock/quasidock/$IMAGE_ID:ci-$GITHUB_RUN_ID"
+      - name: Verify and smoke test candidate in a fresh store
+        shell: bash
+        env:
+          IMAGE_ID: ${{ steps.build.outputs.id }}
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+          QUASIDOCK_HOME: ${{ runner.temp }}\verify-store
+          # Bootstrap packages may still be private. Publish mode must use anonymous pulls.
+          QUASIDOCK_REGISTRY_USERNAME: ${{ inputs.mode == 'bootstrap' && github.actor || '' }}
+          QUASIDOCK_REGISTRY_PASSWORD: ${{ inputs.mode == 'bootstrap' && github.token || '' }}
+        run: |
+          out/bin/quasidock-publish.exe verify-image "out/reports/$IMAGE_ID.report.json"
+          bash scripts/smoke-image.sh "$IMAGE_ID" "ghcr.io/quasidock/quasidock/$IMAGE_ID@$IMAGE_DIGEST" 2>&1 | tee out/logs/verify.log
+      - uses: actions/upload-artifact@v7
+        with:
+          name: publish-report-${{ steps.build.outputs.id }}
+          path: out/reports/*.report.json
+          overwrite: true
+          if-no-files-found: error
+          retention-days: 30
+      - name: Keep build and verification logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: publish-log-${{ inputs.recipe }}
+          path: out/logs
+          overwrite: true
+          if-no-files-found: ignore
+          retention-days: 14

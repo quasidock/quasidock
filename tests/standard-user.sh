@@ -25,14 +25,14 @@ set -u
 export MSYS_NO_PATHCONV=1
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/images.sh"
 
-default_suites="store sandbox batch ctrlc network reach install build-base"
+default_suites="store sandbox batch mounts ctrlc network reach install build-base"
 
 if [ "${1:-}" != --inner ]; then
     [ $# -eq 1 ] && [ -f "$1" ] || { echo "usage: tests/standard-user.sh <account file>"; exit 2; }
     account=$(cygpath -aw "$1")
     user=$(head -1 "$1" | tr -d '\r')
     repo=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
-    (cd "$repo" && go run ./scripts/build.go all asuser argv-echo hostprobe ctrlc-driver netprobe cred-helper imports acprobe procprobe p256sign) ||
+    (cd "$repo" && go run ./scripts/build.go all cli-fixture asuser argv-echo hostprobe ctrlc-driver netprobe cred-helper imports acprobe procprobe p256sign) ||
         { echo "building quasidock failed"; exit 1; }
     stage=$(cygpath -wl "$(mktemp -d)")
     icacls "$stage" /grant "$user:(OI)(CI)M" >/dev/null || { echo "$user can't be given $stage"; exit 1; }

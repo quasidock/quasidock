@@ -5,8 +5,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/quasidock/quasidock/internal/context"
@@ -15,6 +17,7 @@ import (
 	"github.com/quasidock/quasidock/internal/oci"
 	"github.com/quasidock/quasidock/internal/process"
 	"github.com/quasidock/quasidock/internal/recipe"
+	"github.com/quasidock/quasidock/internal/remote"
 	"github.com/quasidock/quasidock/internal/roots"
 	"github.com/quasidock/quasidock/internal/store"
 	"github.com/quasidock/quasidock/internal/tree"
@@ -224,7 +227,8 @@ func buildImage(ctx *context.Context, r *recipe.Recipe, recipePath, source strin
 		Host:   make(map[string]string),
 	}
 
-	for alias, reference := range r.SDK {
+	for _, alias := range slices.Sorted(maps.Keys(r.SDK)) {
+		reference := r.SDK[alias]
 		dep, err := ResolveDependency(ctx, recipePath, DependencySDK, alias, reference)
 		if err != nil {
 			return nil, err
@@ -260,16 +264,15 @@ func buildImage(ctx *context.Context, r *recipe.Recipe, recipePath, source strin
 		if sdkIdx == nil {
 			continue
 		}
-		rtDirs := dirs[:len(dirs)-1]
-		rtIdx := 0
-		for rtAlias, rt := range dep.Config.From {
+		for _, named := range ownRuntimes {
+			rtAlias, rt := named.Alias, dep.Config.From[named.Alias]
 			rtWhat := fmt.Sprintf("%s's base image %s", what, rtAlias)
 			added, err := tools.Add(Tool{
 				Image:   rt.Image,
 				ID:      rt.ID,
 				Version: rt.Version,
 				What:    rtWhat,
-				Dir:     rtDirs[rtIdx],
+				Dir:     named.Path,
 				Path:    rt.Path,
 				Env:     rt.Env,
 			})
@@ -279,7 +282,6 @@ func buildImage(ctx *context.Context, r *recipe.Recipe, recipePath, source strin
 			if added != nil {
 				tools.list[*sdkIdx].Brings++
 			}
-			rtIdx++
 		}
 	}
 
@@ -287,7 +289,8 @@ func buildImage(ctx *context.Context, r *recipe.Recipe, recipePath, source strin
 	var layers []oci.Descriptor
 	var runtimeDirsList []oci.DirPlaceholder
 
-	for alias, reference := range r.From {
+	for _, alias := range slices.Sorted(maps.Keys(r.From)) {
+		reference := r.From[alias]
 		dep, err := ResolveDependency(ctx, recipePath, DependencyRuntime, alias, reference)
 		if err != nil {
 			return nil, err
@@ -321,7 +324,7 @@ func buildImage(ctx *context.Context, r *recipe.Recipe, recipePath, source strin
 		}
 	}
 
-	sources := NewSources(ctx, filepath.Dir(recipePath), r.ID, projects)
+	sources := NewSources(ctx, filepath.Dir(recipePath), r.ID+":"+r.Version, projects, r.SourceMirrors...)
 	defer sources.Close()
 
 	var appTree *tree.Tree
@@ -358,7 +361,7 @@ func buildImage(ctx *context.Context, r *recipe.Recipe, recipePath, source strin
 
 		for _, m := range r.Stages {
 			if m.Vendor != nil {
-				sha, err := root.vendor(ctx, m, recipePath, projects)
+				sha, err := root.vendor(ctx, m, recipePath, projects, r.ID+":"+r.Version)
 				if err != nil {
 					return nil, err
 				}
@@ -380,7 +383,18 @@ func buildImage(ctx *context.Context, r *recipe.Recipe, recipePath, source strin
 		}
 	}
 
-	buildInfo.Sources = sources.hashes
+	// Vendor stages unpack through their own Sources instance. Include their
+	// original downloads as well as the files seen by the final layer builder.
+	sourceHashes := map[string]bool{}
+	for _, hash := range sources.hashes {
+		sourceHashes[hash] = true
+	}
+	for _, src := range downloads {
+		if src.URL != nil && src.Sha256 != nil {
+			sourceHashes[*src.Sha256] = true
+		}
+	}
+	buildInfo.Sources = slices.Sorted(maps.Keys(sourceHashes))
 	if len(sources.images) > 0 {
 		buildInfo.Images = sources.images
 	}
@@ -512,15 +526,7 @@ func checkCommand(ctx *context.Context, appTree *tree.Tree, placeholders oci.Pla
 }
 
 func runtimeDirs(c oci.AppConfig, dirs []string) []oci.DirPlaceholder {
-	var out []oci.DirPlaceholder
-	idx := 0
-	for alias := range c.From {
-		if idx < len(dirs) {
-			out = append(out, oci.DirPlaceholder{Alias: alias, Path: dirs[idx]})
-			idx++
-		}
-	}
-	return out
+	return oci.RuntimeDirectories(c.From, dirs)
 }
 
 type BuildRoot struct {
@@ -743,7 +749,7 @@ const (
 	stepVendor = "vendor"
 )
 
-func (b *BuildRoot) vendor(ctx *context.Context, m recipe.Stage, recipePath string, projects *Snapshots) (string, error) {
+func (b *BuildRoot) vendor(ctx *context.Context, m recipe.Stage, recipePath string, projects *Snapshots, image string) (string, error) {
 	v := m.Vendor
 	dest := filepath.Join(b.path, "src", m.Name)
 	if err := unpackSources(ctx, m, recipePath, projects, dest); err != nil {
@@ -796,7 +802,30 @@ func (b *BuildRoot) vendor(ctx *context.Context, m recipe.Stage, recipePath stri
 			_ = makeScratchDirs(b.path, true)
 			cached = kept
 		} else {
-			return "", err
+			if v.Sha256 == nil {
+				return "", err
+			}
+			ctx.Note("module %s's vendored files: its vendor commands failed; fetching sha256 %.12s", m.Name, *v.Sha256)
+			var fallbackErr error
+			cached, fallbackErr = remote.FetchSource(ctx.Store, ctx.Env[remote.RegistryVar], image, *v.Sha256, ctx.Verbose)
+			if fallbackErr != nil {
+				return "", fmt.Errorf("%w; vendor source fallback: %v", err, fallbackErr)
+			}
+			// A failed command can leave modified inputs behind. Restore the
+			// original stage before applying the recovered vendor archive.
+			rel, pathErr := filepath.Rel(b.path, dest)
+			if pathErr != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+				return "", fmt.Errorf("vendor stage is outside build root: %s", dest)
+			}
+			if err := os.RemoveAll(dest); err != nil {
+				return "", err
+			}
+			if err := unpackSources(ctx, m, recipePath, projects, dest); err != nil {
+				return "", err
+			}
+			if err := makeScratchDirs(b.path, true); err != nil {
+				return "", err
+			}
 		}
 	}
 

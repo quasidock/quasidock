@@ -11,8 +11,8 @@
     "filesystem": ["cwd"]
   },
   "sdk": {
-    "go": "go:1.27.3@sha256:fb6554b0d89f578112c72b92c87a05583980578328180762571770884b3bc162",
-    "busybox": "busybox:FRP-6075-g169694ebd@sha256:db9d39727bfdd4d176b5878c0a125daa8a2396ea21e0f01a6a372f53d9d97e5d"
+    "go": "go:1.27.3@sha256:7ce8afd12dc7371e8f546f455036b941fdfdcbbaa81cefb3c320ea693d951ccc",
+    "busybox": "busybox:FRP-6075-g169694ebd@sha256:baca1ecd27b7b5ffe54402d4f8b6e36802d9db5e0e4cb2b7ab13104031045c50"
   },
   "stages": [
     {
@@ -32,7 +32,7 @@
           "rm -rf vendor packages.txt embeds.txt files.txt && mv minimal/vendor vendor && rmdir minimal"
         ],
         "dir": "vendor",
-        "sha256": "4f97e4112de0bf144d8f6851e81556e9f698f7ab1fe651bc405aa927a5d75fca"
+        "sha256": "a8f1bd093381f397f7e75250f32d9dccb5becf6dc44a9a764c5beeebca3e13f3"
       },
       "build": [
         "go build -mod=vendor -buildmode=pie -ldflags '-X zotregistry.dev/zot/v2/pkg/buildinfo.ReleaseTag=v2.1.23 -X zotregistry.dev/zot/v2/pkg/buildinfo.Commit=v2.1.23-0-gd7915e8 -X zotregistry.dev/zot/v2/pkg/buildinfo.BinaryType=minimal -X zotregistry.dev/zot/v2/pkg/buildinfo.GoVersion=go1.27.3 -s -w' -o \"$PREFIX/zot.exe\" ./cmd/zot",

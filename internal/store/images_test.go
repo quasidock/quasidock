@@ -38,6 +38,30 @@ func catalogFixture(t *testing.T, st *Store, version string) Ref {
 	return Ref{ID: config.ID, Version: version, Manifest: m.Digest, Source: "localhost:5000/app:" + version}
 }
 
+func TestDefaultRegistryPreservesCachedAndExplicitSelections(t *testing.T) {
+	st, err := Open(t.TempDir(), false, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := catalogFixture(t, st, "1")
+	r.Source = "ghcr.io/quasidock/" + r.ID + ":1"
+	if err := st.RegisterImage(r, r.Source, true); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{r.ID, r.Source, r.Manifest} {
+		got, err := st.ResolveLocalImage("", name)
+		if err != nil || got.Manifest != r.Manifest {
+			t.Fatalf("cached selection %s: %v %v", name, got, err)
+		}
+	}
+	if got, err := ImageName("", r.ID+":2"); err != nil || got != "ghcr.io/quasidock/quasidock/"+r.ID+":2" {
+		t.Fatalf("new default: %s %v", got, err)
+	}
+	if got, err := ImageName("localhost:5000/custom", r.ID); err != nil || got != "localhost:5000/custom/"+r.ID+":latest" {
+		t.Fatalf("registry override: %s %v", got, err)
+	}
+}
+
 func TestImageCatalogVersionsNamesAndRemoval(t *testing.T) {
 	st, err := Open(t.TempDir(), false, "")
 	if err != nil {

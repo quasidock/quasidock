@@ -473,15 +473,15 @@
   },
   "cleanup": ["*.bat"],
   "from": {
-    "cmake": "cmake:4.4.4@sha256:fa7efc2e143063055620628a8867dbd904bb0464a36f6a44943f7dba50a8bcd0",
-    "llvm": "llvm-mingw:20261020@sha256:69f40e5c8bfbf0d42be44d3ddaa0df8d07775af88b9cf593595b00b0f779d718",
-    "busybox": "busybox:FRP-6075-g169694ebd@sha256:db9d39727bfdd4d176b5878c0a125daa8a2396ea21e0f01a6a372f53d9d97e5d"
+    "cmake": "cmake:4.4.4@sha256:b96b30bb57b5147726b7deef2607917b43972bb896d9f5d3e3082e31368dbeae",
+    "llvm": "llvm-mingw:20261020@sha256:65425754b958693accc5dc8d8e8ca0dfa6235669c286cc8875105171b3e299b9",
+    "busybox": "busybox:FRP-6075-g169694ebd@sha256:baca1ecd27b7b5ffe54402d4f8b6e36802d9db5e0e4cb2b7ab13104031045c50"
   },
   "stages": [
     {
       "name": "base",
       "sources": [
-        { "image": "qt6-sdk-base:6.12.0@sha256:9b87aa9aed10798a0b989175b89360d08a162914cfaa8493432176e1cd591042" }
+        { "image": "qt6-sdk-base:6.12.0@sha256:1bbcbb39c133ef9669d63b75e5cd859a4ee1d318668e1c4ea908fd8ef666a133" }
       ]
     },
     {

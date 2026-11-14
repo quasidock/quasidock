@@ -9,10 +9,10 @@
   "path": ["bin"],
   "env": { "GDAL_DATA": "${app}\\share\\gdal", "PROJ_DATA": "${app}\\share\\proj" },
   "sdk": {
-    "meson": "meson:1.12.1@sha256:9f1660936c3c00e44f1b90a83c72f20a28023b8f5f85bb61505f33c00ef4f767",
-    "cmake": "cmake:4.4.4@sha256:fa7efc2e143063055620628a8867dbd904bb0464a36f6a44943f7dba50a8bcd0",
-    "llvm": "llvm-mingw:20261020@sha256:1fd5d6d8ada26770ad03d85e375e007e4b3bfcfa6d07201e93f5ad01a72c025e",
-    "busybox": "busybox:FRP-6075-g169694ebd@sha256:db9d39727bfdd4d176b5878c0a125daa8a2396ea21e0f01a6a372f53d9d97e5d"
+    "meson": "meson:1.12.1@sha256:9b656a460928dbde77dc31f5827e9b99ad4b53e007de87b19b6fbec26785bbc3",
+    "cmake": "cmake:4.4.4@sha256:b96b30bb57b5147726b7deef2607917b43972bb896d9f5d3e3082e31368dbeae",
+    "llvm": "llvm-mingw:20261020@sha256:65425754b958693accc5dc8d8e8ca0dfa6235669c286cc8875105171b3e299b9",
+    "busybox": "busybox:FRP-6075-g169694ebd@sha256:baca1ecd27b7b5ffe54402d4f8b6e36802d9db5e0e4cb2b7ab13104031045c50"
   },
   "cleanup": ["/lib/cmake", "*.la", "/share/bash-completion", "/share/doc", "/share/man"],
   "stages": [
@@ -25,8 +25,8 @@
         "FGREP": "grep -F",
         "EGREP_TRADITIONAL": "grep -E",
         "AWK": "awk",
-        "AR": "ar",
-        "RANLIB": "ranlib",
+        "AR": "ar.exe",
+        "RANLIB": "ranlib.exe",
         "RM": "rm -f",
         "CFLAGS": "-O2",
         "WINDRES": "windres"
@@ -51,7 +51,7 @@
       "build": [
         "mkdir -p \"$PREFIX/bin\" \"$PREFIX/include\" \"$PREFIX/lib\"",
         "cc -O2 -DSQLITE_ENABLE_RTREE=1 -c -o sqlite3.o sqlite3.c",
-        "ar rcs \"$PREFIX/lib/libsqlite3.a\" sqlite3.o",
+        "ar.exe rcs \"$PREFIX/lib/libsqlite3.a\" sqlite3.o",
         "cp sqlite3.h sqlite3ext.h \"$PREFIX/include/\"",
         "cc -O2 $LDFLAGS -o \"$PREFIX/bin/sqlite3.exe\" shell.c sqlite3.o"
       ]

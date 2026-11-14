@@ -4,27 +4,47 @@
   "entrypoint": "zig.exe",
   "env": {
     "ZIG_GLOBAL_CACHE_DIR": "${cache}",
-    "CC": "cc",
-    "CXX": "c++",
+    "CC": "cc.exe",
+    "CXX": "c++.exe",
     "RC": "rc",
     "LDFLAGS": "-s -Wl,-Brepro",
     "CGO_LDFLAGS": "-s -Wl,-Brepro",
-    "CC_x86_64_pc_windows_gnu": "cc",
-    "CXX_x86_64_pc_windows_gnu": "c++",
-    "AR_x86_64_pc_windows_gnu": "ar",
+    "CC_x86_64_pc_windows_gnu": "cc.exe",
+    "CXX_x86_64_pc_windows_gnu": "c++.exe",
+    "AR_x86_64_pc_windows_gnu": "ar.exe",
     "CRATE_CC_NO_DEFAULTS": "1",
     "CFLAGS_x86_64_pc_windows_gnu": "-O3 -ffunction-sections -fdata-sections",
-    "CXXFLAGS_x86_64_pc_windows_gnu": "-O3 -ffunction-sections -fdata-sections"
+    "CXXFLAGS_x86_64_pc_windows_gnu": "-O3 -ffunction-sections -fdata-sections",
+    "AR": "ar.exe",
+    "RANLIB": "ranlib.exe"
   },
   "permissions": {
     "sandbox": "soft",
     "filesystem": ["cwd"]
   },
+  "path": ["sdk-bin", "."],
+  "sdk": { "busybox": "busybox:FRP-6075-g169694ebd@sha256:baca1ecd27b7b5ffe54402d4f8b6e36802d9db5e0e4cb2b7ab13104031045c50" },
   "stages": [
     {
       "name": "zig",
       "sources": [
         { "url": "https://ziglang.org/download/0.17.0/zig-x86_64-windows-0.17.0.zip", "sha256": "b5663f69581dcf391293fbf16c06cb80d81d806545ce618b4d0bab7f0eb8c428", "strip": 1 }
+      ]
+    },
+    {
+      "name": "sdk-commands",
+      "sources": [
+        { "path": "sdk-tools/launcher.c", "dest": "launcher.c" },
+        { "path": "zig/commands.h", "dest": "commands.h" }
+      ],
+      "build": [
+        "mkdir -p \"$PREFIX/sdk-bin\"",
+        "\"$PREFIX/zig.exe\" cc -target x86_64-windows-gnu -O2 -municode -s -Wl,-Brepro launcher.c -o \"$PREFIX/sdk-bin/cc.exe\"",
+        "cp \"$PREFIX/sdk-bin/cc.exe\" \"$PREFIX/sdk-bin/c++.exe\"",
+        "cp \"$PREFIX/sdk-bin/cc.exe\" \"$PREFIX/sdk-bin/ar.exe\"",
+        "cp \"$PREFIX/sdk-bin/cc.exe\" \"$PREFIX/sdk-bin/ranlib.exe\"",
+        "cp \"$PREFIX/sdk-bin/cc.exe\" \"$PREFIX/sdk-bin/rc.exe\"",
+        "cp \"$PREFIX/sdk-bin/cc.exe\" \"$PREFIX/sdk-bin/as.exe\""
       ]
     }
   ]

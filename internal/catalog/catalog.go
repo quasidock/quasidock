@@ -135,20 +135,30 @@ func containsSubstr(fields []string, word string) bool {
 // Pushing & Loading
 
 func Push(st *store.Store, envRegistry string, ids []string, verbose bool) error {
+	refs := make([]string, len(ids))
+	for i, id := range ids {
+		refs[i] = id + ":latest"
+	}
+	return PushRefs(st, envRegistry, refs, "latest", verbose)
+}
+
+// PushRefs publishes a catalog from exact image references, including staged digests.
+func PushRefs(st *store.Store, envRegistry string, refs []string, tag string, verbose bool) error {
 	seen := make(map[string]bool)
 	var entries []Entry
 
-	for _, id := range ids {
+	for _, ref := range refs {
+		info, err := remote.FetchInfo(st, envRegistry, ref, verbose)
+		if err != nil {
+			return err
+		}
+		id := info.Config.ID
 		lower := strings.ToLower(id)
 		if seen[lower] {
 			return fmt.Errorf("%s is named twice", id)
 		}
 		seen[lower] = true
 
-		info, err := remote.FetchInfo(st, envRegistry, id+":latest", verbose)
-		if err != nil {
-			return err
-		}
 		entries = append(entries, EntryOf(info))
 	}
 
@@ -156,7 +166,7 @@ func Push(st *store.Store, envRegistry string, ids []string, verbose bool) error
 		return strings.ToLower(entries[i].ID) < strings.ToLower(entries[j].ID)
 	})
 
-	target, err := remote.Resolve(envRegistry, Name+":latest")
+	target, err := remote.Resolve(envRegistry, Name+":"+tag)
 	if err != nil {
 		return err
 	}
@@ -187,8 +197,10 @@ func Push(st *store.Store, envRegistry string, ids []string, verbose bool) error
 	}
 
 	manifest := oci.Manifest{
-		Config: configDesc,
-		Layers: []oci.Descriptor{},
+		SchemaVersion: 2,
+		MediaType:     oci.MediaTypeManifest,
+		Config:        configDesc,
+		Layers:        []oci.Descriptor{},
 		Annotations: map[string]string{
 			"org.opencontainers.image.title":       "quasidock catalog",
 			"org.opencontainers.image.description": fmt.Sprintf("The %d apps in %s, for `quasidock search`", len(entries), cat.Registry),
@@ -199,7 +211,7 @@ func Push(st *store.Store, envRegistry string, ids []string, verbose bool) error
 		return err
 	}
 
-	if err := reg.PushManifest("latest", mBytes); err != nil {
+	if err := reg.PushManifest(tag, mBytes); err != nil {
 		return err
 	}
 
