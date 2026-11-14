@@ -292,26 +292,35 @@ func TestForegroundImages(t *testing.T) {
 	if out, code := call("run", name, "fixture.exe", "exit", "37"); code != 37 {
 		t.Fatalf("child exit: %s %d", out, code)
 	}
-	if out, code := call("run", name, "fixture.exe", "write", "shared"); code != 0 {
+	if out, code := call("run", "--name", "writer1", name, "fixture.exe", "write", "isolated"); code != 0 {
 		t.Fatalf("write data: %s", out)
 	}
 	reg.Fail(false)
 	if out, code := call("pull", reg.Host()+"/app:2"); code != 0 {
 		t.Fatal(out)
 	}
-	if out, code := call("run", reg.Host()+"/app:2", "fixture.exe", "read"); code != 0 || out != "shared" {
-		t.Fatalf("version data: %q %d", out, code)
+	// Containers isolate per-container data: a new run does not see writer1's file.
+	if out, code := call("run", reg.Host()+"/app:2", "fixture.exe", "read"); code != 3 {
+		t.Fatalf("expected isolated data miss (exit 3), got %q (%d)", out, code)
 	}
-	if _, code := call("run", "--ephemeral", name, "fixture.exe", "read"); code != 3 {
-		t.Fatalf("ephemeral reused app data: %d", code)
+	dataDirOut, code := call("inspect", "-f", "{{.DataDir}}", "writer1")
+	if code != 0 {
+		t.Fatalf("inspect writer1: %s %d", dataDirOut, code)
+	}
+	savedBytes, err := os.ReadFile(filepath.Join(strings.TrimSpace(dataDirOut), "home", "saved.txt"))
+	if err != nil || string(savedBytes) != "isolated" {
+		t.Fatalf("writer1 DataDir missing saved.txt: %q %v", savedBytes, err)
+	}
+	if out, code := call("run", "--ephemeral", name, "fixture.exe", "read"); code == 0 || !strings.Contains(out, "--rm") {
+		t.Fatalf("expected --ephemeral rejection pointing to --rm, got %q (%d)", out, code)
 	}
 	if _, code := call("run", name, "missing.exe"); code == 0 {
 		t.Fatal("missing executable succeeded")
 	}
-	// A failed launch must release the app lease before another version starts.
+	// A failed launch must leave concurrent runs unblocked.
 	assertArgs([]string{"run", reg.Host() + "/app:2"}, []string{"default", "2"})
 	ready := filepath.Join(buildDir, "ready")
-	hold := exec.Command(binary, "run", name, "fixture.exe", "hold", ready)
+	hold := exec.Command(binary, "run", "--name", "held", name, "fixture.exe", "hold", ready)
 	hold.Env = append(os.Environ(), "QUASIDOCK_HOME="+ctx.Store.Root)
 	if err := hold.Start(); err != nil {
 		t.Fatal(err)
@@ -324,9 +333,8 @@ func TestForegroundImages(t *testing.T) {
 	if !store.Exists(ready) {
 		t.Fatal("held child did not become ready")
 	}
-	if out, code := call("run", reg.Host()+"/app:2"); code == 0 || !strings.Contains(out, "another version") {
-		t.Fatalf("conflicting run: %s %d", out, code)
-	}
+	// Different versions of the same app can run concurrently in separate containers.
+	assertArgs([]string{"run", reg.Host() + "/app:2"}, []string{"default", "2"})
 	assertArgs([]string{"run", name}, []string{"default", "1"})
 	if out, code := call("rmi", a); code == 0 || !strings.Contains(out, "in use") {
 		t.Fatalf("running image removal: %s %d", out, code)
@@ -335,17 +343,20 @@ func TestForegroundImages(t *testing.T) {
 		t.Fatal(err)
 	}
 	hold.Wait()
-	assertArgs([]string{"run", reg.Host() + "/app:2"}, []string{"default", "2"})
-	if out, code := call("rmi", a); code != 0 {
-		t.Fatal(out)
+	// Exited containers continue pinning their image until removed or pruned.
+	if out, code := call("rmi", a); code == 0 || !strings.Contains(out, "in use") {
+		t.Fatalf("stopped container should pin image: %s %d", out, code)
 	}
-	if out, code := call("run", reg.Host()+"/app:2", "fixture.exe", "read"); code != 0 || out != "shared" {
-		t.Fatalf("removal lost shared data: %q %d", out, code)
+	if out, code := call("container", "prune"); code != 0 {
+		t.Fatalf("container prune: %s %d", out, code)
+	}
+	if out, code := call("rmi", a); code != 0 {
+		t.Fatalf("rmi after container prune: %s %d", out, code)
 	}
 }
 
 func TestRunParserCoreFlagsAndRetiredCommands(t *testing.T) {
-	for _, args := range [][]string{{"--pull=bad", "app"}, {"--command=x", "app"}, {"-v", "app"}, {"-it", "app"}, {"--rm", "app"}, {"-e", "=bad", "app"}} {
+	for _, args := range [][]string{{"--pull=bad", "app"}, {"--command=x", "app"}, {"-v", "app"}, {"--ephemeral", "app"}, {"-p", "app"}, {"-e", "=bad", "app"}} {
 		if _, err := parseRunOptions(context.New(), args); err == nil {
 			t.Fatalf("accepted %v", args)
 		}
@@ -354,7 +365,7 @@ func TestRunParserCoreFlagsAndRetiredCommands(t *testing.T) {
 	if opts.Pull != "never" || opts.ID != "app" || !reflect.DeepEqual(opts.Args, []string{"--entrypoint=x"}) || !reflect.DeepEqual(opts.Settings.Env, []string{"NAME"}) {
 		t.Fatalf("options: %+v", opts)
 	}
-	for old, replacement := range map[string]string{"list": "images", "rm": "rmi", "info": "image info", "ls": "image files", "cat": "image cat", "-v": "--verbose"} {
+	for old, replacement := range map[string]string{"list": "images", "info": "image info", "ls": "image files", "cat": "image cat", "-v": "--verbose"} {
 		_, err := Dispatch(context.New(), []string{old})
 		if err == nil || !strings.Contains(err.Error(), replacement) {
 			t.Fatalf("retired %s: %v", old, err)

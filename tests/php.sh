@@ -307,9 +307,9 @@ check "and under appcontainer without the loopback exemption, through zigsaw" fo
 composer_installs() {
     local sb=$1 out
     rm -rf "$work\\composer" && cp -r "$(cygpath -u "$root")/tests/php/composer" "$(cygpath -u "$work")/composer"
-    out=$(cd "$work\\composer" && qd_run z --sandbox=$sb --ephemeral $COMPOSER install --no-interaction --no-ansi 2>&1 | tr -d '\r')
+    out=$(cd "$work\\composer" && qd_run z --sandbox=$sb --rm $COMPOSER install --no-interaction --no-ansi 2>&1 | tr -d '\r')
     grep -q 'Installing zigsaw/hello (1.0.0)' <<<"$out" || { echo "$sb: $(tail -1 <<<"$out")"; return 1; }
-    out=$(cd "$work\\composer" && qd_run z --sandbox=$sb --ephemeral $COMPOSER run-script which --no-ansi 2>&1 | tr -d '\r')
+    out=$(cd "$work\\composer" && qd_run z --sandbox=$sb --rm $COMPOSER run-script which --no-ansi 2>&1 | tr -d '\r')
     grep -q '^Composer version 2\.10\.3' <<<"$out" || { echo "$sb, its script: $(tail -1 <<<"$out")"; return 1; }
     # Without what zigsaw says about grants: the run's grant of the working
     # directory under low goes when it ends.
@@ -324,7 +324,7 @@ check "and under low" composer_installs low
 # browser.
 kanboard_port=$((9100 + RANDOM % 800))
 kanboard_start() {
-    bash "$QD_IMAGES_HELPER" run "$zigsaw" --sandbox=$1 --ephemeral --port=http=$kanboard_port $KANBOARD --no-browser >"$work\\kanboard.out" 2>&1 &
+    bash "$QD_IMAGES_HELPER" run "$zigsaw" --sandbox=$1 --rm --port=http=$kanboard_port $KANBOARD --no-browser >"$work\\kanboard.out" 2>&1 &
     kanboard=$!
     for _ in $(seq 40); do grep -q 'Development Server' "$work\\kanboard.out" 2>/dev/null && break; sleep 0.25; done
 }

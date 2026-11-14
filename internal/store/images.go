@@ -314,11 +314,11 @@ func (s *Store) RemoveImage(envRegistry, text string) (*Ref, bool, error) {
 		if err != nil {
 			return err
 		}
-		if s.ImageInUse(*ref) {
-			return fmt.Errorf("image %s is in use", ref.Manifest)
-		}
 		removed = ref
 		if oci.DigestHex(text) != "" || oci.IsValidID(text) {
+			if err := s.imageInUseError(*ref); err != nil {
+				return err
+			}
 			for name, digest := range idx.Names {
 				if digest == ref.Manifest {
 					delete(idx.Names, name)
@@ -331,6 +331,18 @@ func (s *Store) RemoveImage(envRegistry, text string) (*Ref, bool, error) {
 			}
 			if _, ok := idx.Names[name]; !ok {
 				return fmt.Errorf("%w: reference %s", ErrImageNotFound, text)
+			}
+			otherNames := false
+			for n, digest := range idx.Names {
+				if digest == ref.Manifest && n != name {
+					otherNames = true
+					break
+				}
+			}
+			if !otherNames {
+				if err := s.imageInUseError(*ref); err != nil {
+					return err
+				}
 			}
 			delete(idx.Names, name)
 		}
@@ -356,36 +368,26 @@ func (s *Store) RemoveImage(envRegistry, text string) (*Ref, bool, error) {
 	return removed, lastApp, err
 }
 
-func (s *Store) ImageInUse(ref Ref) bool {
+func (s *Store) imageInUseError(ref Ref) error {
 	if IsLocked(s.Path("images", "use-"+oci.DigestHex(ref.Manifest)+".lock")) {
-		return true
+		if c, err := s.ContainerUsingImage(ref.Manifest); err == nil && c != nil {
+			return fmt.Errorf("image %s is in use by container %s", ref.Manifest, c.ShortID())
+		}
+		return fmt.Errorf("image %s is in use", ref.Manifest)
 	}
-	// Pre-0.5 runs have an app lease but no manifest lease.
-	if IsLocked(s.RunsLockPath(ref.ID)) {
-		active, _ := os.ReadFile(s.Path("images", "active-"+strings.ToLower(ref.ID)))
-		return len(active) == 0 || string(active) == ref.Manifest
+	if c, err := s.ContainerUsingImage(ref.Manifest); err == nil && c != nil {
+		return fmt.Errorf("image %s is in use by container %s", ref.Manifest, c.ShortID())
 	}
-	return false
+	return nil
 }
 
-// BeginImageRun joins a manifest's runs or changes the active version only when
-// the previous process-backed lease is gone. Stale state after a crash is safe.
+func (s *Store) ImageInUse(ref Ref) bool {
+	return s.imageInUseError(ref) != nil
+}
+
+// BeginImageRun acquires shared app and manifest leases. Multiple versions of
+// the same app can run concurrently in separate containers with isolated data.
 func (s *Store) BeginImageRun(ref Ref) (*Lock, *Lock, error) {
-	guard, err := OpenLock(s.Path("images", "app-"+strings.ToLower(ref.ID)+".lock"), true, true)
-	if err != nil {
-		return nil, nil, err
-	}
-	defer guard.Release()
-	state := s.Path("images", "active-"+strings.ToLower(ref.ID))
-	if IsLocked(s.RunsLockPath(ref.ID)) {
-		active, err := os.ReadFile(state)
-		if err != nil || string(active) != ref.Manifest {
-			return nil, nil, fmt.Errorf("another version of %s is running; finish it before running %s", ref.ID, ref.Manifest)
-		}
-	}
-	if err := os.WriteFile(state, []byte(ref.Manifest), 0o644); err != nil {
-		return nil, nil, err
-	}
 	app, err := OpenLock(s.RunsLockPath(ref.ID), false, true)
 	if err != nil {
 		return nil, nil, err

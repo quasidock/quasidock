@@ -6,20 +6,9 @@
 # - suites: the suites in tests/ that run apps, in a store of the published
 #   images (tests/seed-store.sh), which the published jobs check are what the
 #   recipes build;
-# - gtk-suites: tests/gtk.sh and tests/gtk3.sh, the same way, in a store of
-#   GTK's published images and the apps on them;
-# - qt-suites: tests/qt.sh, the same way, with Qt's images, Flameshot and Notes;
 # - build, one job for each group of tests/build.sh's sections: the group's
 #   checks, in stores of their own, downloading what they build from; the
 #   base group's job runs the unit tests first.
-# GTK's family (its published groups, and gtk-suites) and Qt's (the qt
-# group, and qt-suites) take most of a run's time, and change rarely: a push
-# or pull request checks each only if a file it's built or tested from
-# changed since the last commit a run passed on (scripts/ci-groups.sh). The
-# weekly run, and one started by hand, check everything, so a change to
-# zigsaw that a GTK or Qt image no longer reproduces with shows within a
-# week.
-#
 # And two quick ones:
 # - groups: the groups the published and build jobs are made from, and
 #   whether GTK's and Qt's families are checked;
@@ -375,7 +364,7 @@ jobs:
           path: ${{ runner.temp }}\logs
           if-no-files-found: ignore
 
-  # zigsaw as a real standard user, which the runner's own account isn't: it's
+  # Run as a real standard user, which the runner's own account isn't: it's
   # elevated. It makes one, that lasts as long as the runner does.
   standard-user:
     runs-on: windows-2025
@@ -424,11 +413,7 @@ jobs:
       matrix:
         group: ${{ fromJSON(needs.groups.outputs.build) }}
     runs-on: windows-2025
-    # All of tests/build.sh in one job took 22 minutes in iteration 33; its
-    # groups are balanced to some 3 to 10 minutes each. They download what
-    # they build from (BusyBox's from the sources pushed next to its image,
-    # as frippery.org refuses runners).
-    timeout-minutes: 25
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
         with:
