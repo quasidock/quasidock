@@ -121,20 +121,6 @@ windows-sdk-contracts page https://api.nuget.org/v3-flatcontainer/microsoft.wind
 # PHP's list of what its 8.5 builds use decides for those, not what's newest in the
 # directory it downloads them from, which is often ahead (sqlite3).
 
-apcu page https://pecl.php.net/rest/r/apcu/allreleases.xml <v>{version}</v>
-  https://pecl.php.net/get/apcu-{version}.tgz
-igbinary page https://pecl.php.net/rest/r/igbinary/allreleases.xml <v>{version}</v> ver=[0-9]+\.[0-9]+\.[0-9]+(RC[0-9]+)?
-  https://pecl.php.net/get/igbinary-{version}.tgz
-redis page https://pecl.php.net/rest/r/redis/allreleases.xml <v>{version}</v>
-  https://pecl.php.net/get/redis-{version}.tgz
-ssh2 page https://pecl.php.net/rest/r/ssh2/allreleases.xml <v>{version}</v>
-  https://pecl.php.net/get/ssh2-{version}.tgz
-xdebug page https://pecl.php.net/rest/r/xdebug/allreleases.xml <v>{version}</v>
-  https://pecl.php.net/get/xdebug-{version}.tgz
-yaml-pecl page https://pecl.php.net/rest/r/yaml/allreleases.xml <v>{version}</v>
-  https://pecl.php.net/get/yaml-{version}.tgz
-zstd-pecl page https://pecl.php.net/rest/r/zstd/allreleases.xml <v>{version}</v>
-  https://pecl.php.net/get/zstd-{version}.tgz
 php-deps/icu page https://downloads.php.net/~windows/php-sdk/deps/series/packages-8.5-vs17-x64-stable.txt ICU-{version}-vs17-x64.zip series=0 latest
   https://downloads.php.net/~windows/php-sdk/deps/vs17/x64/ICU-{version}-vs17-x64.zip
 php-deps/brotli page https://downloads.php.net/~windows/php-sdk/deps/series/packages-8.5-vs17-x64-stable.txt brotli-{version}-vs17-x64.zip series=0 latest
@@ -277,8 +263,6 @@ expat git https://github.com/libexpat/libexpat R_{version} series=1
   https://github.com/libexpat/libexpat/releases/download/R_{version}/expat-*.tar.gz
 icu git https://github.com/unicode-org/icu release-{version} series=1
   https://github.com/unicode-org/icu/releases/download/release-{version}/icu4c-*-src.tgz
-libyaml git https://github.com/yaml/libyaml {version}
-  https://github.com/yaml/libyaml/archive/refs/tags/{version}.tar.gz
 json-c page https://s3.amazonaws.com/json-c_releases/ releases/json-c-{version}.tar.gz
   https://s3.amazonaws.com/json-c_releases/releases/json-c-{version}.tar.gz
 nlohmann-json git https://github.com/nlohmann/json v{version}
@@ -301,12 +285,6 @@ qt git https://github.com/qt/qtbase v{version} osv-thin
 
 postgresql page https://ftp.postgresql.org/pub/source/ href="v{version}/" series=1 osv=https://github.com/postgres/postgres,REL_{version_} osv-thin
   https://ftp.postgresql.org/pub/source/v{version}/postgresql-*.tar.gz
-pgvector git https://github.com/pgvector/pgvector v{version}
-  https://github.com/pgvector/pgvector/archive/refs/tags/v{version}.tar.gz
-pg_cron git https://github.com/citusdata/pg_cron v{version}
-  https://github.com/citusdata/pg_cron/archive/refs/tags/v{version}.tar.gz
-postgis page https://download.osgeo.org/postgis/source/ postgis-{version}.tar.gz osv=https://github.com/postgis/postgis,{version}
-  https://download.osgeo.org/postgis/source/postgis-{version}.tar.gz
 gdal git https://github.com/OSGeo/gdal v{version}
   https://download.osgeo.org/gdal/{version}/gdal-*.tar.gz
 proj page https://download.osgeo.org/proj/ proj-{version}.tar.gz

@@ -1,16 +1,17 @@
 {
   "id": "test.build.hello",
   "version": "1",
-  "command": "bin/hello.exe",
-  "sdk": {
-    "zig": "org.ziglang.zig@@ZIG@",
-    "busybox": "net.frippery.busybox@@BUSYBOX@"
-  },
+  "entrypoint": "bin/hello.exe",
+  "sdk": { "zig": "zig@@ZIG@", "busybox": "busybox@@BUSYBOX@" },
   "cleanup": ["/include", "/lib"],
-  "modules": [
+  "stages": [
     {
       "name": "greet",
-      "sources": [{ "path": "greet.c" }, { "path": "greet.h" }, { "path": "twice.cpp" }],
+      "sources": [
+        { "path": "greet.c" },
+        { "path": "greet.h" },
+        { "path": "twice.cpp" }
+      ],
       "build": [
         "cc -O2 -c greet.c -o greet.o",
         "c++ -O2 -fno-exceptions -fno-rtti -c twice.cpp -o twice.o",
@@ -21,7 +22,10 @@
     },
     {
       "name": "app",
-      "sources": [{ "path": "main.c" }, { "path": "hello.rc" }],
+      "sources": [
+        { "path": "main.c" },
+        { "path": "hello.rc" }
+      ],
       "build": [
         "mkdir -p \"$PREFIX/bin\"",
         "rc /fo hello.res hello.rc",

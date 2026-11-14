@@ -1,5 +1,5 @@
 """Python in AppContainers, for zigsaw's Python images: PyGObject's runtime
-and Python's own (org.python.python).
+and Python's own (python).
 
 A process in an AppContainer may create named pipes only in its own
 namespace, \\\\.\\pipe\\LOCAL\\. multiprocessing names its pipes

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# GTK end to end: an app built against GTK's SDK image (org.gtk.Gtk4.Sdk),
+# GTK end to end: an app built against GTK's SDK image (gtk4-sdk),
 # with Meson and llvm-mingw's Clang, runs on GTK's runtime image
-# (org.gtk.Gtk4), with libadwaita, opens a window, draws a frame and quits, in
+# (gtk4), with libadwaita, opens a window, draws a frame and quits, in
 # each sandbox; it gets HTTPS URLs with libsoup, loads an SVG with librsvg's
 # loader, draws text in a font file with pangocairo and checks spelling with
 # enchant; the runtime's own tools run too (Pango's and GIO's among them), its
@@ -44,16 +44,16 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/images.sh"
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
 zigsaw=${1:-$root/out/bin/quasidock.exe}
 QUASIDOCK_HOME=${GTK_HOME:-${BUILD_HOME:-}}
-if [ -z "$QUASIDOCK_HOME" ] || ! qd_cached "$zigsaw" "org.gtk.Gtk4" || ! qd_cached "$zigsaw" "org.gtk.Gtk4.Sdk"; then
-    echo "tests/gtk.sh needs a store with org.gtk.Gtk4 and org.gtk.Gtk4.Sdk in GTK_HOME or BUILD_HOME;"
+if [ -z "$QUASIDOCK_HOME" ] || ! qd_cached "$zigsaw" "gtk4" || ! qd_cached "$zigsaw" "gtk4-sdk"; then
+    echo "tests/gtk.sh needs a store with gtk4 and gtk4-sdk in GTK_HOME or BUILD_HOME;"
     echo "build recipes\\gtk4-sdk.json and recipes\\gtk4.json into one first."
     exit 1
 fi
 export QUASIDOCK_HOME
 work=$(cygpath -w "$(mktemp -d)")
 APP=test.gtk.hello
-EDITOR=org.gnome.TextEditor
-RNOTE=com.github.flxzt.rnote
+EDITOR=gnome-text-editor
+RNOTE=rnote
 
 failures=0
 check() {
@@ -85,7 +85,7 @@ install_again() {
 }
 
 for f in hello.c soup.c svg.c spell.c font.c icon.c meson.build; do cp "$root\\tests\\gtk\\$f" "$work\\"; done
-sed -e "s/@GTK@/$(manifest_of org.gtk.Gtk4)/" -e "s/@GTKSDK@/$(manifest_of org.gtk.Gtk4.Sdk)/" \
+sed -e "s/@GTK@/$(manifest_of gtk4)/" -e "s/@GTKSDK@/$(manifest_of gtk4-sdk)/" \
     "$root\\tests\\gtk\\hello.json.in" >"$work\\hello.json"
 
 check "an app builds against GTK's SDK image, finding gtk4 with pkg-config" z build "$work\\hello.json"
@@ -112,12 +112,12 @@ else
 fi
 settings() {
     local out rc
-    out=$(timeout 60 bash "$QD_IMAGES_HELPER" run "$zigsaw" --entrypoint=gtk4-query-settings org.gtk.Gtk4 2>&1)
+    out=$(timeout 60 bash "$QD_IMAGES_HELPER" run "$zigsaw" --entrypoint=gtk4-query-settings gtk4 2>&1)
     rc=$?
     grep -q 'gtk-theme-name: "Default"' <<<"$out" || { echo "exit status $rc, $(wc -l <<<"$out") lines: $(tr -d '\r' <<<"$out" | tail -3)"; return 1; }
 }
 check "the runtime's gtk4-query-settings reads GTK's settings" settings
-check "its gtk4-demo is GTK 4.24.1" sh -c "timeout 60 bash '$QD_IMAGES_HELPER' run \"\$0\" --entrypoint=gtk4-demo org.gtk.Gtk4 --version | grep -q 'gtk4-demo.exe 4.24.1'" "$zigsaw"
+check "its gtk4-demo is GTK 4.24.1" sh -c "timeout 60 bash '$QD_IMAGES_HELPER' run \"\$0\" --entrypoint=gtk4-demo gtk4 --version | grep -q 'gtk4-demo.exe 4.24.1'" "$zigsaw"
 # The runtime's variables keep GLib's files and settings in the app's data
 # directory, rather than the user's AppData (where GLib looks with
 # SHGetKnownFolderPath) or the registry (GLib's default for settings).
@@ -168,19 +168,19 @@ printf '%s\n' '<svg xmlns="http://www.w3.org/2000/svg" width="48" height="32"><r
 check "GdkPixbuf loads an SVG with librsvg's loader" sh -c "timeout 60 bash '$QD_IMAGES_HELPER' run \"\$0\" --entrypoint=bin/svg-size.exe $APP t.svg | grep -q '^loaded 48x32'" "$zigsaw"
 # The SDK's rsvg-convert, a Rust program GNU ld links: all its imports bound
 # (tests/cmd/imports), it makes a PNG of the SVG.
-sdk_manifest="$QUASIDOCK_HOME\\blobs\\sha256\\$(manifest_of org.gtk.Gtk4.Sdk | cut -d: -f2)"
+sdk_manifest="$QUASIDOCK_HOME\\blobs\\sha256\\$(manifest_of gtk4-sdk | cut -d: -f2)"
 sdk="$QUASIDOCK_HOME\\deploy\\$(grep -o 'sha256:[0-9a-f]*' "$sdk_manifest" | tail -1 | cut -d: -f2)"
 rsvg_convert() {
     (cd "$root" && go run ./scripts/build.go imports) >/dev/null || return 1
     "$root\\out\\test\\quasidock-imports.exe" "$sdk\\bin\\rsvg-convert.exe" || return 1
     # Piped: given a file as stdin, rsvg-convert reads only its first two
     # bytes, run by zigsaw or not.
-    cat "$work\\t.svg" | timeout 60 bash "$QD_IMAGES_HELPER" run "$zigsaw" --entrypoint=bin/rsvg-convert.exe org.gtk.Gtk4.Sdk | head -c 8 | od -A n -t x1 | tr -d ' \n' | grep -qx '89504e470d0a1a0a'
+    cat "$work\\t.svg" | timeout 60 bash "$QD_IMAGES_HELPER" run "$zigsaw" --entrypoint=bin/rsvg-convert.exe gtk4-sdk | head -c 8 | od -A n -t x1 | tr -d ' \n' | grep -qx '89504e470d0a1a0a'
 }
 check "the SDK's rsvg-convert binds all its imports and converts an SVG to PNG" rsvg_convert
 # The runtime keeps GIO's modules and GdkPixbuf's loaders from the SDK's lib
 # directory, and none of its libraries for linking.
-runtime_manifest="$QUASIDOCK_HOME\\blobs\\sha256\\$(manifest_of org.gtk.Gtk4 | cut -d: -f2)"
+runtime_manifest="$QUASIDOCK_HOME\\blobs\\sha256\\$(manifest_of gtk4 | cut -d: -f2)"
 runtime="$QUASIDOCK_HOME\\deploy\\$(grep -o 'sha256:[0-9a-f]*' "$runtime_manifest" | tail -1 | cut -d: -f2)"
 runtime_lib() {
     test -f "$runtime\\lib\\gio\\modules\\libgioopenssl.dll" && test -f "$runtime\\lib\\gdk-pixbuf-2.0\\2.10.0\\loaders\\pixbufloader_svg.dll" || return 1
@@ -203,24 +203,24 @@ check "with --sandbox=appcontainer, without Pango's warning" font_file --sandbox
 printf 'Hello, zigsaw \xd8\xa7\xd9\x84\xd8\xb9\xd8\xb1\xd8\xa8\xd9\x8a\xd8\xa9\n' >"$work\\text.txt"
 pango_view() {
     rm -f "$work\\text.png"
-    timeout 60 bash "$QD_IMAGES_HELPER" run "$zigsaw" "$@" --entrypoint=pango-view org.gtk.Gtk4 -q --font='Segoe UI 20' -o text.png text.txt &&
+    timeout 60 bash "$QD_IMAGES_HELPER" run "$zigsaw" "$@" --entrypoint=pango-view gtk4 -q --font='Segoe UI 20' -o text.png text.txt &&
         head -c 8 "$work\\text.png" | od -A n -t x1 | tr -d ' \n' | grep -qx '89504e470d0a1a0a'
 }
 check "the runtime's pango-view draws text to a PNG" pango_view
 check "with --sandbox=soft" pango_view --sandbox=soft
 check "with --sandbox=appcontainer" pango_view --sandbox=appcontainer
-check "pango-list lists Windows' fonts" sh -c "timeout 60 bash '$QD_IMAGES_HELPER' run \"\$0\" --entrypoint=pango-list org.gtk.Gtk4 | tr -d '\r' | grep -q '^Segoe UI *$'" "$zigsaw"
-check "the runtime's gio runs" sh -c "timeout 60 bash '$QD_IMAGES_HELPER' run \"\$0\" --entrypoint=gio org.gtk.Gtk4 version | grep -q '^2\\.90\\.'" "$zigsaw"
+check "pango-list lists Windows' fonts" sh -c "timeout 60 bash '$QD_IMAGES_HELPER' run \"\$0\" --entrypoint=pango-list gtk4 | tr -d '\r' | grep -q '^Segoe UI *$'" "$zigsaw"
+check "the runtime's gio runs" sh -c "timeout 60 bash '$QD_IMAGES_HELPER' run \"\$0\" --entrypoint=gio gtk4 version | grep -q '^2\\.90\\.'" "$zigsaw"
 # Translations, through GNU gettext's libintl: in the language LANGUAGE
 # names, or Windows' own without it.
-check "the runtime speaks German with LANGUAGE=de (gio's help)" sh -c "timeout 60 bash '$QD_IMAGES_HELPER' run \"\$0\" --env=LANGUAGE=de --entrypoint=gio org.gtk.Gtk4 help 2>&1 | tr -d '\r' | grep -q '^Aufruf:'" "$zigsaw"
+check "the runtime speaks German with LANGUAGE=de (gio's help)" sh -c "timeout 60 bash '$QD_IMAGES_HELPER' run \"\$0\" --env=LANGUAGE=de --entrypoint=gio gtk4 help 2>&1 | tr -d '\r' | grep -q '^Aufruf:'" "$zigsaw"
 # An emoji followed by U+FE0F asks Pango for a color font, which Pango's
 # Windows font map couldn't match to any font before GTK's SDK patched it
 # (GTK's emoji chooser showed nothing).
 printf '\xe2\x9d\xa4\xef\xb8\x8f \xf0\x9f\x98\x80\n' >"$work\\emoji.txt"
 color_emoji() {
     local out
-    out=$(timeout 60 bash "$QD_IMAGES_HELPER" run "$zigsaw" --entrypoint=pango-view org.gtk.Gtk4 -q --font='Segoe UI 20' -o emoji.png emoji.txt 2>&1 | tr -d '\r')
+    out=$(timeout 60 bash "$QD_IMAGES_HELPER" run "$zigsaw" --entrypoint=pango-view gtk4 -q --font='Segoe UI 20' -o emoji.png emoji.txt 2>&1 | tr -d '\r')
     ! grep -q -e 'fallbacks failed' -e "couldn't load font" <<<"$out" && test -s "$work\\emoji.png" || { echo "got: $out"; return 1; }
 }
 check "Pango finds a color font for emoji" color_emoji
@@ -252,7 +252,7 @@ bin="$QUASIDOCK_HOME\\bin"
 loose_cc() {
     (cd "$work\\loose" && "$bin\\cc.exe" hello.c -o hello.exe $("$bin\\pkg-config.exe" --cflags --libs gtk4 libadwaita-1 | tr -d '\r')) || return 1
     local out
-    out=$(cd "$work\\loose" && timeout 120 bash "$QD_IMAGES_HELPER" run "$zigsaw" --entrypoint="$work\\loose\\hello.exe" org.gtk.Gtk4 2>&1 | tr -d '\r')
+    out=$(cd "$work\\loose" && timeout 120 bash "$QD_IMAGES_HELPER" run "$zigsaw" --entrypoint="$work\\loose\\hello.exe" gtk4 2>&1 | tr -d '\r')
     grep -q '^GTK 4\.24\.1$' <<<"$out" && grep -q '^drew a frame with Gsk' <<<"$out" || { echo "got: $out"; return 1; }
 }
 check "the SDK's cc and pkg-config build a GTK program, which runs on the runtime" loose_cc
@@ -263,18 +263,19 @@ cp "$root\\tests\\gtk\\ime.c" "$work\\loose\\"
 ime_survives() {
     (cd "$work\\loose" && "$bin\\cc.exe" ime.c -o ime.exe $("$bin\\pkg-config.exe" --cflags --libs gtk4 | tr -d '\r')) || return 1
     local out
-    out=$(cd "$work\\loose" && timeout 60 bash "$QD_IMAGES_HELPER" run "$zigsaw" --entrypoint="$work\\loose\\ime.exe" org.gtk.Gtk4 2>&1 | tr -d '\r')
+    out=$(cd "$work\\loose" && timeout 60 bash "$QD_IMAGES_HELPER" run "$zigsaw" --entrypoint="$work\\loose\\ime.exe" gtk4 2>&1 | tr -d '\r')
     grep -q '^the view has the focus: yes$' <<<"$out" && grep -q '^still here$' <<<"$out" || { echo "got: $(tr '\n' '|' <<<"$out")"; return 1; }
 }
 check "GTK's input method lets go of a text view removed while it has the focus" ime_survives
 # (Through `run` rather than the meson shim, which Meson's own app has when
 # it was installed first.)
-sdk_meson() { bash "$QD_IMAGES_HELPER" run "$zigsaw" --entrypoint=meson org.gtk.Gtk4.Sdk "$@"; }
+meson_dir="$QUASIDOCK_HOME\\deploy\\$("$zigsaw" inspect -f '{{(index .Quasidock.From "meson").Layer}}' gtk4-sdk | tr -d '\r' | cut -d: -f2)"
+sdk_meson() { bash "$QD_IMAGES_HELPER" run "$zigsaw" --entrypoint='${meson}\python.exe' gtk4-sdk "$meson_dir\\meson\\meson.py" "$@"; }
 loose_meson() {
     (cd "$work\\loose" && sdk_meson setup out >/dev/null && sdk_meson compile -C out >/dev/null) || {
         (cd "$work\\loose" && sdk_meson compile -C out 2>&1 | tail -3); return 1; }
     local out
-    out=$(cd "$work\\loose" && timeout 120 bash "$QD_IMAGES_HELPER" run "$zigsaw" --entrypoint="$work\\loose\\out\\spell.exe" org.gtk.Gtk4 en_US 2>&1 | tr -d '\r')
+    out=$(cd "$work\\loose" && timeout 120 bash "$QD_IMAGES_HELPER" run "$zigsaw" --entrypoint="$work\\loose\\out\\spell.exe" gtk4 en_US 2>&1 | tr -d '\r')
     grep -q '^hunspell en_US: the ok, teh misspelled, suggests the$' <<<"$out" || { echo "got: $out"; return 1; }
 }
 check "the SDK's meson sets up and compiles a project, with the aliases of the SDK's runtimes" loose_meson
@@ -294,7 +295,7 @@ loose_windres() {
     powershell -NoProfile -Command "[Text.Encoding]::Unicode.GetString([IO.File]::ReadAllBytes('$work\\loose\\versioned.exe')).Contains('zigsaw windres')" | tr -d '\r' | grep -qx 'True'
 }
 check "the SDK's windres compiles a resource script that cc links" loose_windres
-check "a relative --entrypoint says how to name a program of yours" sh -c "bash '$QD_IMAGES_HELPER' run \"\$0\" --entrypoint=loose\\\\hello.exe org.gtk.Gtk4 2>&1 | grep -qF 'give its absolute path'" "$zigsaw"
+check "a relative --entrypoint says how to name a program of yours" sh -c "bash '$QD_IMAGES_HELPER' run \"\$0\" --entrypoint=loose\\\\hello.exe gtk4 2>&1 | grep -qF 'give its absolute path'" "$zigsaw"
 
 # A directory of documents that no run has been granted, unlike the work
 # directory, which runs with the cwd permission are.
@@ -307,9 +308,9 @@ stays_up() {
     timeout "$seconds" bash "$QD_IMAGES_HELPER" run "$zigsaw" --env=G_DEBUG=fatal-criticals "$@" >/dev/null 2>&1
     [ $? -eq 124 ]
 }
-check "the Adwaita demo runs" stays_up 15 --entrypoint=adwaita-1-demo org.gtk.Gtk4
+check "the Adwaita demo runs" stays_up 15 --entrypoint=adwaita-1-demo gtk4
 # It aborted at startup without an SVG loader (iteration 11).
-check "GTK's widget factory runs" stays_up 15 --entrypoint=gtk4-widget-factory org.gtk.Gtk4
+check "GTK's widget factory runs" stays_up 15 --entrypoint=gtk4-widget-factory gtk4
 
 # GNOME Text Editor, on the runtime. Built here unless the store has it,
 # which takes a few minutes.
@@ -334,7 +335,7 @@ check "with --sandbox=appcontainer" stays_up 15 --sandbox=appcontainer --filesys
 # with libadwaita and GtkSourceView 5, its packages from PyPI through a
 # pinned vendor step, and Graphviz's dot for its auto layout. Built here
 # unless the store has it (a few minutes).
-GAPHOR=org.gaphor.Gaphor
+GAPHOR=gaphor
 installed_gaphor=false
 if ! qd_cached "$zigsaw" "$GAPHOR"; then
     z build "$root\\recipes\\gaphor.json" >"$work\\gaphor.log" 2>&1 || echo "building $GAPHOR failed: $(tail -1 "$work\\gaphor.log")"
@@ -344,7 +345,7 @@ else
 fi
 # Gaphor's pythonw shows nothing: its console python.exe, from PyGObject's
 # runtime, runs it for these.
-pygobject_dir="$QUASIDOCK_HOME\\deploy\\$(grep -o 'sha256:[0-9a-f]*' "$QUASIDOCK_HOME\\blobs\\sha256\\$(manifest_of org.gnome.PyGObject | cut -d: -f2)" | tail -1 | cut -d: -f2)"
+pygobject_dir="$QUASIDOCK_HOME\\deploy\\$(grep -o 'sha256:[0-9a-f]*' "$QUASIDOCK_HOME\\blobs\\sha256\\$(manifest_of pygobject | cut -d: -f2)" | tail -1 | cut -d: -f2)"
 gaphor_version() {
     local out
     out=$(timeout 60 bash "$QD_IMAGES_HELPER" run "$zigsaw" --entrypoint="$pygobject_dir\\python.exe" $GAPHOR -m gaphor --version 2>&1 | tr -d '\r')
@@ -426,9 +427,9 @@ check "with --sandbox=appcontainer" stays_up 20 --sandbox=appcontainer --filesys
 # built with .NET's SDK image. Microsoft's licence doesn't let the .NET images
 # be published, so they're built here from Microsoft's download unless the
 # store has them (300 MB, about a minute), and Pinta too (about a minute).
-PINTA=com.github.PintaProject.Pinta
+PINTA=pinta
 installed_dotnet=false installed_pinta=false
-qd_cached "$zigsaw" "com.microsoft.dotnet.Sdk" || installed_dotnet=true
+qd_cached "$zigsaw" "dotnet-sdk" || installed_dotnet=true
 qd_cached "$zigsaw" "$PINTA" || installed_pinta=true
 for r in dotnet-sdk dotnet pinta; do
     z build "$root\\recipes\\no-publish\\$r.json" >"$work\\$r.log" 2>&1 || echo "building $r.json failed: $(tail -1 "$work\\$r.log")"
@@ -450,7 +451,7 @@ check "the documents' directory grant was revoked after the runs" sh -c "! icacl
 
 # GTK built with the machine's MSVC (recipes/gtk4-msvc.json), if the store
 # has it: it isn't published, and needs Visual Studio to build.
-MSVC=org.gtk.Gtk4.Msvc
+MSVC=gtk4-msvc
 if qd_cached "$zigsaw" "$MSVC"; then
     msvc_dir="$QUASIDOCK_HOME\\deploy\\$(grep -o 'sha256:[0-9a-f]*' "$QUASIDOCK_HOME\\blobs\\sha256\\$(manifest_of $MSVC | cut -d: -f2)" | tail -1 | cut -d: -f2)"
     check "GTK built with MSVC: its gtk4-demo is GTK 4.24.1" sh -c "timeout 60 bash '$QD_IMAGES_HELPER' run \"\$0\" $MSVC --version | grep -q 'gtk4-demo.exe 4.24.1'" "$zigsaw"
@@ -463,7 +464,7 @@ if qd_cached "$zigsaw" "$MSVC"; then
     check "its demo runs" stays_up 15 $MSVC
     check "with --sandbox=soft" stays_up 15 --sandbox=soft $MSVC
     check "with --sandbox=appcontainer" stays_up 15 --sandbox=appcontainer $MSVC
-    check "its Adwaita demo runs" stays_up 15 --entrypoint=adwaita-1-demo-msvc $MSVC
+    check "its Adwaita demo runs" stays_up 15 --entrypoint=adwaita-1-demo $MSVC
 else
     echo "skip  GTK built with MSVC: $MSVC isn't in the store (recipes\\gtk4-msvc.json builds it, with Visual Studio)"
 fi
@@ -471,7 +472,7 @@ fi
 cd "$root" || exit 1
 rm -rf "$docs"
 $installed_pinta && qd_remove_app z $PINTA >/dev/null 2>&1
-$installed_dotnet && { qd_remove_app z com.microsoft.dotnet >/dev/null 2>&1; qd_remove_app z com.microsoft.dotnet.Sdk >/dev/null 2>&1; }
+$installed_dotnet && { qd_remove_app z dotnet >/dev/null 2>&1; qd_remove_app z dotnet-sdk >/dev/null 2>&1; }
 $installed_rnote && qd_remove_app z $RNOTE >/dev/null 2>&1
 $installed_editor && qd_remove_app z $EDITOR >/dev/null 2>&1
 $installed_gaphor && qd_remove_app z $GAPHOR >/dev/null 2>&1

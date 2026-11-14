@@ -1,8 +1,10 @@
 package recipe
 
 import (
-	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -11,22 +13,22 @@ import (
 
 func TestParseMinimalRecipe(t *testing.T) {
 	raw := `{
-  "id": "net.frippery.busybox",
+  "id": "busybox",
   "version": "1",
-  "command": "busybox.exe",
-  "modules": [{ "name": "busybox", "sources": [{ "url": "https://example.com/bb.exe?x=1", "dest": "busybox.exe" }] }]
+  "entrypoint": "busybox.exe",
+  "stages": [{ "name": "busybox", "sources": [{ "url": "https://example.com/bb.exe?x=1", "dest": "busybox.exe" }] }]
 }`
 	r, err := Parse("test.json", []byte(raw))
 	if err != nil {
 		t.Fatalf("Parse error: %v", err)
 	}
-	if r.Command != "busybox.exe" {
-		t.Fatalf("expected command 'busybox.exe', got %q", r.Command)
+	if !reflect.DeepEqual([]string(r.Entrypoint), []string{"busybox.exe"}) {
+		t.Fatalf("expected entrypoint ['busybox.exe'], got %v", r.Entrypoint)
 	}
-	if len(r.Modules) != 1 || len(r.Modules[0].Sources) != 1 {
-		t.Fatalf("unexpected modules or sources: %+v", r.Modules)
+	if len(r.Stages) != 1 || len(r.Stages[0].Sources) != 1 {
+		t.Fatalf("unexpected stages or sources: %+v", r.Stages)
 	}
-	src := r.Modules[0].Sources[0]
+	src := r.Stages[0].Sources[0]
 	if src.SourceKind() != KindFile {
 		t.Fatalf("expected KindFile, got %v", src.SourceKind())
 	}
@@ -44,12 +46,8 @@ func TestParseMinimalRecipe(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AppConfig error: %v", err)
 	}
-	if len(cfg.Exports) != 1 {
-		t.Fatalf("expected 1 export, got %d", len(cfg.Exports))
-	}
-	exp, ok := cfg.Exports["busybox"]
-	if !ok || exp.Command != "busybox.exe" {
-		t.Fatalf("expected export 'busybox' -> 'busybox.exe', got %+v", exp)
+	if !reflect.DeepEqual(cfg.Entrypoint, []string{"busybox.exe"}) {
+		t.Fatalf("expected config entrypoint ['busybox.exe'], got %v", cfg.Entrypoint)
 	}
 	if r.Layer.Format() != format.FormatGzip {
 		t.Fatalf("expected FormatGzip, got %v", r.Layer.Format())
@@ -57,8 +55,8 @@ func TestParseMinimalRecipe(t *testing.T) {
 }
 
 func TestLayerFormat(t *testing.T) {
-	raw := `{ "id": "x", "version": "1", "command": "a.exe", "layer": "estargz",
-  "modules": [{ "name": "m", "sources": [{ "url": "https://example.com/a.exe", "dest": "a.exe" }] }] }`
+	raw := `{ "id": "x", "version": "1", "entrypoint": "a.exe", "layer": "estargz",
+  "stages": [{ "name": "m", "sources": [{ "url": "https://example.com/a.exe", "dest": "a.exe" }] }] }`
 	r, err := Parse("t.json", []byte(raw))
 	if err != nil {
 		t.Fatalf("Parse error: %v", err)
@@ -68,8 +66,8 @@ func TestLayerFormat(t *testing.T) {
 	}
 
 	for _, name := range []string{"tar", "zstd"} {
-		badJSON := fmt.Sprintf(`{ "id": "x", "version": "1", "command": "a.exe", "layer": "%s",
-  "modules": [{ "name": "m", "sources": [{ "url": "https://example.com/a.exe", "dest": "a.exe" }] }] }`, name)
+		badJSON := fmt.Sprintf(`{ "id": "x", "version": "1", "entrypoint": "a.exe", "layer": "%s",
+  "stages": [{ "name": "m", "sources": [{ "url": "https://example.com/a.exe", "dest": "a.exe" }] }] }`, name)
 		if _, err := Parse("t.json", []byte(badJSON)); err == nil {
 			t.Fatalf("expected error for layer format %q, got nil", name)
 		}
@@ -77,8 +75,8 @@ func TestLayerFormat(t *testing.T) {
 }
 
 func TestPrefetch(t *testing.T) {
-	okJSON := `{ "id": "x", "version": "1", "command": "a.exe", "layer": "estargz", "prefetch": ["a.exe", "lib/b.dll"],
-  "modules": [{ "name": "m", "sources": [{ "url": "https://example.com/a.exe", "dest": "a.exe" }] }] }`
+	okJSON := `{ "id": "x", "version": "1", "entrypoint": "a.exe", "layer": "estargz", "prefetch": ["a.exe", "lib/b.dll"],
+  "stages": [{ "name": "m", "sources": [{ "url": "https://example.com/a.exe", "dest": "a.exe" }] }] }`
 	ok, err := Parse("t.json", []byte(okJSON))
 	if err != nil {
 		t.Fatalf("Parse error: %v", err)
@@ -98,8 +96,8 @@ func TestPrefetch(t *testing.T) {
 	}
 
 	for _, fields := range badFields {
-		raw := fmt.Sprintf(`{ "id": "x", "version": "1", "command": "a.exe", %s,
-  "modules": [{ "name": "m", "sources": [{ "url": "https://example.com/a.exe", "dest": "a.exe" }] }] }`, fields)
+		raw := fmt.Sprintf(`{ "id": "x", "version": "1", "entrypoint": "a.exe", %s,
+  "stages": [{ "name": "m", "sources": [{ "url": "https://example.com/a.exe", "dest": "a.exe" }] }] }`, fields)
 		if _, err := Parse("t.json", []byte(raw)); err == nil {
 			t.Fatalf("expected error for prefetch %s, got nil", fields)
 		}
@@ -107,162 +105,103 @@ func TestPrefetch(t *testing.T) {
 }
 
 func TestRecipeChecks(t *testing.T) {
-	okJSON := `{ "id": "x.tsc", "version": "1", "command": "${node}\\node.exe", "args": ["${app}\\tsc.js"],
-  "runtimes": { "node": "org.nodejs.node@sha256:0000000000000000000000000000000000000000000000000000000000000000" },
-  "exports": { "tsc": { "command": "${node}\\node.exe", "args": ["${app}\\tsc.js"] } },
+	okJSON := `{ "id": "tsc", "version": "1", "entrypoint": ["${node}\\node.exe", "${app}\\tsc.js"], "cmd": ["--help"],
+  "from": { "node": "node@sha256:0000000000000000000000000000000000000000000000000000000000000000" },
   "cleanup": ["/include", "*.pdb"],
-  "modules": [{ "name": "tsc", "sources": [{ "path": "tsc.tgz", "strip": 1 }] }] }`
+  "stages": [{ "name": "tsc", "sources": [{ "path": "tsc.tgz", "strip": 1 }] }] }`
 	ok, err := Parse("t.json", []byte(okJSON))
 	if err != nil {
 		t.Fatalf("Parse error: %v", err)
 	}
-	if ok.Modules[0].Sources[0].SourceKind() != KindTarGz {
-		t.Fatalf("expected KindTarGz, got %v", ok.Modules[0].Sources[0].SourceKind())
+	if !reflect.DeepEqual([]string(ok.Entrypoint), []string{"${node}\\node.exe", "${app}\\tsc.js"}) {
+		t.Fatalf("unexpected entrypoint %v", ok.Entrypoint)
+	}
+	if !reflect.DeepEqual(ok.Cmd, []string{"--help"}) {
+		t.Fatalf("unexpected cmd %v", ok.Cmd)
+	}
+	if ok.Stages[0].Sources[0].SourceKind() != KindTarGz {
+		t.Fatalf("expected KindTarGz, got %v", ok.Stages[0].Sources[0].SourceKind())
 	}
 
-	vendoredJSON := `{ "id": "x", "version": "1", "command": "a.exe",
-  "modules": [{ "name": "m", "build": ["x"], "vendor": { "commands": ["cargo vendor"], "dir": "vendor/crates" } }] }`
+	vendoredJSON := `{ "id": "x", "version": "1", "entrypoint": "a.exe",
+  "stages": [{ "name": "m", "build": ["x"], "vendor": { "commands": ["cargo vendor"], "dir": "vendor/crates" } }] }`
 	vendored, err := Parse("t.json", []byte(vendoredJSON))
 	if err != nil {
 		t.Fatalf("Parse error: %v", err)
 	}
-	if vendored.Modules[0].Vendor == nil || vendored.Modules[0].Vendor.Dir != "vendor/crates" {
-		t.Fatalf("expected vendor dir 'vendor/crates', got %+v", vendored.Modules[0].Vendor)
+	if vendored.Stages[0].Vendor == nil || vendored.Stages[0].Vendor.Dir != "vendor/crates" {
+		t.Fatalf("expected vendor dir 'vendor/crates', got %+v", vendored.Stages[0].Vendor)
 	}
 
-	fromImageJSON := `{ "id": "x", "version": "1", "command": "bin/a.exe", "cleanup": ["/include", "*.a"],
-  "modules": [{ "name": "m", "sources": [{ "image": "x.sdk@sha256:0000000000000000000000000000000000000000000000000000000000000000", "dest": "sdk" }] }] }`
+	fromImageJSON := `{ "id": "x", "version": "1", "entrypoint": "bin/a.exe", "cleanup": ["/include", "*.a"],
+  "stages": [{ "name": "m", "sources": [{ "image": "x-sdk@sha256:0000000000000000000000000000000000000000000000000000000000000000", "dest": "sdk" }] }] }`
 	fromImage, err := Parse("t.json", []byte(fromImageJSON))
 	if err != nil {
 		t.Fatalf("Parse error: %v", err)
 	}
-	if fromImage.Modules[0].Sources[0].Dest == nil || *fromImage.Modules[0].Sources[0].Dest != "sdk" {
-		t.Fatalf("expected dest 'sdk', got %v", fromImage.Modules[0].Sources[0].Dest)
+	if fromImage.Stages[0].Sources[0].Dest == nil || *fromImage.Stages[0].Sources[0].Dest != "sdk" {
+		t.Fatalf("expected dest 'sdk', got %v", fromImage.Stages[0].Sources[0].Dest)
 	}
 
-	projectJSON := `{ "id": "x", "version": "1", "command": "bin/a.exe", "exports": {},
-  "modules": [{ "name": "m", "sources": [{ "path": ".", "skip": ["/docs", "*.log"] }, { "path": "src/" }], "build": ["x"] }] }`
+	projectJSON := `{ "id": "x", "version": "1", "entrypoint": ["bin/a.exe"],
+  "stages": [{ "name": "m", "sources": [{ "path": ".", "skip": ["/docs", "*.log"] }, { "path": "src/" }], "build": ["x"] }] }`
 	project, err := Parse("quasidock.json", []byte(projectJSON))
 	if err != nil {
 		t.Fatalf("Parse error: %v", err)
 	}
-	if len(project.Modules[0].Sources[0].Skip) != 2 || project.Modules[0].Sources[0].Skip[0] != "/docs" {
-		t.Fatalf("expected skip '/docs', got %v", project.Modules[0].Sources[0].Skip)
+	if len(project.Stages[0].Sources[0].Skip) != 2 || project.Stages[0].Sources[0].Skip[0] != "/docs" {
+		t.Fatalf("expected skip '/docs', got %v", project.Stages[0].Sources[0].Skip)
 	}
 
 	bad := []string{
-		// A command in a runtime needs exports.
-		`{ "id": "x", "version": "1", "command": "${node}\\node.exe", "runtimes": { "node": "n" }, "modules": [{ "name": "m", "build": ["x"] }] }`,
+		// Empty entrypoint.
+		`{ "id": "x", "version": "1", "entrypoint": "", "stages": [{ "name": "m", "build": ["x"] }] }`,
+		`{ "id": "x", "version": "1", "entrypoint": [], "stages": [{ "name": "m", "build": ["x"] }] }`,
 		// An unknown alias.
-		`{ "id": "x", "version": "1", "command": "${node}\\node.exe", "exports": {}, "modules": [{ "name": "m", "build": ["x"] }] }`,
+		`{ "id": "x", "version": "1", "entrypoint": "${node}\\node.exe", "stages": [{ "name": "m", "build": ["x"] }] }`,
 		// A reserved alias.
-		`{ "id": "x", "version": "1", "command": "a.exe", "runtimes": { "data": "d" }, "modules": [{ "name": "m", "build": ["x"] }] }`,
+		`{ "id": "x", "version": "1", "entrypoint": "a.exe", "from": { "data": "d" }, "stages": [{ "name": "m", "build": ["x"] }] }`,
 		// The same alias twice.
-		`{ "id": "x", "version": "1", "command": "a.exe", "sdk": { "zig": "z" }, "runtimes": { "zig": "z" }, "modules": [{ "name": "m", "build": ["x"] }] }`,
-		// No modules, or an empty one.
-		`{ "id": "x", "version": "1", "command": "a.exe", "modules": [] }`,
-		`{ "id": "x", "version": "1", "command": "a.exe", "modules": [{ "name": "m" }] }`,
-		// Two modules with one name.
-		`{ "id": "x", "version": "1", "command": "a.exe", "modules": [{ "name": "m", "build": ["x"] }, { "name": "M", "build": ["y"] }] }`,
-		// Network for a module that builds nothing.
-		`{ "id": "x", "version": "1", "command": "a.exe", "modules": [{ "name": "m", "network": true, "sources": [{ "path": "a.exe" }] }] }`,
+		`{ "id": "x", "version": "1", "entrypoint": "a.exe", "sdk": { "zig": "z" }, "from": { "zig": "z" }, "stages": [{ "name": "m", "build": ["x"] }] }`,
+		// No stages, or an empty one.
+		`{ "id": "x", "version": "1", "entrypoint": "a.exe", "stages": [] }`,
+		`{ "id": "x", "version": "1", "entrypoint": "a.exe", "stages": [{ "name": "m" }] }`,
+		// Two stages with one name.
+		`{ "id": "x", "version": "1", "entrypoint": "a.exe", "stages": [{ "name": "m", "build": ["x"] }, { "name": "M", "build": ["y"] }] }`,
+		// Network for a stage that builds nothing.
+		`{ "id": "x", "version": "1", "entrypoint": "a.exe", "stages": [{ "name": "m", "network": true, "sources": [{ "path": "a.exe" }] }] }`,
 		// strip on a file.
-		`{ "id": "x", "version": "1", "command": "a.exe", "modules": [{ "name": "m", "sources": [{ "path": "a.exe", "strip": 1 }] }] }`,
+		`{ "id": "x", "version": "1", "entrypoint": "a.exe", "stages": [{ "name": "m", "sources": [{ "path": "a.exe", "strip": 1 }] }] }`,
 		// An image source: on its own, pinned by digest only, inside the app.
-		`{ "id": "x", "version": "1", "command": "a.exe", "modules": [{ "name": "m", "sources": [{ "image": "x.sdk@sha256:00", "path": "a.exe" }] }] }`,
-		`{ "id": "x", "version": "1", "command": "a.exe", "modules": [{ "name": "m", "sources": [{ "image": "x.sdk@sha256:00", "sha256": "00" }] }] }`,
-		`{ "id": "x", "version": "1", "command": "a.exe", "modules": [{ "name": "m", "sources": [{ "image": "x.sdk@sha256:00", "strip": 1 }] }] }`,
-		`{ "id": "x", "version": "1", "command": "a.exe", "modules": [{ "name": "m", "sources": [{ "image": "x.sdk@sha256:00", "dest": "../up" }] }] }`,
-		`{ "id": "x", "version": "1", "command": "a.exe", "modules": [{ "name": "m", "sources": [{ "image": "x.sdk@sha256:00", "skip": ["/a"] }] }] }`,
+		`{ "id": "x", "version": "1", "entrypoint": "a.exe", "stages": [{ "name": "m", "sources": [{ "image": "x.sdk@sha256:00", "path": "a.exe" }] }] }`,
+		`{ "id": "x", "version": "1", "entrypoint": "a.exe", "stages": [{ "name": "m", "sources": [{ "image": "x.sdk@sha256:00", "sha256": "00" }] }] }`,
+		`{ "id": "x", "version": "1", "entrypoint": "a.exe", "stages": [{ "name": "m", "sources": [{ "image": "x.sdk@sha256:00", "strip": 1 }] }] }`,
+		`{ "id": "x", "version": "1", "entrypoint": "a.exe", "stages": [{ "name": "m", "sources": [{ "image": "x.sdk@sha256:00", "dest": "../up" }] }] }`,
+		`{ "id": "x", "version": "1", "entrypoint": "a.exe", "stages": [{ "name": "m", "sources": [{ "image": "x.sdk@sha256:00", "skip": ["/a"] }] }] }`,
 		// skip: for a directory path, with cleanup's patterns.
-		`{ "id": "x", "version": "1", "command": "a.exe", "modules": [{ "name": "m", "sources": [{ "url": "https://example.com/a.exe", "skip": ["/a"] }] }] }`,
-		`{ "id": "x", "version": "1", "command": "a.exe", "modules": [{ "name": "m", "sources": [{ "path": ".", "skip": ["docs/*.md"] }] }] }`,
-		`{ "id": "x", "version": "1", "command": "a.exe", "modules": [{ "name": "m", "sources": [{ "path": ".", "skip": ["/../x"] }] }] }`,
+		`{ "id": "x", "version": "1", "entrypoint": "a.exe", "stages": [{ "name": "m", "sources": [{ "url": "https://example.com/a.exe", "skip": ["/a"] }] }] }`,
+		`{ "id": "x", "version": "1", "entrypoint": "a.exe", "stages": [{ "name": "m", "sources": [{ "path": ".", "skip": ["docs/*.md"] }] }] }`,
+		`{ "id": "x", "version": "1", "entrypoint": "a.exe", "stages": [{ "name": "m", "sources": [{ "path": ".", "skip": ["/../x"] }] }] }`,
 		// A URL with no file name, and none given.
-		`{ "id": "x", "version": "1", "command": "a.exe", "modules": [{ "name": "m", "sources": [{ "url": "https://example.com/" }] }] }`,
+		`{ "id": "x", "version": "1", "entrypoint": "a.exe", "stages": [{ "name": "m", "sources": [{ "url": "https://example.com/" }] }] }`,
 		// Cleanup patterns.
-		`{ "id": "x", "version": "1", "command": "a.exe", "cleanup": ["/../x"], "modules": [{ "name": "m", "build": ["x"] }] }`,
-		`{ "id": "x", "version": "1", "command": "a.exe", "cleanup": ["lib/*.a"], "modules": [{ "name": "m", "build": ["x"] }] }`,
+		`{ "id": "x", "version": "1", "entrypoint": "a.exe", "cleanup": ["/../x"], "stages": [{ "name": "m", "build": ["x"] }] }`,
+		`{ "id": "x", "version": "1", "entrypoint": "a.exe", "cleanup": ["lib/*.a"], "stages": [{ "name": "m", "build": ["x"] }] }`,
 		// Host toolchains: only msvc, and only for build commands.
-		`{ "id": "x", "version": "1", "command": "a.exe", "host": ["gcc"], "modules": [{ "name": "m", "build": ["x"] }] }`,
-		`{ "id": "x", "version": "1", "command": "a.exe", "host": ["msvc"], "modules": [{ "name": "m", "sources": [{ "path": "a.exe" }] }] }`,
-		// Aliases: plain names, for commands in the image itself or in one of its runtimes.
-		`{ "id": "x", "version": "1", "command": "a.exe", "aliases": { "a/b": { "command": "a.exe" } }, "modules": [{ "name": "m", "build": ["x"] }] }`,
-		`{ "id": "x", "version": "1", "command": "a.exe", "aliases": { "ab": { "command": "${go}\\go.exe" } }, "runtimes": { "node": "n" }, "modules": [{ "name": "m", "build": ["x"] }] }`,
-		// Dropped arguments: only for aliases, one trimmed line each.
-		`{ "id": "x", "version": "1", "command": "a.exe", "exports": { "a": { "command": "a.exe", "drop": ["-x"] } }, "modules": [{ "name": "m", "build": ["x"] }] }`,
-		`{ "id": "x", "version": "1", "command": "a.exe", "aliases": { "a": { "command": "a.exe", "drop": [" -x"] } }, "modules": [{ "name": "m", "build": ["x"] }] }`,
-		`{ "id": "x", "version": "1", "command": "a.exe", "aliases": { "a": { "command": "a.exe", "drop": [""] } }, "modules": [{ "name": "m", "build": ["x"] }] }`,
-		// Vendor steps: only with build commands, with commands, into a directory inside the module's, pinned by a well-formed hash.
-		`{ "id": "x", "version": "1", "command": "a.exe", "modules": [{ "name": "m", "sources": [{ "path": "a.exe" }], "vendor": { "commands": ["x"], "dir": "v" } }] }`,
-		`{ "id": "x", "version": "1", "command": "a.exe", "modules": [{ "name": "m", "build": ["x"], "vendor": { "commands": [], "dir": "v" } }] }`,
-		`{ "id": "x", "version": "1", "command": "a.exe", "modules": [{ "name": "m", "build": ["x"], "vendor": { "commands": ["x"], "dir": "." } }] }`,
-		`{ "id": "x", "version": "1", "command": "a.exe", "modules": [{ "name": "m", "build": ["x"], "vendor": { "commands": ["x"], "dir": "../v" } }] }`,
-		`{ "id": "x", "version": "1", "command": "a.exe", "modules": [{ "name": "m", "build": ["x"], "vendor": { "commands": ["x"], "dir": "v", "sha256": "ABC" } }] }`,
-		// Shortcuts: to an export, named so they can be file names, with an icon inside the app.
-		`{ "id": "x", "version": "1", "command": "a.exe", "shortcuts": { "A": { "command": "b" } }, "modules": [{ "name": "m", "build": ["x"] }] }`,
-		`{ "id": "x", "version": "1", "command": "a.exe", "shortcuts": { "A/B": { "command": "a" } }, "modules": [{ "name": "m", "build": ["x"] }] }`,
-		`{ "id": "x", "version": "1", "command": "a.exe", "shortcuts": { "A": { "command": "a" }, "a": { "command": "a" } }, "modules": [{ "name": "m", "build": ["x"] }] }`,
-		`{ "id": "x", "version": "1", "command": "a.exe", "shortcuts": { "A": { "command": "a", "icon": "../a.ico" } }, "modules": [{ "name": "m", "build": ["x"] }] }`,
-		// Associations: an extension, opened by an export, once, with an icon inside the app.
-		`{ "id": "x", "version": "1", "command": "a.exe", "associations": { ".a": { "command": "b" } }, "modules": [{ "name": "m", "build": ["x"] }] }`,
-		`{ "id": "x", "version": "1", "command": "a.exe", "associations": { "a": { "command": "a" } }, "modules": [{ "name": "m", "build": ["x"] }] }`,
-		`{ "id": "x", "version": "1", "command": "a.exe", "associations": { ".a": { "command": "a", "icon": "C:\\a.ico" } }, "modules": [{ "name": "m", "build": ["x"] }] }`,
+		`{ "id": "x", "version": "1", "entrypoint": "a.exe", "host": ["gcc"], "stages": [{ "name": "m", "build": ["x"] }] }`,
+		`{ "id": "x", "version": "1", "entrypoint": "a.exe", "host": ["msvc"], "stages": [{ "name": "m", "sources": [{ "path": "a.exe" }] }] }`,
+		// Vendor steps: only with build commands, with commands, into a directory inside the stage's, pinned by a well-formed hash.
+		`{ "id": "x", "version": "1", "entrypoint": "a.exe", "stages": [{ "name": "m", "sources": [{ "path": "a.exe" }], "vendor": { "commands": ["x"], "dir": "v" } }] }`,
+		`{ "id": "x", "version": "1", "entrypoint": "a.exe", "stages": [{ "name": "m", "build": ["x"], "vendor": { "commands": [], "dir": "v" } }] }`,
+		`{ "id": "x", "version": "1", "entrypoint": "a.exe", "stages": [{ "name": "m", "build": ["x"], "vendor": { "commands": ["x"], "dir": "." } }] }`,
+		`{ "id": "x", "version": "1", "entrypoint": "a.exe", "stages": [{ "name": "m", "build": ["x"], "vendor": { "commands": ["x"], "dir": "../v" } }] }`,
+		`{ "id": "x", "version": "1", "entrypoint": "a.exe", "stages": [{ "name": "m", "build": ["x"], "vendor": { "commands": ["x"], "dir": "v", "sha256": "ABC" } }] }`,
 	}
 
 	for _, text := range bad {
 		if _, err := Parse("t.json", []byte(text)); err == nil {
 			t.Fatalf("expected error for %s, got nil", text)
 		}
-	}
-
-	with, err := Parse("t.json", []byte(`{ "id": "x", "version": "1", "command": "a.exe", "shortcuts": { "Text Editor": { "command": "a", "description": "Edit" } },
-  "modules": [{ "name": "m", "build": ["x"] }] }`))
-	if err != nil {
-		t.Fatalf("Parse error: %v", err)
-	}
-	withCfg, err := with.AppConfig(nil, nil)
-	if err != nil {
-		t.Fatalf("AppConfig error: %v", err)
-	}
-	withJSON, err := json.Marshal(withCfg)
-	if err != nil {
-		t.Fatalf("Marshal error: %v", err)
-	}
-	if !strings.Contains(string(withJSON), `"Text Editor"`) {
-		t.Fatalf("expected 'Text Editor' in JSON, got %s", string(withJSON))
-	}
-
-	vendoredCfg, err := vendored.AppConfig(nil, nil)
-	if err != nil {
-		t.Fatalf("AppConfig error: %v", err)
-	}
-	withoutJSON, err := json.Marshal(vendoredCfg)
-	if err != nil {
-		t.Fatalf("Marshal error: %v", err)
-	}
-	if strings.Contains(string(withoutJSON), `"shortcuts"`) {
-		t.Fatalf("did not expect 'shortcuts' in JSON, got %s", string(withoutJSON))
-	}
-
-	opening, err := Parse("t.json", []byte(`{ "id": "x", "version": "1", "command": "a.exe", "associations": { ".note": { "command": "a", "description": "Note" } },
-  "modules": [{ "name": "m", "build": ["x"] }] }`))
-	if err != nil {
-		t.Fatalf("Parse error: %v", err)
-	}
-	openingCfg, err := opening.AppConfig(nil, nil)
-	if err != nil {
-		t.Fatalf("AppConfig error: %v", err)
-	}
-	openingJSON, err := json.Marshal(openingCfg)
-	if err != nil {
-		t.Fatalf("Marshal error: %v", err)
-	}
-	if !strings.Contains(string(openingJSON), `".note"`) {
-		t.Fatalf("expected '.note' in JSON, got %s", string(openingJSON))
-	}
-	if strings.Contains(string(withoutJSON), `"associations"`) {
-		t.Fatalf("did not expect 'associations' in JSON, got %s", string(withoutJSON))
 	}
 }
 
@@ -340,5 +279,33 @@ func TestGlobMatch(t *testing.T) {
 	}
 	if GlobMatch("*x*y", "axbyc") {
 		t.Fatalf("unexpected match *x*y axbyc")
+	}
+}
+
+func TestAllRecipesParse(t *testing.T) {
+	var files []string
+	for _, pattern := range []string{"../../recipes/*.json", "../../recipes/no-publish/*.json"} {
+		matches, err := filepath.Glob(pattern)
+		if err != nil {
+			t.Fatalf("glob %s: %v", pattern, err)
+		}
+		files = append(files, matches...)
+	}
+	if len(files) != 73 {
+		t.Fatalf("expected 73 recipes, got %d", len(files))
+	}
+	for _, path := range files {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+		r, err := Parse(path, data)
+		if err != nil {
+			t.Fatalf("Parse(%s): %v", path, err)
+		}
+		stem := strings.TrimSuffix(filepath.Base(path), ".json")
+		if r.ID != stem {
+			t.Fatalf("%s: id = %q, want %q", path, r.ID, stem)
+		}
 	}
 }

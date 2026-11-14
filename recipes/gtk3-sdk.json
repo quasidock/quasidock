@@ -1,32 +1,25 @@
 {
-  "id": "org.gtk.Gtk3.Sdk",
+  "id": "gtk3-sdk",
   "version": "3.24.52",
   "name": "GTK 3 SDK",
   "summary": "GTK 3 and ATK, with headers, import libraries and introspection data, to build GTK 3 apps with the GTK 4 SDK, which has the rest of the stack",
   "homepage": "https://www.gtk.org/",
   "license": "LGPL-2.1-or-later",
-  "command": "about.bat",
+  "entrypoint": "about.bat",
   "path": ["bin"],
   "env": { "GI_GIR_PATH": "${app}\\share\\gir-1.0" },
-  "exports": {},
-  "sdk": {
-    "gtksdk": "org.gtk.Gtk4.Sdk:4.24.1@sha256:31b88a3d1d0a4530f3a31cf558d7c6c6c58e04a42ced0d7aeb28d0cf501de104"
-  },
-  "modules": [
+  "sdk": { "gtksdk": "gtk4-sdk:4.24.1@sha256:31b88a3d1d0a4530f3a31cf558d7c6c6c58e04a42ced0d7aeb28d0cf501de104" },
+  "stages": [
     {
       "name": "about",
       "build": [
-        "printf '%s\\r\\n' '@echo off' 'echo GTK 3 for apps built with zigsaw. It needs the GTK 4 runtime, org.gtk.Gtk4, for GLib, Pango, cairo and the rest:' 'echo an app lists both. gtk3-demo is org.gtk.Gtk3demo.' > \"$PREFIX/about.bat\""
+        "printf '%s\\r\\n' '@echo off' 'echo GTK 3 for apps built with zigsaw. It needs the GTK 4 runtime, gtk4, for GLib, Pango, cairo and the rest:' 'echo an app lists both. gtk3-demo is gtk3demo.' > \"$PREFIX/about.bat\""
       ]
     },
     {
       "name": "atk",
       "sources": [
-        {
-          "url": "https://download.gnome.org/sources/at-spi2-core/2.60/at-spi2-core-2.60.7.tar.xz",
-          "sha256": "92893c8188355264ba639ca3d27943437b26ef069971ea9faa4b20de40595b9a",
-          "strip": 1
-        }
+        { "url": "https://download.gnome.org/sources/at-spi2-core/2.60/at-spi2-core-2.60.7.tar.xz", "sha256": "92893c8188355264ba639ca3d27943437b26ef069971ea9faa4b20de40595b9a", "strip": 1 }
       ],
       "build": [
         "meson setup out --prefix=\"$PREFIX\" --buildtype=release -Datk_only=true -Dintrospection=enabled -Ddocs=false -Dx11=disabled",
@@ -37,11 +30,7 @@
       "name": "gtk",
       "env": { "GI_GIR_PATH": "B:/prefix/share/gir-1.0" },
       "sources": [
-        {
-          "url": "https://download.gnome.org/sources/gtk/3.24/gtk-3.24.52.tar.xz",
-          "sha256": "80931fa472a77b9a164f6740e3c0b444fac6770054632d35a7ff9d679e5e7b9f",
-          "strip": 1
-        }
+        { "url": "https://download.gnome.org/sources/gtk/3.24/gtk-3.24.52.tar.xz", "sha256": "80931fa472a77b9a164f6740e3c0b444fac6770054632d35a7ff9d679e5e7b9f", "strip": 1 }
       ],
       "build": [
         "sed -i '/^    gio_querymodules: gio_module_dirs,$/d' meson.build",
@@ -59,16 +48,9 @@
     {
       "name": "adwaita-icon-theme-legacy",
       "sources": [
-        {
-          "url": "https://download.gnome.org/sources/adwaita-icon-theme-legacy/46/adwaita-icon-theme-legacy-46.2.tar.xz",
-          "sha256": "548480f58589a54b72d18833b755b15ffbd567e3187249d74e2e1f8f99f22fb4",
-          "strip": 1
-        }
+        { "url": "https://download.gnome.org/sources/adwaita-icon-theme-legacy/46/adwaita-icon-theme-legacy-46.2.tar.xz", "sha256": "548480f58589a54b72d18833b755b15ffbd567e3187249d74e2e1f8f99f22fb4", "strip": 1 }
       ],
-      "build": [
-        "meson setup out --prefix=\"$PREFIX\"",
-        "meson install -C out"
-      ]
+      "build": ["meson setup out --prefix=\"$PREFIX\"", "meson install -C out"]
     }
   ]
 }

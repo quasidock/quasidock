@@ -119,7 +119,7 @@ check "this is $(whoami), a standard user: not in Administrators, at medium inte
 docs=$(powershell -NoProfile -Command "[Environment]::GetFolderPath('MyDocuments')" | tr -d '\r')
 store="$LOCALAPPDATA\\quasidock"
 zigsaw="$store\\bin\\quasidock.exe"
-BB=net.frippery.busybox
+BB=busybox
 z() { "$zigsaw" "$@" </dev/null; }
 sch="$(cygpath -u "$WINDIR")/System32/schtasks.exe"
 task="Zigsaw update check"

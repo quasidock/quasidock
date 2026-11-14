@@ -1,14 +1,10 @@
 {
   "id": "test.build.cmake",
   "version": "1",
-  "command": "bin/hello.exe",
-  "sdk": {
-    "cmake": "org.cmake.cmake@@CMAKE@",
-    "zig": "org.ziglang.zig@@ZIG@",
-    "busybox": "net.frippery.busybox@@BUSYBOX@"
-  },
+  "entrypoint": "bin/hello.exe",
+  "sdk": { "cmake": "cmake@@CMAKE@", "zig": "zig@@ZIG@", "busybox": "busybox@@BUSYBOX@" },
   "cleanup": ["/include", "/lib"],
-  "modules": [
+  "stages": [
     {
       "name": "hello",
       "sources": [

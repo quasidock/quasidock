@@ -28,8 +28,6 @@ gettext.json
 gtk4-sdk-base.json
 gtk4-sdk.json
 gtk4.json
-gtk4-hunspell-vi.json
-gtk4-hunspell-fr.json
 gnome-text-editor.json
 rnote.json
 gtk3-sdk.json
@@ -46,13 +44,6 @@ sumatrapdf.json
 vlc.json
 php-sdk.json
 php.json
-php-apcu.json
-php-xdebug.json
-php-igbinary.json
-php-redis.json
-php-ssh2.json
-php-yaml.json
-php-zstd.json
 composer.json
 kanboard.json
 java-sdk.json
@@ -75,8 +66,5 @@ gdal.json
 make.json
 postgresql-sdk.json
 postgresql.json
-postgresql-pgvector.json
-postgresql-pg-cron.json
-postgresql-postgis.json
 osm2pgsql.json
 vscodium.json

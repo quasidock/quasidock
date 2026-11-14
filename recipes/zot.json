@@ -1,25 +1,24 @@
 {
-  "id": "dev.zotregistry.zot",
+  "id": "zot",
   "version": "2.1.23",
   "name": "zot",
   "summary": "An OCI image registry, its minimal build",
   "homepage": "https://zotregistry.dev/",
   "license": "Apache-2.0",
-  "command": "zot.exe",
-  "permissions": { "network": true, "filesystem": ["cwd"] },
-  "sdk": {
-    "go": "org.golang.go:1.27.3@sha256:fb6554b0d89f578112c72b92c87a05583980578328180762571770884b3bc162",
-    "busybox": "net.frippery.busybox:FRP-6075-g169694ebd@sha256:db9d39727bfdd4d176b5878c0a125daa8a2396ea21e0f01a6a372f53d9d97e5d"
+  "entrypoint": "zot.exe",
+  "permissions": {
+    "network": true,
+    "filesystem": ["cwd"]
   },
-  "modules": [
+  "sdk": {
+    "go": "go:1.27.3@sha256:fb6554b0d89f578112c72b92c87a05583980578328180762571770884b3bc162",
+    "busybox": "busybox:FRP-6075-g169694ebd@sha256:db9d39727bfdd4d176b5878c0a125daa8a2396ea21e0f01a6a372f53d9d97e5d"
+  },
+  "stages": [
     {
       "name": "zot",
       "sources": [
-        {
-          "url": "https://proxy.golang.org/zotregistry.dev/zot/v2/@v/v2.1.23.zip",
-          "sha256": "f1aec50428799c1fe26cba26086bd0b4418c63515f15a05ed0b5d6af849a712f",
-          "strip": 3
-        }
+        { "url": "https://proxy.golang.org/zotregistry.dev/zot/v2/@v/v2.1.23.zip", "sha256": "f1aec50428799c1fe26cba26086bd0b4418c63515f15a05ed0b5d6af849a712f", "strip": 3 }
       ],
       "env": { "CGO_ENABLED": "0", "GOEXPERIMENT": "jsonv2" },
       "vendor": {

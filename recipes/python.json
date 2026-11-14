@@ -1,20 +1,21 @@
 {
-  "id": "org.python.python",
+  "id": "python",
   "version": "3.14.10",
   "name": "Python",
   "summary": "The Python programming language, as its embeddable distribution",
   "homepage": "https://www.python.org/",
   "license": "PSF-2.0",
-  "command": "python.exe",
-  "permissions": { "sandbox": "soft", "network": true, "filesystem": ["cwd"] },
-  "modules": [
+  "entrypoint": "python.exe",
+  "permissions": {
+    "sandbox": "soft",
+    "network": true,
+    "filesystem": ["cwd"]
+  },
+  "stages": [
     {
       "name": "python",
       "sources": [
-        {
-          "url": "https://www.python.org/ftp/python/3.14.10/python-3.14.10-embed-amd64.zip",
-          "sha256": "90905e64a840557d8c1bc4f5b74db3d7ee85e3ffb217611cac1c7813acea4159"
-        }
+        { "url": "https://www.python.org/ftp/python/3.14.10/python-3.14.10-embed-amd64.zip", "sha256": "90905e64a840557d8c1bc4f5b74db3d7ee85e3ffb217611cac1c7813acea4159" }
       ]
     },
     {

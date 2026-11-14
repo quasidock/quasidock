@@ -12,28 +12,24 @@ func strPtr(s string) *string {
 
 func TestRankOf(t *testing.T) {
 	vlc := Entry{
-		ID:           "org.videolan.VLC",
-		Version:      "3.0.24",
-		Name:         strPtr("VLC media player"),
-		Summary:      strPtr("Plays video and audio files"),
-		Commands:     []string{"vlc"},
-		Associations: map[string]string{".mkv": "Matroska video"},
+		ID:         "vlc",
+		Version:    "3.0.24",
+		Name:       strPtr("VLC media player"),
+		Summary:    strPtr("Plays video and audio files"),
+		Entrypoint: []string{"vlc.exe"},
+		Cmd:        []string{"--no-video-title-show"},
 	}
 
 	if r, ok := RankOf(vlc, []string{"vlc"}); !ok || r != 0 {
 		t.Errorf("RankOf vlc = (%d, %v), want (0, true)", r, ok)
 	}
 
-	if r, ok := RankOf(vlc, []string{"MEDIA", "videolan"}); !ok || r != 0 {
-		t.Errorf("RankOf MEDIA videolan = (%d, %v), want (0, true)", r, ok)
+	if r, ok := RankOf(vlc, []string{"MEDIA", "player"}); !ok || r != 0 {
+		t.Errorf("RankOf MEDIA player = (%d, %v), want (0, true)", r, ok)
 	}
 
-	if r, ok := RankOf(vlc, []string{"vlc", ".mkv"}); !ok || r != 1 {
-		t.Errorf("RankOf vlc .mkv = (%d, %v), want (1, true)", r, ok)
-	}
-
-	if r, ok := RankOf(vlc, []string{"matroska"}); !ok || r != 1 {
-		t.Errorf("RankOf matroska = (%d, %v), want (1, true)", r, ok)
+	if r, ok := RankOf(vlc, []string{"vlc", "audio"}); !ok || r != 1 {
+		t.Errorf("RankOf vlc audio = (%d, %v), want (1, true)", r, ok)
 	}
 
 	if _, ok := RankOf(vlc, []string{"vlc", "pdf"}); ok {
@@ -49,22 +45,22 @@ func TestRankOf(t *testing.T) {
 	}
 
 	zig := Entry{
-		ID:       "org.ziglang.zig",
-		Version:  "0.16.0",
-		Commands: []string{"zig"},
+		ID:         "zig",
+		Version:    "0.16.0",
+		Entrypoint: []string{"zig.exe"},
 	}
-	if d := zig.Describe(); d != "commands: zig" {
+	if d := zig.Describe(); d != "entrypoint: zig.exe" {
 		t.Errorf("Describe = %q", d)
 	}
 }
 
 func TestCatalogJSONRoundTrip(t *testing.T) {
 	entry := Entry{
-		ID:       "org.ziglang.zig",
-		Version:  "0.16.0",
-		Manifest: "sha256:" + strings.Repeat("a", 64),
-		Download: 88,
-		Commands: []string{"zig"},
+		ID:         "zig",
+		Version:    "0.16.0",
+		Manifest:   "sha256:" + strings.Repeat("a", 64),
+		Download:   88,
+		Entrypoint: []string{"zig.exe"},
 	}
 	cat := Catalog{
 		Registry: "ghcr.io/zigsaw-io",
@@ -89,7 +85,7 @@ func TestCatalogJSONRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if len(back.Apps) != 1 || back.Apps[0].ID != "org.ziglang.zig" || back.Apps[0].Download != 88 {
+	if len(back.Apps) != 1 || back.Apps[0].ID != "zig" || back.Apps[0].Download != 88 {
 		t.Errorf("unexpected unmarshaled back: %+v", back)
 	}
 }

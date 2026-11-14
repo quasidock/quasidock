@@ -97,7 +97,7 @@ export QUASIDOCK_HOME
 
 # With --skip-unchanged: work out which recipes to publish. Those git sees
 # changed, then (until nothing more is added) those that name the image of one
-# already chosen, such as "org.gtk.Gtk3:3.24.52@sha256:...".
+# already chosen, such as "gtk3:3.24.52@sha256:...".
 todo=("$@")
 if [ -n "$changed" ]; then
     declare -A ids pick

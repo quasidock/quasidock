@@ -28,20 +28,19 @@ type Catalog struct {
 }
 
 type Entry struct {
-	ID           string            `json:"id"`
-	Version      string            `json:"version"`
-	Manifest     string            `json:"manifest"`
-	Download     uint64            `json:"download"`
-	Name         *string           `json:"name,omitempty"`
-	Summary      *string           `json:"summary,omitempty"`
-	Homepage     *string           `json:"homepage,omitempty"`
-	License      *string           `json:"license,omitempty"`
-	Commands     []string          `json:"commands,omitempty"`
-	Shortcuts    map[string]string `json:"shortcuts,omitempty"`
-	Associations map[string]string `json:"associations,omitempty"`
-	Permissions  oci.Permissions   `json:"permissions,omitempty"`
-	Registry     []string          `json:"registry,omitempty"`
-	Runtimes     []string          `json:"runtimes,omitempty"`
+	ID          string          `json:"id"`
+	Version     string          `json:"version"`
+	Manifest    string          `json:"manifest"`
+	Download    uint64          `json:"download"`
+	Name        *string         `json:"name,omitempty"`
+	Summary     *string         `json:"summary,omitempty"`
+	Homepage    *string         `json:"homepage,omitempty"`
+	License     *string         `json:"license,omitempty"`
+	Entrypoint  []string        `json:"entrypoint,omitempty"`
+	Cmd         []string        `json:"cmd,omitempty"`
+	Permissions oci.Permissions `json:"permissions,omitempty"`
+	Registry    []string        `json:"registry,omitempty"`
+	From        []string        `json:"from,omitempty"`
 }
 
 func EntryOf(info remote.Info) Entry {
@@ -60,48 +59,16 @@ func EntryOf(info remote.Info) Entry {
 		Summary:     cfg.Summary,
 		Homepage:    cfg.Homepage,
 		License:     cfg.License,
+		Entrypoint:  append([]string(nil), cfg.Entrypoint...),
+		Cmd:         append([]string(nil), cfg.Cmd...),
 		Permissions: cfg.Permissions,
 		Registry:    cfg.Registry,
 	}
 
-	for cmd := range cfg.Exports {
-		e.Commands = append(e.Commands, cmd)
+	for _, r := range cfg.From {
+		e.From = append(e.From, fmt.Sprintf("%s %s", r.ID, r.Version))
 	}
-	sort.Strings(e.Commands)
-
-	if len(cfg.Shortcuts) > 0 {
-		e.Shortcuts = make(map[string]string)
-		for k, v := range cfg.Shortcuts {
-			desc := ""
-			if v.Description != nil {
-				desc = *v.Description
-			}
-			e.Shortcuts[k] = desc
-		}
-	}
-
-	if len(cfg.Associations) > 0 || len(cfg.Schemes) > 0 {
-		e.Associations = make(map[string]string)
-		for k, v := range cfg.Associations {
-			desc := ""
-			if v.Description != nil {
-				desc = *v.Description
-			}
-			e.Associations[k] = desc
-		}
-		for k, v := range cfg.Schemes {
-			desc := ""
-			if v.Description != nil {
-				desc = *v.Description
-			}
-			e.Associations[k+":"] = desc
-		}
-	}
-
-	for _, r := range cfg.Runtimes {
-		e.Runtimes = append(e.Runtimes, fmt.Sprintf("%s %s", r.ID, r.Version))
-	}
-	sort.Strings(e.Runtimes)
+	sort.Strings(e.From)
 
 	return e
 }
@@ -116,15 +83,15 @@ func (e Entry) Describe() string {
 	if e.Summary != nil && *e.Summary != "" {
 		return *e.Summary
 	}
-	if len(e.Commands) > 0 {
-		return "commands: " + strings.Join(e.Commands, ", ")
+	if len(e.Entrypoint) > 0 {
+		return "entrypoint: " + strings.Join(e.Entrypoint, " ")
 	}
 	return ""
 }
 
 // RankOf checks whether all words match the entry.
-// Returns (0, true) if all words are in id, name, or commands.
-// Returns (1, true) if all words match, but some only in summary, shortcuts, associations.
+// Returns (0, true) if all words are in id, name, or entrypoint.
+// Returns (1, true) if all words match, but some only in summary, cmd, or from.
 // Returns (0, false) if any word is not found.
 func RankOf(e Entry, words []string) (int, bool) {
 	var mainFields []string
@@ -132,18 +99,14 @@ func RankOf(e Entry, words []string) (int, bool) {
 	if e.Name != nil {
 		mainFields = append(mainFields, *e.Name)
 	}
-	mainFields = append(mainFields, e.Commands...)
+	mainFields = append(mainFields, e.Entrypoint...)
 
 	var otherFields []string
 	if e.Summary != nil {
 		otherFields = append(otherFields, *e.Summary)
 	}
-	for k, v := range e.Shortcuts {
-		otherFields = append(otherFields, k, v)
-	}
-	for k, v := range e.Associations {
-		otherFields = append(otherFields, k, v)
-	}
+	otherFields = append(otherFields, e.Cmd...)
+	otherFields = append(otherFields, e.From...)
 
 	rank := 0
 	for _, word := range words {

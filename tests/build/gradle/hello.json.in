@@ -1,15 +1,10 @@
 {
   "id": "test.build.gradle",
   "version": "1",
-  "command": "${java}\\bin\\java.exe",
-  "args": ["-jar", "${app}\\hello.jar"],
-  "exports": {},
-  "runtimes": { "java": "org.openjdk.java@@JAVA@" },
-  "sdk": {
-    "gradle": "org.gradle.gradle@@GRADLE@",
-    "busybox": "net.frippery.busybox@@BUSYBOX@"
-  },
-  "modules": [
+  "entrypoint": ["${java}\\bin\\java.exe", "-jar", "${app}\\hello.jar"],
+  "from": { "java": "java@@JAVA@" },
+  "sdk": { "gradle": "gradle@@GRADLE@", "busybox": "busybox@@BUSYBOX@" },
+  "stages": [
     {
       "name": "hello",
       "sources": [
@@ -22,10 +17,7 @@
         "dir": "vendor",
         "sha256": "2bda3256e5b06b532b2c30dc060847a5f3027400041ef0bd689b912573ac7b02"
       },
-      "build": [
-        "ZIGSAW_GRADLE_REPO=\"$PWD/vendor\" gradle --offline stage",
-        "cp -r build/stage/. \"$PREFIX/\""
-      ]
+      "build": ["ZIGSAW_GRADLE_REPO=\"$PWD/vendor\" gradle --offline stage", "cp -r build/stage/. \"$PREFIX/\""]
     }
   ]
 }

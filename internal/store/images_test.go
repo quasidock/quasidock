@@ -14,7 +14,7 @@ import (
 
 func catalogFixture(t *testing.T, st *Store, version string) Ref {
 	t.Helper()
-	config := oci.AppConfig{ID: "test.images.app", Version: version, Command: "app.exe"}
+	config := oci.AppConfig{ID: "test.images.app", Version: version, Entrypoint: []string{"app.exe"}}
 	cfg, err := json.Marshal(config)
 	if err != nil {
 		t.Fatal(err)

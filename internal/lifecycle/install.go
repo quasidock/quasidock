@@ -49,8 +49,8 @@ func Install(ctx *context.Context, image *oci.Image) error {
 	}
 
 	ctx.Note("installed %s %s\n  manifest %s", cfg.ID, cfg.Version, image.ManifestDigest)
-	for alias, r := range cfg.Runtimes {
-		ctx.Note("  runtime  %s: %s %s", alias, r.ID, r.Version)
+	for alias, r := range cfg.From {
+		ctx.Note("  from     %s: %s %s", alias, r.ID, r.Version)
 	}
 	ownL := oci.OwnLayer(&image.Manifest)
 	ctx.Note("  layer    %s (%d bytes)", ownL.Digest, ownL.Size)

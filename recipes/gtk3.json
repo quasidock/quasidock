@@ -1,17 +1,13 @@
 {
-  "id": "org.gtk.Gtk3",
+  "id": "gtk3",
   "version": "3.24.52",
   "name": "GTK 3",
   "summary": "GTK 3 and ATK, with their typelibs, for GTK 3 apps, which have GTK 4's runtime too for GLib, Pango, cairo and the rest",
   "homepage": "https://www.gtk.org/",
   "license": "LGPL-2.1-or-later",
-  "command": "about.bat",
+  "entrypoint": "about.bat",
   "path": ["bin"],
-  "env": {
-    "GSETTINGS_SCHEMA_DIR": "${app}\\share\\glib-2.0\\schemas",
-    "XDG_DATA_DIRS": "${app}\\share"
-  },
-  "exports": {},
+  "env": { "GSETTINGS_SCHEMA_DIR": "${app}\\share\\glib-2.0\\schemas", "XDG_DATA_DIRS": "${app}\\share" },
   "cleanup": [
     "/include",
     "/lib/pkgconfig",
@@ -26,10 +22,12 @@
     "*.a",
     "*.lib"
   ],
-  "modules": [
+  "stages": [
     {
       "name": "gtk",
-      "sources": [{ "image": "org.gtk.Gtk3.Sdk:3.24.52@sha256:100f44c0111f325b3289c380071f2c6039908f70b34c7ef3ec469fe69312773c" }]
+      "sources": [
+        { "image": "gtk3-sdk:3.24.52@sha256:100f44c0111f325b3289c380071f2c6039908f70b34c7ef3ec469fe69312773c" }
+      ]
     }
   ]
 }

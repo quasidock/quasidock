@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Java apps end to end, on OpenJDK's runtime image (org.openjdk.java):
+# Java apps end to end, on OpenJDK's runtime image (java):
 # Apache PDFBox (recipes/pdfbox.json, built with Maven) makes a PDF from
 # text, reads its text back and renders it, with its font cache in its data
 # directory, and its debugger opens a PDF given with --file, keeping its
@@ -37,10 +37,10 @@ if [ -z "$QUASIDOCK_HOME" ]; then
 fi
 export QUASIDOCK_HOME
 work=$(cygpath -w "$(mktemp -d)")
-PDFBOX=org.apache.pdfbox
-PLANTUML=com.plantuml.PlantUML
-LOGISIM=com.github.reds.LogisimEvolution
-SCENEBUILDER=com.gluonhq.SceneBuilder
+PDFBOX=pdfbox
+PLANTUML=plantuml
+LOGISIM=logisim-evolution
+SCENEBUILDER=scenebuilder
 (cd "$root" && go run ./scripts/build.go winwait) || { echo "building the window waiter failed"; exit 1; }
 winwait="$root\\out\\test\\quasidock-winwait.exe"
 had_prefs=false
@@ -67,10 +67,10 @@ build_image() {
     qd_cached "$zigsaw" "$1" || installed_here="$installed_here $1"
     z build "$root\\recipes\\$2" >"$work\\$2.log" 2>&1 || echo "building $2 failed: $(tail -1 "$work\\$2.log")"
 }
-build_image org.openjdk.java.Sdk java-sdk.json
-build_image org.openjdk.java java.json
-build_image org.apache.maven maven.json
-build_image org.gradle.gradle gradle.json
+build_image java-sdk java-sdk.json
+build_image java java.json
+build_image maven maven.json
+build_image gradle gradle.json
 build_image $PDFBOX pdfbox.json
 build_image $PLANTUML plantuml.json
 build_image $LOGISIM logisim-evolution.json
@@ -138,7 +138,7 @@ opens_window() {
 docs=$(cygpath -w "$(mktemp -d)")
 cp "$work\\soft\\out.pdf" "$docs\\doc.pdf"
 for sb in soft low appcontainer; do
-    check "its debugger opens a PDF under $sb" opens_window "$work\\$sb" "PDF Debugger - $docs\\doc.pdf" --sandbox=$sb --filesystem="$docs" --entrypoint=pdfbox-debugger $PDFBOX "$docs\\doc.pdf"
+    check "its debugger opens a PDF under $sb" opens_window "$work\\$sb" "PDF Debugger - $docs\\doc.pdf" --sandbox=$sb --filesystem="$docs" $PDFBOX debug "$docs\\doc.pdf"
 done
 # Java keeps the debugger's settings in HKCU\Software\JavaSoft\Prefs; the app
 # keeps its key with its data, so each run, in any sandbox, has the files the
@@ -172,7 +172,7 @@ version=$(grep -o '"version": *"[^"]*"' "$root\\recipes\\plantuml.json" | head -
 check "its version names the release and its commit" sh -c "bash '$QD_IMAGES_HELPER' run '$zigsaw' $PLANTUML -version 2>/dev/null | tr -d '\r' | grep -q '^PlantUML version $version / [0-9a-f]\{7\} \[20'"
 check "and the dot it found is its own" sh -c "bash '$QD_IMAGES_HELPER' run '$zigsaw' $PLANTUML -version 2>/dev/null | tr -d '\r' | grep -q '^Installation seems OK'"
 for sb in soft low appcontainer; do
-    check "its window comes up, under $sb" opens_window "$work\\$sb" class:SunAwtFrame --sandbox=$sb --entrypoint=plantuml-gui $PLANTUML
+    check "its window comes up, under $sb" opens_window "$work\\$sb" class:SunAwtFrame --sandbox=$sb $PLANTUML -gui
 done
 
 # --- Logisim-evolution ----------------------------------------------------------
@@ -196,7 +196,7 @@ done
 check "its version names the release and the time of its tag's commit" sh -c "bash '$QD_IMAGES_HELPER' run '$zigsaw' $LOGISIM --version 2>/dev/null | tr -d '\r' | grep -q '^(Not built from Git repo) (2026-09-12T04:03:35+0000)'"
 cp "$root\\tests\\java\\half-adder.circ" "$docs\\"
 for sb in soft low appcontainer; do
-    check "its window opens a circuit under $sb" opens_window "$work\\$sb" "main of half-adder" --sandbox=$sb --filesystem="$docs" --entrypoint=logisim-gui $LOGISIM "$docs\\half-adder.circ"
+    check "its window opens a circuit under $sb" opens_window "$work\\$sb" "main of half-adder" --sandbox=$sb --filesystem="$docs" $LOGISIM "$docs\\half-adder.circ"
 done
 logisim_recent_kept() {
     local out

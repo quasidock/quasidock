@@ -31,7 +31,7 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/images.sh"
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
 zigsaw=${1:-$root/out/bin/quasidock.exe}
 QUASIDOCK_HOME=${TEXLIVE_HOME:-${BUILD_HOME:-}}
-APP=org.tug.texlive
+APP=texlive
 if [ -z "$QUASIDOCK_HOME" ] || ! qd_cached "$zigsaw" "$APP"; then
     echo "tests/texlive.sh needs a store with $APP in TEXLIVE_HOME or BUILD_HOME;"
     echo "build recipes\\texlive.json into one first."

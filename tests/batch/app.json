@@ -1,15 +1,12 @@
 {
   "id": "test.batch.args",
   "version": "1",
-  "command": "echo-args.cmd",
+  "entrypoint": "echo-args.cmd",
+  "cmd": ["${app}", "a b", "%PATH%"],
   "path": ["."],
   "env": {},
-  "permissions": { "sandbox": "soft", "network": false, "filesystem": [] },
-  "exports": {
-    "echo-args": { "command": "echo-args.cmd" },
-    "echo-args-pre": { "command": "echo-args.cmd", "args": ["${app}", "a b", "%PATH%"] }
-  },
-  "modules": [
+  "permissions": { "sandbox": "soft", "network": false },
+  "stages": [
     {
       "name": "scripts",
       "sources": [

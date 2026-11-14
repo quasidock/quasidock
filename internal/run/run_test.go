@@ -11,13 +11,13 @@ import (
 )
 
 func TestFilesystemFor(t *testing.T) {
-	base := []string{"cwd:ro", `C:\Shared`, "documents:ro"}
+	base := []string{"cwd:ro", `C:\Shared`, `C:\Docs:ro`}
 	s := Settings{
 		Filesystem:   []string{"cwd", `C:\Extra:ro`},
 		NoFilesystem: []string{`c:\shared\`},
 	}
 	got := s.FilesystemFor(base)
-	want := []string{"cwd", "documents:ro", `C:\Extra:ro`}
+	want := []string{"cwd", `C:\Docs:ro`, `C:\Extra:ro`}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("FilesystemFor = %v, want %v", got, want)
 	}

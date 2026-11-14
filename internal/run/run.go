@@ -572,8 +572,6 @@ func launchContainer(
 		case oci.FsGrantPath:
 			p := g.Where.Path
 			hostGrants = append(hostGrants, HostGrant{Path: &p, ReadOnly: g.ReadOnly})
-		case oci.FsGrantFolder:
-			// Named user-folder grants are ignored without folder junction linking.
 		default:
 			ctx.Note("warning: %s asks for the filesystem permission %q, which this quasidock doesn't know, and leaves out; a newer quasidock may", cfg.ID, spec)
 		}
@@ -652,7 +650,7 @@ func launchContainer(
 	appPath = append(appPath, appDirs...)
 	for i, r := range rt.own {
 		alias := rt.aliases[i]
-		rCfg := cfg.Runtimes[alias]
+		rCfg := cfg.From[alias]
 		pDirs, _ := environment.PathDirs(r, rCfg.Path)
 		appPath = append(appPath, pDirs...)
 	}
@@ -685,7 +683,7 @@ func launchContainer(
 	var appEnv []environment.Var
 	for i, r := range rt.own {
 		alias := rt.aliases[i]
-		rCfg := cfg.Runtimes[alias]
+		rCfg := cfg.From[alias]
 		_ = environment.Expand(&appEnv, r, rCfg.Env)
 	}
 	_ = environment.Expand(&appEnv, placeholders, cfg.Env)
@@ -707,8 +705,8 @@ func launchContainer(
 
 	if ctx.Verbose {
 		ctx.Note("app      %s %s (%s)", cfg.ID, cfg.Version, img.Ref.Manifest)
-		for alias, r := range cfg.Runtimes {
-			ctx.Note("runtime  %s: %s %s", alias, r.ID, r.Version)
+		for alias, r := range cfg.From {
+			ctx.Note("from     %s: %s %s", alias, r.ID, r.Version)
 		}
 		netStr := "off"
 		if network {
@@ -1583,7 +1581,7 @@ func runtimeDirs(cfg oci.AppConfig, dirs []string, dataDir, cacheDir string, roo
 	own := make([]oci.Placeholders, 0, len(dirs))
 	aliasesList := make([]string, 0, len(dirs))
 	idx := 0
-	for alias := range cfg.Runtimes {
+	for alias := range cfg.From {
 		if idx < len(dirs) {
 			dir := dirs[idx]
 			named = append(named, oci.DirPlaceholder{Alias: alias, Path: dir})
@@ -1609,7 +1607,7 @@ func usesCache(cfg oci.AppConfig) bool {
 	if oci.UsesCache(cfg.Path, cfg.Env) {
 		return true
 	}
-	for _, r := range cfg.Runtimes {
+	for _, r := range cfg.From {
 		if oci.UsesCache(r.Path, r.Env) {
 			return true
 		}
@@ -1618,15 +1616,10 @@ func usesCache(cfg oci.AppConfig) bool {
 }
 
 func usesRoots(cfg oci.AppConfig) bool {
-	if oci.UsesRoots(cfg.Env, cfg.Args) {
+	if oci.UsesRoots(cfg.Env, cfg.Entrypoint) || oci.UsesRoots(nil, cfg.Cmd) {
 		return true
 	}
-	for _, e := range cfg.Exports {
-		if oci.UsesRoots(nil, e.Args) {
-			return true
-		}
-	}
-	for _, r := range cfg.Runtimes {
+	for _, r := range cfg.From {
 		if oci.UsesRoots(r.Env, nil) {
 			return true
 		}
@@ -1652,6 +1645,7 @@ func newCommand(exe string, args []string) Command {
 func commandForRun(p oci.Placeholders, cfg oci.AppConfig, opts Options, path []string, systemRoot string) (Command, error) {
 	var requested *string
 	args := opts.Args
+	explicitEntrypoint := opts.Entrypoint != nil
 	if opts.Entrypoint != nil && *opts.Entrypoint != "" {
 		requested = opts.Entrypoint
 	} else if len(args) > 0 {
@@ -1660,7 +1654,7 @@ func commandForRun(p oci.Placeholders, cfg oci.AppConfig, opts Options, path []s
 	} else if opts.Entrypoint != nil {
 		return Command{}, errors.New("empty --entrypoint needs a command after IMAGE")
 	}
-	cmd, err := resolveCommand(p, cfg, requested, path, systemRoot)
+	cmd, err := resolveCommand(p, cfg, requested, explicitEntrypoint, path, systemRoot)
 	if err != nil {
 		return Command{}, err
 	}
@@ -1668,19 +1662,21 @@ func commandForRun(p oci.Placeholders, cfg oci.AppConfig, opts Options, path []s
 	return cmd, nil
 }
 
-func resolveCommand(placeholders oci.Placeholders, config oci.AppConfig, requested *string, appPath []string, systemRoot string) (Command, error) {
+func resolveCommand(placeholders oci.Placeholders, config oci.AppConfig, requested *string, explicitEntrypoint bool, appPath []string, systemRoot string) (Command, error) {
 	if requested == nil {
-		cmdPath := placeholders.CommandPath(config.Command)
-		args := expandAll(placeholders, config.Args)
+		if len(config.Entrypoint) == 0 {
+			return Command{}, errors.New("image has no entrypoint")
+		}
+		cmdPath := placeholders.CommandPath(config.Entrypoint[0])
+		args := expandAll(placeholders, config.Entrypoint[1:])
+		args = append(args, expandAll(placeholders, config.Cmd)...)
 		return newCommand(cmdPath, args), nil
 	}
 	name := *requested
-	for k, e := range config.Exports {
-		if strings.EqualFold(k, name) {
-			cmdPath := placeholders.CommandPath(e.Command)
-			args := expandAll(placeholders, e.Args)
-			return newCommand(cmdPath, args), nil
-		}
+	if len(config.Entrypoint) > 0 && (strings.EqualFold(name, config.ID) || (!explicitEntrypoint && len(config.Entrypoint) > 1 && strings.EqualFold(name, oci.CommandStem(config.Entrypoint[0])))) {
+		cmdPath := placeholders.CommandPath(config.Entrypoint[0])
+		args := expandAll(placeholders, config.Entrypoint[1:])
+		return newCommand(cmdPath, args), nil
 	}
 	if oci.IsPlaceholderPath(name) {
 		name = placeholders.Expand(name)
@@ -1690,7 +1686,7 @@ func resolveCommand(placeholders oci.Placeholders, config oci.AppConfig, request
 		if strings.ContainsAny(name, `/\`) && !filepath.IsAbs(name) {
 			return Command{}, fmt.Errorf("command %q is not a file in the app; for a program of yours, give its absolute path (e.g. --entrypoint=%%CD%%\\%s)", name, filepath.Base(name))
 		}
-		return Command{}, fmt.Errorf("command %q is not an export of the app, or an executable or batch file in it or in System32", name)
+		return Command{}, fmt.Errorf("command %q is not an executable or batch file in the app or in System32", name)
 	}
 	return newCommand(resolved, nil), nil
 }

@@ -38,7 +38,7 @@ func TakeSnapshots(ctx *context.Context, r *recipe.Recipe, recipePath string) (*
 		baseDir = "."
 	}
 
-	for _, m := range r.Modules {
+	for _, m := range r.Stages {
 		for i, src := range m.Sources {
 			if src.Path == nil {
 				continue
@@ -59,12 +59,12 @@ func TakeSnapshots(ctx *context.Context, r *recipe.Recipe, recipePath string) (*
 			}
 			if !stat.IsDir() {
 				if len(src.Skip) > 0 {
-					return nil, fmt.Errorf("module %s: %s is a file; \"skip\" is for a directory", m.Name, p)
+					return nil, fmt.Errorf("stage %s: %s is a file; \"skip\" is for a directory", m.Name, p)
 				}
 				continue
 			}
 			if src.Sha256 != nil || src.Type != nil || src.Strip != 0 {
-				return nil, fmt.Errorf("module %s: %s is a directory, whose files are hashed as the build takes them; \"sha256\", \"type\" and \"strip\" don't apply", m.Name, p)
+				return nil, fmt.Errorf("stage %s: %s is a directory, whose files are hashed as the build takes them; \"sha256\", \"type\" and \"strip\" don't apply", m.Name, p)
 			}
 
 			start := ctx.Now()

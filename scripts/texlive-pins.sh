@@ -11,9 +11,8 @@
 # Windows (with what install-tl adds on Windows: tlperl, tlgs, and its
 # required packages), downloads each archive, checks it against the
 # database's sha512, and writes every archive's URL and sha256 into the
-# recipe, with the version (2026.<repository revision>) and the exports (the
-# packages' programs in bin/windows, but for those listed in `deny`). A
-# package updated while it runs fails it; run it again.
+# recipe along with the version (<release>.<repository revision>). A package
+# updated while it runs fails it; run it again.
 #
 # MIRROR is the tlnet URL the recipe pins (default: MIT's CTAN mirror);
 # SCHEME the scheme (default scheme-small); TEXLIVE_PINS_CACHE keeps the
@@ -111,24 +110,6 @@ source_line() { # url sha256 dest [type]
 sed -i 's|"dest": "install-tl" }|"dest": "install-tl", "strip": 1 }|' "$cache/sources.json"
 
 # The programs in bin/windows of the Windows packages.
-awk -v pkgs="$(cut -d' ' -f1 "$cache/packages.txt" | grep '\.windows$' | tr '\n' ' ')" -v deny="$deny" '
-BEGIN { n = split(pkgs, ps, " "); for (i = 1; i <= n; i++) want[ps[i]] = 1 }
-/^name / { p = $2; files = 0; next }
-/^[a-z]/ { files = ($1 == "binfiles" && (p in want)); next }
-files && /^ bin\/windows\/[^\/]*\.exe$/ {
-    e = $1; sub(/^bin\/windows\//, "", e); sub(/\.exe$/, "", e)
-    if (index(deny, " " e " ") == 0 && e !~ /-sys$/) print e
-}' "$tlpdb" | sort -u >"$cache/exports.txt"
-{
-    first=1
-    while read -r e; do
-        [ $first = 1 ] || printf ',\n'
-        first=0
-        printf '    "%s": { "command": "bin/windows/%s.exe" }' "$e" "$e"
-    done <"$cache/exports.txt"
-    printf '\n'
-} >"$cache/exports.json"
-
 # install-tl's profile: the scheme's collections, named, so install-tl
 # doesn't add collection-wintools as it does on Windows; the tree in the
 # build's prefix, portable (no registry, PATH or Start menu); without
@@ -148,8 +129,7 @@ files && /^ bin\/windows\/[^\/]*\.exe$/ {
 } >"$root/recipes/texlive/texlive.profile"
 
 epoch=$(($(date -u +%s) / 86400 * 86400))
-awk -v version="$release.$revision" -v epoch="$epoch" -v sources="$cache/sources.json" -v exports="$cache/exports.json" '
+awk -v version="$release.$revision" -v epoch="$epoch" -v sources="$cache/sources.json" '
 /^ *@SOURCES@$/ { while ((getline l <sources) > 0) print l; next }
-/^ *@EXPORTS@$/ { while ((getline l <exports) > 0) print l; next }
 { gsub(/@VERSION@/, version); gsub(/@EPOCH@/, epoch); print }' "$template" >"$out"
-echo "wrote recipes/texlive.json: version $release.$revision, $(wc -l <"$cache/packages.txt") packages, $(wc -l <"$cache/exports.txt") exports"
+echo "wrote recipes/texlive.json: version $release.$revision, $(wc -l <"$cache/packages.txt") packages"

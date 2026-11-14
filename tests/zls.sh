@@ -34,7 +34,7 @@ if [ -z "$QUASIDOCK_HOME" ]; then
 fi
 export QUASIDOCK_HOME
 work=$(cygpath -w "$(mktemp -d)")
-ZLS=org.zigtools.zls
+ZLS=zls
 
 failures=0
 gaps=0

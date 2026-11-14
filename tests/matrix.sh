@@ -46,20 +46,20 @@ if [ -z "${QUASIDOCK_HOME:-}" ]; then
 fi
 export QUASIDOCK_HOME
 work=$(cygpath -w "$(mktemp -d)")
-BB=net.frippery.busybox
-RG=com.github.BurntSushi.ripgrep
-BAT=com.github.sharkdp.bat
-GIT=org.git_scm.MinGit
-NODE=org.nodejs.node
-PY=org.python.python
-ZIG=org.ziglang.zig
-GO=org.golang.go
-FZF=com.github.junegunn.fzf
-ZOT=dev.zotregistry.zot
-CMAKE=org.cmake.cmake
-ZSTD=com.github.facebook.zstd
-PDFBOX=org.apache.pdfbox
-PUML=com.plantuml.PlantUML
+BB=busybox
+RG=ripgrep
+BAT=bat
+GIT=mingit
+NODE=node
+PY=python
+ZIG=zig
+GO=go
+FZF=fzf
+ZOT=zot
+CMAKE=cmake
+ZSTD=zstd
+PDFBOX=pdfbox
+PUML=plantuml
 
 # --- Setup -------------------------------------------------------------------
 
@@ -239,7 +239,7 @@ expect ok "$(ac_if final-path-dos)" ok "realpath resolves cwd" run $PY -c 'impor
 # programs need them: a host whose root it hasn't yet fails (example.com, on
 # 2026-10-28). ghcr.io's is there wherever zigsaw pulls, as zig's std reads
 # the same store.
-ghcr_token='https://ghcr.io/token?scope=repository:zigsaw-io/org.python.python:pull'
+ghcr_token='https://ghcr.io/token?scope=repository:zigsaw-io/python:pull'
 expect ok ok ok "https with system certs" run $PY -c "import urllib.request as u; u.urlopen('$ghcr_token', timeout=20)"
 expect ok fails ok "network denied by --unshare" run --unshare=network $PY -c "import urllib.request as u; u.urlopen('$ghcr_token', timeout=10)"
 expect fails fails fails "can't write into app dir" run $PY -c 'import os, sys; open(os.path.join(sys.prefix, "x.txt"), "w")'
@@ -293,7 +293,7 @@ expect ok "$(ac_if self-path-dos nul)" ok "hashes a file in granted cwd" cmake_h
 tool zstd
 expect ok ok ok "runs" run $ZSTD --version
 zstd_round_trip() {
-    seq 1 1000 >a.txt && run $ZSTD -q -f a.txt -o a.zst && run --entrypoint=unzstd $ZSTD -q -f a.zst -o b.txt && cmp -s a.txt b.txt
+    seq 1 1000 >a.txt && run $ZSTD -q -f a.txt -o a.zst && run $ZSTD -d -q -f a.zst -o b.txt && cmp -s a.txt b.txt
 }
 expect ok ok ok "compresses and restores in granted cwd" zstd_round_trip
 # (What it writes to stdout is compressed, binary.)

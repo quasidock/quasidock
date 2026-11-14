@@ -1,25 +1,24 @@
 {
-  "id": "dev.sigstore.cosign",
+  "id": "cosign",
   "version": "3.1.4",
   "name": "cosign",
   "summary": "Signs and verifies container images and other artifacts in OCI registries",
   "homepage": "https://github.com/sigstore/cosign",
   "license": "Apache-2.0",
-  "command": "cosign.exe",
-  "permissions": { "network": true, "filesystem": ["cwd"] },
-  "sdk": {
-    "go": "org.golang.go:1.27.3@sha256:fb6554b0d89f578112c72b92c87a05583980578328180762571770884b3bc162",
-    "busybox": "net.frippery.busybox:FRP-6075-g169694ebd@sha256:db9d39727bfdd4d176b5878c0a125daa8a2396ea21e0f01a6a372f53d9d97e5d"
+  "entrypoint": "cosign.exe",
+  "permissions": {
+    "network": true,
+    "filesystem": ["cwd"]
   },
-  "modules": [
+  "sdk": {
+    "go": "go:1.27.3@sha256:fb6554b0d89f578112c72b92c87a05583980578328180762571770884b3bc162",
+    "busybox": "busybox:FRP-6075-g169694ebd@sha256:db9d39727bfdd4d176b5878c0a125daa8a2396ea21e0f01a6a372f53d9d97e5d"
+  },
+  "stages": [
     {
       "name": "cosign",
       "sources": [
-        {
-          "url": "https://proxy.golang.org/github.com/sigstore/cosign/v3/@v/v3.1.4.zip",
-          "sha256": "98b7e685c7f7c3567a895d0cc7393747174419b4751855df6c9e4c52c9e94720",
-          "strip": 4
-        }
+        { "url": "https://proxy.golang.org/github.com/sigstore/cosign/v3/@v/v3.1.4.zip", "sha256": "98b7e685c7f7c3567a895d0cc7393747174419b4751855df6c9e4c52c9e94720", "strip": 4 }
       ],
       "env": { "CGO_ENABLED": "0" },
       "vendor": {

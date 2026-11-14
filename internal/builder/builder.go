@@ -142,7 +142,7 @@ func inputHash(ctx *context.Context, r *recipe.Recipe, bytesRead []byte, recipeP
 	if baseDir == "" {
 		baseDir = "."
 	}
-	for _, m := range r.Modules {
+	for _, m := range r.Stages {
 		for i, src := range m.Sources {
 			if src.Path == nil {
 				continue
@@ -160,7 +160,7 @@ func inputHash(ctx *context.Context, r *recipe.Recipe, bytesRead []byte, recipeP
 			}
 			fh, err := store.Sha256File(full)
 			if err != nil {
-				return "", fmt.Errorf("module %s: reading %s: %w", m.Name, full, err)
+				return "", fmt.Errorf("stage %s: reading %s: %w", m.Name, full, err)
 			}
 			h.Write([]byte(fh.Hex))
 		}
@@ -262,8 +262,8 @@ func buildImage(ctx *context.Context, r *recipe.Recipe, recipePath, source strin
 		}
 		rtDirs := dirs[:len(dirs)-1]
 		rtIdx := 0
-		for rtAlias, rt := range dep.Config.Runtimes {
-			rtWhat := fmt.Sprintf("%s's runtime %s", what, rtAlias)
+		for rtAlias, rt := range dep.Config.From {
+			rtWhat := fmt.Sprintf("%s's base image %s", what, rtAlias)
 			added, err := tools.Add(Tool{
 				Image:   rt.Image,
 				ID:      rt.ID,
@@ -283,11 +283,11 @@ func buildImage(ctx *context.Context, r *recipe.Recipe, recipePath, source strin
 		}
 	}
 
-	runtimes := make(map[string]oci.Runtime)
+	from := make(map[string]oci.Runtime)
 	var layers []oci.Descriptor
 	var runtimeDirsList []oci.DirPlaceholder
 
-	for alias, reference := range r.Runtimes {
+	for alias, reference := range r.From {
 		dep, err := ResolveDependency(ctx, recipePath, DependencyRuntime, alias, reference)
 		if err != nil {
 			return nil, err
@@ -301,21 +301,21 @@ func buildImage(ctx *context.Context, r *recipe.Recipe, recipePath, source strin
 				l.Release()
 			}
 		}()
-		runtimes[alias] = dep.Runtime()
+		from[alias] = dep.Runtime()
 		layers = append(layers, dep.Layer())
 		runtimeDirsList = append(runtimeDirsList, oci.DirPlaceholder{Alias: alias, Path: dirs[0]})
 		_, _ = tools.Add(Tool{
 			Image:   dep.ManifestDigest,
 			ID:      dep.Config.ID,
 			Version: dep.Config.Version,
-			What:    fmt.Sprintf("runtime %s", alias),
+			What:    fmt.Sprintf("base image %s", alias),
 			Dir:     dirs[0],
 			Path:    dep.Config.Path,
 			Env:     dep.Config.Env,
 		})
 	}
 
-	for _, m := range r.Modules {
+	for _, m := range r.Stages {
 		if m.Network {
 			buildInfo.Network = true
 		}
@@ -333,7 +333,7 @@ func buildImage(ctx *context.Context, r *recipe.Recipe, recipePath, source strin
 	}()
 
 	var downloads []recipe.Source
-	for _, m := range r.Modules {
+	for _, m := range r.Stages {
 		for i, src := range m.Sources {
 			if src.Image == nil && projects.Get(m.Name, i) == nil {
 				downloads = append(downloads, src)
@@ -356,7 +356,7 @@ func buildImage(ctx *context.Context, r *recipe.Recipe, recipePath, source strin
 			buildInfo.Host["windows-sdk"] = root.msvc.SDKVersion
 		}
 
-		for _, m := range r.Modules {
+		for _, m := range r.Stages {
 			if m.Vendor != nil {
 				sha, err := root.vendor(ctx, m, recipePath, projects)
 				if err != nil {
@@ -366,14 +366,14 @@ func buildImage(ctx *context.Context, r *recipe.Recipe, recipePath, source strin
 			}
 		}
 
-		t, err := root.buildModules(ctx, sources, r, recipePath)
+		t, err := root.buildStages(ctx, sources, r, recipePath)
 		if err != nil {
 			return nil, err
 		}
 		appTree = t
 	} else {
 		appTree = tree.New()
-		for _, m := range r.Modules {
+		for _, m := range r.Stages {
 			if err := sources.Add(appTree, m, recipePath); err != nil {
 				return nil, err
 			}
@@ -386,7 +386,7 @@ func buildImage(ctx *context.Context, r *recipe.Recipe, recipePath, source strin
 	}
 	appTree.Cleanup(r.Cleanup)
 
-	config, err := r.AppConfig(runtimes, buildInfo)
+	config, err := r.AppConfig(from, buildInfo)
 	if err != nil {
 		return nil, err
 	}
@@ -399,12 +399,14 @@ func buildImage(ctx *context.Context, r *recipe.Recipe, recipePath, source strin
 		Data:     "",
 		Runtimes: runtimeDirsList,
 	}
-	if err := checkCommand(ctx, appTree, placeholders, "command runs", config.Command); err != nil {
+	if err := checkCommand(ctx, appTree, placeholders, "entrypoint runs", config.Entrypoint[0]); err != nil {
 		return nil, err
 	}
-	for name, exp := range config.Exports {
-		if err := checkCommand(ctx, appTree, placeholders, fmt.Sprintf("export %s runs", name), exp.Command); err != nil {
-			return nil, err
+	for _, s := range config.Permissions.Services {
+		if s.Command != "" {
+			if err := checkCommand(ctx, appTree, placeholders, fmt.Sprintf("service %s runs", s.Name), s.Command); err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -506,13 +508,13 @@ func checkCommand(ctx *context.Context, appTree *tree.Tree, placeholders oci.Pla
 	} else if appTree.IsFile(command) {
 		return nil
 	}
-	return fmt.Errorf("%s %q, which is not a file in the app tree the modules produce", what, command)
+	return fmt.Errorf("%s %q, which is not a file in the app tree the stages produce", what, command)
 }
 
 func runtimeDirs(c oci.AppConfig, dirs []string) []oci.DirPlaceholder {
 	var out []oci.DirPlaceholder
 	idx := 0
-	for alias := range c.Runtimes {
+	for alias := range c.From {
 		if idx < len(dirs) {
 			out = append(out, oci.DirPlaceholder{Alias: alias, Path: dirs[idx]})
 			idx++
@@ -697,9 +699,9 @@ func (b *BuildRoot) keepCache(ctx *context.Context, id string) {
 	_ = store.RenameRetrying(here, kept, 5000)
 }
 
-func (b *BuildRoot) buildModules(ctx *context.Context, sources *Sources, r *recipe.Recipe, recipePath string) (*tree.Tree, error) {
+func (b *BuildRoot) buildStages(ctx *context.Context, sources *Sources, r *recipe.Recipe, recipePath string) (*tree.Tree, error) {
 	prefix := filepath.Join(b.path, "prefix")
-	for _, m := range r.Modules {
+	for _, m := range r.Stages {
 		t := tree.New()
 		if err := sources.Add(t, m, recipePath); err != nil {
 			return nil, err
@@ -715,7 +717,7 @@ func (b *BuildRoot) buildModules(ctx *context.Context, sources *Sources, r *reci
 					dest = filepath.Join(b.path, "src", m.Name)
 				}
 				if err := writeSourcesToDisk(t, dest); err != nil {
-					return nil, fmt.Errorf("module %s: unpacking sources: %w", m.Name, err)
+					return nil, fmt.Errorf("stage %s: unpacking sources: %w", m.Name, err)
 				}
 			}
 			if err := sources.projects.Recheck(ctx, m.Name); err != nil {
@@ -741,7 +743,7 @@ const (
 	stepVendor = "vendor"
 )
 
-func (b *BuildRoot) vendor(ctx *context.Context, m recipe.Module, recipePath string, projects *Snapshots) (string, error) {
+func (b *BuildRoot) vendor(ctx *context.Context, m recipe.Stage, recipePath string, projects *Snapshots) (string, error) {
 	v := m.Vendor
 	dest := filepath.Join(b.path, "src", m.Name)
 	if err := unpackSources(ctx, m, recipePath, projects, dest); err != nil {
@@ -754,7 +756,7 @@ func (b *BuildRoot) vendor(ctx *context.Context, m recipe.Module, recipePath str
 		if store.Exists(c) {
 			cached = c
 			if ctx.Verbose {
-				ctx.Note("module %s: vendored files from the cache (sha256 %s)", m.Name, *v.Sha256)
+				ctx.Note("stage %s: vendored files from the cache (sha256 %s)", m.Name, *v.Sha256)
 			}
 		}
 	}
@@ -821,7 +823,7 @@ func (b *BuildRoot) vendor(ctx *context.Context, m recipe.Module, recipePath str
 	return *v.Sha256, nil
 }
 
-func unpackSources(ctx *context.Context, m recipe.Module, recipePath string, projects *Snapshots, dest string) error {
+func unpackSources(ctx *context.Context, m recipe.Stage, recipePath string, projects *Snapshots, dest string) error {
 	sources := NewSources(ctx, filepath.Dir(recipePath), "", projects)
 	defer sources.Close()
 	t := tree.New()
@@ -846,7 +848,7 @@ func makeScratchDirs(path string, fresh bool) error {
 	return nil
 }
 
-func (b *BuildRoot) runCommands(ctx *context.Context, m recipe.Module, step string, warnOnly bool) error {
+func (b *BuildRoot) runCommands(ctx *context.Context, m recipe.Stage, step string, warnOnly bool) error {
 	systemRoot := ""
 	if ctx != nil && ctx.Env != nil {
 		systemRoot = ctx.Env["SystemRoot"]
@@ -957,7 +959,7 @@ func (s Shell) CommandLine(command string) string {
 	}
 }
 
-func (b *BuildRoot) findShell(ctx *context.Context, m recipe.Module, systemRoot string) (*Shell, error) {
+func (b *BuildRoot) findShell(ctx *context.Context, m recipe.Stage, systemRoot string) (*Shell, error) {
 	if m.Shell == recipe.ShellCmd {
 		return &Shell{exe: filepath.Join(systemRoot, `System32`, `cmd.exe`), kind: ShellCmd}, nil
 	}
@@ -975,7 +977,7 @@ func (b *BuildRoot) findShell(ctx *context.Context, m recipe.Module, systemRoot 
 			}
 		}
 	}
-	return nil, fmt.Errorf("module %s: its build commands run in sh, which none of the recipe's sdk or runtimes provides; add busybox to \"sdk\"", m.Name)
+	return nil, fmt.Errorf("stage %s: its build commands run in sh, which none of the recipe's sdk or base images provides; add busybox to \"sdk\"", m.Name)
 }
 
 func containsFold(list []string, item string) bool {
@@ -1000,7 +1002,7 @@ type Work struct {
 const stateHeader = "quasidock work 1 "
 
 func wantedWork(r *recipe.Recipe, projects *Snapshots) bool {
-	for _, m := range r.Modules {
+	for _, m := range r.Stages {
 		if keepsWork(m, projects) {
 			return true
 		}
@@ -1008,7 +1010,7 @@ func wantedWork(r *recipe.Recipe, projects *Snapshots) bool {
 	return false
 }
 
-func keepsWork(m recipe.Module, projects *Snapshots) bool {
+func keepsWork(m recipe.Stage, projects *Snapshots) bool {
 	if len(m.Build) == 0 || m.Vendor != nil {
 		return false
 	}
@@ -1044,7 +1046,7 @@ func (w *Work) drop() error {
 	return nil
 }
 
-func (w *Work) take(ctx *context.Context, root string, t *tree.Tree, m recipe.Module) error {
+func (w *Work) take(ctx *context.Context, root string, t *tree.Tree, m recipe.Stage) error {
 	kept := filepath.Join(w.dir, m.Name)
 	statePath := kept + ".state"
 	dest := filepath.Join(root, "src", m.Name)

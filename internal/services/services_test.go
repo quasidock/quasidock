@@ -9,13 +9,13 @@ import (
 func TestUsedBy(t *testing.T) {
 	digest := "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	cfg := oci.AppConfig{
-		ID:      "app",
-		Version: "1",
-		Command: "x.exe",
+		ID:         "app",
+		Version:    "1",
+		Entrypoint: []string{"x.exe"},
 		Permissions: oci.Permissions{
 			Uses: []oci.Use{{Name: "db", Port: 5432}},
 		},
-		Runtimes: map[string]oci.Runtime{
+		From: map[string]oci.Runtime{
 			"php": {
 				ID:    "php",
 				Image: digest,
@@ -85,44 +85,51 @@ func TestParseKept(t *testing.T) {
 
 func TestServes(t *testing.T) {
 	cfg := oci.AppConfig{
-		ID:      "app",
-		Version: "1",
-		Command: "bin/server.exe",
-		Exports: map[string]oci.Export{
-			"server":         {Command: "bin/server.exe"},
-			"client":         {Command: "bin/client.exe"},
-			"verbose-server": {Command: "bin/server.exe", Args: []string{"-v"}},
-		},
+		ID:         "app",
+		Version:    "1",
+		Entrypoint: []string{"bin/server.exe"},
 	}
 
-	byExport := oci.Service{Name: "db", Port: 5432, Command: "server"}
-	if !Serves(cfg, byExport, "server") {
+	byCmd := oci.Service{Name: "db", Port: 5432, Command: "bin/server.exe"}
+	if !Serves(cfg, byCmd, "bin/server.exe") {
+		t.Error("expected Serves(bin/server.exe) true")
+	}
+	if !Serves(cfg, byCmd, "server") {
 		t.Error("expected Serves(server) true")
 	}
-	if !Serves(cfg, byExport, "Server") {
-		t.Error("expected Serves(Server) true")
+	if !Serves(cfg, byCmd, "app") {
+		t.Error("expected Serves(app) true")
 	}
-	if !Serves(cfg, byExport, "") {
+	if !Serves(cfg, byCmd, "") {
 		t.Error("expected Serves(empty) true")
 	}
-	if Serves(cfg, byExport, "client") {
+	if Serves(cfg, byCmd, "client") {
 		t.Error("expected Serves(client) false")
-	}
-	if Serves(cfg, byExport, "verbose-server") {
-		t.Error("expected Serves(verbose-server) false")
-	}
-	if Serves(cfg, byExport, "bin/server.exe") {
-		t.Error("expected Serves(bin/server.exe) false")
 	}
 
-	byApp := oci.Service{Name: "db", Port: 5432}
-	if !Serves(cfg, byApp, "") {
+	byDefault := oci.Service{Name: "db", Port: 5432}
+	if !Serves(cfg, byDefault, "") {
 		t.Error("expected Serves(empty) true")
 	}
-	if !Serves(cfg, byApp, "server") {
+	if !Serves(cfg, byDefault, "server") {
 		t.Error("expected Serves(server) true")
 	}
-	if Serves(cfg, byApp, "client") {
+	if Serves(cfg, byDefault, "client") {
 		t.Error("expected Serves(client) false")
+	}
+
+	multiCfg := oci.AppConfig{
+		ID:         "kanboard",
+		Version:    "1",
+		Entrypoint: []string{"${php}\\php.exe", "${app}\\serve.php"},
+	}
+	if !Serves(multiCfg, byDefault, "") {
+		t.Error("expected multi Serves(empty) true")
+	}
+	if !Serves(multiCfg, byDefault, "kanboard") {
+		t.Error("expected multi Serves(kanboard) true")
+	}
+	if Serves(multiCfg, byDefault, "${php}\\php.exe") {
+		t.Error("expected multi Serves(${php}\\php.exe) false")
 	}
 }

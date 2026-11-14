@@ -109,7 +109,7 @@ func namesOf(services []oci.Service, uses []oci.Use) string {
 func UsedBy(cfg oci.AppConfig) []oci.Use {
 	var list []oci.Use
 	addUses(&list, cfg.Permissions.Uses)
-	for _, r := range cfg.Runtimes {
+	for _, r := range cfg.From {
 		addUses(&list, r.Uses)
 	}
 	return list
@@ -175,41 +175,29 @@ func Placeholders(ports []Ports) []oci.ServicePorts {
 	return out
 }
 
-type Entry struct {
-	Command string
-	Args    []string
-}
-
-func entry(cfg oci.AppConfig, command string) *Entry {
-	if command == "" {
-		return &Entry{Command: cfg.Command, Args: cfg.Args}
-	}
-	for name, exp := range cfg.Exports {
-		if strings.EqualFold(name, command) {
-			return &Entry{Command: exp.Command, Args: exp.Args}
-		}
-	}
-	return nil
-}
-
 func Serves(cfg oci.AppConfig, s oci.Service, command string) bool {
-	run := entry(cfg, command)
-	if run == nil {
-		return false
-	}
-	serving := entry(cfg, s.Command)
-	if serving == nil {
-		return false
-	}
-	if !strings.EqualFold(run.Command, serving.Command) || len(run.Args) != len(serving.Args) {
-		return false
-	}
-	for i := range run.Args {
-		if run.Args[i] != serving.Args[i] {
-			return false
+	if command == "" || strings.EqualFold(command, cfg.ID) {
+		if s.Command == "" {
+			return len(cfg.Entrypoint) > 0
 		}
+		return len(cfg.Entrypoint) == 1 && commandMatches(cfg.Entrypoint[0], s.Command)
 	}
-	return true
+	if s.Command != "" {
+		return commandMatches(command, s.Command)
+	}
+	return len(cfg.Entrypoint) == 1 && commandMatches(command, cfg.Entrypoint[0])
+}
+
+func commandMatches(a, b string) bool {
+	na := strings.ReplaceAll(a, "/", `\`)
+	nb := strings.ReplaceAll(b, "/", `\`)
+	if strings.EqualFold(na, nb) {
+		return true
+	}
+	if !strings.Contains(na, `\`) || !strings.Contains(nb, `\`) {
+		return strings.EqualFold(oci.CommandStem(na), oci.CommandStem(nb))
+	}
+	return false
 }
 
 func PortsPath(st *store.Store, id string) string {

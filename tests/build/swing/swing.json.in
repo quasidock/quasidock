@@ -1,18 +1,15 @@
 {
   "id": "test.build.swing",
   "version": "1",
-  "command": "${java}\\bin\\java.exe",
-  "args": ["-jar", "${app}\\swing.jar"],
-  "exports": {},
-  "runtimes": { "java": "org.openjdk.java@@JAVA@" },
-  "sdk": {
-    "jdk": "org.openjdk.java.Sdk@@JAVASDK@",
-    "busybox": "net.frippery.busybox@@BUSYBOX@"
-  },
-  "modules": [
+  "entrypoint": ["${java}\\bin\\java.exe", "-jar", "${app}\\swing.jar"],
+  "from": { "java": "java@@JAVA@" },
+  "sdk": { "jdk": "java-sdk@@JAVASDK@", "busybox": "busybox@@BUSYBOX@" },
+  "stages": [
     {
       "name": "swing",
-      "sources": [{ "path": "Swing.java" }],
+      "sources": [
+        { "path": "Swing.java" }
+      ],
       "build": [
         "javac -d classes Swing.java",
         "jar --create --file \"$PREFIX/swing.jar\" --main-class Swing --date 2026-01-01T00:00:02Z -C classes ."
