@@ -328,7 +328,7 @@ func Leave(st *store.Store, s *Session) {
 		return
 	}
 	if err := leaveOrFail(st, s); err != nil {
-		fmt.Fprintf(os.Stderr, "warning: %s's registry keys stay in HKCU until its next run, `quasidock repair` or `quasidock rm`\n", s.ID)
+		fmt.Fprintf(os.Stderr, "warning: %s's registry keys stay in HKCU until its next run, `quasidock repair` or `quasidock rmi`\n", s.ID)
 	}
 }
 

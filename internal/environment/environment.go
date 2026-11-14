@@ -113,7 +113,24 @@ func Build(host map[string]string, spec Spec) ([]Var, error) {
 	for _, extra := range spec.Extra {
 		eq := strings.IndexByte(extra, '=')
 		if eq == -1 {
-			return nil, fmt.Errorf("--env expects NAME=VALUE, got %q", extra)
+			if extra == "" || strings.ContainsRune(extra, '\x00') {
+				return nil, fmt.Errorf("invalid environment name %q", extra)
+			}
+			if val, ok := lookupFold(host, extra); ok {
+				Set(&env, extra, val)
+			} else {
+				kept := env[:0]
+				for _, kv := range env {
+					if !strings.EqualFold(kv.Name, extra) {
+						kept = append(kept, kv)
+					}
+				}
+				env = kept
+			}
+			continue
+		}
+		if eq == 0 || strings.ContainsRune(extra, '\x00') {
+			return nil, fmt.Errorf("invalid environment setting %q", extra)
 		}
 		Set(&env, extra[0:eq], extra[eq+1:])
 	}

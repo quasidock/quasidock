@@ -12,6 +12,7 @@
 
 set -u
 export MSYS_NO_PATHCONV=1
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/images.sh"
 
 cd "$(dirname "$0")/.." || exit 1
 root=$(cygpath -w "$(pwd)")
@@ -38,7 +39,7 @@ fi
 status=$?
 
 if $own_store; then
-    "$quasidock" rm --delete-data org.nodejs.node >/dev/null 2>&1
+    qd_remove_app "$quasidock" org.nodejs.node >/dev/null 2>&1
     "$quasidock" prune --downloads >/dev/null 2>&1
     rm -rf "$QUASIDOCK_HOME"
 fi

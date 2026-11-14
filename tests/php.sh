@@ -28,6 +28,7 @@
 
 set -u
 export MSYS_NO_PATHCONV=1
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/images.sh"
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
 zigsaw=${1:-$root/out/bin/quasidock.exe}
@@ -56,7 +57,7 @@ check() {
 }
 
 z() { "$zigsaw" "$@"; }
-manifest_of() { grep -o 'sha256:[0-9a-f]*' "$QUASIDOCK_HOME\\refs\\$1.json"; }
+manifest_of() { qd_manifest "$zigsaw" "$1"; }
 own_layer() { grep -o 'sha256:[0-9a-f]*' "$QUASIDOCK_HOME\\blobs\\sha256\\$(manifest_of "$1" | cut -d: -f2)" | tail -1 | cut -d: -f2; }
 deploy_of() { echo "$QUASIDOCK_HOME\\deploy\\$(own_layer "$1")"; }
 recipe_sha256() { grep -o '"sha256": *"[0-9a-f]*"' "$root\\recipes\\$1" | head -1 | cut -d'"' -f4; }
@@ -66,7 +67,7 @@ IGBINARY=net.php.php.Igbinary REDIS=net.php.php.Redis SSH2=net.php.php.SSH2 SERV
 YAML=net.php.php.Yaml ZSTD=net.php.php.Zstd COMPOSER=org.getcomposer.composer KANBOARD=org.kanboard.Kanboard
 installed=()
 for id in $SDK $PHP $APCU $XDEBUG $IGBINARY $REDIS $SSH2 $YAML $ZSTD $SERVERS $COMPOSER $KANBOARD; do
-    [ -f "$QUASIDOCK_HOME\\refs\\$id.json" ] || installed+=("$id")
+    qd_cached "$zigsaw" "$id" || installed+=("$id")
 done
 
 check "php-sdk.json builds PHP's SDK image" z build "$root\\recipes\\php-sdk.json"
@@ -89,7 +90,7 @@ php_dir=$(deploy_of $PHP)
 runtime_runs() {
     local sb out
     for sb in soft low appcontainer; do
-        out=$(cd "$work\\cwd" && z run --sandbox=$sb $PHP -r 'echo PHP_VERSION, " ", php_ini_loaded_file(), "\n"; foreach (["curl", "fileinfo", "gd", "intl", "mbstring", "openssl", "pdo_sqlite", "sqlite3", "sodium", "zip"] as $e) if (!extension_loaded($e)) echo "no $e\n";' | tr -d '\r')
+        out=$(cd "$work\\cwd" && qd_run z --sandbox=$sb $PHP -r 'echo PHP_VERSION, " ", php_ini_loaded_file(), "\n"; foreach (["curl", "fileinfo", "gd", "intl", "mbstring", "openssl", "pdo_sqlite", "sqlite3", "sodium", "zip"] as $e) if (!extension_loaded($e)) echo "no $e\n";' | tr -d '\r')
         [ "$out" = "8.5.12 $php_dir\\php.ini" ] || { echo "$sb, got: $out"; return 1; }
     done
 }
@@ -101,7 +102,7 @@ runtime_files() {
 check "it has PHP's files, without the SDK's headers and php-ext" runtime_files
 https_works() {
     local out
-    out=$(cd "$work\\cwd" && z run $PHP -r '$c = curl_init("https://www.php.net/"); curl_setopt($c, CURLOPT_RETURNTRANSFER, true); echo curl_exec($c) === false ? curl_error($c) : "curl ok", "\n"; echo strlen((string) file_get_contents("https://www.php.net/")) > 1000 ? "stream ok" : "stream fails", "\n";' 2>&1 | tr -d '\r')
+    out=$(cd "$work\\cwd" && qd_run z $PHP -r '$c = curl_init("https://www.php.net/"); curl_setopt($c, CURLOPT_RETURNTRANSFER, true); echo curl_exec($c) === false ? curl_error($c) : "curl ok", "\n"; echo strlen((string) file_get_contents("https://www.php.net/")) > 1000 ? "stream ok" : "stream fails", "\n";' 2>&1 | tr -d '\r')
     [ "$out" = "curl ok
 stream ok" ] || { echo "got: $out"; return 1; }
 }
@@ -112,7 +113,7 @@ curl_roots() {
     local out
     openssl req -x509 -newkey rsa:2048 -nodes -keyout "$work\\other.key" -out "$work\\cwd\\other.pem" -days 1 -subj "/CN=zigsaw php.sh" >/dev/null 2>&1 ||
         { echo "openssl (Git Bash's) made no certificate"; return 1; }
-    out=$(cd "$work\\cwd" && z run "--env=SSL_CERT_FILE=$work\\cwd\\other.pem" $PHP -r '$c = curl_init("https://www.php.net/"); curl_setopt($c, CURLOPT_RETURNTRANSFER, true); echo curl_exec($c) === false ? curl_error($c) : "curl ok", "\n";' 2>&1 | tr -d '\r')
+    out=$(cd "$work\\cwd" && qd_run z "--env=SSL_CERT_FILE=$work\\cwd\\other.pem" $PHP -r '$c = curl_init("https://www.php.net/"); curl_setopt($c, CURLOPT_RETURNTRANSFER, true); echo curl_exec($c) === false ? curl_error($c) : "curl ok", "\n";' 2>&1 | tr -d '\r')
     grep -q 'SSL certificate' <<<"$out" || { echo "got: $out"; return 1; }
 }
 check "curl's roots are the ones SSL_CERT_FILE names" curl_roots
@@ -145,7 +146,7 @@ lib_ext_files() {
     done
 }
 check "yaml's and zstd's images have their library's licence, and not its headers or static library" lib_ext_files
-about() { z run $APCU | tr -d '\r' | grep -q '^This image is the PHP extension apcu, for PHP 8.5.12'; }
+about() { qd_run z $APCU | tr -d '\r' | grep -q '^This image is the PHP extension apcu, for PHP 8.5.12'; }
 check "an extension image run as an app says what it is" about
 
 
@@ -162,7 +163,7 @@ passed() {
 }
 apcu_suite() {
     local out
-    out=$(cd "$work\\apcu" && z run --command=php-ext $SDK test tests --ext "$(deploy_of $APCU)\\php_apcu.dll" 2>&1 | tr -d '\r')
+    out=$(cd "$work\\apcu" && qd_run z --entrypoint=php-ext $SDK test tests --ext "$(deploy_of $APCU)\\php_apcu.dll" 2>&1 | tr -d '\r')
     passed "$out"
 }
 check "APCu passes its test suite" apcu_suite
@@ -187,7 +188,7 @@ check "Xdebug's tests come from its 3.5.3 tag" xdebug_sources
 # C:\Windows\Temp, which a low-integrity run can't.
 xdebug_suite() {
     local out
-    out=$(cd "$work\\xdebug" && z run --sandbox=soft --command=php-ext $SDK test --runner run-xdebug-tests.php "$@" --ext "$(deploy_of $XDEBUG)\\php_xdebug.dll" 2>&1 | tr -d '\r')
+    out=$(cd "$work\\xdebug" && qd_run z --sandbox=soft --entrypoint=php-ext $SDK test --runner run-xdebug-tests.php "$@" --ext "$(deploy_of $XDEBUG)\\php_xdebug.dll" 2>&1 | tr -d '\r')
     passed "$out"
 }
 check "Xdebug passes its tests: base, coverage, develop, filter, gcstats, library, profiler, tracing" \
@@ -206,7 +207,7 @@ for x in igbinary:php-igbinary.json ssh2:php-ssh2.json redis:php-redis.json; do
 done
 igbinary_suite() {
     local out
-    out=$(cd "$work\\igbinary" && z run --command=php-ext $SDK test tests --ext "$(deploy_of $IGBINARY)\\php_igbinary.dll" 2>&1 | tr -d '\r')
+    out=$(cd "$work\\igbinary" && qd_run z --entrypoint=php-ext $SDK test tests --ext "$(deploy_of $IGBINARY)\\php_igbinary.dll" 2>&1 | tr -d '\r')
     passed "$out"
 }
 check "igbinary passes its test suite" igbinary_suite
@@ -218,7 +219,7 @@ lib_suite() {
     local ext=$1 id=$2 out
     mkdir -p "$work\\$ext"
     tar -xzf "$(cygpath -u "$QUASIDOCK_HOME\\cache\\downloads\\$(pecl_sha256 php-$ext.json)")" -C "$(cygpath -u "$work\\$ext")" --strip-components=1
-    out=$(cd "$work\\$ext" && z run --command=php-ext $SDK test tests --ext "$(deploy_of $id)\\php_$ext.dll" 2>&1 | tr -d '\r')
+    out=$(cd "$work\\$ext" && qd_run z --entrypoint=php-ext $SDK test tests --ext "$(deploy_of $id)\\php_$ext.dll" 2>&1 | tr -d '\r')
     passed "$out"
 }
 check "yaml passes its test suite, as php.net's build of it does" lib_suite yaml $YAML
@@ -226,7 +227,7 @@ check "zstd passes its test suite, as php.net's build of it does" lib_suite zstd
 
 # The SSH server takes a password, or the key ssh2's tests have, and runs
 # commands with BusyBox's sh; Redis is miniredis. Each says its port.
-"$zigsaw" run $SERVERS -ssh 127.0.0.1:0 -redis 127.0.0.1:0 -user zigsaw -pass secret \
+bash "$QD_IMAGES_HELPER" run "$zigsaw" $SERVERS -ssh 127.0.0.1:0 -redis 127.0.0.1:0 -user zigsaw -pass secret \
     -authorized "$work\\ssh2\\tests\\testkey_rsa.pub" >"$work\\servers.out" 2>&1 &
 servers=$!
 for _ in $(seq 20); do [ "$(grep -c listening "$work\\servers.out" 2>/dev/null)" = 2 ] && break; sleep 0.5; done
@@ -238,7 +239,7 @@ check "the SSH and Redis servers listen" test -n "$ssh_port" -a -n "$redis_port"
 rm -f "$work\\ssh2\\tests\\ssh2_send_signal.phpt"
 ssh2_suite() {
     local out
-    out=$(cd "$work\\ssh2" && z run --command=php-ext --env=TEST_SSH2_HOSTNAME=127.0.0.1 --env=TEST_SSH2_PORT=$ssh_port \
+    out=$(cd "$work\\ssh2" && qd_run z --entrypoint=php-ext --env=TEST_SSH2_HOSTNAME=127.0.0.1 --env=TEST_SSH2_PORT=$ssh_port \
         --env=TEST_SSH2_USER=zigsaw --env=TEST_SSH2_PASS=secret $SDK test tests --ext "$(deploy_of $SSH2)\\php_ssh2.dll" 2>&1 | tr -d '\r')
     passed "$out"
 }
@@ -249,7 +250,7 @@ check "ssh2 passes its test suite against the SSH server, but for signals" ssh2_
 redis_suite() {
     local out p f
     cp "$root\\tests\\php\\redis-each.php" "$work\\redis\\tests\\"
-    out=$(cd "$work\\redis\\tests" && z run --command=php.exe $SDK -n -d "extension=$(deploy_of $IGBINARY)\\php_igbinary.dll" \
+    out=$(cd "$work\\redis\\tests" && qd_run z --entrypoint=php.exe $SDK -n -d "extension=$(deploy_of $IGBINARY)\\php_igbinary.dll" \
         -d "extension=$(deploy_of $REDIS)\\php_redis.dll" redis-each.php . 127.0.0.1 "$redis_port" 2>&1 | tr -d '\r')
     p=$(sed -n 's/^== PASSED //p' <<<"$out") f=$(sed -n 's/^== FAILED //p' <<<"$out")
     [ "${p:-0}" -ge 108 ] && [ "${f:-999}" -le 46 ] || { echo "passed ${p:-?}, failed ${f:-?}: $(tail -2 <<<"$out" | tr '\n' ' ')"; return 1; }
@@ -268,7 +269,7 @@ check "an app with PHP, APCu and Xdebug as runtimes builds" z build "$work\\cons
 consumer_runs() {
     local sb out
     for sb in soft low appcontainer; do
-        out=$(cd "$work\\consumer" && z run --sandbox=$sb $CONSUMER | tr -d '\r')
+        out=$(cd "$work\\consumer" && qd_run z --sandbox=$sb $CONSUMER | tr -d '\r')
         [ "$out" = "ini apcu.ini xdebug.ini app.ini
 loaded apcu xdebug
 apcu works
@@ -281,11 +282,11 @@ check "it loads both through their .ini files, then its own, under soft, low and
 debugs() {
     local sb=$1 port out heard
     port=$((9100 + RANDOM % 800))
-    (cd "$work\\consumer" && "$zigsaw" run --command=php $PHP listener.php $port 10 >"$work\\listener.out" 2>&1) &
+    (cd "$work\\consumer" && bash "$QD_IMAGES_HELPER" run "$zigsaw" --entrypoint=php $PHP listener.php $port 10 >"$work\\listener.out" 2>&1) &
     local listener=$!
     for _ in 1 2 3 4 5 6 7 8 9 10; do grep -q listening "$work\\listener.out" 2>/dev/null && break; sleep 0.5; done
     # Xdebug's image uses port 9003, dbgp, which --port moves.
-    out=$(cd "$work\\consumer" && z run --sandbox=$sb --env=XDEBUG_MODE=debug --env=XDEBUG_SESSION=1 --port=dbgp=$port $CONSUMER 2>&1 | tr -d '\r' | grep '^xdebug mode')
+    out=$(cd "$work\\consumer" && qd_run z --sandbox=$sb --env=XDEBUG_MODE=debug --env=XDEBUG_SESSION=1 --port=dbgp=$port $CONSUMER 2>&1 | tr -d '\r' | grep '^xdebug mode')
     wait $listener
     heard=$(tr -d '\r' <"$work\\listener.out" | paste -sd' ')
     [ "$out" = "xdebug mode debug, debugger connected" ] && [ "$heard" = "listening init PHP status stopping" ] ||
@@ -306,13 +307,13 @@ check "and under appcontainer without the loopback exemption, through zigsaw" fo
 composer_installs() {
     local sb=$1 out
     rm -rf "$work\\composer" && cp -r "$(cygpath -u "$root")/tests/php/composer" "$(cygpath -u "$work")/composer"
-    out=$(cd "$work\\composer" && z run --sandbox=$sb --ephemeral $COMPOSER install --no-interaction --no-ansi 2>&1 | tr -d '\r')
+    out=$(cd "$work\\composer" && qd_run z --sandbox=$sb --ephemeral $COMPOSER install --no-interaction --no-ansi 2>&1 | tr -d '\r')
     grep -q 'Installing zigsaw/hello (1.0.0)' <<<"$out" || { echo "$sb: $(tail -1 <<<"$out")"; return 1; }
-    out=$(cd "$work\\composer" && z run --sandbox=$sb --ephemeral $COMPOSER run-script which --no-ansi 2>&1 | tr -d '\r')
+    out=$(cd "$work\\composer" && qd_run z --sandbox=$sb --ephemeral $COMPOSER run-script which --no-ansi 2>&1 | tr -d '\r')
     grep -q '^Composer version 2\.10\.3' <<<"$out" || { echo "$sb, its script: $(tail -1 <<<"$out")"; return 1; }
     # Without what zigsaw says about grants: the run's grant of the working
     # directory under low goes when it ends.
-    out=$(cd "$work\\composer" && z run --sandbox=$sb $PHP -r 'require "vendor/autoload.php"; echo Zigsaw\Hello\Hello::hi(), "\n";' 2>&1 | tr -d '\r' |
+    out=$(cd "$work\\composer" && qd_run z --sandbox=$sb $PHP -r 'require "vendor/autoload.php"; echo Zigsaw\Hello\Hello::hi(), "\n";' 2>&1 | tr -d '\r' |
         grep -v -e '^labelled ' -e '^removed the low integrity label ')
     [ "$out" = "hello from a package Composer installed" ] || { echo "$sb, PHP: $out"; return 1; }
 }
@@ -323,7 +324,7 @@ check "and under low" composer_installs low
 # browser.
 kanboard_port=$((9100 + RANDOM % 800))
 kanboard_start() {
-    "$zigsaw" run --sandbox=$1 --ephemeral --port=http=$kanboard_port $KANBOARD --no-browser >"$work\\kanboard.out" 2>&1 &
+    bash "$QD_IMAGES_HELPER" run "$zigsaw" --sandbox=$1 --ephemeral --port=http=$kanboard_port $KANBOARD --no-browser >"$work\\kanboard.out" 2>&1 &
     kanboard=$!
     for _ in $(seq 40); do grep -q 'Development Server' "$work\\kanboard.out" 2>/dev/null && break; sleep 0.25; done
 }
@@ -358,7 +359,7 @@ check "and under appcontainer, through the service zigsaw publishes" kanboard_pu
 kanboard_stop
 kanboard_data() {
     local out
-    out=$(z run --command=kanboard-cli $KANBOARD db:version 2>&1 | tr -d '\r')
+    out=$(qd_run z --entrypoint=kanboard-cli $KANBOARD db:version 2>&1 | tr -d '\r')
     grep -qE '^Current version: [0-9]+' <<<"$out" || { echo "kanboard-cli: $out"; return 1; }
     [ -f "$QUASIDOCK_HOME\\data\\$KANBOARD\\db.sqlite" ] || { echo "no db.sqlite in its data"; return 1; }
 }
@@ -373,8 +374,8 @@ kanboard_start low
 check "but under low it refuses its data directory, which PHP takes for read-only (known gap)" kanboard_low
 kanboard_stop
 
-z rm --delete-data $CONSUMER >/dev/null 2>&1
-for id in "${installed[@]}"; do z rm --delete-data "$id" >/dev/null 2>&1; done
+qd_remove_app z $CONSUMER >/dev/null 2>&1
+for id in "${installed[@]}"; do qd_remove_app z "$id" >/dev/null 2>&1; done
 rm -rf "$work"
 echo
 echo "$failures check(s) failed."

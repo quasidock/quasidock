@@ -29,6 +29,7 @@
 
 set -u
 export MSYS_NO_PATHCONV=1
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/images.sh"
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
 zigsaw=${1:-$root/out/bin/quasidock.exe}
@@ -44,7 +45,7 @@ PG=org.postgresql.PostgreSQL
 PHP=net.php.php
 COMPOSER=org.getcomposer.composer
 PERL=org.perl.perl
-has() { [ -f "$QUASIDOCK_HOME\\refs\\$1.json" ]; }
+has() { qd_cached "$zigsaw" "$1"; }
 if [ -z "$QUASIDOCK_HOME" ] || ! has $PY; then
     echo "tests/certs.sh needs a store with $PY in CERTS_HOME or BUILD_HOME"
     exit 1
@@ -93,7 +94,7 @@ row() {
 z() {
     local sandbox=$1
     shift
-    timeout 120 "$zigsaw" run --sandbox="$sandbox" "$@"
+    timeout 120 bash "$QD_IMAGES_HELPER" run "$zigsaw" --sandbox="$sandbox" "$@"
 }
 # says <want> <command...>: the last line the command prints is want; else
 # it says what came, and the last line of its errors.
@@ -126,7 +127,7 @@ zig_get() {
         return 1
     }
 }
-psql_get() { says 1 z "$1" --command=psql $PG "host=localhost port=$pgport dbname=postgres user=postgres sslmode=verify-full sslrootcert=system" -XAt -c "select 1"; }
+psql_get() { says 1 z "$1" --entrypoint=psql $PG "host=localhost port=$pgport dbname=postgres user=postgres sslmode=verify-full sslrootcert=system" -XAt -c "select 1"; }
 # Its warnings on one line: the TLS one comes before "Failed to open stream".
 # (A handler of its own, too, as an installed Xdebug adds its stack to them.)
 php_stream_get() { says ok z "$1" $PHP -r "\$w = []; set_error_handler(function (\$n, \$m) use (&\$w) { \$w[] = \$m; return true; }); \$r = file_get_contents('$url/ok'); echo \$r === false ? implode(' / ', \$w) : trim(\$r), PHP_EOL;"; }
@@ -204,7 +205,7 @@ cleanup() {
     if [ $trusted = 1 ]; then
         admin -delstore Root "$serial" || echo "taking the test CA out failed: run certutil -delstore Root $serial as an administrator"
     fi
-    [ -z "$pgserver" ] || { z soft --port=postgresql=$pgport --command=pg_ctl $PG stop -m fast >/dev/null 2>&1; wait "$pgserver" 2>/dev/null; }
+    [ -z "$pgserver" ] || { z soft --port=postgresql=$pgport --entrypoint=pg_ctl $PG stop -m fast >/dev/null 2>&1; wait "$pgserver" 2>/dev/null; }
     [ -z "$server" ] || { kill "$server" 2>/dev/null; wait "$server" 2>/dev/null; }
     if has $PG; then rm -rf "$pgdata\\data" "$pgdata\\pgpass.conf"; fi
     acprobe_rm "$zigsaw" 2>/dev/null
@@ -253,19 +254,19 @@ printf '%s\n' 'file(DOWNLOAD "${URL}" STATUS status TLS_VERIFY ON LOG log)' 'lis
 printf '%s\n' 'pub fn build(_: *@import("std").Build) void {}' >build.zig
 # Composer's project: zigsaw/certs, from the server's repository only.
 printf '{"repositories": [{"type": "composer", "url": "%s"}, {"packagist.org": false}], "require": {"zigsaw/certs": "1.0.0"}}\n' "$url" >composer.json
-if has $JDK; then z soft --command=javac $JDK -d classes Get.java >/dev/null 2>&1 || echo "compiling Get.java failed"; fi
+if has $JDK; then z soft --entrypoint=javac $JDK -d classes Get.java >/dev/null 2>&1 || echo "compiling Get.java failed"; fi
 
-"$zigsaw" run $PY server.py $port leaf.crt leaf.key ready $crlport ca.crl >server.out 2>&1 &
+bash "$QD_IMAGES_HELPER" run "$zigsaw" $PY server.py $port leaf.crt leaf.key ready $crlport ca.crl >server.out 2>&1 &
 server=$!
 for i in $(seq 30); do [ -e ready ] && break; sleep 1; done
 [ -e ready ] || { echo "the HTTPS server didn't start:"; tail -5 server.out; exit 1; }
 
 if has $PG; then
     rm -rf "$pgdata\\data" "$pgdata\\pgpass.conf"
-    "$zigsaw" run --port=postgresql=$pgport $PG -c ssl=on -c "ssl_cert_file=$work\\leaf.crt" -c "ssl_key_file=$work\\leaf.key" >pg.out 2>&1 &
+    bash "$QD_IMAGES_HELPER" run "$zigsaw" --port=postgresql=$pgport $PG -c ssl=on -c "ssl_cert_file=$work\\leaf.crt" -c "ssl_key_file=$work\\leaf.key" >pg.out 2>&1 &
     pgserver=$!
-    for i in $(seq 60); do z soft --port=postgresql=$pgport --command=pg_isready $PG -q 2>/dev/null && break; sleep 1; done
-    z soft --port=postgresql=$pgport --command=pg_isready $PG -q 2>/dev/null || { echo "PostgreSQL's server didn't start:"; tail -5 pg.out; exit 1; }
+    for i in $(seq 60); do z soft --port=postgresql=$pgport --entrypoint=pg_isready $PG -q 2>/dev/null && break; sleep 1; done
+    z soft --port=postgresql=$pgport --entrypoint=pg_isready $PG -q 2>/dev/null || { echo "PostgreSQL's server didn't start:"; tail -5 pg.out; exit 1; }
 fi
 
 # --- Before Windows trusts the CA --------------------------------------------

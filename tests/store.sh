@@ -10,6 +10,7 @@
 
 set -u
 export MSYS_NO_PATHCONV=1
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/images.sh"
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
 quasidock=${1:-$root/out/bin/quasidock.exe}
@@ -55,43 +56,50 @@ set_version() {
     sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"$1\"/" "$(cygpath -u "$recipe")"
     echo "$1" >"$work\\marker.txt"
 }
-installed_version() { z list | awk -v id=$BB '$1 == id { print $2 }'; }
+installed_version() { qd_version z $BB; }
 z build "$recipe" >/dev/null 2>&1 || { echo "building busybox failed"; exit 1; }
+first_digest=$(qd_manifest z "$BB")
 
 # --- build replacement -------------------------------------------------------
 
 changed_recipe() {
     set_version test-2
-    z build "$recipe" >/dev/null 2>&1 && [ "$(installed_version)" = test-2 ] && expect_count deployments 1
+    z build "$recipe" >/dev/null 2>&1 && [ "$(installed_version)" = test-2 ] && expect_count deployments 2
 }
-check "build: a changed recipe replaces the old version" changed_recipe
+check "build: a changed recipe retains the old cached version" changed_recipe
+second_digest=$(qd_manifest z "$BB")
 
 # --- in-use protection ---------------------------------------------------------
 
 # Starts `busybox sleep` on the installed version, in the background.
-z run $BB sleep 6 &
+qd_run z $BB sleep 6 &
 running=$!
 sleep 1
 build_while_running() {
     set_version test-3
-    z build "$recipe" 2>&1 | grep -q 'still running' && [ "$(installed_version)" = test-3 ] && expect_count deployments 2
+    z build "$recipe" >/dev/null 2>&1 && [ "$(installed_version)" = test-3 ] && expect_count deployments 3
 }
 check "build: a running version's files are kept" build_while_running
-prune_while_running() { z prune 2>&1 | grep -q 'kept 1 unused deployment' && expect_count deployments 2; }
-check "prune: keeps a deployment in use" prune_while_running
+conflicting_version() { z run "$BB" 2>&1 | grep -q 'another version'; }
+check "run rejects a different version while app data is in use" conflicting_version
+prune_while_running() { z prune >/dev/null 2>&1 && expect_count deployments 3; }
+check "prune: keeps named images and a deployment in use" prune_while_running
 # `check` runs commands in a subshell, which can't wait for this shell's jobs.
 wait $running
 status=$?
 check "the running app finishes normally" test $status -eq 0
 
-dry_run() { z prune --dry-run 2>&1 | grep -q '^would remove 1 deployment' && expect_count deployments 2 && expect_count blobs 6; }
+dry_run() { z prune --dry-run >/dev/null 2>&1 && expect_count deployments 3 && expect_count blobs 9; }
 check "prune --dry-run deletes nothing" dry_run
-prune_after_exit() { z prune >/dev/null 2>&1 && expect_count deployments 1 && expect_count blobs 3; }
-check "prune: removes it once unused, and unused blobs" prune_after_exit
+prune_after_exit() {
+    z rmi "$first_digest" "$second_digest" >/dev/null 2>&1 &&
+        z prune >/dev/null 2>&1 && expect_count deployments 1 && expect_count blobs 3
+}
+check "rmi and prune remove older images only when explicitly removed" prune_after_exit
 
 # --- tmp\ ----------------------------------------------------------------------
 
-z run --ephemeral $BB sh -c 'echo x > "$APPDATA/f" && sleep 5' &
+qd_run z --ephemeral $BB sh -c 'echo x > "$APPDATA/f" && sleep 5' &
 ephemeral=$!
 sleep 1
 mkdir "$QUASIDOCK_HOME\\tmp\\stale-dir" && echo x >"$QUASIDOCK_HOME\\tmp\\stale-dir\\f" && echo x >"$QUASIDOCK_HOME\\tmp\\stale-file"
@@ -109,12 +117,13 @@ check "the --ephemeral run cleans up after itself" ephemeral_done
 
 # --- rm, orphaned data and downloads ---------------------------------------------
 
-z run $BB sleep 5 &
+qd_run z $BB sleep 5 &
 running=$!
 sleep 1
-rm_while_running() { z rm $BB 2>&1 | grep -q 'still in use' && expect_count deployments 1; }
-check "rm: keeps the files of a running app" rm_while_running
+rm_while_running() { qd_remove_app z $BB 2>&1 | grep -q 'in use' && expect_count deployments 1; }
+check "rmi refuses the image of a running app" rm_while_running
 wait $running
+qd_remove_app z "$BB" >/dev/null 2>&1
 orphaned_data() { z prune 2>&1 | grep -q "kept data of apps that aren't installed: $BB" && expect_count deployments 0; }
 check "prune: removes them afterwards, and lists orphaned data" orphaned_data
 check "prune --data deletes it" sh -c "\"\$0\" prune --data >/dev/null 2>&1 && [ ! -e '$QUASIDOCK_HOME\\data\\$BB' ]" "$quasidock"

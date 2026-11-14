@@ -12,10 +12,6 @@ import (
 // Install deploys an image's layers and updates the app's ref.
 func Install(ctx *context.Context, image *oci.Image) error {
 	cfg := image.Config
-	previous, err := ctx.Store.ReadRef(cfg.ID)
-	if err != nil {
-		previous = nil
-	}
 
 	start := ctx.Now()
 	for _, l := range image.Manifest.Layers {
@@ -36,19 +32,20 @@ func Install(ctx *context.Context, image *oci.Image) error {
 	}
 	ctx.Timed(start, "deploy")
 
-	if err := ctx.Store.WriteRef(store.Ref{
+	name, err := store.ImageName(ctx.Env["QUASIDOCK_REGISTRY"], image.Source)
+	if err != nil {
+		name, err = store.ImageName(ctx.Env["QUASIDOCK_REGISTRY"], cfg.ID+":"+cfg.Version)
+	}
+	if err != nil {
+		return err
+	}
+	if err := ctx.Store.RegisterImage(store.Ref{
 		ID:       cfg.ID,
 		Version:  cfg.Version,
 		Manifest: image.ManifestDigest,
 		Source:   image.Source,
-	}); err != nil {
+	}, name, true); err != nil {
 		return err
-	}
-
-	if previous != nil && previous.Manifest != image.ManifestDigest {
-		if deleted, err := ctx.Store.DeleteUnusedDeployments(previous.Manifest); err == nil && deleted {
-			ctx.Note("  kept     %s %s, which is still running; `quasidock prune` removes it later", cfg.ID, previous.Version)
-		}
 	}
 
 	ctx.Note("installed %s %s\n  manifest %s", cfg.ID, cfg.Version, image.ManifestDigest)
@@ -86,7 +83,7 @@ func Install(ctx *context.Context, image *oci.Image) error {
 	}
 
 	if _, err := grants.SettleUnlessRunning(ctx, cfg.ID); err != nil {
-		ctx.Note("warning: what %s's earlier runs were granted stays until its next run ends, `quasidock repair` or `quasidock rm`", cfg.ID)
+		ctx.Note("warning: what %s's earlier runs were granted stays until its next run ends, `quasidock repair` or `quasidock rmi`", cfg.ID)
 	}
 	return nil
 }

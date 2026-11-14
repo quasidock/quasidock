@@ -109,10 +109,10 @@ param(
     if ($Uninstall) {
         $quasidock = Join-Path $Dir 'quasidock.exe'
         if (Test-Path -LiteralPath $quasidock) {
-            # A header line, then a line per app.
-            $apps = @(& $quasidock list | Select-Object -Skip 1 | ForEach-Object { ($_ -split '\s+')[0] } | Where-Object { $_ })
+            $apps = @(& $quasidock images -q | Where-Object { $_ })
+            if ($LASTEXITCODE -ne 0) { throw 'Could not read the image store; repair it before uninstalling.' }
             if ($apps.Count -gt 0) {
-                throw "These apps are still installed: $($apps -join ', '). Remove each with 'quasidock rm <id>' first: quasidock undoes what it changed for them, which deleting its files wouldn't."
+                throw "These images are still cached: $($apps -join ', '). Remove each with 'quasidock rmi <id>' first: quasidock undoes what it changed for them, which deleting its files wouldn't."
             }
             # What stores since deleted left; later, no quasidock is here to.
             & $quasidock repair | Out-Null
@@ -183,7 +183,7 @@ param(
     $installed = & $quasidock version
     Write-Host "Installed $installed in $Dir."
 
-    if (Test-Path (Join-Path $store 'refs\*.json')) {
+    if ((Test-Path (Join-Path $store 'images\index.json')) -or (Test-Path (Join-Path $store 'refs\*.json'))) {
         & $quasidock repair
         if ($LASTEXITCODE -ne 0) { Write-Warning "Some apps' grants remain from the earlier quasidock. Close the apps and run 'quasidock repair'." }
     }

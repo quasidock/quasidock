@@ -20,6 +20,7 @@
 # zig's image), and loses it afterwards if it didn't.
 set -u
 export MSYS_NO_PATHCONV=1
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/images.sh"
 # Byte counts, for Content-Length.
 export LC_ALL=C
 
@@ -66,7 +67,7 @@ check_want() {
 
 z() { "$zigsaw" "$@"; }
 installed_here=""
-if [ ! -f "$QUASIDOCK_HOME\\refs\\$ZLS.json" ]; then
+if ! qd_cached "$zigsaw" "$ZLS"; then
     installed_here=$ZLS
     z build "$root\\recipes\\zls.json" >"$work\\build.log" 2>&1 || echo "building zls.json failed: $(tail -1 "$work\\build.log")"
 fi
@@ -77,10 +78,10 @@ acprobe_run "$zigsaw" "$root" "$work"
 # has the cwd permission, which low runs label and AppContainer runs grant.
 cd "$work" || exit 1
 
-check "zls --version says 0.17.0" sh -c "[ \"\$(\"\$0\" run $ZLS --version | tr -d '\r')\" = 0.17.0 ]" "$zigsaw"
+check "zls --version says 0.17.0" sh -c "[ \"\$(bash '$QD_IMAGES_HELPER' run \"\$0\" $ZLS --version | tr -d '\r')\" = 0.17.0 ]" "$zigsaw"
 caches_in_data() {
     local dir
-    dir=$(z run $ZLS env | tr -d '\r' | grep '"global_cache_dir"' | sed -e 's/.*: "//' -e 's/",*$//' -e 's/\\\\/\\/g')
+    dir=$(qd_run z $ZLS env | tr -d '\r' | grep '"global_cache_dir"' | sed -e 's/.*: "//' -e 's/",*$//' -e 's/\\\\/\\/g')
     [[ $dir == "$QUASIDOCK_HOME\\data\\$ZLS\\"* ]] || { echo "global_cache_dir is $dir"; return 1; }
 }
 check "its caches and log are in its data" caches_in_data
@@ -146,7 +147,7 @@ for sb in soft low appcontainer; do
     dir="$work\\$sb"
     mkdir -p "$dir" && cp "$(cygpath -u "$root")"/tests/zls/*.zig "$(cygpath -u "$dir")/"
     uri="file:///$(cygpath -m "$dir")"
-    coproc SERVER { cd "$dir" && exec "$zigsaw" run --sandbox=$sb $ZLS 2>"$work\\$sb.stderr.txt"; }
+    coproc SERVER { cd "$dir" && exec bash "$QD_IMAGES_HELPER" run "$zigsaw" --sandbox=$sb $ZLS 2>"$work\\$sb.stderr.txt"; }
     # (Bash forgets SERVER once the server exits.)
     to_server=${SERVER[1]} from_server=${SERVER[0]} pid=$SERVER_PID
     send '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"processId":null,"rootUri":"'"$uri"'","capabilities":{"textDocument":{"publishDiagnostics":{}}}}}'
@@ -170,7 +171,7 @@ check "no run labelled or granted the repository" sh -c "! icacls '$root' | grep
 
 cd "$root" || exit 1
 acprobe_rm "$zigsaw"
-for id in $installed_here; do z rm --delete-data "$id" >/dev/null 2>&1; done
+for id in $installed_here; do qd_remove_app z "$id" >/dev/null 2>&1; done
 if [ -n "$temp_store" ]; then
     z prune --downloads --data >/dev/null 2>&1
     rm -rf "$temp_store"

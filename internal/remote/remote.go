@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -25,7 +24,7 @@ import (
 )
 
 const (
-	DefaultRegistry = "ghcr.io/zigsaw-io"
+	DefaultRegistry = store.DefaultImageRegistry
 	RegistryVar     = "QUASIDOCK_REGISTRY"
 	MaxBlobWorkers  = 4
 	MinReuseTenths  = 1
@@ -70,6 +69,9 @@ func ExpandShort(reg, text string) (*Short, error) {
 
 // Resolve resolves an image text (short app ID or full reference) into a Target.
 func Resolve(envRegistry, text string) (Target, error) {
+	if oci.DigestHex(text) != "" {
+		return Target{}, fmt.Errorf("%s is a local image ID; use a repository@digest reference for registry operations", text)
+	}
 	if envRegistry == "" {
 		envRegistry = DefaultRegistry
 	}
@@ -526,9 +528,14 @@ type Info struct {
 	Index          *string
 	Manifest       *oci.Manifest
 	Config         *oci.AppConfig
+	ManifestBytes  []byte
 }
 
 func FetchInfo(st *store.Store, envRegistry, imageText string, verbose bool) (Info, error) {
+	return fetchInfo(st, envRegistry, imageText, verbose, false)
+}
+
+func fetchInfo(st *store.Store, envRegistry, imageText string, verbose, verify bool) (Info, error) {
 	target, err := Resolve(envRegistry, imageText)
 	if err != nil {
 		return Info{}, err
@@ -547,6 +554,22 @@ func FetchInfo(st *store.Store, envRegistry, imageText string, verbose bool) (In
 	if !oci.IsConfigType(resolved.Manifest.Config.MediaType) {
 		return Info{}, fmt.Errorf("%s is not a quasidock app (its config type is %s; it may be a container image)", target.Ref, resolved.Manifest.Config.MediaType)
 	}
+	if verify {
+		check, err := CheckSignature(st, reg, target.Ref, resolved.Index, resolved.Digest)
+		if err != nil {
+			return Info{}, err
+		}
+		switch check.Kind {
+		case SigWrong:
+			return Info{}, fmt.Errorf("%s: %s. Nothing was installed", target.Text, check.Why)
+		case SigMissing:
+			context.Note("warning: %s isn't signed; nothing says who made it", target.Text)
+		case SigNoKey:
+			context.Note("signature not checked: no key here for its registry")
+		case SigSigned:
+			context.Note("signed, by key %s", check.Fingerprint)
+		}
+	}
 
 	// Read or download config
 	cfgHex := oci.DigestHex(resolved.Manifest.Config.Digest)
@@ -557,8 +580,18 @@ func FetchInfo(st *store.Store, envRegistry, imageText string, verbose bool) (In
 		}
 	}
 	if cfgBytes == nil {
-		tmpPath := filepath.Join(os.TempDir(), "quasidock-cfg-"+cfgHex+".json")
+		tmp, err := os.CreateTemp("", "quasidock-cfg-*.json")
+		if err != nil {
+			return Info{}, err
+		}
+		tmpPath := tmp.Name()
+		tmp.Close()
+		defer os.Remove(tmpPath)
 		h, err := reg.DownloadBlob(resolved.Manifest.Config, tmpPath)
+		if err != nil {
+			return Info{}, err
+		}
+		data, err := os.ReadFile(tmpPath)
 		if err != nil {
 			return Info{}, err
 		}
@@ -567,11 +600,6 @@ func FetchInfo(st *store.Store, envRegistry, imageText string, verbose bool) (In
 			if err != nil {
 				return Info{}, err
 			}
-		}
-		data, err := os.ReadFile(tmpPath)
-		_ = os.Remove(tmpPath)
-		if err != nil {
-			return Info{}, err
 		}
 		cfgBytes = data
 	}
@@ -593,11 +621,18 @@ func FetchInfo(st *store.Store, envRegistry, imageText string, verbose bool) (In
 		Index:          resolved.Index,
 		Manifest:       resolved.Manifest,
 		Config:         cfg,
+		ManifestBytes:  resolved.Bytes,
 	}, nil
 }
 
 func Fetch(st *store.Store, envRegistry, imageText string, verbose bool) (*oci.Image, error) {
-	info, err := FetchInfo(st, envRegistry, imageText, verbose)
+	return FetchPrepared(st, envRegistry, imageText, verbose, nil)
+}
+
+// FetchPrepared permits the lazy layer implementation to prepare verified layers
+// without introducing a package cycle. Returning true skips the whole download.
+func FetchPrepared(st *store.Store, envRegistry, imageText string, verbose bool, prepare func(*registry.Registry, oci.Descriptor) (bool, error)) (*oci.Image, error) {
+	info, err := fetchInfo(st, envRegistry, imageText, verbose, true)
 	if err != nil {
 		return nil, err
 	}
@@ -612,8 +647,28 @@ func Fetch(st *store.Store, envRegistry, imageText string, verbose bool) (*oci.I
 		return nil, err
 	}
 
-	if err := DownloadBlobs(st, reg, info.Manifest.Layers, verbose); err != nil {
+	layers := make([]oci.Descriptor, 0, len(info.Manifest.Layers))
+	for _, layer := range info.Manifest.Layers {
+		if prepare != nil && !st.HasBlob(layer.Digest) {
+			prepared, err := prepare(reg, layer)
+			if err != nil {
+				return nil, err
+			}
+			if prepared {
+				continue
+			}
+		}
+		layers = append(layers, layer)
+	}
+	if err := DownloadBlobs(st, reg, layers, verbose); err != nil {
 		return nil, err
+	}
+	manifest, err := st.PutBlob(info.ManifestBytes, oci.MediaTypeManifest)
+	if err != nil {
+		return nil, err
+	}
+	if manifest.Digest != info.ManifestDigest {
+		return nil, errors.New("downloaded manifest digest mismatch")
 	}
 
 	return &oci.Image{
@@ -864,7 +919,7 @@ func indexedLayers(st *store.Store, except string) []oci.Descriptor {
 	if st == nil {
 		return nil
 	}
-	refs, _ := st.ListRefs()
+	refs, _ := st.ListImages()
 	var manifests []string
 	for _, ref := range refs {
 		manifests = append(manifests, ref.Manifest)
@@ -1203,36 +1258,33 @@ type PushOptions struct {
 	Sources bool
 }
 
-func Push(ctx *context.Context, id string, imageText string, opts PushOptions) error {
-	installed, err := ctx.Store.ReadRef(id)
-	if err != nil || installed == nil {
-		return fmt.Errorf("%s is not installed", id)
-	}
-	targetText := id
-	if imageText != "" {
-		targetText = imageText
+func Push(ctx *context.Context, imageText string, opts PushOptions) error {
+	if oci.DigestHex(imageText) != "" {
+		return errors.New("push needs a local repository tag; tag IMAGE TARGET first")
 	}
 	envReg := ""
 	if ctx != nil && ctx.Env != nil {
 		envReg = ctx.Env["QUASIDOCK_REGISTRY"]
 	}
-	target, err := Resolve(envReg, targetText)
+	installed, err := ctx.Store.ResolveLocalImage(envReg, imageText)
 	if err != nil {
 		return err
 	}
-	ref := target.Ref
-	if target.AppID != nil && !strings.EqualFold(*target.AppID, id) {
-		return fmt.Errorf("%s is the image of %s; push %s to its own, or give a full image reference", imageText, *target.AppID, id)
+	id := installed.ID
+	targetText := imageText
+	if oci.IsValidID(imageText) {
+		targetText = id + ":" + installed.Version
+	}
+	name, err := store.ImageName(envReg, targetText)
+	if err != nil {
+		return err
+	}
+	ref, err := registry.ParseReference(name)
+	if err != nil {
+		return err
 	}
 	if ref.Digest != "" {
-		return fmt.Errorf("push to a tag, not a digest: %s", target.Text)
-	}
-	if ref.Tag == "" {
-		if registry.IsValidTag(installed.Version) {
-			ref.Tag = installed.Version
-		} else {
-			return fmt.Errorf("%s's version %q can't be a tag; add one: %s:<tag>", id, installed.Version, target.Text)
-		}
+		return fmt.Errorf("push to a tag, not a digest: %s", name)
 	}
 
 	manifestBytes, err := ctx.Store.ReadBlob(installed.Manifest)
@@ -1247,7 +1299,7 @@ func Push(ctx *context.Context, id string, imageText string, opts PushOptions) e
 	for _, l := range image.Manifest.Layers {
 		hex := oci.DigestHex(l.Digest)
 		if ctx.Store.IsLazy(hex) && !store.Exists(ctx.Store.BlobPath(hex)) {
-			return fmt.Errorf("%s is still being downloaded (`quasidock list` says how far): push it once it's in", id)
+			return fmt.Errorf("%s is still being downloaded: push it once it's in", id)
 		}
 	}
 
@@ -1274,5 +1326,3 @@ func Push(ctx *context.Context, id string, imageText string, opts PushOptions) e
 	context.Note("pushed %s %s to %s\n  manifest %s", id, installed.Version, ref.String(), installed.Manifest)
 	return nil
 }
-
-

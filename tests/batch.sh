@@ -11,6 +11,7 @@
 
 set -u
 export MSYS_NO_PATHCONV=1
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/images.sh"
 
 cd "$(dirname "$0")/.." || exit 1
 root=$(cygpath -w "$(pwd)")
@@ -38,7 +39,7 @@ check() {
 
 "$quasidock" build "$root\\tests\\batch\\app.json" >/dev/null 2>&1 || { echo "building the test app failed"; exit 1; }
 # The app's files are the deployment of its manifest's last layer.
-manifest="$QUASIDOCK_HOME\\blobs\\sha256\\$(grep -o 'sha256:[0-9a-f]*' "$QUASIDOCK_HOME\\refs\\$APP.json" | cut -d: -f2)"
+manifest="$QUASIDOCK_HOME\\blobs\\sha256\\$(qd_manifest "$quasidock" "$APP" | cut -d: -f2)"
 deploy="$QUASIDOCK_HOME\\deploy\\$(grep -o 'sha256:[0-9a-f]*' "$manifest" | tail -1 | cut -d: -f2)"
 
 # What cmd.exe would act on if it reached it unquoted, and the edge cases of quoting.
@@ -64,10 +65,10 @@ gets_args() {
 }
 
 check "the printer alone gets the arguments exactly (the control)" gets_args "$root\\out\\test\\quasidock-argv.exe"
-check "the app's .cmd command gets them exactly" gets_args "$quasidock" run $APP
-check "an exported .cmd gets them exactly" gets_args "$quasidock" run --command=echo-args $APP
-check "and under --sandbox=appcontainer" gets_args "$quasidock" run --sandbox=appcontainer $APP
-check "and under --sandbox=low" gets_args "$quasidock" run --sandbox=low $APP
+check "the app's .cmd command gets them exactly" gets_args bash "$QD_IMAGES_HELPER" run "$quasidock" $APP
+check "an exported .cmd gets them exactly" gets_args bash "$QD_IMAGES_HELPER" run "$quasidock" --entrypoint=echo-args $APP
+check "and under --sandbox=appcontainer" gets_args bash "$QD_IMAGES_HELPER" run "$quasidock" --sandbox=appcontainer $APP
+check "and under --sandbox=low" gets_args bash "$QD_IMAGES_HELPER" run "$quasidock" --sandbox=low $APP
 check "no argument ran a command" test ! -e "$injected"
 # Attempts to run a command, one per run, so no other argument changes how
 # cmd.exe reads them.
@@ -81,7 +82,7 @@ injections=(
 one_at_a_time() {
     local a got
     for a in "${injections[@]}"; do
-        got=$("$quasidock" run $APP "$a" | tr -d '\r')
+        got=$(bash "$QD_IMAGES_HELPER" run "$quasidock" $APP "$a" | tr -d '\r')
         [ "$got" = "$(hex "$a")" ] || { echo "\"$a\" came back as $got"; return 1; }
     done
     [ ! -e "$injected" ] || { echo "a command ran"; return 1; }
@@ -91,29 +92,29 @@ check "attempts to run a command, one at a time, don't" one_at_a_time
 export_args() {
     local want got
     want=$(for a in "$deploy" "a b" "%PATH%" x; do hex "$a"; done)
-    got=$("$quasidock" run --command=echo-args-pre $APP x | tr -d '\r')
+    got=$(bash "$QD_IMAGES_HELPER" run "$quasidock" --entrypoint=echo-args-pre $APP x | tr -d '\r')
     [ "$got" = "$want" ] || { diff <(echo "$want") <(echo "$got") | head -4; return 1; }
 }
 check "an export's own arguments come first, also exactly" export_args
-exit_code() { "$quasidock" run --command=exit-code $APP 7; [ $? -eq 7 ]; }
-check "--command finds a .cmd, and its exit code comes back" exit_code
+exit_code() { bash "$QD_IMAGES_HELPER" run "$quasidock" --entrypoint=exit-code $APP 7; [ $? -eq 7 ]; }
+check "--entrypoint finds a .cmd, and its exit code comes back" exit_code
 line_break() {
     local out
-    out=$("$quasidock" run $APP $'a\nb' 2>&1) && return 1
+    out=$(bash "$QD_IMAGES_HELPER" run "$quasidock" $APP $'a\nb' 2>&1) && return 1
     grep -q "can't pass it an argument with a line break" <<<"$out" || { echo "$out"; return 1; }
 }
 check "an argument with a line break is refused" line_break
 verbose() {
     local out
-    out=$("$quasidock" -v run $APP x 2>&1 >/dev/null)
+    out=$(bash "$QD_IMAGES_HELPER" run "$quasidock" --verbose $APP x 2>&1 >/dev/null)
     grep -q '^exe .*\\System32\\cmd\.exe$' <<<"$out" &&
         grep -q '^script .*\\echo-args\.cmd$' <<<"$out" &&
         grep -q '^cmdline .*cmd\.exe /d /e:ON /v:OFF /c ""' <<<"$out"
 }
-check "-v shows cmd.exe, the script and the command line" verbose
+check "--verbose shows cmd.exe, the script and the command line" verbose
 
 # Installed apps are protected against deletion, so remove them through quasidock.
-"$quasidock" rm --delete-data $APP >/dev/null 2>&1
+qd_remove_app "$quasidock" $APP >/dev/null 2>&1
 rm -rf "$tmp"
 echo
 echo "$failures check(s) failed."

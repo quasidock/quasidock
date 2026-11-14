@@ -22,6 +22,7 @@
 
 set -u
 export MSYS_NO_PATHCONV=1
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/images.sh"
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
 registry=${1:-localhost:5000}
@@ -70,23 +71,23 @@ check() {
 fails() { ! "$@"; }
 
 za build "$root/recipes/busybox.json" >/dev/null 2>&1 || { echo "building busybox failed"; exit 1; }
-digest=$(za list | awk '$1 == "net.frippery.busybox" { print $3 }')
+digest=$(qd_manifest za net.frippery.busybox)
 
 tags_list() { curl -s "http://${registry/localhost/127.0.0.1}/v2/${repo#*/}/busybox/tags/list" | grep -q FRP-6075-g169694ebd; }
-second_push() { [ "$(za -v push net.frippery.busybox "$repo/busybox" 2>&1 | grep -c ' upload ')" -eq 0 ]; }
-pulled_runs() { [ "$(zb run net.frippery.busybox echo pulled | tr -d '\r')" = pulled ]; }
-same_digest() { [ "$(zb list | awk '$1 == "net.frippery.busybox" { print $3 }')" = "$digest" ]; }
+second_push() { [ "$(qd_push za --verbose "$repo/busybox:FRP-6075-g169694ebd" 2>&1 | grep -c ' upload ')" -eq 0 ]; }
+pulled_runs() { [ "$(qd_run zb net.frippery.busybox echo pulled | tr -d '\r')" = pulled ]; }
+same_digest() { [ "$(qd_manifest zb net.frippery.busybox)" = "$digest" ]; }
 missing_tag() { zb pull --yes "$repo/busybox:nope" 2>&1 | grep -q 'not found'; }
 # Container images, as found on real registries, are refused, not installed.
 refused() { zb pull --yes "$1" 2>&1 | grep -qE 'not a quasidock app|none for windows/amd64'; }
 
-check "push" za push net.frippery.busybox "$repo/busybox"
+check "push" qd_push za net.frippery.busybox "$repo/busybox"
 check "the tag defaults to the app's version" tags_list
 check "pushing again uploads nothing" second_push
 check "pull into an empty store" zb pull --yes "$repo/busybox:FRP-6075-g169694ebd"
 check "the pulled app runs" pulled_runs
 check "the pulled image has the pushed digest" same_digest
-full_digest=$(grep -o 'sha256:[0-9a-f]*' "$store_a\\refs\\net.frippery.busybox.json")
+full_digest=$(QUASIDOCK_HOME="$store_a" qd_manifest "$zigsaw" "net.frippery.busybox")
 check "pull by digest" zb pull --yes "$repo/busybox@$full_digest"
 check "a digest that doesn't match is refused" fails zb pull --yes "$repo/busybox@sha256:$(printf '0%.0s' {1..64})"
 check "a missing tag is reported" missing_tag
@@ -100,28 +101,28 @@ printf '{ "id": "%s", "version": "1", "command": "busybox.exe", "exports": {}, "
 sgz_built() {
     za build "$work\\estargz.json" >/dev/null 2>&1 || return 1
     local manifest
-    manifest=$(grep -o 'sha256:[0-9a-f]*' "$store_a\\refs\\$SGZ.json" | cut -d: -f2)
+    manifest=$(QUASIDOCK_HOME="$store_a" qd_manifest "$zigsaw" "$SGZ" | cut -d: -f2)
     grep -q '"containerd.io/snapshot/stargz/toc.digest": "sha256:' "$store_a\\blobs\\sha256\\$manifest"
 }
 sgz_pushed() {
-    za push $SGZ "$repo/estargz" >/dev/null 2>&1 || return 1
+    qd_push za $SGZ "$repo/estargz" >/dev/null 2>&1 || return 1
     curl -sf -H "Accept: application/vnd.oci.image.manifest.v1+json" "http://${registry/localhost/127.0.0.1}/v2/${repo#*/}/estargz/manifests/1" |
         grep -q '"containerd.io/snapshot/stargz/toc.digest"'
 }
 sgz_pulled() {
     local out
-    out=$(QUASIDOCK_HOME="$work\\sgz" "$zigsaw" -v pull --yes "$repo/estargz:1" 2>&1) || { echo "$out" | tail -2; return 1; }
+    out=$(QUASIDOCK_HOME="$work\\sgz" "$zigsaw" --verbose pull --yes "$repo/estargz:1" 2>&1) || { echo "$out" | tail -2; return 1; }
     grep -q ' unpack ' <<<"$out" && ! grep -q ' inflate ' <<<"$out" || { echo "$out"; return 1; }
-    [ "$(QUASIDOCK_HOME="$work\\sgz" "$zigsaw" list | awk -v id=$SGZ '$1 == id { print $3 }')" = "$(za list | awk -v id=$SGZ '$1 == id { print $3 }')" ]
+    [ "$(QUASIDOCK_HOME="$work\\sgz" qd_manifest "$zigsaw" $SGZ)" = "$(qd_manifest za $SGZ)" ]
 }
-sgz_runs() { [ "$(QUASIDOCK_HOME="$work\\sgz" "$zigsaw" run $SGZ echo sgz | tr -d '\r')" = sgz ]; }
+sgz_runs() { [ "$(QUASIDOCK_HOME="$work\\sgz" bash "$QD_IMAGES_HELPER" run "$zigsaw" $SGZ echo sgz | tr -d '\r')" = sgz ]; }
 sgz_own_files_only() {
     local deployed
     # The lock files next to deployments are the runs'.
     deployed=$(cd "$(cygpath -u "$work\\sgz")/deploy" && find . -type f ! -name '*.lock')
     [[ "$deployed" =~ ^\./[0-9a-f]{64}/busybox\.exe$ ]] || { echo "$deployed"; return 1; }
 }
-sgz_info() { QUASIDOCK_HOME="$work\\sgz" "$zigsaw" info "$repo/estargz:1" 2>&1 | grep -q '^ *layer  *eStargz$'; }
+sgz_info() { QUASIDOCK_HOME="$work\\sgz" "$zigsaw" image info "$repo/estargz:1" 2>&1 | grep -q '^ *layer  *eStargz$'; }
 check "eStargz: the layer's descriptor has its TOC's digest" sgz_built
 check "  pushed, the registry's manifest has it" sgz_pushed
 check "  pulled, the same image, unpacked without inflating" sgz_pulled
@@ -132,10 +133,10 @@ check "  info says the layer is eStargz" sgz_info
 # Its files, listed and read from the registry by Range requests, without
 # pulling the layer: a fresh store keeps only the config.
 zp() { QUASIDOCK_HOME="$work\\peek" "$zigsaw" "$@"; }
-sgz_ls() { zp ls "$repo/estargz:1" | grep -qE '^ +[0-9]+  busybox\.exe$'; }
-sgz_cat() { [ "$(zp cat "$repo/estargz:1" busybox.exe | sha256sum | cut -d' ' -f1)" = 07bb1e5b095b00d68a695481f9240879f33c5724b40aa2308f999d54ed78f075 ]; }
+sgz_ls() { zp image files "$repo/estargz:1" | grep -qE '^ +[0-9]+  busybox\.exe$'; }
+sgz_cat() { [ "$(zp image cat "$repo/estargz:1" busybox.exe | sha256sum | cut -d' ' -f1)" = 07bb1e5b095b00d68a695481f9240879f33c5724b40aa2308f999d54ed78f075 ]; }
 sgz_peek_blobs() { [ "$(ls "$(cygpath -u "$work\\peek")/blobs/sha256" | wc -l)" -eq 1 ]; }
-gzip_cat() { zp cat "$repo/busybox:FRP-6075-g169694ebd" busybox.exe 2>&1 | grep -q "busybox's (gzip) can't be"; }
+gzip_cat() { zp image cat "$repo/busybox:FRP-6075-g169694ebd" busybox.exe 2>&1 | grep -q "busybox's (gzip) can't be"; }
 check "  ls lists its files without pulling it" sgz_ls
 check "  cat writes a file, checked, without pulling it" sgz_cat
 check "  the store has only the image's config" sgz_peek_blobs
@@ -151,33 +152,33 @@ printf '{ "id": "%s", "version": "2", "command": "busybox.exe", "exports": {}, "
     $SGZ "$full_digest" >"$work\\estargz2.json"
 own_layer() { # <store>: the blob path of the installed eStargz app's own layer
     local manifest
-    manifest=$(grep -o 'sha256:[0-9a-f]*' "$1\\refs\\$SGZ.json" | head -1 | cut -d: -f2)
+    manifest=$(QUASIDOCK_HOME="$1" qd_manifest "$zigsaw" "$SGZ" | head -1 | cut -d: -f2)
     echo "$1\\blobs\\sha256\\$(grep -o '"digest": *"sha256:[0-9a-f]*"' "$1\\blobs\\sha256\\$manifest" | tail -1 | grep -o '[0-9a-f]\{64\}')"
 }
 sgz_v2_pushed() {
     zbad pull --yes "$repo/estargz:1" >/dev/null 2>&1 || return 1
     # A byte in the middle of the old layer, in busybox.exe's member.
     python -I -c 'import sys; p = sys.argv[1]; b = bytearray(open(p, "rb").read()); b[len(b) // 2] ^= 0xff; open(p, "wb").write(b)' "$(own_layer "$work\\sgzbad")" || return 1
-    za build "$work\\estargz2.json" >/dev/null 2>&1 && za push $SGZ "$repo/estargz:1" >/dev/null 2>&1
+    za build "$work\\estargz2.json" >/dev/null 2>&1 && qd_push za $SGZ "$repo/estargz:1" >/dev/null 2>&1
 }
 sgz_delta() {
     local out size fetched
-    out=$(QUASIDOCK_HOME="$work\\sgz" "$zigsaw" -v pull --yes "$repo/estargz:1" 2>&1) || { echo "$out" | tail -2; return 1; }
+    out=$(QUASIDOCK_HOME="$work\\sgz" "$zigsaw" --verbose pull --yes "$repo/estargz:1" 2>&1) || { echo "$out" | tail -2; return 1; }
     size=$(stat -c %s "$(own_layer "$store_a")")
     fetched=$(sed -n 's/.*downloading sha256:[0-9a-f]*: \([0-9]*\) of [0-9]* bytes, rest from layers in store.*/\1/p' <<<"$out" | head -1)
     [ -n "$fetched" ] || { echo "$out" | grep -iE 'download|whole|rest' | tail -2; return 1; }
     [ "$((fetched * 4))" -lt "$size" ] || { echo "fetched $fetched of $size"; return 1; }
-    [ "$(QUASIDOCK_HOME="$work\\sgz" "$zigsaw" list | awk -v id=$SGZ '$1 == id { print $3 }')" = "$(za list | awk -v id=$SGZ '$1 == id { print $3 }')" ]
+    [ "$(QUASIDOCK_HOME="$work\\sgz" qd_manifest "$zigsaw" $SGZ)" = "$(qd_manifest za $SGZ)" ]
 }
 sgz_v2_runs() {
-    [ "$(QUASIDOCK_HOME="$work\\sgz" "$zigsaw" run $SGZ echo v2 | tr -d '\r')" = v2 ] &&
+    [ "$(QUASIDOCK_HOME="$work\\sgz" bash "$QD_IMAGES_HELPER" run "$zigsaw" $SGZ echo v2 | tr -d '\r')" = v2 ] &&
         [ "$(cat "$(cygpath -u "$work\\sgz")"/deploy/*/a.txt | tr -d '\r ')" = version2 ]
 }
 sgz_mismatch() {
     local out
-    out=$(zbad -v pull --yes "$repo/estargz:1" 2>&1) || { echo "$out" | tail -2; return 1; }
+    out=$(zbad --verbose pull --yes "$repo/estargz:1" 2>&1) || { echo "$out" | tail -2; return 1; }
     grep -q "built from layers isn't matching digest; downloading whole" <<<"$out" || { echo "$out" | tail -2; return 1; }
-    [ "$(zbad list | awk -v id=$SGZ '$1 == id { print $3 }')" = "$(za list | awk -v id=$SGZ '$1 == id { print $3 }')" ]
+    [ "$(qd_manifest zbad $SGZ)" = "$(qd_manifest za $SGZ)" ]
 }
 check "  version 2 pushed under the same tag" sgz_v2_pushed
 check "  pull builds it from the old blob, fetching under a quarter" sgz_delta
@@ -188,9 +189,9 @@ check "  a damaged old blob: the blob built is refused, then downloaded whole" s
 # request), into the same blob.
 resumed() {
     local out
-    out=$(QUASIDOCK_TEST_DOWNLOAD_BREAK=100000 QUASIDOCK_HOME="$work\\resume" "$zigsaw" -v pull --yes "$repo/busybox:FRP-6075-g169694ebd" 2>&1) || { echo "$out" | tail -2; return 1; }
+    out=$(QUASIDOCK_TEST_DOWNLOAD_BREAK=100000 QUASIDOCK_HOME="$work\\resume" "$zigsaw" --verbose pull --yes "$repo/busybox:FRP-6075-g169694ebd" 2>&1) || { echo "$out" | tail -2; return 1; }
     grep -q 'resuming sha256:[0-9a-f]* at 100000 bytes' <<<"$out" || { echo "$out" | tail -3; return 1; }
-    [ "$(QUASIDOCK_HOME="$work\\resume" "$zigsaw" list | awk '$1 == "net.frippery.busybox" { print $3 }')" = "$digest" ]
+    [ "$(QUASIDOCK_HOME="$work\\resume" qd_manifest "$zigsaw" net.frippery.busybox)" = "$digest" ]
 }
 check "a download that breaks off goes on where it got to" resumed
 
@@ -206,9 +207,9 @@ manifest_proxy=$!
 sleep 1
 reset_in_layer() {
     local out
-    out=$(QUASIDOCK_HOME="$work\\reset-layer" "$zigsaw" -v pull --yes "127.0.0.1:5002/${repo#*/}/busybox:FRP-6075-g169694ebd" 2>&1) || { echo "$out" | tail -2; return 1; }
+    out=$(QUASIDOCK_HOME="$work\\reset-layer" "$zigsaw" --verbose pull --yes "127.0.0.1:5002/${repo#*/}/busybox:FRP-6075-g169694ebd" 2>&1) || { echo "$out" | tail -2; return 1; }
     grep -q 'resuming sha256:[0-9a-f]* at [0-9]* bytes, after ConnectionResetByPeer' <<<"$out" || { echo "$out" | tail -3; return 1; }
-    [ "$(QUASIDOCK_HOME="$work\\reset-layer" "$zigsaw" list | awk '$1 == "net.frippery.busybox" { print $3 }')" = "$digest" ]
+    [ "$(QUASIDOCK_HOME="$work\\reset-layer" qd_manifest "$zigsaw" net.frippery.busybox)" = "$digest" ]
 }
 reset_in_manifest() {
     local out code
@@ -226,19 +227,19 @@ wait "$blob_proxy" "$manifest_proxy" 2>/dev/null
 # the registry got to.
 pulls_back() { # <repository>: into a fresh store, the pushed digest
     QUASIDOCK_HOME="$work\\chunks" "$zigsaw" pull --yes "$1:FRP-6075-g169694ebd" >/dev/null 2>&1 &&
-        [ "$(QUASIDOCK_HOME="$work\\chunks" "$zigsaw" list | awk '$1 == "net.frippery.busybox" { print $3 }')" = "$digest" ]
+        [ "$(QUASIDOCK_HOME="$work\\chunks" qd_manifest "$zigsaw" net.frippery.busybox)" = "$digest" ]
 }
 in_chunks() {
     local out
-    out=$(QUASIDOCK_UPLOAD_CHUNK_SIZE=65536 za -v push net.frippery.busybox "$repo/busybox-chunks" 2>&1) || { echo "$out"; return 1; }
+    out=$(QUASIDOCK_UPLOAD_CHUNK_SIZE=65536 qd_push za --verbose net.frippery.busybox "$repo/busybox-chunks" 2>&1) || { echo "$out"; return 1; }
     grep -q "sent .* in [0-9]* chunks" <<<"$out" || { echo "$out"; return 1; }
     pulls_back "$repo/busybox-chunks"
 }
 broken_chunk() {
     local out
-    out=$(QUASIDOCK_UPLOAD_CHUNK_SIZE=65536 QUASIDOCK_TEST_UPLOAD_BREAK=3 za push net.frippery.busybox "$repo/busybox-broken" 2>&1) || { echo "$out"; return 1; }
+    out=$(QUASIDOCK_UPLOAD_CHUNK_SIZE=65536 QUASIDOCK_TEST_UPLOAD_BREAK=3 qd_push za net.frippery.busybox "$repo/busybox-broken" 2>&1) || { echo "$out"; return 1; }
     grep -qE "broke off .*(at [0-9]* of [0-9]* bytes; resuming|starting it again)" <<<"$out" || { echo "$out"; return 1; }
-    QUASIDOCK_HOME="$work\\chunks" "$zigsaw" rm net.frippery.busybox >/dev/null 2>&1
+    QUASIDOCK_HOME="$work\\chunks" qd_remove_app "$zigsaw" net.frippery.busybox >/dev/null 2>&1
     pulls_back "$repo/busybox-broken"
 }
 # A chunk that doesn't start where the registry got to
@@ -252,24 +253,24 @@ broken_chunk() {
 # otherwise in one request.
 failed_chunk() {
     local out
-    out=$(QUASIDOCK_UPLOAD_CHUNK_SIZE=65536 QUASIDOCK_TEST_UPLOAD_SKIP=2 za push net.frippery.busybox "$repo/busybox-skip" 2>&1) || { echo "$out"; return 1; }
+    out=$(QUASIDOCK_UPLOAD_CHUNK_SIZE=65536 QUASIDOCK_TEST_UPLOAD_SKIP=2 qd_push za net.frippery.busybox "$repo/busybox-skip" 2>&1) || { echo "$out"; return 1; }
     grep -qE "failed \(HTTP 416\) at [0-9]* of [0-9]* bytes; resuming" <<<"$out" || { echo "$out"; return 1; }
-    QUASIDOCK_HOME="$work\\chunks" "$zigsaw" rm net.frippery.busybox >/dev/null 2>&1
+    QUASIDOCK_HOME="$work\\chunks" qd_remove_app "$zigsaw" net.frippery.busybox >/dev/null 2>&1
     pulls_back "$repo/busybox-skip"
 }
 lost_chunk() {
     local out
-    out=$(QUASIDOCK_UPLOAD_CHUNK_SIZE=65536 QUASIDOCK_TEST_UPLOAD_SKIP=2 QUASIDOCK_TEST_UPLOAD_LOST=1 za push net.frippery.busybox "$repo/busybox-lost" 2>&1) || { echo "$out"; return 1; }
+    out=$(QUASIDOCK_UPLOAD_CHUNK_SIZE=65536 QUASIDOCK_TEST_UPLOAD_SKIP=2 QUASIDOCK_TEST_UPLOAD_LOST=1 qd_push za net.frippery.busybox "$repo/busybox-lost" 2>&1) || { echo "$out"; return 1; }
     grep -q "failed a chunk of .* (HTTP 416) and can't say how much of it it has (HTTP 404); uploading it in one request" <<<"$out" || { echo "$out"; return 1; }
-    QUASIDOCK_HOME="$work\\chunks" "$zigsaw" rm net.frippery.busybox >/dev/null 2>&1
+    QUASIDOCK_HOME="$work\\chunks" qd_remove_app "$zigsaw" net.frippery.busybox >/dev/null 2>&1
     pulls_back "$repo/busybox-lost"
 }
 lost_upload() { # <repository> <expected note> <test hooks...>
     local repository=$1 note=$2 out
     shift 2
-    out=$(env QUASIDOCK_UPLOAD_CHUNK_SIZE=65536 "$@" QUASIDOCK_HOME="$store_a" "$zigsaw" push net.frippery.busybox "$repository" 2>&1) || { echo "$out"; return 1; }
+    out=$(env QUASIDOCK_UPLOAD_CHUNK_SIZE=65536 "$@" QUASIDOCK_HOME="$store_a" bash "$QD_IMAGES_HELPER" push "$zigsaw" net.frippery.busybox "$repository" 2>&1) || { echo "$out"; return 1; }
     grep -q "$note" <<<"$out" || { echo "$out"; return 1; }
-    QUASIDOCK_HOME="$work\\chunks" "$zigsaw" rm net.frippery.busybox >/dev/null 2>&1
+    QUASIDOCK_HOME="$work\\chunks" qd_remove_app "$zigsaw" net.frippery.busybox >/dev/null 2>&1
     pulls_back "$repository"
 }
 check "push in chunks, which pull back as pushed" in_chunks
@@ -306,16 +307,16 @@ plain_image() {
     sed -e 's/layer\.v1\.tar+gzip/layer.v1.tar/' -e "s/$old_hex/$hex/" -e "s/\"size\": $old_size\$/\"size\": $size/" "$manifest" >"$tar.json"
     curl -sf -X PUT -H 'Content-Type: application/vnd.oci.image.manifest.v1+json' --data-binary @"$tar.json" "$api/manifests/plain" >/dev/null || { echo "uploading the manifest failed"; return 1; }
     QUASIDOCK_HOME="$work\\plain" "$zigsaw" pull --yes "$repo/busybox:plain" >/dev/null 2>&1 || { echo "pull failed"; return 1; }
-    [ "$(QUASIDOCK_HOME="$work\\plain" "$zigsaw" run net.frippery.busybox echo plain | tr -d '\r')" = plain ] || { echo "it doesn't run"; return 1; }
-    QUASIDOCK_HOME="$work\\plain" "$zigsaw" push net.frippery.busybox "$repo/busybox-plain" >/dev/null 2>&1 || { echo "push failed"; return 1; }
+    [ "$(QUASIDOCK_HOME="$work\\plain" bash "$QD_IMAGES_HELPER" run "$zigsaw" net.frippery.busybox echo plain | tr -d '\r')" = plain ] || { echo "it doesn't run"; return 1; }
+    QUASIDOCK_HOME="$work\\plain" bash "$QD_IMAGES_HELPER" push "$zigsaw" net.frippery.busybox "$repo/busybox-plain" >/dev/null 2>&1 || { echo "push failed"; return 1; }
 }
 check "an image with a plain tar layer pulls, runs and pushes" plain_image
 
 # Back to the recipe's version, which the checks below push and pull.
-za push net.frippery.busybox "$repo/busybox:latest" >/dev/null 2>&1
+qd_push za net.frippery.busybox "$repo/busybox:latest" >/dev/null 2>&1
 sed 's/"version": "[^"]*"/"version": "reg-2"/' "$root/recipes/busybox.json" >"$work\\busybox-2.json"
 za build "$work\\busybox-2.json" >/dev/null 2>&1
-za push net.frippery.busybox "$repo/busybox:latest" >/dev/null 2>&1
+qd_push za net.frippery.busybox "$repo/busybox:latest" >/dev/null 2>&1
 za build "$root/recipes/busybox.json" >/dev/null 2>&1
 
 # Multi-platform indexes, made here from the two busybox images in the
@@ -342,13 +343,13 @@ index_pull() {
     local out
     out=$(zi pull --yes "$repo/busybox:multi" 2>&1) || { echo "$out"; return 1; }
     grep -q "is a multi-platform index" <<<"$out" || { echo "$out"; return 1; }
-    [ "$(zi list | awk '$1 == "net.frippery.busybox" { print $3 }')" = "$digest" ]
+    [ "$(qd_manifest zi net.frippery.busybox)" = "$digest" ]
 }
 index_pinned() {
     zi pull --yes "$repo/busybox@$index_digest" >/dev/null 2>&1 &&
-        [ "$(zi list | awk '$1 == "net.frippery.busybox" { print $3 }')" = "$digest" ]
+        [ "$(qd_manifest zi net.frippery.busybox)" = "$digest" ]
 }
-index_info() { zi info "$repo/busybox:multi" | grep -q "index .*$index_digest"; }
+index_info() { zi image info "$repo/busybox:multi" | grep -q "index .*$index_digest"; }
 linux_only() { zi pull --yes "$repo/busybox:linux-only" 2>&1 | grep -q 'with images for linux/arm64; none for windows/amd64'; }
 check "pull from a multi-platform index takes its image for windows/amd64" index_pull
 check "  pull by the index's digest" index_pinned
@@ -361,16 +362,17 @@ szb() { QUASIDOCK_REGISTRY="$repo" QUASIDOCK_HOME="$store_b" "$zigsaw" "$@"; }
 check "push by app id" sza push net.frippery.busybox
 short_pull() {
     szb pull --yes net.frippery.busybox:FRP-6075-g169694ebd >/dev/null 2>&1 &&
-        grep -q "\"source\": \"$repo/net.frippery.busybox:FRP-6075-g169694ebd\"" "$store_b\\refs\\net.frippery.busybox.json"
+        [ "$(qd_source szb net.frippery.busybox)" = "$repo/net.frippery.busybox:FRP-6075-g169694ebd" ]
 }
 check "pull by app id; the ref records the full reference" short_pull
-check "pull by app id defaults to :latest" sh -c "QUASIDOCK_REGISTRY='$repo' QUASIDOCK_HOME='$store_a' \"\$0\" push net.frippery.busybox net.frippery.busybox:latest && QUASIDOCK_REGISTRY='$repo' QUASIDOCK_HOME='$store_b' \"\$0\" pull --yes net.frippery.busybox" "$zigsaw"
+short_latest() { qd_push sza net.frippery.busybox net.frippery.busybox:latest && szb pull --yes net.frippery.busybox; }
+check "pull by app id defaults to :latest" short_latest
 other_app_image() {
-    za push net.frippery.busybox "$repo/org.example.other:1" >/dev/null 2>&1 &&
+    qd_push za net.frippery.busybox "$repo/org.example.other:1" >/dev/null 2>&1 &&
         szb pull --yes org.example.other:1 2>&1 | grep -q 'holds net.frippery.busybox, not org.example.other'
 }
 check "pull by app id refuses an image of another app" other_app_image
-check "push by app id refuses another app's image" sh -c "QUASIDOCK_REGISTRY='$repo' QUASIDOCK_HOME='$store_a' \"\$0\" push net.frippery.busybox org.example.other:2 2>&1 | grep -q 'is the image of org.example.other'" "$zigsaw"
+check "push requires an explicit local target tag" sh -c "QUASIDOCK_REGISTRY='$repo' QUASIDOCK_HOME='$store_a' \"\$0\" push net.frippery.busybox org.example.other:2 2>&1 | grep -q 'tag SOURCE TARGET'" "$zigsaw"
 
 # The catalog: push --catalog lists apps as the registry has them at their
 # latest tag, and search and info read it. A second app has a name, a summary
@@ -380,7 +382,7 @@ sed -e "s/\"net.frippery.busybox\"/\"$CAT\"/" \
     -e 's|"command": "busybox.exe",|&\n  "name": "Catalog Shell",\n  "summary": "A shell for the catalog checks",\n  "license": "GPL-2.0-only",\n  "homepage": "https://example.com/catalog",\n  "permissions": { "filesystem": ["documents"] },\n  "associations": { ".zct": { "command": "busybox", "description": "Zigsaw catalog test" } },|' \
     "$root/recipes/busybox.json" >"$work\\catalog-app.json"
 za build "$work\\catalog-app.json" >/dev/null 2>&1 || echo "building $CAT failed"
-sza push $CAT >/dev/null 2>&1 && sza push $CAT $CAT:latest >/dev/null 2>&1
+sza push $CAT >/dev/null 2>&1 && qd_push sza $CAT $CAT:latest >/dev/null 2>&1
 catalog_pushed() { sza push --catalog net.frippery.busybox $CAT 2>&1 | grep -q 'pushed the catalog of 2 app(s)'; }
 search_all() {
     local out
@@ -395,10 +397,10 @@ search_kind() { szb search .zct | grep -q "^$CAT "; }
 no_match() { ! szb search no-such-app-anywhere >/dev/null 2>&1; }
 info_catalog_app() {
     local out
-    out=$(szb info $CAT) && grep -q 'Catalog Shell' <<<"$out" && grep -q 'permits *your Documents' <<<"$out" &&
+    out=$(szb image info $CAT) && grep -q 'Catalog Shell' <<<"$out" && grep -q 'permits' <<<"$out" &&
         grep -q 'license *GPL-2.0-only' <<<"$out" && grep -q 'opens *.zct' <<<"$out" && grep -q 'installed *no' <<<"$out"
 }
-info_any_image() { szb info "$repo/busybox:FRP-6075-g169694ebd" | grep -q '^net.frippery.busybox FRP-6075-g169694ebd'; }
+info_any_image() { szb image info "$repo/busybox:FRP-6075-g169694ebd" | grep -q '^net.frippery.busybox FRP-6075-g169694ebd'; }
 unknown_app() { ! sza push --catalog net.frippery.busybox org.example.none >/dev/null 2>&1; }
 told_first() {
     local out told installed
@@ -436,9 +438,9 @@ zn() { QUASIDOCK_REGISTRY="$repo" QUASIDOCK_HOME="$work\\consent" "$zigsaw" "$@"
 pulled_non_interactive() {
     local out
     out=$(zn pull $CAT </dev/null 2>&1) || { echo "$out" | tail -1; return 1; }
-    grep -q 'permits *your Documents' <<<"$out" && ! grep -q 'Install it?' <<<"$out" && zn list | grep -q "^$CAT "
+    ! grep -q 'Install it?' <<<"$out" && qd_cached zn "$CAT"
 }
-pulled_with_yes() { zn pull --yes $CAT </dev/null >/dev/null 2>&1 && zn list | grep -q "^$CAT "; }
+pulled_with_yes() { zn pull --yes $CAT </dev/null >/dev/null 2>&1 && qd_cached zn "$CAT"; }
 check "pull prints permissions and installs non-interactively without --yes" pulled_non_interactive
 check "  and still accepts --yes for compatibility" pulled_with_yes
 
@@ -483,7 +485,7 @@ printf '{ "id": "test.registry.parallel", "version": "1", "command": "f1.txt", "
 downloads_in() { ls "$(cygpath -u "$work\\$1")/cache/downloads" | wc -l; }
 parallel_fetch() {
     local out
-    out=$(QUASIDOCK_REGISTRY="$repo" QUASIDOCK_HOME="$work\\par1" "$zigsaw" -v build "$work\\parallel.json" 2>&1) || { echo "$out" | tail -1; return 1; }
+    out=$(QUASIDOCK_REGISTRY="$repo" QUASIDOCK_HOME="$work\\par1" "$zigsaw" --verbose build "$work\\parallel.json" 2>&1) || { echo "$out" | tail -1; return 1; }
     grep -q 'fetch 12 files (.*), 8 at a time' <<<"$out" && [ "$(downloads_in par1)" -eq 12 ]
 }
 one_changed() {
@@ -522,7 +524,7 @@ vendor_hash=$(za build "$work\\vendor-unpinned.json" 2>&1 | grep -o '"sha256": "
 vendor_recipe 'mkdir -p deps && echo vendored > deps/x.txt' ", \"sha256\": \"$vendor_hash\"" >"$work\\vendor.json"
 vendor_recipe 'exit 3' ", \"sha256\": \"$vendor_hash\"" >"$work\\vendor-failing.json"
 za build "$work\\vendor.json" >/dev/null 2>&1
-vendored_digest=$(grep -o 'sha256:[0-9a-f]*' "$store_a\\refs\\$VENDORED.json")
+vendored_digest=$(QUASIDOCK_HOME="$store_a" qd_manifest "$zigsaw" "$VENDORED")
 vendor_from_sources() {
     local out
     sza push --sources $VENDORED >/dev/null 2>&1 || { echo "push --sources failed"; return 1; }
@@ -534,29 +536,29 @@ check "a vendor step whose commands fail takes what they make from next to the i
 
 # A large app: its 100 MB layer streams both ways.
 za build "$root\\recipes\\node.json" >/dev/null 2>&1 || { echo "building node failed"; exit 1; }
-node_chunks() { QUASIDOCK_UPLOAD_CHUNK_SIZE=16777216 za -v push org.nodejs.node "$repo/node" 2>&1 | grep -q "sent .* in 3 chunks"; }
+node_chunks() { QUASIDOCK_UPLOAD_CHUNK_SIZE=16777216 qd_push za --verbose org.nodejs.node "$repo/node" 2>&1 | grep -q "sent .* in 3 chunks"; }
 check "push node (100 MB, 38 MB compressed), in 16 MiB chunks" node_chunks
 check "pull node" zb pull --yes "$repo/node:24.22.2"
-check "the pulled node runs" zb run org.nodejs.node -e 'process.exit(0)'
+check "the pulled node runs" qd_run zb org.nodejs.node -e 'process.exit(0)'
 
 # An app with a runtime: the runtime's layer travels in the app's image, and
 # a pull brings it without installing the runtime as an app.
 za build "$root\\recipes\\prettier.json" >/dev/null 2>&1 || { echo "building prettier (on node) failed"; exit 1; }
 store_d="$work\\d"
 zd() { QUASIDOCK_HOME="$store_d" "$zigsaw" "$@"; }
-check "push an app with a runtime" za push io.prettier.prettier "$repo/prettier"
+check "push an app with a runtime" qd_push za io.prettier.prettier "$repo/prettier"
 check "pull it into an empty store" zd pull --yes "$repo/prettier:3.9.10"
-check "it runs on the runtime its image brought" sh -c "QUASIDOCK_HOME='$store_d' \"\$0\" run io.prettier.prettier --version | grep -q '^3.9.10'" "$zigsaw"
-check "the runtime isn't installed as an app" sh -c "! QUASIDOCK_HOME='$store_d' \"\$0\" list | grep -q '^org.nodejs.node '" "$zigsaw"
+check "it runs on the runtime its image brought" sh -c "QUASIDOCK_HOME='$store_d' bash '$QD_IMAGES_HELPER' run \"\$0\" io.prettier.prettier --version | grep -q '^3.9.10'" "$zigsaw"
+check "the runtime isn't registered as a top-level image" sh -c "! QUASIDOCK_HOME='$store_d' \"\$0\" inspect org.nodejs.node >/dev/null 2>&1" "$zigsaw"
 
 # Mounts. Pushed by app id, a runtime's image is where pushing an app on it
 # by app id looks for the runtime's layer, and mounts it from there instead
 # of uploading it.
 mounted_runtime() {
     local node_layer out
-    node_layer=$(grep -o 'sha256:[0-9a-f]*' "$store_a\\blobs\\sha256\\$(grep -o 'sha256:[0-9a-f]*' "$store_a\\refs\\org.nodejs.node.json" | cut -d: -f2)" | tail -1)
+    node_layer=$(grep -o 'sha256:[0-9a-f]*' "$store_a\\blobs\\sha256\\$(QUASIDOCK_HOME="$store_a" qd_manifest "$zigsaw" "org.nodejs.node" | cut -d: -f2)" | tail -1)
     sza push org.nodejs.node >/dev/null 2>&1 || { echo "pushing node failed"; return 1; }
-    out=$(sza -v push io.prettier.prettier 2>&1) || { echo "$out" | tail -1; return 1; }
+    out=$(sza --verbose push io.prettier.prettier 2>&1) || { echo "$out" | tail -1; return 1; }
     grep -q "^mounted $node_layer ([0-9]* bytes) from ${repo#*/}/org.nodejs.node$" <<<"$out" && ! grep -q " upload $node_layer" <<<"$out"
 }
 check "pushing an app by id mounts its runtime's layer from the runtime's repository" mounted_runtime
@@ -564,7 +566,7 @@ check "pushing an app by id mounts its runtime's layer from the runtime's reposi
 # all of it is mounted from where it came from.
 remounted() {
     local out
-    out=$(zd -v push io.prettier.prettier "$repo/prettier-copy" 2>&1) || { echo "$out" | tail -1; return 1; }
+    out=$(qd_push zd --verbose io.prettier.prettier "$repo/prettier-copy" 2>&1) || { echo "$out" | tail -1; return 1; }
     ! grep -q ' upload ' <<<"$out" && [ "$(grep -c ' mount sha256:' <<<"$out")" -eq 3 ] || { echo "$out" | grep -E 'upload|mount' | tail -3; return 1; }
 }
 check "pushing a pulled app to another repository mounts all of it" remounted
@@ -574,7 +576,7 @@ check "ghcr.io: token, container image refused" refused ghcr.io/oras-project/ora
 # A file of Qt's eStargz runtime, read through ghcr.io's redirect to its
 # storage by Range requests.
 ghcr_cat() {
-    [ "$(QUASIDOCK_HOME="$work\\peek" "$zigsaw" cat ghcr.io/zigsaw-io/io.qt.qt6@sha256:5b3217abb8c7486dfbc80e8204cd1796f725e227a1f1997bf4f9b6f83120d200 bin/Qt6QuickControls2Native.dll |
+    [ "$(QUASIDOCK_HOME="$work\\peek" "$zigsaw" image cat ghcr.io/zigsaw-io/io.qt.qt6@sha256:5b3217abb8c7486dfbc80e8204cd1796f725e227a1f1997bf4f9b6f83120d200 bin/Qt6QuickControls2Native.dll |
         sha256sum | cut -d' ' -f1)" = 6f3cde26e753c28f70729ac1624a119d1539af18393860f45516ca98c5641e6d ]
 }
 check "ghcr.io: cat a file of an eStargz layer by Range requests" ghcr_cat
@@ -597,10 +599,10 @@ if [ -n "${AUTH_REGISTRY:-}" ]; then
     env_default() { QUASIDOCK_REGISTRY="$AUTH_REGISTRY/quasidock-test" env_login "$@"; }
     env_refused() {
         QUASIDOCK_REGISTRY="$AUTH_REGISTRY/quasidock-test" QUASIDOCK_REGISTRY_USERNAME="$AUTH_USER" QUASIDOCK_REGISTRY_PASSWORD=wrong \
-            za push net.frippery.busybox "$auth_repo" 2>&1 | grep -q 'refused the credentials in QUASIDOCK_REGISTRY_USERNAME'
+            qd_push za net.frippery.busybox "$auth_repo" 2>&1 | grep -q 'refused the credentials in QUASIDOCK_REGISTRY_USERNAME'
     }
-    check "login registry: the environment's credentials don't go to another registry" asks_for_login env_login za push net.frippery.busybox "$auth_repo"
-    check "login registry: they go to the default registry" env_default za push net.frippery.busybox "$auth_repo"
+    check "login registry: the environment's credentials don't go to another registry" asks_for_login env_login qd_push za net.frippery.busybox "$auth_repo"
+    check "login registry: they go to the default registry" env_default qd_push za net.frippery.busybox "$auth_repo"
     check "login registry: a wrong password there is refused" env_refused
     check "login registry: pull without credentials asks for a login" asks_for_login zc pull --yes "$auth_tag"
 
@@ -608,16 +610,16 @@ if [ -n "${AUTH_REGISTRY:-}" ]; then
     no_env() { (unset QUASIDOCK_REGISTRY_USERNAME QUASIDOCK_REGISTRY_PASSWORD QUASIDOCK_REGISTRY && "$@"); }
     login_refused() { echo wrong | za login --username="$AUTH_USER" --password-stdin "$AUTH_REGISTRY" 2>&1 | grep -q 'refused the credentials; nothing was saved'; }
     login_saved() { printf '%s\n' "$AUTH_PASSWORD" | za login --username="$AUTH_USER" --password-stdin "$AUTH_REGISTRY"; }
-    login_used() { no_env zc -v pull --yes "$auth_tag" 2>&1 | grep -q "credentials for $AUTH_REGISTRY: $AUTH_USER, saved by .quasidock login."; }
+    login_used() { no_env zc --verbose pull --yes "$auth_tag" 2>&1 | grep -q "credentials for $AUTH_REGISTRY: $AUTH_USER, saved by .quasidock login."; }
     logged_out() { za logout "$AUTH_REGISTRY" 2>&1 | grep -q 'removed the login'; }
     check "login: a wrong password is refused" login_refused
-    check "login: a refused login isn't saved" asks_for_login no_env za push net.frippery.busybox "$auth_repo"
+    check "login: a refused login isn't saved" asks_for_login no_env qd_push za net.frippery.busybox "$auth_repo"
     check "login: the right password is saved" login_saved
-    check "login: push with the saved login" no_env za push net.frippery.busybox "$auth_repo"
+    check "login: push with the saved login" no_env qd_push za net.frippery.busybox "$auth_repo"
     check "login: pull with the saved login" no_env zc pull --yes "$auth_tag"
     check "login: -v says where the credentials came from" login_used
     # Its config and layer, mounted from where they were pulled from.
-    login_mounts() { [ "$(no_env zc -v push net.frippery.busybox "$auth_repo-copy" 2>&1 | grep -c ' mount sha256:')" -eq 2 ]; }
+    login_mounts() { [ "$(no_env qd_push zc --verbose net.frippery.busybox "$auth_repo-copy" 2>&1 | grep -c ' mount sha256:')" -eq 2 ]; }
     check "login: a pulled app pushed to another repository there is mounted" login_mounts
     check "logout" logged_out
     check "logout: pull asks for a login again" asks_for_login no_env zc pull --yes "$auth_tag"
@@ -634,7 +636,7 @@ if [ -n "${AUTH_REGISTRY:-}" ]; then
     pulls_with() { # <origin> <command...>: pulls, with the credentials from there
         local origin=$1 out
         shift
-        out=$("$@" -v pull --yes "$auth_tag" 2>&1) || { echo "$out"; return 1; }
+        out=$("$@" --verbose pull --yes "$auth_tag" 2>&1) || { echo "$out"; return 1; }
         grep -qF "credentials for $AUTH_REGISTRY: $AUTH_USER, $origin" <<<"$out" || { echo "$out"; return 1; }
     }
     auth=$(printf '%s:%s' "$AUTH_USER" "$AUTH_PASSWORD" | base64 -w0)
@@ -680,7 +682,7 @@ check "no run labelled or granted the repository" sh -c "! icacls '$root' | grep
 # Installed apps are protected against deletion, so remove them through
 # zigsaw, and the images builds use with prune --downloads.
 for store in "$work\a" "$work\b" "$work\c" "$work\d" "$work\idx" "$work\chunks" "$work\plain" "$work\fresh1" "$work\fresh2" "$work\fresh-none" "$work\fresh-vendor" "$work\consent" "$work\par1" "$work\par2" "$work\sgz"; do
-    for id in net.frippery.busybox org.nodejs.node io.prettier.prettier test.registry.vendored test.registry.catalog test.registry.parallel $SGZ; do QUASIDOCK_HOME="$store" "$zigsaw" rm --delete-data "$id" >/dev/null 2>&1; done
+    for id in net.frippery.busybox org.nodejs.node io.prettier.prettier test.registry.vendored test.registry.catalog test.registry.parallel $SGZ; do QUASIDOCK_HOME="$store" qd_remove_app "$zigsaw" "$id" >/dev/null 2>&1; done
     QUASIDOCK_HOME="$store" "$zigsaw" prune --downloads >/dev/null 2>&1
 done
 rm -rf "$work"

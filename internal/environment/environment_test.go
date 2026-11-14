@@ -120,6 +120,31 @@ func TestExpand(t *testing.T) {
 	}
 }
 
+func TestBuildEnvironmentInheritanceAndRemoval(t *testing.T) {
+	env, err := Build(map[string]string{"inherit": "host"}, Spec{Profile: NewProfile(`D:\data`), SystemRoot: `C:\Windows`, Vars: []Var{{"INHERIT", "image"}, {"REMOVE", "image"}}, Extra: []string{"INHERIT", "REMOVE", "VALUE=first", "value=last", "EMPTY="}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	for _, v := range env {
+		got[strings.ToUpper(v.Name)] = v.Value
+	}
+	if got["INHERIT"] != "host" || got["VALUE"] != "last" {
+		t.Fatalf("overrides: %v", got)
+	}
+	if _, ok := got["REMOVE"]; ok {
+		t.Fatal("absent inherited variable retained image value")
+	}
+	if value, ok := got["EMPTY"]; !ok || value != "" {
+		t.Fatal("empty explicit value was removed")
+	}
+	for _, bad := range []string{"", "=value", "NAME\x00=bad"} {
+		if _, err := Build(nil, Spec{Extra: []string{bad}}); err == nil {
+			t.Fatalf("accepted %q", bad)
+		}
+	}
+}
+
 func TestEncodeBlock(t *testing.T) {
 	var vars []Var
 	Set(&vars, "Path", "x")

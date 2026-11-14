@@ -26,12 +26,13 @@
 
 set -u
 export MSYS_NO_PATHCONV=1
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/images.sh"
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
 zigsaw=${1:-$root/out/bin/quasidock.exe}
 QUASIDOCK_HOME=${TEXLIVE_HOME:-${BUILD_HOME:-}}
 APP=org.tug.texlive
-if [ -z "$QUASIDOCK_HOME" ] || [ ! -f "$QUASIDOCK_HOME\\refs\\$APP.json" ]; then
+if [ -z "$QUASIDOCK_HOME" ] || ! qd_cached "$zigsaw" "$APP"; then
     echo "tests/texlive.sh needs a store with $APP in TEXLIVE_HOME or BUILD_HOME;"
     echo "build recipes\\texlive.json into one first."
     exit 1
@@ -84,12 +85,12 @@ z() { "$zigsaw" "$@"; }
 tl() {
     local program=$1
     shift
-    timeout 300 "$zigsaw" run ${SANDBOX:+--sandbox=$SANDBOX} --command "bin/windows/$program.exe" $APP -interaction=nonstopmode "$@"
+    timeout 300 bash "$QD_IMAGES_HELPER" run "$zigsaw" ${SANDBOX:+--sandbox=$SANDBOX} --entrypoint "bin/windows/$program.exe" $APP -interaction=nonstopmode "$@"
 }
 tl_plain() {
     local program=$1
     shift
-    timeout 300 "$zigsaw" run ${SANDBOX:+--sandbox=$SANDBOX} --command "bin/windows/$program.exe" $APP "$@"
+    timeout 300 bash "$QD_IMAGES_HELPER" run "$zigsaw" ${SANDBOX:+--sandbox=$SANDBOX} --entrypoint "bin/windows/$program.exe" $APP "$@"
 }
 
 . "$(dirname "$0")/acprobe.sh"
@@ -127,12 +128,12 @@ bib() {
     grep -q 'TeX' cite.ind || { echo "no TeX in cite.ind"; return 1; }
 }
 check "BibTeX and MakeIndex run" bib
-check "Biber starts" sh -c "\"\$0\" run --command bin/windows/biber.exe $APP --version 2>&1 | tr -d '\r' | grep -q '^biber version: '" "$zigsaw"
+check "Biber starts" sh -c "bash '$QD_IMAGES_HELPER' run \"\$0\" --entrypoint bin/windows/biber.exe $APP --version 2>&1 | tr -d '\r' | grep -q '^biber version: '" "$zigsaw"
 mp() { tl_plain mpost fig.mp >mpost.out 2>&1 || { tail -5 mpost.out; return 1; }; test -s fig-1.mps; }
 check "MetaPost draws a figure" mp
 latexmk() {
     rm -f mk.pdf
-    timeout 300 "$zigsaw" run $APP -pdf -jobname=mk hello.tex >latexmk.out 2>&1 || { tail -5 latexmk.out; return 1; }
+    timeout 300 bash "$QD_IMAGES_HELPER" run "$zigsaw" $APP -pdf -jobname=mk hello.tex >latexmk.out 2>&1 || { tail -5 latexmk.out; return 1; }
     test -s mk.pdf
 }
 check "latexmk, on Perl's image, makes a PDF" latexmk
@@ -146,7 +147,7 @@ ps2pdf() {
 check "LaTeX, dvips and ps2pdf make a PDF through PostScript" ps2pdf
 
 dated() {
-    timeout 300 "$zigsaw" run --env=SOURCE_DATE_EPOCH=1767225600 --env=FORCE_SOURCE_DATE=1 --command bin/windows/pdflatex.exe $APP \
+    timeout 300 bash "$QD_IMAGES_HELPER" run "$zigsaw" --env=SOURCE_DATE_EPOCH=1767225600 --env=FORCE_SOURCE_DATE=1 --entrypoint bin/windows/pdflatex.exe $APP \
         -interaction=nonstopmode -jobname=same hello.tex >same.out 2>&1 || { tail -5 same.out; return 1; }
 }
 same_pdf() {

@@ -164,9 +164,9 @@ store=$(cygpath -u "$QUASIDOCK_HOME" 2>/dev/null || echo "$QUASIDOCK_HOME")
 logs=${REBUILD_LOGS:-$(mktemp -d)}
 mkdir -p "$logs"
 
-# <recipe>: the digest its build left in the store's refs, without "sha256:".
+# <recipe>: query the build's default image, without "sha256:".
 built_digest() {
-    sed -n 's/.*"manifest": *"sha256:\([0-9a-f]*\)".*/\1/p' "$store/refs/${id_of[$1]}.json"
+    "$quasidock" inspect -f '{{.Id}}' "${id_of[$1]}" | tr -d '\r' | sed 's/^sha256://'
 }
 
 for recipe in "${order[@]}"; do
@@ -182,7 +182,7 @@ for recipe in "${order[@]}"; do
         exit 1
     fi
     hex=$(built_digest "$recipe")
-    [ "${#hex}" = 64 ] || die "$recipe built, but $store/refs/${id_of[$recipe]}.json has no digest"
+    [ "${#hex}" = 64 ] || die "$recipe built, but inspect ${id_of[$recipe]} returned no digest"
     echo "$recipe ${hex:0:12} $((SECONDS - start))s"
     if [ "$mode" = build ]; then
         version=$(grep -o '"version": *"[^"]*"' "$recipe.json" | head -1 | cut -d'"' -f4)

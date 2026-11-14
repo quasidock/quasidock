@@ -10,6 +10,7 @@
 
 set -u
 export MSYS_NO_PATHCONV=1
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/images.sh"
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
 zigsaw=${1:-$root\\out\\bin\\quasidock.exe}
@@ -50,7 +51,7 @@ in_store() { # <store name> <args>
     QUASIDOCK_HOME="$work\\$name" "$zigsaw" "$@"
 }
 blobs_in() { ls "$work\\$1\\blobs\\sha256" 2>/dev/null | wc -l; }
-installed() { in_store "$1" list 2>/dev/null | tr -d '\r' | awk -v id="$APP" '$1 == id { print $2 }'; }
+installed() { in_store "$1" inspect -f '{{.Quasidock.Version}}' "$APP" 2>/dev/null | tr -d '\r'; }
 
 recipe() { # <version>
     printf '{ "id": "%s", "version": "%s", "command": "app.cmd", "permissions": { "sandbox": "soft" }, "exports": {},\n  "modules": [{ "name": "scripts", "sources": [{ "path": "app.cmd" }] }] }\n' "$APP" "$1" >"$work\\app.json"
@@ -59,8 +60,8 @@ recipe() { # <version>
 publish() { # <version> [<tag>]: the image's digest goes in $digest
     recipe "$1"
     za build "$work\\app.json" >/dev/null 2>&1 || return 1
-    za push "$APP" "$repo:${2:-$1}" >/dev/null 2>&1 || return 1
-    digest=$(grep -o 'sha256:[0-9a-f]*' "$work\\publisher\\refs\\$APP.json" | head -1)
+    qd_push za "$APP" "$repo:${2:-$1}" >/dev/null 2>&1 || return 1
+    digest=$(QUASIDOCK_HOME="$work\\publisher" qd_manifest "$zigsaw" "$APP" | head -1)
 }
 "$signer" key one "$work\\one.pub"
 "$signer" key other "$work\\other.pub"
@@ -122,7 +123,7 @@ unkeyed() {
     [ "$(installed plain)" = 1 ]
 }
 check "with no key for its registry, an image installs, saying it wasn't checked" unkeyed
-info_unkeyed() { in_store plain info "$repo:1" 2>/dev/null | grep -q 'signature *not checked'; }
+info_unkeyed() { in_store plain image info "$repo:1" 2>/dev/null | grep -q 'signature *not checked'; }
 check "  and info says so" info_unkeyed
 
 # --- Missing ---------------------------------------------------------------------
@@ -138,7 +139,7 @@ missing_warns() {
     [ "$(installed m1)" = 1 ]
 }
 check "with a key and no signature, it warns and installs, for now" missing_warns
-info_missing() { in_store m1 info "$repo:1" 2>/dev/null | grep -q 'signature *none'; }
+info_missing() { in_store m1 image info "$repo:1" 2>/dev/null | grep -q 'signature *none'; }
 check "  and info says so" info_missing
 check_missing() { ! in_store m1 signature check "$repo:1" 2>/dev/null; }
 check "  and signature check fails" check_missing
@@ -169,7 +170,7 @@ good_pull() {
     [ "$(installed g1)" = 1 ]
 }
 check "pull installs an image with a good signature, and says whose" good_pull
-good_info() { in_store g1 info "$repo:1" 2>/dev/null | grep -q "signature *signed, by key $one_fp"; }
+good_info() { in_store g1 image info "$repo:1" 2>/dev/null | grep -q "signature *signed, by key $one_fp"; }
 check "  and info says so" good_info
 check "  and signature check passes" in_store g1 signature check "$repo:1"
 by_digest() {
@@ -205,7 +206,7 @@ wrong_key() {
     refused w1 'not by any key that counts'
 }
 check "a signature by another key is refused, with nothing downloaded" wrong_key
-wrong_info() { in_store w1 info "$image" 2>/dev/null | grep -q 'signature *WRONG'; }
+wrong_info() { in_store w1 image info "$image" 2>/dev/null | grep -q 'signature *WRONG'; }
 check "  and info says so" wrong_info
 
 publish 3 && digest3=$digest
@@ -316,7 +317,7 @@ indexed() {
 }
 check "a signature of a multi-platform index covers its image" indexed
 
-for s in "$work"/*/; do [ -f "${s}refs/$APP.json" ] && QUASIDOCK_HOME="$(cygpath -w "$s")" "$zigsaw" rm --delete-data "$APP" >/dev/null 2>&1; done
+for s in "$work"/*/; do QUASIDOCK_HOME="$(cygpath -w "$s")" qd_remove_app "$zigsaw" "$APP" >/dev/null 2>&1; done
 reg delete "HKCU\\$QUASIDOCK_GRANTS_KEY" /f >/dev/null 2>&1
 reg query 'HKCU\Software\QuasidockTest' 2>/dev/null | grep -q . || reg delete 'HKCU\Software\QuasidockTest' /f >/dev/null 2>&1
 cd / && rm -rf "$work" 2>/dev/null
