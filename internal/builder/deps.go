@@ -30,25 +30,14 @@ func (d *Dependency) Layer() oci.Descriptor {
 }
 
 func (d *Dependency) Runtime() oci.Runtime {
-	var aliases map[string]oci.Export
-	if len(d.Config.Aliases) > 0 {
-		aliases = d.Config.Aliases
-	}
-	var extensions map[string]oci.ExtensionPoint
-	if len(d.Config.Extensions) > 0 {
-		extensions = d.Config.Extensions
-	}
-
 	return oci.Runtime{
-		ID:         d.Config.ID,
-		Version:    d.Config.Version,
-		Image:      d.ManifestDigest,
-		Layer:      d.Layer().Digest,
-		Path:       d.Config.Path,
-		Env:        d.Config.Env,
-		Aliases:    aliases,
-		Extensions: extensions,
-		Uses:       d.Config.Permissions.Uses,
+		ID:      d.Config.ID,
+		Version: d.Config.Version,
+		Image:   d.ManifestDigest,
+		Layer:   d.Layer().Digest,
+		Path:    d.Config.Path,
+		Env:     d.Config.Env,
+		Uses:    d.Config.Permissions.Uses,
 	}
 }
 
@@ -97,8 +86,8 @@ func ResolveDependency(ctx *context.Context, recipePath string, kind DependencyK
 	if target.AppID != nil && !strings.EqualFold(*target.AppID, config.ID) {
 		return nil, fmt.Errorf("%s: %s %s: %s is %s, not %s", recipePath, kind, alias, digest, config.ID, *target.AppID)
 	}
-	if kind == DependencyRuntime && len(config.Runtimes) > 0 {
-		return nil, fmt.Errorf("%s: %s %s is %s, which has runtimes of its own; quasidock doesn't support that", recipePath, kind, alias, config.ID)
+	if kind == DependencyRuntime && len(config.From) > 0 {
+		return nil, fmt.Errorf("%s: %s %s is %s, which has base images of its own; quasidock doesn't support that", recipePath, kind, alias, config.ID)
 	}
 
 	_ = ctx.Store.MarkBuildImage(digest)

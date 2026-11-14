@@ -1,44 +1,28 @@
 {
-  "id": "com.github.reds.LogisimEvolution",
+  "id": "logisim-evolution",
   "version": "5.0.0",
   "name": "Logisim-evolution",
   "summary": "Design and simulate digital logic circuits, in its window or from the command line",
   "homepage": "https://github.com/logisim-evolution/logisim-evolution",
   "license": "GPL-3.0-or-later",
-  "command": "${java}\\bin\\java.exe",
-  "args": ["--enable-native-access=ALL-UNNAMED", "-jar", "${app}\\logisim-evolution.jar"],
-  "permissions": { "filesystem": ["cwd", "desktop", "documents", "downloads"] },
+  "entrypoint": ["${java}\\bin\\java.exe", "--enable-native-access=ALL-UNNAMED", "-jar", "${app}\\logisim-evolution.jar"],
+  "permissions": {
+    "filesystem": ["cwd"]
+  },
   "registry": ["Software\\JavaSoft\\Prefs\\com\\cburch\\logisim"],
-  "runtimes": { "java": "org.openjdk.java:25.0.5_8@sha256:95555a36dec93c035655f66162ec5b557feaecb14c4cab3320a9181a93f1c823" },
-  "exports": {
-    "logisim": { "command": "${java}\\bin\\java.exe", "args": ["--enable-native-access=ALL-UNNAMED", "-jar", "${app}\\logisim-evolution.jar"] },
-    "logisim-gui": { "command": "${java}\\bin\\javaw.exe", "args": ["--enable-native-access=ALL-UNNAMED", "-jar", "${app}\\logisim-evolution.jar"] }
-  },
-  "shortcuts": {
-    "Logisim-evolution": { "command": "logisim-gui", "description": "Design and simulate digital logic circuits", "icon": "Logisim-evolution.ico" }
-  },
-  "associations": {
-    ".circ": { "command": "logisim-gui", "description": "Logisim circuit", "icon": "Logisim-evolution.ico" }
-  },
+  "from": { "java": "java:25.0.5_8@sha256:95555a36dec93c035655f66162ec5b557feaecb14c4cab3320a9181a93f1c823" },
   "sdk": {
-    "gradle": "org.gradle.gradle:9.8.1@sha256:8050cb2afa977601b0969f067a1eb460c3f5fa147911bd599c89307136b843c8",
-    "busybox": "net.frippery.busybox:FRP-6075-g169694ebd@sha256:db9d39727bfdd4d176b5878c0a125daa8a2396ea21e0f01a6a372f53d9d97e5d"
+    "gradle": "gradle:9.8.1@sha256:8050cb2afa977601b0969f067a1eb460c3f5fa147911bd599c89307136b843c8",
+    "busybox": "busybox:FRP-6075-g169694ebd@sha256:db9d39727bfdd4d176b5878c0a125daa8a2396ea21e0f01a6a372f53d9d97e5d"
   },
-  "modules": [
+  "stages": [
     {
       "name": "logisim-evolution",
       "sources": [
-        {
-          "url": "https://github.com/logisim-evolution/logisim-evolution/archive/refs/tags/v5.0.0.tar.gz",
-          "sha256": "f988340da25e65ae3e8e8b29e6b16b4014661ed730a8952fc5c618337828f9ca",
-          "strip": 1
-        }
+        { "url": "https://github.com/logisim-evolution/logisim-evolution/archive/refs/tags/v5.0.0.tar.gz", "sha256": "f988340da25e65ae3e8e8b29e6b16b4014661ed730a8952fc5c618337828f9ca", "strip": 1 }
       ],
       "vendor": {
-        "commands": [
-          "gradle -g gradle-home shadowJar",
-          "gradle-vendor gradle-home vendor"
-        ],
+        "commands": ["gradle -g gradle-home shadowJar", "gradle-vendor gradle-home vendor"],
         "dir": "vendor",
         "sha256": "e780a6a296e1df3987e950f5ce9627fb63c97d8789ad2ccf61fff1fc6211ac5c"
       },

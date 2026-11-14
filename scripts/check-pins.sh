@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Checks that the registry has what the published recipes pin: each image a
-# recipe names by digest ("org.gtk.Gtk4:4.24.1@sha256:...", as a runtime, an
+# recipe names by digest ("gtk4:4.24.1@sha256:...", as a base image, an
 # SDK or an image source), and each recipe's own version, by tag. Something
 # missing means a fresh store can't build a recipe that pins it, which the
 # Reproduce workflow can't see for recipes it skips. On the default registry, each
@@ -137,10 +137,10 @@ for recipe in "$@"; do
         echo "missing: $id:$version, which $name makes, isn't published (or not publicly)"
         missing=$((missing + 1))
     fi
-    # The pins in the recipe's "runtimes" (one object, no "}" inside), which
+    # The pins in the recipe's "from" (one object, no "}" inside), which
     # an install brings along: only these warn when older than their tag. An
     # older SDK is the recipe's business and costs nothing at run time.
-    runtime_pins=$(awk '/"runtimes": *\{/ { on = 1 } on { print } on && /\}/ { exit }' "$recipe" |
+    runtime_pins=$(awk '/"from": *\{/ { on = 1 } on { print } on && /\}/ { exit }' "$recipe" |
         grep -o "$pin_re" | tr -d '"' || true)
     for pin in $(grep -o "$pin_re" "$recipe" | tr -d '"' | sort -u); do
         pins=$((pins + 1))

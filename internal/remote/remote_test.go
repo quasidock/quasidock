@@ -117,12 +117,12 @@ func TestMountSources(t *testing.T) {
 		},
 	}
 	config := oci.AppConfig{
-		ID:      "io.prettier.prettier",
-		Version: "3",
-		Command: "${node}\\node.exe",
-		Runtimes: map[string]oci.Runtime{
+		ID:         "prettier",
+		Version:    "3",
+		Entrypoint: []string{"${node}\\node.exe"},
+		From: map[string]oci.Runtime{
 			"node": {
-				ID:      "org.nodejs.node",
+				ID:      "node",
 				Version: "24",
 				Image:   "sha256:" + repeatStr("d", 64),
 				Layer:   nodeLayer,
@@ -130,18 +130,18 @@ func TestMountSources(t *testing.T) {
 		},
 	}
 
-	target, _ := registry.ParseReference("ghcr.io/zigsaw-io/io.prettier.prettier:3")
+	target, _ := registry.ParseReference("ghcr.io/zigsaw-io/prettier:3")
 
 	// Built locally
 	built := MountSources(target, "D:\\recipes\\prettier.json", manifest, config)
-	if built.ByDigest[nodeLayer] != "zigsaw-io/org.nodejs.node" {
+	if built.ByDigest[nodeLayer] != "zigsaw-io/node" {
 		t.Errorf("built mount for node = %q", built.ByDigest[nodeLayer])
 	}
 	if _, ok := built.ByDigest[ownLayer]; ok {
 		t.Errorf("expected no mount for own layer")
 	}
 	repos := built.Repositories()
-	if len(repos) != 1 || repos[0] != "zigsaw-io/org.nodejs.node" {
+	if len(repos) != 1 || repos[0] != "zigsaw-io/node" {
 		t.Errorf("unexpected repos: %v", repos)
 	}
 
@@ -155,7 +155,7 @@ func TestMountSources(t *testing.T) {
 
 	// Pulled from different registry
 	other := MountSources(target, "docker.io/me/prettier:3", manifest, config)
-	if len(other.ByDigest) != 1 || other.ByDigest[nodeLayer] != "zigsaw-io/org.nodejs.node" {
+	if len(other.ByDigest) != 1 || other.ByDigest[nodeLayer] != "zigsaw-io/node" {
 		t.Errorf("unexpected other mounts: %+v", other.ByDigest)
 	}
 }

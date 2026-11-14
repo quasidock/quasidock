@@ -1,18 +1,20 @@
 {
   "id": "test.qt.hello",
   "version": "1",
-  "command": "bin/hello-qt.exe",
+  "entrypoint": "bin/hello-qt.exe",
   "path": ["bin"],
-  "permissions": { "filesystem": ["cwd"] },
-  "exports": {
-    "hello-quick": { "command": "bin/hello-quick.exe" }
+  "permissions": {
+    "filesystem": ["cwd"]
   },
-  "runtimes": { "qt": "io.qt.Qt6@@QT@" },
-  "sdk": { "qtsdk": "io.qt.Qt6.Sdk@@QTSDK@" },
-  "modules": [
+  "from": { "qt": "qt6@@QT@" },
+  "sdk": { "qtsdk": "qt6-sdk@@QTSDK@" },
+  "stages": [
     {
       "name": "hello",
-      "sources": [{ "path": "CMakeLists.txt" }, { "path": "hello.cpp" }],
+      "sources": [
+        { "path": "CMakeLists.txt" },
+        { "path": "hello.cpp" }
+      ],
       "build": [
         "cmake -S . -B out -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=\"$PREFIX\"",
         "cmake --build out",

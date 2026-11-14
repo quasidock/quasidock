@@ -1,26 +1,23 @@
 {
-  "id": "net.php.php",
+  "id": "php",
   "version": "8.5.12-1",
   "name": "PHP",
   "summary": "PHP 8.5 (NTS, x64), the scripting language, as php.net builds it for Windows; needs the Visual C++ Redistributable",
   "homepage": "https://www.php.net/",
   "license": "PHP-3.01",
-  "command": "php.exe",
+  "entrypoint": "php.exe",
   "env": { "PHPRC": "${app}", "SSL_CERT_FILE": "${roots}" },
-  "permissions": { "network": true, "filesystem": ["cwd"] },
-  "extensions": {
-    "net.php.php": { "version": "API20250925,NTS,VS17", "join": ["PHP_INI_SCAN_DIR"] }
-  },
-  "exports": {
-    "php": { "command": "php.exe" },
-    "php-cgi": { "command": "php-cgi.exe" },
-    "phpdbg": { "command": "phpdbg.exe" }
+  "permissions": {
+    "network": true,
+    "filesystem": ["cwd"]
   },
   "cleanup": ["/dev", "/php8embed.lib"],
-  "modules": [
+  "stages": [
     {
       "name": "php",
-      "sources": [{ "image": "net.php.php.Sdk:8.5.12-1@sha256:2e0bfb6e3555a368c25ec5b318f508fed836f8a032ed35b0560e642aa102ae2a" }]
+      "sources": [
+        { "image": "php-sdk:8.5.12-1@sha256:2e0bfb6e3555a368c25ec5b318f508fed836f8a032ed35b0560e642aa102ae2a" }
+      ]
     }
   ]
 }

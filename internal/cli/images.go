@@ -50,7 +50,8 @@ func inspectImage(ctx *context.Context, idx *store.ImageIndex, ref store.Ref) (i
 	out.Quasidock = img.Config
 	out.Source = ref.Source
 	out.Default = idx.Defaults[strings.ToLower(ref.ID)] == ref.Manifest
-	out.Config.Cmd = append([]string{img.Config.Command}, img.Config.Args...)
+	out.Config.Entrypoint = append([]string(nil), img.Config.Entrypoint...)
+	out.Config.Cmd = append([]string(nil), img.Config.Cmd...)
 	out.Config.Env = []string{}
 	for k, v := range img.Config.Env {
 		out.Config.Env = append(out.Config.Env, k+"="+v)

@@ -35,7 +35,7 @@ if [ -n "${SEED_DOWNLOADS:-}" ]; then
         cp -n "$(cygpath -u "$SEED_DOWNLOADS")"/* "$(cygpath -u "$QUASIDOCK_HOME")/cache/downloads/"
 fi
 
-BB=net.frippery.busybox
+BB=busybox
 OTHER=test.sandbox.other
 
 failures=0
@@ -95,7 +95,7 @@ release() {
 (cd "$root" && go run ./scripts/build.go hostprobe) || { echo "building the host probe failed"; exit 1; }
 hostprobe="$root\\out\\test\\quasidock-hostprobe.exe"
 "$zigsaw" build "$root/recipes/busybox.json" >/dev/null 2>&1 || { echo "building busybox failed"; exit 1; }
-sed "s/\"net.frippery.busybox\"/\"$OTHER\"/" "$root/recipes/busybox.json" >"$work\\other.json"
+sed "s/\"busybox\"/\"$OTHER\"/" "$root/recipes/busybox.json" >"$work\\other.json"
 "$zigsaw" build "$work\\other.json" >/dev/null 2>&1 || { echo "building the second app failed"; exit 1; }
 
 mkdir -p "$work\\rw" "$work\\ro" "$work\\outside" "$work\\cwd" "$work\\ac" "$work\\mine" "$work\\own"
@@ -157,8 +157,8 @@ fi
 # line chooses one: the app's overrides over the store-wide ones (--global).
 
 SOFT=test.sandbox.soft
-sed -e "s/\"net.frippery.busybox\"/\"$SOFT\"/" \
-    -e 's/"command": "busybox.exe",/&\n  "permissions": { "sandbox": "soft" },/' \
+sed -e "s/\"busybox\"/\"$SOFT\"/" \
+    -e 's/"entrypoint": "busybox.exe",/&\n  "permissions": { "sandbox": "soft" },/' \
     "$root/recipes/busybox.json" >"$work\\soft.json"
 soft_built=$("$zigsaw" build "$work\\soft.json" 2>&1 </dev/null) || { echo "building the soft app failed: $soft_built"; exit 1; }
 mkdir -p "$work\\global"
@@ -249,8 +249,8 @@ check "cwd: one a command-line --filesystem=cwd grants goes after its run" cmdli
 # zigsaw's.
 
 FOLD=test.sandbox.folders
-sed -e "s/\"net.frippery.busybox\"/\"$FOLD\"/" \
-    -e 's/"command": "busybox.exe",/&\n  "permissions": { "filesystem": ["documents", "xdg-later"] },/' \
+sed -e "s/\"busybox\"/\"$FOLD\"/" \
+    -e 's/"entrypoint": "busybox.exe",/&\n  "permissions": { "filesystem": ["cwd", "xdg-later"] },/' \
     "$root/recipes/busybox.json" >"$work\\folders.json"
 "$zigsaw" build "$work\\folders.json" >/dev/null 2>&1 || { echo "building the folders app failed"; exit 1; }
 warns_unknown() { bash "$QD_IMAGES_HELPER" run "$zigsaw" $FOLD true 2>&1 </dev/null | grep -q 'xdg-later.*doesn.t know'; }
@@ -267,8 +267,8 @@ REG2=test.sandbox.registry2
 key="Software\\QuasidockTest\\sandbox-$$"
 record="HKCU\\Software\\quasidock\\keys\\Software/ZigsawTest/sandbox-$$"
 for app in $REG $REG2; do
-    sed -e "s/\"net.frippery.busybox\"/\"$app\"/" \
-        -e "s/\"command\": \"busybox.exe\",/&\n  \"registry\": [\"Software\\\\\\\\ZigsawTest\\\\\\\\sandbox-$$\"],/" \
+    sed -e "s/\"busybox\"/\"$app\"/" \
+        -e "s/\"entrypoint\": \"busybox.exe\",/&\n  \"registry\": [\"Software\\\\\\\\ZigsawTest\\\\\\\\sandbox-$$\"],/" \
         "$root/recipes/busybox.json" >"$work\\$app.json"
     "$zigsaw" build "$work\\$app.json" >/dev/null 2>&1 || { echo "building $app failed"; exit 1; }
 done
@@ -356,8 +356,8 @@ reg delete "HKCU\\$key" /f >/dev/null 2>&1
 # it back deletes the key its run made above it, not the one that was there.
 REG3=test.sandbox.registry3
 deep="Software\\QuasidockTest\\deep-$$"
-sed -e "s/\"net.frippery.busybox\"/\"$REG3\"/" \
-    -e "s/\"command\": \"busybox.exe\",/&\n  \"registry\": [\"Software\\\\\\\\ZigsawTest\\\\\\\\deep-$$\\\\\\\\made\\\\\\\\settings\"],/" \
+sed -e "s/\"busybox\"/\"$REG3\"/" \
+    -e "s/\"entrypoint\": \"busybox.exe\",/&\n  \"registry\": [\"Software\\\\\\\\ZigsawTest\\\\\\\\deep-$$\\\\\\\\made\\\\\\\\settings\"],/" \
     "$root/recipes/busybox.json" >"$work\\$REG3.json"
 "$zigsaw" build "$work\\$REG3.json" >/dev/null 2>&1 || { echo "building $REG3 failed"; exit 1; }
 only_what_it_made() {
@@ -395,7 +395,7 @@ qd_remove_app "$zigsaw" $OTHER >/dev/null 2>&1 </dev/null
 # the program: it prints its integrity level.
 
 PROG=test.sandbox.programs
-sed "s/\"net.frippery.busybox\"/\"$PROG\"/" "$root/recipes/busybox.json" >"$work\\programs.json"
+sed "s/\"busybox\"/\"$PROG\"/" "$root/recipes/busybox.json" >"$work\\programs.json"
 "$zigsaw" build "$work\\programs.json" >/dev/null 2>&1 || { echo "building the fourth app failed"; exit 1; }
 mkdir -p "$work\\prog" "$work\\progac" "$work\\lowexe"
 cp "$hostprobe" "$work\\prog\\src.bin" && cp "$hostprobe" "$work\\progac\\src.bin"
@@ -520,7 +520,7 @@ done
 za() { QUASIDOCK_HOME="$store_a" "$zigsaw" "$@" </dev/null; }
 zb() { QUASIDOCK_HOME="$store_b" "$zigsaw" "$@" </dev/null; }
 LEDGER=test.sandbox.ledger
-sed -e "s/\"net.frippery.busybox\"/\"$LEDGER\"/" "$root/recipes/busybox.json" >"$work\\ledger.json"
+sed -e "s/\"busybox\"/\"$LEDGER\"/" "$root/recipes/busybox.json" >"$work\\ledger.json"
 za build "$work\\ledger.json" >/dev/null 2>&1 && zb build "$work\\ledger.json" >/dev/null 2>&1 ||
     { echo "building the record's app failed"; exit 1; }
 mkdir -p "$work\\both"

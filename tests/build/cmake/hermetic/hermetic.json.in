@@ -1,16 +1,14 @@
 {
   "id": "test.build.cmake-hermetic",
   "version": "1",
-  "command": "found.txt",
-  "exports": {},
-  "sdk": {
-    "cmake": "org.cmake.cmake@@CMAKE@",
-    "busybox": "net.frippery.busybox@@BUSYBOX@"
-  },
-  "modules": [
+  "entrypoint": "found.txt",
+  "sdk": { "cmake": "cmake@@CMAKE@", "busybox": "busybox@@BUSYBOX@" },
+  "stages": [
     {
       "name": "hermetic",
-      "sources": [{ "path": "CMakeLists.txt" }],
+      "sources": [
+        { "path": "CMakeLists.txt" }
+      ],
       "build": ["cmake -S . -B out -DCMAKE_INSTALL_PREFIX=\"$PREFIX\""]
     }
   ]

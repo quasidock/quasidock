@@ -1,25 +1,24 @@
 {
-  "id": "land.oras.oras",
+  "id": "oras",
   "version": "1.3.6",
   "name": "ORAS",
   "summary": "Pushes and pulls files and other artifacts to and from OCI registries",
   "homepage": "https://oras.land/",
   "license": "Apache-2.0",
-  "command": "oras.exe",
-  "permissions": { "network": true, "filesystem": ["cwd"] },
-  "sdk": {
-    "go": "org.golang.go:1.27.3@sha256:fb6554b0d89f578112c72b92c87a05583980578328180762571770884b3bc162",
-    "busybox": "net.frippery.busybox:FRP-6075-g169694ebd@sha256:db9d39727bfdd4d176b5878c0a125daa8a2396ea21e0f01a6a372f53d9d97e5d"
+  "entrypoint": "oras.exe",
+  "permissions": {
+    "network": true,
+    "filesystem": ["cwd"]
   },
-  "modules": [
+  "sdk": {
+    "go": "go:1.27.3@sha256:fb6554b0d89f578112c72b92c87a05583980578328180762571770884b3bc162",
+    "busybox": "busybox:FRP-6075-g169694ebd@sha256:db9d39727bfdd4d176b5878c0a125daa8a2396ea21e0f01a6a372f53d9d97e5d"
+  },
+  "stages": [
     {
       "name": "oras",
       "sources": [
-        {
-          "url": "https://proxy.golang.org/oras.land/oras/@v/v1.3.6.zip",
-          "sha256": "8d8aceae90dcec197637b7e90d44527037d0689537d31099c3e810408b0781bc",
-          "strip": 2
-        }
+        { "url": "https://proxy.golang.org/oras.land/oras/@v/v1.3.6.zip", "sha256": "8d8aceae90dcec197637b7e90d44527037d0689537d31099c3e810408b0781bc", "strip": 2 }
       ],
       "env": { "CGO_ENABLED": "0" },
       "vendor": {

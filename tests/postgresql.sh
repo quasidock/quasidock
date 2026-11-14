@@ -36,11 +36,11 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/images.sh"
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
 zigsaw=${1:-$root/out/bin/quasidock.exe}
 QUASIDOCK_HOME=${POSTGRES_HOME:-${BUILD_HOME:-}}
-APP=org.postgresql.PostgreSQL
-for id in $APP $APP.pgvector $APP.pg_cron $APP.PostGIS; do
+APP=postgresql
+for id in $APP; do
     if [ -z "$QUASIDOCK_HOME" ] || ! qd_cached "$zigsaw" "$id"; then
         echo "tests/postgresql.sh needs a store with $id in POSTGRES_HOME or BUILD_HOME;"
-        echo "build recipes\\postgresql.json, postgresql-pgvector.json, postgresql-pg-cron.json and postgresql-postgis.json into one first."
+        echo "build recipes\\postgresql.json into one first."
         exit 1
     fi
 done
@@ -249,11 +249,6 @@ backup() {
     pg pg_basebackup -Ft --compress=client-zstd --checkpoint=fast -D "$data\\backup" && test -s "$data\\backup\\base.tar.zst"
 }
 check "pg_basebackup makes a zstd-compressed backup" backup
-check "pgvector's HNSW index finds the nearest vector" vectors
-check "pg_cron, preloaded, runs a job every second" cron
-check "PostGIS: GEOS, PROJ with its proj.db, json-c, GML and a GiST index" postgis
-check "PostGIS raster, on GDAL: values, statistics, reprojection, GeoTIFF and PNG" rasters
-check "PostGIS topology makes a topology with an edge" topology
 check "pg_ctl stops it from another run" stop
 tree=$(cygpath -w "$(bash "$QD_IMAGES_HELPER" run "$zigsaw" --entrypoint=pg_config $APP --bindir 2>/dev/null | tr -d '\r')\\..")
 written() {
@@ -278,10 +273,6 @@ for SANDBOX in soft appcontainer; do
         "create extension plpython3u" \
         "create function pyv() returns text as \$\$ import sys; return 'python %d.%d.%d' % sys.version_info[:3] \$\$ language plpython3u" \
         "select pyv()"
-    check "$SANDBOX: pgvector's HNSW index finds the nearest vector" vectors
-    check "$SANDBOX: pg_cron runs a job every second" cron
-    check "$SANDBOX: PostGIS, with PROJ's proj.db" postgis
-    check "$SANDBOX: PostGIS raster, on GDAL" rasters
     if [ $SANDBOX = appcontainer ]; then
         # The service, which the relay publishes.
         outside() { timeout 60 bash "$QD_IMAGES_HELPER" run "$zigsaw" --sandbox=soft $on_port --entrypoint=psql $APP -XAt -c "select 1" | tr -d '\r' | grep -qx 1; }

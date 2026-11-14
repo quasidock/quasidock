@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # GTK 3 end to end: GTK 3's images are an add-on to GTK 4's. An app built
-# against GTK 3's SDK image (org.gtk.Gtk3.Sdk) and GTK 4's, with Meson and
-# llvm-mingw's Clang, runs on both runtimes (org.gtk.Gtk3 and org.gtk.Gtk4),
+# against GTK 3's SDK image (gtk3-sdk) and GTK 4's, with Meson and
+# llvm-mingw's Clang, runs on both runtimes (gtk3 and gtk4),
 # opens a window and draws it in each sandbox, with GTK 3's settings schemas
-# and the legacy icon theme from its runtime; GTK 3's demos (org.gtk.Gtk3demo)
+# and the legacy icon theme from its runtime; GTK 3's demos (gtk3demo)
 # run, with the windowless shim and Start menu shortcuts (in a temporary
 # folder). Gnumeric (recipes/gnumeric.json) converts a spreadsheet between
 # CSV, Excel and OpenDocument with ssconvert in each sandbox, draws charts,
@@ -41,16 +41,16 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/images.sh"
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
 zigsaw=${1:-$root/out/bin/quasidock.exe}
 QUASIDOCK_HOME=${GTK_HOME:-${BUILD_HOME:-}}
-if [ -z "$QUASIDOCK_HOME" ] || ! qd_cached "$zigsaw" "org.gtk.Gtk4" || ! qd_cached "$zigsaw" "org.gtk.Gtk4.Sdk"; then
-    echo "tests/gtk3.sh needs a store with org.gtk.Gtk4 and org.gtk.Gtk4.Sdk in GTK_HOME or BUILD_HOME;"
+if [ -z "$QUASIDOCK_HOME" ] || ! qd_cached "$zigsaw" "gtk4" || ! qd_cached "$zigsaw" "gtk4-sdk"; then
+    echo "tests/gtk3.sh needs a store with gtk4 and gtk4-sdk in GTK_HOME or BUILD_HOME;"
     echo "build recipes\\gtk4-sdk.json and recipes\\gtk4.json into one first."
     exit 1
 fi
 export QUASIDOCK_HOME
 work=$(cygpath -w "$(mktemp -d)")
 APP=test.gtk.hello3
-DEMO=org.gtk.Gtk3demo
-GNUMERIC=org.gnome.Gnumeric
+DEMO=gtk3demo
+GNUMERIC=gnumeric
 mkdir -p "$work\\folders\\Documents"
 
 failures=0
@@ -105,15 +105,15 @@ build_image() {
     qd_cached "$zigsaw" "$1" || installed_here="$installed_here $1"
     install_again "$1" "$2" >"$work\\$2.log" 2>&1 || echo "installing $2 failed: $(tail -1 "$work\\$2.log")"
 }
-build_image org.gtk.Gtk3.Sdk gtk3-sdk.json
-build_image org.gtk.Gtk3 gtk3.json
+build_image gtk3-sdk gtk3-sdk.json
+build_image gtk3 gtk3.json
 build_image $DEMO gtk3demo.json
 . "$(cygpath -u "$root")/tests/acprobe.sh"
 acprobe_run "$zigsaw" "$root" "$work"
 
 cp "$root\\tests\\gtk\\gtk3\\hello3.c" "$root\\tests\\gtk\\gtk3\\meson.build" "$work\\"
-sed -e "s/@GTK@/$(manifest_of org.gtk.Gtk4)/" -e "s/@GTKSDK@/$(manifest_of org.gtk.Gtk4.Sdk)/" \
-    -e "s/@GTK3@/$(manifest_of org.gtk.Gtk3)/" -e "s/@GTK3SDK@/$(manifest_of org.gtk.Gtk3.Sdk)/" \
+sed -e "s/@GTK@/$(manifest_of gtk4)/" -e "s/@GTKSDK@/$(manifest_of gtk4-sdk)/" \
+    -e "s/@GTK3@/$(manifest_of gtk3)/" -e "s/@GTK3SDK@/$(manifest_of gtk3-sdk)/" \
     "$root\\tests\\gtk\\gtk3\\hello3.json.in" >"$work\\hello3.json"
 check "an app builds against GTK 3's SDK image and GTK 4's, finding gtk+-3.0 with pkg-config" z build "$work\\hello3.json"
 # Runs from the work directory: the app has the cwd permission.
@@ -130,7 +130,7 @@ check "with --sandbox=soft" drew --sandbox=soft
 check "with --sandbox=appcontainer" drew --sandbox=appcontainer
 # GTK 4's runtime's variables, which GTK 3's apps have too.
 check "GLib keeps settings in a key file in the app's data" sh -c "timeout 60 bash '$QD_IMAGES_HELPER' run \"\$0\" $APP 2>&1 | grep -q '^settings in GKeyfileSettingsBackend'" "$zigsaw"
-runtime_dir="$QUASIDOCK_HOME\\deploy\\$(grep -o 'sha256:[0-9a-f]*' "$QUASIDOCK_HOME\\blobs\\sha256\\$(manifest_of org.gtk.Gtk3 | cut -d: -f2)" | tail -1 | cut -d: -f2)"
+runtime_dir="$QUASIDOCK_HOME\\deploy\\$(grep -o 'sha256:[0-9a-f]*' "$QUASIDOCK_HOME\\blobs\\sha256\\$(manifest_of gtk3 | cut -d: -f2)" | tail -1 | cut -d: -f2)"
 runtime_files() {
     test -f "$runtime_dir\\bin\\libgtk-3-0.dll" -a -f "$runtime_dir\\bin\\libatk-1.0-0.dll" || return 1
     ! test -e "$runtime_dir\\include" && ! test -e "$runtime_dir\\lib\\pkgconfig" && ! test -e "$runtime_dir\\bin\\libglib-2.0-0.dll" || return 1
@@ -200,11 +200,11 @@ check "with --sandbox=appcontainer" stays_up 20 --sandbox=appcontainer --filesys
 # Meld, a Python app: PyGObject's runtime runs it, with GTK 3 and GTK 4
 # through their runtimes' typelibs. Built here unless the store has them
 # (about 3 minutes).
-MELD=org.gnome.Meld
-build_image org.gnome.PyGObject.Sdk pygobject-sdk.json
-build_image org.gnome.PyGObject pygobject.json
+MELD=meld
+build_image pygobject-sdk pygobject-sdk.json
+build_image pygobject pygobject.json
 build_image $MELD meld.json
-pygobject_dir="$QUASIDOCK_HOME\\deploy\\$(grep -o 'sha256:[0-9a-f]*' "$QUASIDOCK_HOME\\blobs\\sha256\\$(manifest_of org.gnome.PyGObject | cut -d: -f2)" | tail -1 | cut -d: -f2)"
+pygobject_dir="$QUASIDOCK_HOME\\deploy\\$(grep -o 'sha256:[0-9a-f]*' "$QUASIDOCK_HOME\\blobs\\sha256\\$(manifest_of pygobject | cut -d: -f2)" | tail -1 | cut -d: -f2)"
 printf '%s\n' 'import gi' 'gi.require_version("Gtk", "3.0")' 'gi.require_version("GtkSource", "4")' \
     'from gi.repository import Gtk, GtkSource, Pango' \
     'print("GTK", Gtk.get_major_version(), Gtk.get_minor_version(), Gtk.get_micro_version())' \
@@ -301,9 +301,9 @@ published_ids=$(for name in $(grep -v '^#' "$root\\scripts\\published-recipes.tx
 done)
 one_build() {
     local runtime layer id on=0 others=""
-    for runtime in org.gtk.Gtk4 org.gtk.Gtk3; do
+    for runtime in gtk4 gtk3; do
         layer=$(layers_of $runtime)
-        for id in $(z inspect -f "{{range .Quasidock.Runtimes}}{{if eq .ID \"$runtime\"}}{{$.Quasidock.ID}}{{end}}{{end}}" $(z images -q) | tr -d '\r'); do
+        for id in $(z inspect -f "{{range .Quasidock.From}}{{if eq .ID \"$runtime\"}}{{$.Quasidock.ID}}{{end}}{{end}}" $(z images -q) | tr -d '\r'); do
             grep -qxF "$id" <<<"$published_ids" || continue
             on=$((on + 1))
             layers_of "$id" | grep -qxF "$layer" || others="$others $id"

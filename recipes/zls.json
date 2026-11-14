@@ -1,26 +1,22 @@
 {
-  "id": "org.zigtools.zls",
+  "id": "zls",
   "version": "0.17.0",
   "name": "ZLS",
   "summary": "The Zig language server: completions, hover, go to definition and diagnostics for Zig in your editor",
   "homepage": "https://github.com/zigtools/zls",
   "license": "MIT",
-  "command": "bin\\zls.exe",
+  "entrypoint": "bin\\zls.exe",
   "path": ["${zig}"],
-  "permissions": { "filesystem": ["cwd"] },
-  "runtimes": { "zig": "org.ziglang.zig:0.17.0@sha256:93ec2b6b36708ae80ffac87872e70dafaee350cd2d49a95dd2fa5847d0a10449" },
-  "sdk": {
-    "busybox": "net.frippery.busybox:FRP-6075-g169694ebd@sha256:db9d39727bfdd4d176b5878c0a125daa8a2396ea21e0f01a6a372f53d9d97e5d"
+  "permissions": {
+    "filesystem": ["cwd"]
   },
-  "modules": [
+  "from": { "zig": "zig:0.17.0@sha256:93ec2b6b36708ae80ffac87872e70dafaee350cd2d49a95dd2fa5847d0a10449" },
+  "sdk": { "busybox": "busybox:FRP-6075-g169694ebd@sha256:db9d39727bfdd4d176b5878c0a125daa8a2396ea21e0f01a6a372f53d9d97e5d" },
+  "stages": [
     {
       "name": "zls",
       "sources": [
-        {
-          "url": "https://github.com/zigtools/zls/archive/refs/tags/0.17.0.tar.gz",
-          "sha256": "f77940720768daf67c01802ea3cf3029dfd8a74afd7b68b39676c4f814dd992e",
-          "strip": 1
-        }
+        { "url": "https://github.com/zigtools/zls/archive/refs/tags/0.17.0.tar.gz", "sha256": "f77940720768daf67c01802ea3cf3029dfd8a74afd7b68b39676c4f814dd992e", "strip": 1 }
       ],
       "vendor": {
         "commands": ["zig build --fetch"],

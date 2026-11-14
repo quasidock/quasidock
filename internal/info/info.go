@@ -109,12 +109,12 @@ func WriteContents(st *store.Store, w io.Writer, manifest oci.Manifest, cfg oci.
 	}
 	WriteLine(w, "download", dlStr)
 
-	var runtimes []string
-	for _, r := range cfg.Runtimes {
-		runtimes = append(runtimes, fmt.Sprintf("%s %s", r.ID, r.Version))
+	var from []string
+	for _, r := range cfg.From {
+		from = append(from, fmt.Sprintf("%s %s", r.ID, r.Version))
 	}
-	sort.Strings(runtimes)
-	WriteLine(w, "runtimes", strings.Join(runtimes, ", "))
+	sort.Strings(from)
+	WriteLine(w, "from", strings.Join(from, ", "))
 
 	ownLayer := oci.OwnLayer(&manifest)
 	if ownLayer.Digest != "" {
@@ -123,12 +123,12 @@ func WriteContents(st *store.Store, w io.Writer, manifest oci.Manifest, cfg oci.
 		}
 	}
 
-	var cmds []string
-	for k := range cfg.Exports {
-		cmds = append(cmds, k)
+	if len(cfg.Entrypoint) > 0 {
+		WriteLine(w, "entrypoint", strings.Join(cfg.Entrypoint, " "))
 	}
-	sort.Strings(cmds)
-	WriteLine(w, "commands", strings.Join(cmds, ", "))
+	if len(cfg.Cmd) > 0 {
+		WriteLine(w, "cmd", strings.Join(cfg.Cmd, " "))
+	}
 
 	if len(cfg.Permissions.Services) > 0 {
 		WriteLine(w, "serves", oci.DescribeServices(cfg.Permissions.Services))

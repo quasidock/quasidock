@@ -22,7 +22,7 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/images.sh"
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
 zigsaw=${1:-$root/out/bin/quasidock.exe}
 QUASIDOCK_HOME=${GDAL_HOME:-${BUILD_HOME:-}}
-APP=org.gdal.GDAL
+APP=gdal
 if [ -z "$QUASIDOCK_HOME" ] || ! qd_cached "$zigsaw" "$APP"; then
     echo "tests/gdal.sh needs a store with $APP in GDAL_HOME or BUILD_HOME;"
     echo "build recipes\\gdal-sdk.json and recipes\\gdal.json into one first."

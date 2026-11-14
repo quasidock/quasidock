@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Helpers for repository scripts. App/tool suites explicitly choose their image's
-# default exported command as an entrypoint; CLI integration tests exercise CMD
+# Helpers for repository scripts. App/tool suites preserve the image's
+# entrypoint when passing arguments; CLI integration tests exercise command
 # replacement directly. All metadata comes from inspect, never the store layout.
 
 QD_IMAGES_HELPER="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/images.sh"
@@ -33,11 +33,12 @@ qd_run() {
         else "$cli" run "${options[@]}" "$@"; fi
         return
     fi
-    local image=$1 entrypoint
-    # Prefer the export matching the default command and arguments: its embedded
-    # placeholders are expanded by the runtime, including Java/Python launchers.
-    entrypoint=$("$cli" image inspect -f '{{$c := .Quasidock.Command}}{{$a := json .Quasidock.Args}}{{range $n, $e := .Quasidock.Exports}}{{if and (eq $e.Command $c) (eq (json $e.Args) $a)}}{{$n}}{{"\n"}}{{end}}{{end}}' "$image" 2>/dev/null | tr -d '\r' | head -1)
-    if [ -z "$entrypoint" ]; then entrypoint=$("$cli" image inspect -f '{{.Quasidock.Command}}' "$image" 2>/dev/null | tr -d '\r'); fi
+    local image=$1 entrypoint=
+    # Preserve the image's entrypoint when trailing arguments are passed: multi-element
+    # entrypoints select the image ID so placeholders and leading args stay intact.
+    if [ $# -gt 1 ]; then
+        entrypoint=$("$cli" image inspect -f '{{if gt (len .Quasidock.Entrypoint) 1}}{{.Quasidock.ID}}{{else if .Quasidock.Entrypoint}}{{index .Quasidock.Entrypoint 0}}{{end}}' "$image" 2>/dev/null | tr -d '\r')
+    fi
     if [ "${QD_EXEC_RUN:-0}" = 1 ]; then
         if [ -n "$entrypoint" ]; then exec "$cli" run --entrypoint="$entrypoint" "${options[@]}" "$@"
         else exec "$cli" run "${options[@]}" "$@"; fi

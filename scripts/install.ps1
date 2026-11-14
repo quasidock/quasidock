@@ -192,5 +192,5 @@ param(
         if (Set-UserPath $true) { Write-Host "Added $Dir to your PATH. Terminals opened from now on have it." }
         if (-not (@($env:Path -split ';') | Where-Object { $_ -ne '' -and (Same-Dir $_) })) { $env:Path = "$($env:Path.TrimEnd(';'));$Dir" }
     }
-    Write-Host "Try: quasidock pull org.nodejs.node"
+    Write-Host "Try: quasidock pull node"
 } $Version $Dir $From ($NoPath -or [bool]$env:QUASIDOCK_INSTALL_NO_PATH) ([bool]$Uninstall)

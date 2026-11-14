@@ -1,26 +1,24 @@
 {
-  "id": "com.github.BurntSushi.ripgrep",
+  "id": "ripgrep",
   "version": "15.2.0",
   "name": "ripgrep",
   "summary": "Searches files for a regular expression, recursively and fast, respecting .gitignore",
   "homepage": "https://github.com/BurntSushi/ripgrep",
   "license": "Unlicense OR MIT",
-  "command": "rg.exe",
-  "permissions": { "filesystem": ["cwd:ro"] },
-  "sdk": {
-    "rust": "org.rust-lang.rust:1.99.0@sha256:e7e9706485bba88759915d9509993d0e41d340d7d8dfec6426fce1feda9a10e2",
-    "zig": "org.ziglang.zig:0.17.0@sha256:93ec2b6b36708ae80ffac87872e70dafaee350cd2d49a95dd2fa5847d0a10449",
-    "busybox": "net.frippery.busybox:FRP-6075-g169694ebd@sha256:db9d39727bfdd4d176b5878c0a125daa8a2396ea21e0f01a6a372f53d9d97e5d"
+  "entrypoint": "rg.exe",
+  "permissions": {
+    "filesystem": ["cwd:ro"]
   },
-  "modules": [
+  "sdk": {
+    "rust": "rust:1.99.0@sha256:e7e9706485bba88759915d9509993d0e41d340d7d8dfec6426fce1feda9a10e2",
+    "zig": "zig:0.17.0@sha256:93ec2b6b36708ae80ffac87872e70dafaee350cd2d49a95dd2fa5847d0a10449",
+    "busybox": "busybox:FRP-6075-g169694ebd@sha256:db9d39727bfdd4d176b5878c0a125daa8a2396ea21e0f01a6a372f53d9d97e5d"
+  },
+  "stages": [
     {
       "name": "ripgrep",
       "sources": [
-        {
-          "url": "https://static.crates.io/crates/ripgrep/ripgrep-15.2.0.crate",
-          "sha256": "a30750b6d0743bfdd2656ebbaf4555aa278c43144b84bc389bcbfa399485ec71",
-          "strip": 1
-        }
+        { "url": "https://static.crates.io/crates/ripgrep/ripgrep-15.2.0.crate", "sha256": "a30750b6d0743bfdd2656ebbaf4555aa278c43144b84bc389bcbfa399485ec71", "strip": 1 }
       ],
       "vendor": {
         "commands": ["cargo vendor --locked vendor >/dev/null"],

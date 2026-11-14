@@ -39,7 +39,7 @@ fi
 status=$?
 
 if $own_store; then
-    qd_remove_app "$quasidock" org.nodejs.node >/dev/null 2>&1
+    qd_remove_app "$quasidock" node >/dev/null 2>&1
     "$quasidock" prune --downloads >/dev/null 2>&1
     rm -rf "$QUASIDOCK_HOME"
 fi

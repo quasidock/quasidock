@@ -92,28 +92,28 @@ recipe() {
     local file=$1 id=$2 source=$3 sdk= p
     shift 3
     for p in "$@"; do sdk+="\"$p\": \"$p:1@$pin\", "; done
-    printf '{ "id": "%s", "version": "1", "command": "a.exe",\n  "sdk": { %s"x": "x:1@%s" },\n  "modules": [{ "name": "m", "sources": [{ "url": "%s", "sha256": "0" }] }] }\n' \
+    printf '{ "id": "%s", "version": "1", "entrypoint": "a.exe",\n  "sdk": { %s"x": "x:1@%s" },\n  "stages": [{ "name": "m", "sources": [{ "url": "%s", "sha256": "0" }] }] }\n' \
         "$id" "$sdk" "$pin" "$source" >"$recipes/$file.json"
 }
 
 # A chain for what rebuilds: lib <- sdk <- app, and an app that's only local.
-recipe lib org.lib https://example.org/lib-1.2.3.tar.gz
-recipe sdk org.sdk https://example.org/sdk-5.0.tar.gz org.lib
-recipe app org.app https://example.org/app-2.0.tar.gz org.sdk
-recipe no-publish/local org.local https://example.org/local-7.tar.gz org.sdk
-recipe held org.held https://example.org/held-1.0.tar.gz
-recipe dev org.dev https://example.org/dev-1.2.0.tar.gz
-recipe rc org.rc https://example.org/rc-2.0.0RC1.tgz
-recipe tagged org.tagged https://example.org/dl/R_2_9_0/tagged-2.9.0.tar.gz
-recipe plus org.plus https://example.org/dl/plus-25.0.5%2B8.zip
-recipe twoa org.twoa https://example.org/two-1.0.tar.gz
-recipe twob org.twob https://example.org/two-3.0.tar.gz
-recipe gone org.gone https://example.org/gone-1.0.tar.gz
-recipe withdrawn org.withdrawn https://example.org/withdrawn-1.0.tar.gz
-recipe away org.away https://example.org/away-1.0.tar.gz
-recipe skipped org.skipped https://example.org/skipped/abc123.tar.gz
-recipe latestonly org.latestonly https://example.org/latestonly-3000.zip
-recipe lite org.lite https://example.org/lite-3530400.zip
+recipe lib lib https://example.org/lib-1.2.3.tar.gz
+recipe sdk sdk https://example.org/sdk-5.0.tar.gz lib
+recipe app app https://example.org/app-2.0.tar.gz sdk
+recipe no-publish/local local https://example.org/local-7.tar.gz sdk
+recipe held held https://example.org/held-1.0.tar.gz
+recipe dev dev https://example.org/dev-1.2.0.tar.gz
+recipe rc rc https://example.org/rc-2.0.0RC1.tgz
+recipe tagged tagged https://example.org/dl/R_2_9_0/tagged-2.9.0.tar.gz
+recipe plus plus https://example.org/dl/plus-25.0.5%2B8.zip
+recipe twoa twoa https://example.org/two-1.0.tar.gz
+recipe twob twob https://example.org/two-3.0.tar.gz
+recipe gone gone https://example.org/gone-1.0.tar.gz
+recipe withdrawn withdrawn https://example.org/withdrawn-1.0.tar.gz
+recipe away away https://example.org/away-1.0.tar.gz
+recipe skipped skipped https://example.org/skipped/abc123.tar.gz
+recipe latestonly latestonly https://example.org/latestonly-3000.zip
+recipe lite lite https://example.org/lite-3530400.zip
 printf '# the published ones\nlib.json\nsdk.json\napp.json\n' >"$UPSTREAM_PUBLISHED"
 
 # The pages, with the versions a real page's markup has around them.
@@ -304,14 +304,14 @@ check "without --all, current ones aren't listed" sh -c "! grep -q '^| app |' '$
 
 coverage() { UPSTREAM_TABLE=$1 bash "$script" --coverage >/dev/null 2>"$work/cov.err"; }
 check "--coverage: this table covers these recipes" coverage "$without_broken"
-recipe newone org.newone https://example.org/newone-1.tar.gz
+recipe newone newone https://example.org/newone-1.tar.gz
 uncovered() { ! coverage "$without_broken" && grep -q 'no row of the table covers https://example.org/newone-1.tar.gz' "$work/cov.err"; }
 check "--coverage: a source with no row fails" uncovered
 rm "$recipes/newone.json"
 rm "$recipes/held.json"
 stale() { ! coverage "$without_broken" && grep -q "held: no recipe has a source like" "$work/cov.err"; }
 check "--coverage: a row nothing uses fails" stale
-recipe held org.held https://example.org/held-1.0.tar.gz
+recipe held held https://example.org/held-1.0.tar.gz
 no_why=$work/table3.txt
 sed 's/^skipped skip .*/skipped skip/' "$without_broken" >"$no_why"
 unexplained() { ! coverage "$no_why" && grep -q 'skipped without saying why' "$work/cov.err"; }

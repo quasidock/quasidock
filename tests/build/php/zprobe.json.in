@@ -1,12 +1,10 @@
 {
   "id": "test.build.phpext",
   "version": "1",
-  "command": "about.bat",
+  "entrypoint": "about.bat",
   "env": { "PHP_EXT_ZPROBE": "${app}", "PHP_INI_SCAN_DIR": "${app}\\conf.d" },
-  "extends": { "point": "net.php.php", "version": "API20250925,NTS,VS17" },
-  "exports": {},
-  "sdk": { "phpsdk": "net.php.php.Sdk@@PHPSDK@" },
-  "modules": [
+  "sdk": { "phpsdk": "php-sdk@@PHPSDK@" },
+  "stages": [
     {
       "name": "zprobe",
       "sources": [

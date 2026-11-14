@@ -94,15 +94,25 @@ func main() {
 
 	switch args[0] {
 	case "serve":
-		if len(args) < 2 {
+		if len(args) >= 2 {
+			serve(args[1])
+		} else if p := os.Getenv("ECHO_LISTEN"); p != "" {
+			serve(p)
+		} else {
 			win32.ExitProcess(2)
 		}
-		serve(args[1])
 	case "ping":
-		if len(args) < 2 {
+		if len(args) >= 2 {
+			if p := os.Getenv(args[1]); p != "" {
+				ping(p)
+			} else {
+				ping(args[1])
+			}
+		} else if p := os.Getenv("ECHO_LISTEN"); p != "" {
+			ping(p)
+		} else {
 			win32.ExitProcess(2)
 		}
-		ping(args[1])
 	case "env":
 		for _, name := range args[1:] {
 			if val, ok := os.LookupEnv(name); ok {

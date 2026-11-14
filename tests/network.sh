@@ -63,30 +63,24 @@ host_port2=$((declared + 1000))
 
 # recipe <id> <command args> <more>: the probe as an app.
 recipe() {
-    printf '{ "id": "%s", "version": "1", "command": "quasidock-netprobe.exe", "args": [%s],%s\n  "modules": [{ "name": "probe", "sources": [{ "path": "quasidock-netprobe.exe" }] }] }\n' \
+    printf '{ "id": "%s", "version": "1", "entrypoint": ["quasidock-netprobe.exe", %s],%s\n  "stages": [{ "name": "probe", "sources": [{ "path": "quasidock-netprobe.exe" }] }] }\n' \
         "$1" "$2" "$3" >"$probe_dir\\$1.json"
     z build "$probe_dir\\$1.json" >/dev/null 2>&1 || { z build "$probe_dir\\$1.json"; exit 1; }
 }
 recipe $APP '"serve", "${listen:echo}"' '
   "env": { "ECHO_LISTEN": "${listen:echo}", "ECHO_PORT": "${port:echo}", "UPSTREAM_PORT": "${uses:upstream}" },
   "permissions": {
-    "services": [{ "name": "echo", "port": '$declared', "command": "netprobe-serve" }],
+    "services": [{ "name": "echo", "port": '$declared' }],
     "uses": [{ "name": "upstream", "port": '$host_port' }]
-  },
-  "exports": {
-    "netprobe-serve": { "command": "quasidock-netprobe.exe", "args": ["serve", "${listen:echo}"] },
-    "netprobe-ping": { "command": "quasidock-netprobe.exe", "args": ["ping", "${listen:echo}"] },
-    "netprobe-upstream": { "command": "quasidock-netprobe.exe", "args": ["ping", "${uses:upstream}"] },
-    "netprobe-env": { "command": "quasidock-netprobe.exe", "args": ["env"] }
   },'
-recipe $RACE '"env", "QUASIDOCK_ID"' ' "exports": {},'
+recipe $RACE '"env", "QUASIDOCK_ID"' ''
 
 # --- Proxies -----------------------------------------------------------------
 
 proxied() {
     local out
     out=$(HTTP_PROXY=http://proxy.invalid:3128 https_proxy=http://proxy.invalid:3129 NO_PROXY=localhost \
-        qd_run z "$@" --entrypoint=netprobe-env $APP HTTP_PROXY HTTPS_PROXY NO_PROXY ALL_PROXY | tr -d '\r')
+        qd_run z "$@" --entrypoint=quasidock-netprobe.exe $APP env HTTP_PROXY HTTPS_PROXY NO_PROXY ALL_PROXY | tr -d '\r')
     echo "$out"
 }
 with_proxies() {
@@ -160,7 +154,7 @@ served() {
 # ${port:echo}, as "<listen> <port>".
 ports() {
     local out
-    out=$(qd_run z "$@" --entrypoint=netprobe-env $APP ECHO_LISTEN ECHO_PORT | tr -d '\r')
+    out=$(qd_run z "$@" --entrypoint=quasidock-netprobe.exe $APP env ECHO_LISTEN ECHO_PORT | tr -d '\r')
     echo "$(sed -n 's/^ECHO_LISTEN=//p' <<<"$out") $(sed -n 's/^ECHO_PORT=//p' <<<"$out")"
 }
 same_ports() {
@@ -204,7 +198,7 @@ private_loopback() {
     local out i
     serve --sandbox=appcontainer
     for i in $(seq 40); do
-        out=$(qd_run z --sandbox=appcontainer --entrypoint=netprobe-ping $APP 2>&1 | tr -d '\r') && break
+        out=$(qd_run z --sandbox=appcontainer --entrypoint=quasidock-netprobe.exe $APP ping "$(ports --sandbox=appcontainer | cut -d' ' -f1)" 2>&1 | tr -d '\r') && break
         sleep 0.25
     done
     stop
@@ -220,7 +214,7 @@ taken() {
     sleep 0.5
     serve --sandbox=appcontainer
     for i in $(seq 40); do
-        out=$(qd_run z --sandbox=appcontainer --entrypoint=netprobe-ping $APP 2>&1 | tr -d '\r') && break
+        out=$(qd_run z --sandbox=appcontainer --entrypoint=quasidock-netprobe.exe $APP ping "$(ports --sandbox=appcontainer | cut -d' ' -f1)" 2>&1 | tr -d '\r') && break
         sleep 0.25
     done
     stop
@@ -319,13 +313,13 @@ check "an exemption you made stays after the run" yours
 
 # The server's port is one the app uses: ${uses:upstream}.
 # upstream <run options...>: what the app's runs see as ${uses:upstream}.
-upstream() { qd_run z "$@" --entrypoint=netprobe-env $APP UPSTREAM_PORT | tr -d '\r' | sed -n 's/^UPSTREAM_PORT=//p'; }
+upstream() { qd_run z "$@" --entrypoint=quasidock-netprobe.exe $APP env UPSTREAM_PORT | tr -d '\r' | sed -n 's/^UPSTREAM_PORT=//p'; }
 # reaches_upstream <expected> <run options...>: a run of the app pings
 # ${uses:upstream}, and the probe says <expected>.
 reaches_upstream() {
     local expected=$1 out
     shift
-    out=$(qd_run z "$@" --entrypoint=netprobe-upstream $APP 2>&1 | tr -d '\r')
+    out=$(qd_run z "$@" --entrypoint=quasidock-netprobe.exe $APP ping "$(upstream "$@")" 2>&1 | tr -d '\r')
     [ "$out" = "$expected" ] || { echo "got $out"; return 1; }
 }
 direct_use() {

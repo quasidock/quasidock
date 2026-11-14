@@ -25,7 +25,7 @@ if [ -n "${SEED_DOWNLOADS:-}" ]; then
         cp -n "$(cygpath -u "$SEED_DOWNLOADS")"/* "$(cygpath -u "$QUASIDOCK_HOME")/cache/downloads/"
 fi
 
-BB=net.frippery.busybox
+BB=busybox
 
 failures=0
 check() {

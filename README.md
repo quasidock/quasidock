@@ -6,9 +6,8 @@ focused on image distribution and native Windows execution.
 
 Version **0.6.0** supports Docker-style container lifecycle management (`run`, `ps`,
 `logs`, `stop`, `rm`, `inspect`, `prune`), per-container isolated data, image
-management, and Quasidock images (including compatible published Zigsaw images)
-for `windows/amd64`. Dockerfiles, the Docker Engine API, bind mounts, and general
-Docker images are not supported.
+management, and Quasidock images for `windows/amd64`. Dockerfiles, the Docker
+Engine API, bind mounts, and general Docker images are not supported.
 
 ## Build and try it
 
@@ -16,8 +15,8 @@ On Windows, with the Go toolchain specified by `go.mod`:
 
 ```powershell
 go run ./scripts/build.go
-.\out\bin\quasidock.exe pull org.nodejs.node
-.\out\bin\quasidock.exe run --rm org.nodejs.node node.exe --version
+.\out\bin\quasidock.exe pull node
+.\out\bin\quasidock.exe run --rm node node.exe --version
 .\out\bin\quasidock.exe images
 .\out\bin\quasidock.exe ps -a
 ```
@@ -54,9 +53,9 @@ build or pull. Explicit references select their own image. Moving a tag retains
 the previous manifest and does not change the app's default.
 
 ```powershell
-quasidock inspect -f '{{.Id}}' org.nodejs.node
-quasidock inspect -f '{{.Quasidock.Version}}' org.nodejs.node
-quasidock tag org.nodejs.node ghcr.io/example/node:demo
+quasidock inspect -f '{{.Id}}' node
+quasidock inspect -f '{{.Quasidock.Version}}' node
+quasidock tag node ghcr.io/example/node:demo
 quasidock push ghcr.io/example/node:demo
 ```
 
@@ -90,19 +89,23 @@ removes leftover legacy app data once unused.
 quasidock run [OPTIONS] IMAGE [COMMAND] [ARG...]
 ```
 
-Without a command, the image's `command` and `args` provide its default CMD.
-An explicit command replaces both. `--entrypoint` selects an executable or an
-exported command, clears the default CMD, and receives the arguments after IMAGE.
-Exported commands retain their own configured argument prefixes.
+Without a command or `--entrypoint`, the container runs the image's `entrypoint`
+followed by its default `cmd`. Passing a `COMMAND` after `IMAGE` resolves that
+executable in the image and runs `COMMAND [ARG...]`, ignoring `entrypoint` and
+`cmd` — unless `COMMAND` matches the image's `id` (or the entrypoint executable's
+stem when `entrypoint` has leading arguments), in which case it keeps
+`entrypoint` and replaces `cmd` with `[ARG...]`. `--entrypoint` overrides the
+entrypoint (or keeps the configured `entrypoint` when set to the image's `id`),
+clears default `cmd`, and passes the remaining arguments after `IMAGE`.
 
 ```powershell
-quasidock run --rm org.nodejs.node node.exe -e 'console.log(process.version)'
-quasidock run -d --name node-demo org.nodejs.node node.exe -e 'setInterval(() => {}, 1000)'
+quasidock run --rm node node.exe -e 'console.log(process.version)'
+quasidock run -d --name node-demo node node.exe -e 'setInterval(() => {}, 1000)'
 quasidock logs node-demo
 quasidock stop node-demo
 quasidock rm node-demo
-quasidock run --entrypoint=node org.nodejs.node -e 'console.log(process.version)'
-quasidock run --pull=never -e EXAMPLE=value org.nodejs.node node.exe -e 'console.log(process.env.EXAMPLE)'
+quasidock run --entrypoint=node.exe node -e 'console.log(process.version)'
+quasidock run --pull=never -e EXAMPLE=value node node.exe -e 'console.log(process.env.EXAMPLE)'
 ```
 
 Run options stop at IMAGE; subsequent flags belong to the application. Single-letter
@@ -136,7 +139,6 @@ execution, or AppContainer execution. The image chooses the default, falling
 back to `low`. The Windows permission model retains `--filesystem`,
 `--nofilesystem`, `--share`, `--unshare`, and service-name-based `--port` options.
 
-Recipe builds remain available through `build [recipe.json|directory]`.
 Use `image info IMAGE` for remote metadata, `image files IMAGE` for a remote
 eStargz file listing, and `image cat IMAGE PATH` to read a file. Search, login,
 trust, signatures, grants, repair, and maintenance pruning remain available.
@@ -145,6 +147,13 @@ Run `quasidock help` for supported commands.
 Pull reports signature status and permissions. With a matching trust key, missing
 signatures warn and invalid signatures are rejected. Without a matching key,
 images are reported as unchecked. Explicit and automatic pull use the same path.
+
+### Recipes
+
+Recipe builds remain available through `build [recipe.json|directory]` (using
+`quasidock.json` when given a directory or no arguments). See
+[docs/recipes.md](docs/recipes.md) for the Docker-style recipe schema,
+placeholders, vendoring, and pinned dependencies.
 
 ## Upgrading
 
@@ -182,4 +191,12 @@ older binaries do not read catalog changes.
 | `-v` for verbosity | `--verbose` |
 
 Data lives in `%QUASIDOCK_HOME%`, or `%LOCALAPPDATA%\quasidock` by default.
-No recipe or published-image schema migration is required.
+
+### Recipe and image schema (Docker-style)
+
+Quasidock uses Docker-style short image IDs (`node`, `busybox`, `gtk4`, etc.),
+required `entrypoint` and optional default `cmd` fields (instead of `command`,
+`args`, and `exports`), and `from` base-image aliases (instead of `runtimes`).
+Legacy Zigsaw recipes and published Zigsaw image configs without `entrypoint`
+are no longer compatible and fail config validation. See
+[docs/recipes.md](docs/recipes.md) for the current schema.

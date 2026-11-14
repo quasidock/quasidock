@@ -1,8 +1,8 @@
 {
   "id": "test.regprobe",
   "version": "1",
-  "command": "regprobe.exe",
-  "modules": [
+  "entrypoint": "regprobe.exe",
+  "stages": [
     {
       "name": "probe",
       "sources": [

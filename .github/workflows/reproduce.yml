@@ -203,7 +203,7 @@ jobs:
           QUASIDOCK_HOME: ${{ runner.temp }}\store
         run: |
           mkdir -p "$(cygpath -u "$LOG_DIR")"
-          bash tests/seed-store.sh --build busybox node --pull zig rust ripgrep bat go fzf zot oras skopeo cosign cmake zstd mingit python java-sdk java maven gradle pdfbox plantuml zls texlive gdal postgresql postgresql-pgvector postgresql-pg-cron postgresql-postgis osm2pgsql perl php composer 2>&1 | tee "$(cygpath -u "$LOG_DIR")/seed.txt"
+          bash tests/seed-store.sh --build busybox node --pull zig rust ripgrep bat go fzf zot oras skopeo cosign cmake zstd mingit python java-sdk java maven gradle pdfbox plantuml zls texlive gdal postgresql osm2pgsql perl php composer 2>&1 | tee "$(cygpath -u "$LOG_DIR")/seed.txt"
 
       # The suites run whether or not the steps before them passed.
       - name: tests/store.sh
@@ -286,7 +286,7 @@ jobs:
         run: bash tests/zls.sh 2>&1 | tee "$(cygpath -u "$LOG_DIR")/zls.txt"
 
       # TeX Live as published, with Perl's and Ghostscript's images as its
-      # runtimes, in the seeded store.
+      # base images, in the seeded store.
       - name: tests/texlive.sh
         if: ${{ !cancelled() }}
         shell: bash
@@ -303,7 +303,7 @@ jobs:
         run: bash tests/gdal.sh 2>&1 | tee "$(cygpath -u "$LOG_DIR")/gdal.txt"
 
       # PostgreSQL as published, with Perl's and Python's images as its
-      # runtimes, in the seeded store: its server in each sandbox, its
+      # base images, in the seeded store: its server in each sandbox, its
       # service on a port of its own (--port), away from the runner's
       # PostgreSQL's 5432.
       - name: tests/postgresql.sh

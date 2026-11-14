@@ -35,7 +35,7 @@ if [ -z "$QUASIDOCK_HOME" ]; then
 fi
 export QUASIDOCK_HOME
 work=$(cygpath -w "$(mktemp -d)")
-FILES=community.files.Files
+FILES=files
 
 failures=0
 check() {
@@ -54,7 +54,7 @@ z() { "$zigsaw" "$@"; }
 manifest_of() { qd_manifest "$zigsaw" "$1"; }
 
 installed_dotnet=false installed_files=false
-qd_cached "$zigsaw" "com.microsoft.dotnet.Sdk" || installed_dotnet=true
+qd_cached "$zigsaw" "dotnet-sdk" || installed_dotnet=true
 qd_cached "$zigsaw" "$FILES" || installed_files=true
 for r in dotnet-sdk dotnet; do
     z build "$root\\recipes\\no-publish\\$r.json" >"$work\\$r.log" 2>&1 || echo "building $r.json failed: $(tail -1 "$work\\$r.log")"
@@ -150,7 +150,7 @@ check "it keeps its settings in its data directory, and its registry values in a
 cd "$root" || exit 1
 end_files
 $installed_files && qd_remove_app z $FILES >/dev/null 2>&1
-$installed_dotnet && { qd_remove_app z com.microsoft.dotnet >/dev/null 2>&1; qd_remove_app z com.microsoft.dotnet.Sdk >/dev/null 2>&1; }
+$installed_dotnet && { qd_remove_app z dotnet >/dev/null 2>&1; qd_remove_app z dotnet-sdk >/dev/null 2>&1; }
 rm -rf "$work"
 echo
 echo "$failures check(s) failed."

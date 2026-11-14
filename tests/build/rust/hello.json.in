@@ -1,17 +1,16 @@
 {
   "id": "test.build.rust",
   "version": "1",
-  "command": "hello.exe",
-  "sdk": {
-    "rust": "org.rust-lang.rust@@RUST@",
-    "zig": "org.ziglang.zig@@ZIG@",
-    "busybox": "net.frippery.busybox@@BUSYBOX@"
-  },
-  "modules": [
+  "entrypoint": "hello.exe",
+  "sdk": { "rust": "rust@@RUST@", "zig": "zig@@ZIG@", "busybox": "busybox@@BUSYBOX@" },
+  "stages": [
     {
       "name": "hello",
       "sources": [
-        { "path": "Cargo.toml" }, { "path": "Cargo.lock" }, { "path": "build.rs" }, { "path": "greet.c" },
+        { "path": "Cargo.toml" },
+        { "path": "Cargo.lock" },
+        { "path": "build.rs" },
+        { "path": "greet.c" },
         { "path": "main.rs", "dest": "src/main.rs" }
       ],
       "vendor": {

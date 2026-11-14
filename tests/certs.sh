@@ -34,17 +34,17 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/images.sh"
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
 zigsaw=${1:-$root/out/bin/quasidock.exe}
 QUASIDOCK_HOME=${CERTS_HOME:-${BUILD_HOME:-}}
-PY=org.python.python
-NODE=org.nodejs.node
-JDK=org.openjdk.java.Sdk
-JRE=org.openjdk.java
-GIT=org.git_scm.MinGit
-CMAKE=org.cmake.cmake
-ZIG=org.ziglang.zig
-PG=org.postgresql.PostgreSQL
-PHP=net.php.php
-COMPOSER=org.getcomposer.composer
-PERL=org.perl.perl
+PY=python
+NODE=node
+JDK=java-sdk
+JRE=java
+GIT=mingit
+CMAKE=cmake
+ZIG=zig
+PG=postgresql
+PHP=php
+COMPOSER=composer
+PERL=perl
 has() { qd_cached "$zigsaw" "$1"; }
 if [ -z "$QUASIDOCK_HOME" ] || ! has $PY; then
     echo "tests/certs.sh needs a store with $PY in CERTS_HOME or BUILD_HOME"

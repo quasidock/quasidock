@@ -1,11 +1,11 @@
 {
-  "id": "org.tug.texlive",
+  "id": "texlive",
   "version": "@VERSION@",
   "name": "TeX Live",
   "summary": "TeX, LaTeX, pdfTeX, XeTeX, LuaTeX and MetaPost: TeX Live's small scheme",
   "homepage": "https://tug.org/texlive/",
   "license": "LicenseRef-TeX-Live",
-  "command": "bin/windows/latexmk.exe",
+  "entrypoint": "bin/windows/latexmk.exe",
   "path": ["bin/windows"],
   "env": {
     "TEXMFVAR": "${data}\\texmf-var",
@@ -16,21 +16,18 @@
     "TEXLIVE_WINDOWS_EXTERNAL_GS": "${gs}\\bin\\gswin64c.exe"
   },
   "permissions": { "filesystem": ["cwd"] },
-  "runtimes": {
-    "perl": "org.perl.perl:5.42.3.1@sha256:4bf63dc4d73c1094335f85767629736c3d01276dc3e46be04bfba985b70e25df",
-    "gs": "com.artifex.Ghostscript:10.08.0@sha256:bc9081d9e3f9785a27f590a7f06317ed74b5f9327334c264c128b790be0164b8"
-  },
-  "exports": {
-@EXPORTS@
+  "from": {
+    "perl": "perl:5.42.3.1@sha256:4bf63dc4d73c1094335f85767629736c3d01276dc3e46be04bfba985b70e25df",
+    "gs": "ghostscript:10.08.0@sha256:bc9081d9e3f9785a27f590a7f06317ed74b5f9327334c264c128b790be0164b8"
   },
   "sdk": {
-    "busybox": "net.frippery.busybox:FRP-6075-g169694ebd@sha256:db9d39727bfdd4d176b5878c0a125daa8a2396ea21e0f01a6a372f53d9d97e5d"
+    "busybox": "busybox:FRP-6075-g169694ebd@sha256:db9d39727bfdd4d176b5878c0a125daa8a2396ea21e0f01a6a372f53d9d97e5d"
   },
   "cleanup": [
     "/tlpkg/tlperl", "/tlpkg/tlgs", "/tlpkg/installer", "/tlpkg/tltcl", "/tlpkg/translations", "/tlpkg/backups",
     "/install-tl", "/install-tl-windows.bat", "/tl-tray-menu.exe", "*.log"
   ],
-  "modules": [
+  "stages": [
     {
       "name": "texlive",
       "env": {

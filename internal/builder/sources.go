@@ -38,7 +38,7 @@ func (s *Sources) Close() {
 	s.openFiles = nil
 }
 
-func (s *Sources) Add(t *tree.Tree, m recipe.Module, recipePath string) error {
+func (s *Sources) Add(t *tree.Tree, m recipe.Stage, recipePath string) error {
 	for i, src := range m.Sources {
 		dest := "."
 		if src.Dest != nil {

@@ -18,9 +18,9 @@ func TestGetLayers(t *testing.T) {
 		Config: &oci.AppConfig{
 			ID:      "my.app",
 			Version: "1.0",
-			Runtimes: map[string]oci.Runtime{
+			From: map[string]oci.Runtime{
 				"runtime1": {
-					ID:      "org.runtime.one",
+					ID:      "runtime-one",
 					Version: "2.0",
 					Layer:   "sha256:layer1",
 				},
@@ -37,8 +37,8 @@ func TestGetLayers(t *testing.T) {
 	if layers[0].ID != "my.app" || layers[0].Version != "1.0" {
 		t.Errorf("expected my.app first, got %+v", layers[0])
 	}
-	// Runtime layer second
-	if layers[1].ID != "org.runtime.one" || layers[1].Version != "2.0" {
-		t.Errorf("expected runtime second, got %+v", layers[1])
+	// Base image layer second
+	if layers[1].ID != "runtime-one" || layers[1].Version != "2.0" {
+		t.Errorf("expected base image second, got %+v", layers[1])
 	}
 }

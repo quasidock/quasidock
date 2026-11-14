@@ -43,8 +43,8 @@ if [ -n "${SEED_DOWNLOADS:-}" ]; then
 fi
 work=$(cygpath -w "$(mktemp -d)")
 
-CHROMIUM=io.github.ungoogled_software.ungoogled_chromium
-CODIUM=com.vscodium.codium
+CHROMIUM=ungoogled-chromium
+CODIUM=vscodium
 
 . "$(dirname "$0")/acprobe.sh"
 
@@ -212,13 +212,13 @@ opens() {
     finish "$title"
 }
 row "Chromium opens a page, and draws WebGL" ok fails fails \
-    opens $CHROMIUM chromium "$page" 'webgl-ok' 30 --
+    opens $CHROMIUM chrome "$page" 'webgl-ok' 30 --
 row "VSCodium opens a file" ok fails fails \
-    opens $CODIUM codium "$note" 'zigsaw-note.txt - ' 30 --
+    opens $CODIUM VSCodium "$note" 'zigsaw-note.txt - ' 30 --
 # What docs/published-apps.md offers those who'd rather confine its extensions
 # and terminal. In an AppContainer, Node's realpath stops it first.
 row "VSCodium opens a file, told --no-sandbox" ok gap ok \
-    opens $CODIUM codium "$note" 'zigsaw-note.txt - ' 30 --no-sandbox --
+    opens $CODIUM VSCodium "$note" 'zigsaw-note.txt - ' 30 --no-sandbox --
 
 # confined <id> <command> <file> <title> <sandbox>: Windows says the app's
 # renderers are at untrusted integrity with restricted tokens, its GPU process
@@ -236,8 +236,8 @@ confined() {
     finish "$title" || result=1
     return $result
 }
-check "Chromium's renderers are confined under its image's sandbox" confined $CHROMIUM chromium "$page" 'webgl-ok' soft
-check "VSCodium's renderer is confined under its image's sandbox" confined $CODIUM codium "$note" 'zigsaw-note.txt - ' soft
+check "Chromium's renderers are confined under its image's sandbox" confined $CHROMIUM chrome "$page" 'webgl-ok' soft
+check "VSCodium's renderer is confined under its image's sandbox" confined $CODIUM VSCodium "$note" 'zigsaw-note.txt - ' soft
 
 # hands_over <id> <command> <first file> <first title> <second file> <second title>:
 # a second run gives its file to the running instance, and ends.
@@ -262,8 +262,8 @@ hands_over() {
     window "$second" 15 || return 1
     finish "$second"
 }
-check "Chromium's second run opens a tab in the first, and ends" hands_over $CHROMIUM chromium "$page" 'webgl-ok' "$work\\zigsaw-second.html" 'zigsaw-second'
-check "VSCodium's second run opens its file in the first, and ends" hands_over $CODIUM codium "$note" 'zigsaw-note.txt - ' "$work\\zigsaw-second.txt" 'zigsaw-second.txt - '
+check "Chromium's second run opens a tab in the first, and ends" hands_over $CHROMIUM chrome "$page" 'webgl-ok' "$work\\zigsaw-second.html" 'zigsaw-second'
+check "VSCodium's second run opens its file in the first, and ends" hands_over $CODIUM VSCodium "$note" 'zigsaw-note.txt - ' "$work\\zigsaw-second.txt" 'zigsaw-second.txt - '
 
 # plays: Chromium decodes H.264, whose decoder is in its build's ffmpeg. The
 # clip is a few frames made by ffmpeg, if this machine has it. The first frame
@@ -275,7 +275,7 @@ v.onloadeddata=()=>{document.title="video-result decoded "+v.videoWidth+"x"+v.vi
 v.onerror=()=>{document.title="video-result error "+v.error.code};
 </script>\n' >"$work\\zigsaw-video.html"
 plays() {
-    start $CHROMIUM chromium soft "$work\\zigsaw-video.html" --disable-backgrounding-occluded-windows
+    start $CHROMIUM chrome soft "$work\\zigsaw-video.html" --disable-backgrounding-occluded-windows
     window 'video-result' 30 || return 1
     local title
     title=$("$winwait" "$winpid" 'video-result' 1)
@@ -291,7 +291,7 @@ fi
 # keeps_key: Chromium keeps HKCU\Software\Chromium, which its recipe declares,
 # with its data, in HKCU only while it runs.
 keeps_key() {
-    start $CHROMIUM chromium soft "$page"
+    start $CHROMIUM chrome soft "$page"
     window 'webgl-ok' 30 || return 1
     sleep 2
     reg query 'HKCU\Software\Chromium' >/dev/null 2>&1 || { finish 'webgl-ok'; echo "the key isn't there while it runs"; return 1; }
@@ -313,7 +313,7 @@ save_as() {
     local result=0 downloads
     downloads=$(cygpath -u "$folders\\Downloads")
     rm -f "$downloads"/*.tmp
-    start $CHROMIUM chromium soft "$work\\zigsaw-download.html"
+    start $CHROMIUM chrome soft "$work\\zigsaw-download.html"
     window 'zigsaw-download' 30 || return 1
     window 'Save As' 15 || return 1
     sleep 2
@@ -357,7 +357,7 @@ terminal() {
     local i
     rm -f "$proj\\term.txt"
     cd "$proj" || return 1
-    bash "$QD_IMAGES_HELPER" run "$zigsaw" --entrypoint=codium $CODIUM "$proj" >"$work\\run.log" 2>&1 &
+    bash "$QD_IMAGES_HELPER" run "$zigsaw" --entrypoint=VSCodium $CODIUM "$proj" >"$work\\run.log" 2>&1 &
     runner=$!
     winpid=$(cat /proc/$runner/winpid)
     cd "$work" || return 1
@@ -406,7 +406,7 @@ check "VSCodium's extension host edits and saves a file (at low, told --no-sandb
 # The console's commands.
 cli_version() {
     local out
-    out=$(bash "$QD_IMAGES_HELPER" run "$zigsaw" --sandbox=$1 --entrypoint=codium-cli $CODIUM --version 2>/dev/null | tr -d '\r' | head -1)
+    out=$(bash "$QD_IMAGES_HELPER" run "$zigsaw" --sandbox=$1 --entrypoint=codium $CODIUM --version 2>/dev/null | tr -d '\r' | head -1)
     grep -qx '[0-9]*\.[0-9]*\.[0-9]*' <<<"$out" || { echo "codium-cli --version said \"$out\""; return 1; }
 }
 # In an AppContainer, Node's realpath fails on the drive's root.
@@ -421,7 +421,7 @@ check "VSCodium doesn't look for updates: zigsaw's its way of getting them" no_u
 says_why() {
     local out sb
     for sb in low appcontainer; do
-        out=$(bash "$QD_IMAGES_HELPER" run "$zigsaw" --sandbox=$sb --entrypoint=codium-cli $CODIUM --version 2>&1 </dev/null)
+        out=$(bash "$QD_IMAGES_HELPER" run "$zigsaw" --sandbox=$sb --entrypoint=codium $CODIUM --version 2>&1 </dev/null)
         grep -q "can't run under the $sb sandbox: Windows refuses Chromium's sandbox a window station" <<<"$out" || { echo "$sb: $out"; return 1; }
     done
 }

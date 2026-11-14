@@ -102,7 +102,27 @@ type Vendor struct {
 	Sha256   *string  `json:"sha256,omitempty"`
 }
 
-type Module struct {
+type Entrypoint []string
+
+func (e *Entrypoint) UnmarshalJSON(data []byte) error {
+	var single string
+	if err := json.Unmarshal(data, &single); err == nil {
+		if single == "" {
+			*e = nil
+			return nil
+		}
+		*e = []string{single}
+		return nil
+	}
+	var list []string
+	if err := json.Unmarshal(data, &list); err != nil {
+		return fmt.Errorf("entrypoint must be a string or a string array: %w", err)
+	}
+	*e = list
+	return nil
+}
+
+type Stage struct {
 	Name    string            `json:"name"`
 	Sources []Source          `json:"sources,omitempty"`
 	Build   []string          `json:"build,omitempty"`
@@ -129,52 +149,37 @@ func (l LayerKind) Format() format.Format {
 }
 
 type Recipe struct {
-	ID           string                          `json:"id"`
-	Version      string                          `json:"version"`
-	Name         *string                         `json:"name,omitempty"`
-	Summary      *string                         `json:"summary,omitempty"`
-	Homepage     *string                         `json:"homepage,omitempty"`
-	License      *string                         `json:"license,omitempty"`
-	Command      string                          `json:"command"`
-	Args         []string                        `json:"args,omitempty"`
-	Path         []string                        `json:"path,omitempty"`
-	Env          map[string]string               `json:"env,omitempty"`
-	Permissions  oci.Permissions                 `json:"permissions,omitempty"`
-	Exports      map[string]oci.Export           `json:"exports,omitempty"`
-	Aliases      map[string]oci.Export           `json:"aliases,omitempty"`
-	Shortcuts    map[string]oci.Shortcut         `json:"shortcuts,omitempty"`
-	Associations map[string]oci.Association      `json:"associations,omitempty"`
-	Schemes      map[string]oci.Scheme           `json:"schemes,omitempty"`
-	Registry     []string                        `json:"registry,omitempty"`
-	Extensions   map[string]oci.ExtensionPoint   `json:"extensions,omitempty"`
-	Extends      *oci.Extends                    `json:"extends,omitempty"`
-	SDK          map[string]string               `json:"sdk,omitempty"`
-	Runtimes     map[string]string               `json:"runtimes,omitempty"`
-	Layer        LayerKind                       `json:"layer,omitempty"`
-	Prefetch     []string                        `json:"prefetch,omitempty"`
-	Cleanup      []string                        `json:"cleanup,omitempty"`
-	Host         []string                        `json:"host,omitempty"`
-	Modules      []Module                        `json:"modules"`
+	ID          string            `json:"id"`
+	Version     string            `json:"version"`
+	Name        *string           `json:"name,omitempty"`
+	Summary     *string           `json:"summary,omitempty"`
+	Homepage    *string           `json:"homepage,omitempty"`
+	License     *string           `json:"license,omitempty"`
+	Entrypoint  Entrypoint        `json:"entrypoint"`
+	Cmd         []string          `json:"cmd,omitempty"`
+	Path        []string          `json:"path,omitempty"`
+	Env         map[string]string `json:"env,omitempty"`
+	Permissions oci.Permissions   `json:"permissions,omitempty"`
+	Registry    []string          `json:"registry,omitempty"`
+	SDK         map[string]string `json:"sdk,omitempty"`
+	From        map[string]string `json:"from,omitempty"`
+	Layer       LayerKind         `json:"layer,omitempty"`
+	Prefetch    []string          `json:"prefetch,omitempty"`
+	Cleanup     []string          `json:"cleanup,omitempty"`
+	Host        []string          `json:"host,omitempty"`
+	Stages      []Stage           `json:"stages"`
 }
 
 func (r Recipe) HasBuildCommands() bool {
-	for _, m := range r.Modules {
-		if len(m.Build) > 0 {
+	for _, s := range r.Stages {
+		if len(s.Build) > 0 {
 			return true
 		}
 	}
 	return false
 }
 
-func (r Recipe) AppConfig(runtimes map[string]oci.Runtime, build *oci.Build) (*oci.AppConfig, error) {
-	exportsMap := make(map[string]oci.Export)
-	if r.Exports != nil {
-		exportsMap = r.Exports
-	} else {
-		stem := oci.CommandStem(r.Command)
-		exportsMap[stem] = oci.Export{Command: r.Command, Args: r.Args}
-	}
-
+func (r Recipe) AppConfig(from map[string]oci.Runtime, build *oci.Build) (*oci.AppConfig, error) {
 	p := r.Path
 	if len(p) == 0 {
 		p = []string{"."}
@@ -186,27 +191,20 @@ func (r Recipe) AppConfig(runtimes map[string]oci.Runtime, build *oci.Build) (*o
 	}
 
 	return &oci.AppConfig{
-		ID:           r.ID,
-		Version:      r.Version,
-		Name:         r.Name,
-		Summary:      r.Summary,
-		Homepage:     r.Homepage,
-		License:      r.License,
-		Command:      r.Command,
-		Args:         r.Args,
-		Path:         p,
-		Env:          r.Env,
-		Permissions:  r.Permissions,
-		Exports:      exportsMap,
-		Aliases:      r.Aliases,
-		Shortcuts:    r.Shortcuts,
-		Associations: r.Associations,
-		Schemes:      r.Schemes,
-		Registry:     r.Registry,
-		Runtimes:     runtimes,
-		Extensions:   r.Extensions,
-		Extends:      r.Extends,
-		Build:        b,
+		ID:          r.ID,
+		Version:     r.Version,
+		Name:        r.Name,
+		Summary:     r.Summary,
+		Homepage:    r.Homepage,
+		License:     r.License,
+		Entrypoint:  []string(r.Entrypoint),
+		Cmd:         r.Cmd,
+		Path:        p,
+		Env:         r.Env,
+		Permissions: r.Permissions,
+		Registry:    r.Registry,
+		From:        from,
+		Build:       b,
 	}, nil
 }
 
@@ -228,22 +226,19 @@ func Parse(fileName string, bytes []byte) (*Recipe, error) {
 	if err := validateDependencies(fileName, r); err != nil {
 		return nil, err
 	}
-	if r.Exports == nil && oci.IsPlaceholderPath(r.Command) && !strings.HasPrefix(r.Command, "${app}") {
-		return nil, fmt.Errorf("%s: the command %q is in a runtime, so the recipe must list its \"exports\"", fileName, r.Command)
-	}
 
-	var runtimeAliases []string
-	for k := range r.Runtimes {
-		runtimeAliases = append(runtimeAliases, k)
+	var fromAliases []string
+	for k := range r.From {
+		fromAliases = append(fromAliases, k)
 	}
 	cfg, err := r.AppConfig(nil, nil)
 	if err != nil {
 		return nil, err
 	}
-	if err := oci.ValidateEntryPoints(fileName, cfg, runtimeAliases); err != nil {
+	if err := oci.ValidateEntryPoints(fileName, cfg, fromAliases); err != nil {
 		return nil, err
 	}
-	if err := validateModules(fileName, r.Modules); err != nil {
+	if err := validateStages(fileName, r.Stages); err != nil {
 		return nil, err
 	}
 	for _, pattern := range r.Cleanup {
@@ -257,7 +252,7 @@ func Parse(fileName string, bytes []byte) (*Recipe, error) {
 		}
 	}
 	if len(r.Host) > 0 && !r.HasBuildCommands() {
-		return nil, fmt.Errorf("%s: \"host\" toolchains are for build commands, and no module has any", fileName)
+		return nil, fmt.Errorf("%s: \"host\" toolchains are for build commands, and no stage has any", fileName)
 	}
 	if err := validatePrefetch(fileName, r); err != nil {
 		return nil, err
@@ -298,7 +293,7 @@ func validateDependencies(fileName string, r Recipe) error {
 		deps map[string]string
 	}{
 		{"sdk", r.SDK},
-		{"runtimes", r.Runtimes},
+		{"from", r.From},
 	}
 	for _, group := range groups {
 		for alias := range group.deps {
@@ -308,34 +303,31 @@ func validateDependencies(fileName string, r Recipe) error {
 		}
 	}
 	for alias := range r.SDK {
-		if _, ok := r.Runtimes[alias]; ok {
-			return fmt.Errorf("%s: %q is both an sdk and a runtime alias", fileName, alias)
+		if _, ok := r.From[alias]; ok {
+			return fmt.Errorf("%s: %q is both an sdk and a base image alias", fileName, alias)
 		}
-	}
-	if r.Extends != nil && len(r.Runtimes) > 0 {
-		return fmt.Errorf("%s: an extension can't have runtimes, which the runs it joins wouldn't have; its point's image has them", fileName)
 	}
 	return nil
 }
 
-func validateModules(fileName string, modules []Module) error {
-	if len(modules) == 0 {
-		return fmt.Errorf("%s: at least one module is required", fileName)
+func validateStages(fileName string, stages []Stage) error {
+	if len(stages) == 0 {
+		return fmt.Errorf("%s: at least one stage is required", fileName)
 	}
-	for i, m := range modules {
+	for i, m := range stages {
 		if !oci.IsValidID(m.Name) {
-			return fmt.Errorf("%s: module name %q must be 1-57 characters of letters, digits, '.', '-', '_'", fileName, m.Name)
+			return fmt.Errorf("%s: stage name %q must be 1-57 characters of letters, digits, '.', '-', '_'", fileName, m.Name)
 		}
-		for _, earlier := range modules[:i] {
+		for _, earlier := range stages[:i] {
 			if strings.EqualFold(earlier.Name, m.Name) {
-				return fmt.Errorf("%s: there are two modules named %s", fileName, m.Name)
+				return fmt.Errorf("%s: there are two stages named %s", fileName, m.Name)
 			}
 		}
 		if len(m.Sources) == 0 && len(m.Build) == 0 {
-			return fmt.Errorf("%s: module %s has neither sources nor build commands", fileName, m.Name)
+			return fmt.Errorf("%s: stage %s has neither sources nor build commands", fileName, m.Name)
 		}
 		if len(m.Build) == 0 && (m.Network || len(m.Env) > 0) {
-			return fmt.Errorf("%s: module %s sets \"network\" or \"env\", which only apply to build commands", fileName, m.Name)
+			return fmt.Errorf("%s: stage %s sets \"network\" or \"env\", which only apply to build commands", fileName, m.Name)
 		}
 		if m.Vendor != nil {
 			if err := validateVendor(fileName, m, *m.Vendor); err != nil {
@@ -351,23 +343,23 @@ func validateModules(fileName string, modules []Module) error {
 	return nil
 }
 
-func validateVendor(fileName string, m Module, v Vendor) error {
+func validateVendor(fileName string, m Stage, v Vendor) error {
 	if len(m.Build) == 0 {
-		return fmt.Errorf("%s: module %s has a \"vendor\" step, but no build commands to use what it fetches", fileName, m.Name)
+		return fmt.Errorf("%s: stage %s has a \"vendor\" step, but no build commands to use what it fetches", fileName, m.Name)
 	}
 	if len(v.Commands) == 0 {
-		return fmt.Errorf("%s: module %s's \"vendor\" step has no commands", fileName, m.Name)
+		return fmt.Errorf("%s: stage %s's \"vendor\" step has no commands", fileName, m.Name)
 	}
 	if !oci.IsSafeRelPath(v.Dir) || len(strings.Trim(v.Dir, "./\\")) == 0 {
-		return fmt.Errorf("%s: module %s's vendor dir %q must be a directory inside the module's", fileName, m.Name, v.Dir)
+		return fmt.Errorf("%s: stage %s's vendor dir %q must be a directory inside the stage's", fileName, m.Name, v.Dir)
 	}
 	if v.Sha256 != nil && !oci.IsSha256Hex(*v.Sha256) {
-		return fmt.Errorf("%s: module %s's vendor sha256 must be 64 lowercase hex characters", fileName, m.Name)
+		return fmt.Errorf("%s: stage %s's vendor sha256 must be 64 lowercase hex characters", fileName, m.Name)
 	}
 	return nil
 }
 
-func validateSource(fileName, module string, n int, s Source) error {
+func validateSource(fileName, stage string, n int, s Source) error {
 	given := 0
 	if s.URL != nil {
 		given++
@@ -379,35 +371,35 @@ func validateSource(fileName, module string, n int, s Source) error {
 		given++
 	}
 	if given != 1 {
-		return fmt.Errorf("%s: module %s source %d needs exactly one of \"url\", \"path\" or \"image\"", fileName, module, n)
+		return fmt.Errorf("%s: stage %s source %d needs exactly one of \"url\", \"path\" or \"image\"", fileName, stage, n)
 	}
 	if s.Image != nil {
 		if s.Sha256 != nil || s.Type != nil || s.Strip != 0 || len(s.Skip) > 0 {
-			return fmt.Errorf("%s: module %s source %d is an image, pinned by its digest; \"sha256\", \"type\", \"strip\" and \"skip\" don't apply", fileName, module, n)
+			return fmt.Errorf("%s: stage %s source %d is an image, pinned by its digest; \"sha256\", \"type\", \"strip\" and \"skip\" don't apply", fileName, stage, n)
 		}
 		if s.Dest != nil && !oci.IsSafeRelPath(*s.Dest) {
-			return fmt.Errorf("%s: module %s source %d dest %q must be a relative path inside the app", fileName, module, n, *s.Dest)
+			return fmt.Errorf("%s: stage %s source %d dest %q must be a relative path inside the app", fileName, stage, n, *s.Dest)
 		}
 		return nil
 	}
 	if s.Sha256 != nil && !oci.IsSha256Hex(*s.Sha256) {
-		return fmt.Errorf("%s: module %s source %d sha256 must be 64 lowercase hex characters", fileName, module, n)
+		return fmt.Errorf("%s: stage %s source %d sha256 must be 64 lowercase hex characters", fileName, stage, n)
 	}
 	if s.Dest != nil && !oci.IsSafeRelPath(*s.Dest) {
-		return fmt.Errorf("%s: module %s source %d dest %q must be a relative path inside the app", fileName, module, n, *s.Dest)
+		return fmt.Errorf("%s: stage %s source %d dest %q must be a relative path inside the app", fileName, stage, n, *s.Dest)
 	}
 	if s.Strip != 0 && !s.SourceKind().IsArchive() {
-		return fmt.Errorf("%s: module %s source %d uses \"strip\", which only applies to archives", fileName, module, n)
+		return fmt.Errorf("%s: stage %s source %d uses \"strip\", which only applies to archives", fileName, stage, n)
 	}
 	if s.URL != nil && s.SourceKind() == KindFile && s.Dest == nil && len(s.FileName()) == 0 {
-		return fmt.Errorf("%s: module %s source %d has no file name; set \"dest\"", fileName, module, n)
+		return fmt.Errorf("%s: stage %s source %d has no file name; set \"dest\"", fileName, stage, n)
 	}
 	if len(s.Skip) > 0 && s.Path == nil {
-		return fmt.Errorf("%s: module %s source %d uses \"skip\", which only applies to a directory \"path\"", fileName, module, n)
+		return fmt.Errorf("%s: stage %s source %d uses \"skip\", which only applies to a directory \"path\"", fileName, stage, n)
 	}
 	for _, pattern := range s.Skip {
 		if !isValidCleanupPattern(pattern) {
-			return fmt.Errorf("%s: module %s source %d skip pattern %q must be \"/<path>\" inside the directory, or a file name pattern without '/' or '\\'", fileName, module, n, pattern)
+			return fmt.Errorf("%s: stage %s source %d skip pattern %q must be \"/<path>\" inside the directory, or a file name pattern without '/' or '\\'", fileName, stage, n, pattern)
 		}
 	}
 	return nil
