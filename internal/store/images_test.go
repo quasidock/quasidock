@@ -109,26 +109,68 @@ func TestImageRunLeasesAndCrashState(t *testing.T) {
 	if err != nil {
 		t.Fatal("same version cannot join:", err)
 	}
-	if _, _, err := st.BeginImageRun(b); err == nil {
-		t.Fatal("conflicting version started")
+	// Different versions of the same app can run concurrently with isolated containers.
+	x3, y3, err := st.BeginImageRun(b)
+	if err != nil {
+		t.Fatal("concurrent version was blocked:", err)
 	}
 	if _, _, err := st.RemoveImage("", a.Manifest); err == nil {
 		t.Fatal("running image removed")
 	}
 	x.Release()
 	y.Release()
-	if _, _, err := st.BeginImageRun(b); err == nil {
-		t.Fatal("second running lease was ignored")
-	}
 	x2.Release()
 	y2.Release()
-	// The active-manifest file intentionally remains, as it does after a crash.
-	x3, y3, err := st.BeginImageRun(b)
-	if err != nil {
-		t.Fatal("stale state blocked next run:", err)
-	}
 	x3.Release()
 	y3.Release()
+
+	// Stopped containers pin their image until removed or pruned.
+	ctr, err := st.CreateContainer("pinned-v1", ContainerRecord{
+		Image: a.Manifest,
+		AppID: a.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := st.RemoveImage("", a.Manifest); err == nil || !strings.Contains(err.Error(), ctr.ShortID()) {
+		t.Fatalf("stopped container did not pin image: %v", err)
+	}
+	removed, err := st.PruneImages(false)
+	if err != nil || len(removed) != 0 {
+		t.Fatalf("PruneImages removed pinned image: %v %v", removed, err)
+	}
+	if err := st.RemoveContainer(ctr.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := st.RemoveImage("", a.Manifest); err != nil {
+		t.Fatalf("RemoveImage after container removal: %v", err)
+	}
+
+	// Simulate crash reconciliation on stale running containers (AutoRemove vs persisted).
+	kept, err := st.CreateContainer("crashed-keep", ContainerRecord{
+		Image: b.Manifest,
+		AppID: b.ID,
+		State: ContainerState{Status: "running", Running: true, Pid: 99999, Launched: true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = st.CreateContainer("crashed-autorm", ContainerRecord{
+		Image:      b.Manifest,
+		AppID:      b.ID,
+		HostConfig: ContainerHostConfig{AutoRemove: true},
+		State:      ContainerState{Status: "running", Running: true, Pid: 99998, Launched: true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := st.ReadContainer(kept.ID)
+	if err != nil || got.State.Running || got.State.Status != "exited" || got.State.ExitCode != 137 {
+		t.Fatalf("reconciled crashed container = %+v, %v", got, err)
+	}
+	if _, err := st.ResolveContainer("crashed-autorm"); !errors.Is(err, ErrContainerNotFound) {
+		t.Fatalf("crashed AutoRemove container was not cleaned up: %v", err)
+	}
 }
 
 func TestImageCatalogMigrationIsOneTimeAndRequiresIdleStore(t *testing.T) {

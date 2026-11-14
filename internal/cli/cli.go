@@ -29,15 +29,28 @@ import (
 
 const usage = `usage: quasidock [--verbose] <command> [options]
 
+Docker-style container commands:
+  container ls | ps [-a|--all] [-q|--quiet]
+                                       list running containers (or all with -a)
+  container inspect | inspect [-f TEMPLATE] NAME|ID [NAME|ID...]
+                                       inspect containers or images (JSON by default)
+  container logs | logs [-f|--follow] [-n|--tail LINES] CONTAINER
+                                       fetch the logs of a container
+  container stop | stop [-t|--time SECONDS] CONTAINER [CONTAINER...]
+                                       stop one or more running containers
+  container rm | rm [-f|--force] CONTAINER [CONTAINER...]
+                                       remove one or more containers
+  container prune                      remove all stopped containers
+  run [options] IMAGE [COMMAND] [ARG...] run an image in a new container
+
 Docker-style image commands:
   image ls | images [-q|--quiet]       list cached image references
-  image inspect | inspect [-f TEMPLATE] IMAGE [IMAGE...]
+  image inspect [-f TEMPLATE] IMAGE [IMAGE...]
                                        inspect local images (JSON by default)
   image pull | pull [--lazy] <image>   cache an image, without prompting
   image tag | tag SOURCE TARGET       name a cached image; an omitted tag is latest
   image push | push [--sources] IMAGE  publish the exact local image
   image rm | rmi IMAGE [IMAGE...]      untag a reference or remove a manifest ID
-  run [options] IMAGE [COMMAND] [ARG...] run an image in the foreground
 
 Quasidock extensions:
   build [--rebuild] [--clean] [--keep-build-dir] [<recipe.json> | <dir>]
@@ -55,12 +68,17 @@ Quasidock extensions:
   signature check IMAGE
   grants [APP-ID] | grants --take-back PATH
   prune [--dry-run] [--downloads] [--data]
-                                       collect unnamed images and unused files;
-                                       --data also removes orphan application data
+                                       collect stopped containers, unreferenced images,
+                                       and unused files (--data removes orphan data)
   repair                              settle obsolete host grants
   version                             print quasidock's version
 
 run options (before IMAGE):
+  --name NAME                         assign a name to the container
+  --rm                                automatically remove the container when it exits
+  -d, --detach                        run container in background and print container ID
+  -i, --interactive                   keep STDIN open (attach console STDIN in foreground)
+  -t, --tty                           allocate a pseudo-TTY flag on container config
   --pull=missing|always|never          default: missing; failed pulls never use stale images
   --entrypoint=COMMAND                override the executable and clear the default CMD
   -e, --env NAME[=VALUE]               set or inherit an environment variable
@@ -70,7 +88,6 @@ run options (before IMAGE):
   --share=network|host                grant network access or quasidock-host
   --unshare=network|host              remove that grant
   --port=SERVICE=PORT                 override a declared service's localhost port
-  --ephemeral                         discard this run's fresh app data afterwards
   --verbose                           print runtime diagnostics
 
 Images use registry/repository[:tag][@sha256:...], or app-id[:tag][@digest].
@@ -78,9 +95,9 @@ QUASIDOCK_REGISTRY changes the default registry (ghcr.io/zigsaw-io).
 A bare cached app ID selects its last successful build/pull; full sha256 IDs
 select local manifests. Explicit names and tags select exactly that reference.
 Image IDs are manifest digests. images -q prints full IDs; inspect is local-only.
-Versions share per-app data and cannot run simultaneously with different manifests.
+Each run creates a container with isolated data under containers/<id>/data.
 Use an explicit command after IMAGE to replace the image's command and default args.
-Named containers, -d, -it, --rm, -v/--mount, and -p are not supported yet.
+Bind mounts (-v/--mount) and -p are not supported yet.
 
 Registry credentials use Windows Credential Manager, QUASIDOCK_REGISTRY_USERNAME /
 QUASIDOCK_REGISTRY_PASSWORD (for the default registry), or Docker's saved login.
@@ -127,17 +144,12 @@ type settingsParser struct {
 	ports        []string
 }
 
-var settingsFlags = []string{"ephemeral"}
+var settingsFlags []string
 
 func (p *settingsParser) apply(opt Option) error {
 	name := opt.Name
 	if name == "ephemeral" {
-		if opt.Value != nil {
-			return errors.New("--ephemeral takes no value")
-		}
-		b := true
-		p.settings.Ephemeral = &b
-		return nil
+		return errors.New("--ephemeral was removed; use --rm")
 	}
 	if opt.Value == nil {
 		return fmt.Errorf("--%s needs a value", name)
@@ -203,7 +215,7 @@ func parseRunOptions(ctx *context.Context, args []string) (run.Options, error) {
 	args = append([]string(nil), args...)
 	var parser settingsParser
 
-	flags := append(append([]string(nil), settingsFlags...), "verbose")
+	flags := []string{"rm", "detach", "interactive", "tty", "verbose", "ephemeral"}
 	i := 0
 	for i < len(args) {
 		if args[i] == "--" {
@@ -219,7 +231,32 @@ func parseRunOptions(ctx *context.Context, args []string) (run.Options, error) {
 		}
 		if !strings.HasPrefix(args[i], "--") {
 			if strings.HasPrefix(args[i], "-") {
-				return opts, fmt.Errorf("unsupported run option %q; -v is reserved for volumes, use --verbose", args[i])
+				if len(args[i]) > 1 {
+					allShort := true
+					for _, ch := range args[i][1:] {
+						switch ch {
+						case 'd':
+							opts.Detach = true
+						case 'i':
+							opts.Interactive = true
+						case 't':
+							opts.TTY = true
+						default:
+							allShort = false
+						}
+						if !allShort {
+							break
+						}
+					}
+					if allShort {
+						i++
+						continue
+					}
+				}
+				if strings.ContainsRune(args[i], 'v') {
+					return opts, fmt.Errorf("unsupported run option %q; -v is reserved for volumes, use --verbose", args[i])
+				}
+				return opts, fmt.Errorf("unknown run option %q", args[i])
 			}
 			break
 		}
@@ -227,21 +264,54 @@ func parseRunOptions(ctx *context.Context, args []string) (run.Options, error) {
 		if err != nil {
 			return opts, err
 		}
-		if opt.Name == "verbose" && opt.Value == nil {
+		switch opt.Name {
+		case "ephemeral":
+			return opts, errors.New("--ephemeral was removed; use --rm")
+		case "rm":
+			if opt.Value != nil {
+				return opts, errors.New("--rm takes no value")
+			}
+			opts.AutoRemove = true
+		case "detach":
+			if opt.Value != nil {
+				return opts, errors.New("--detach takes no value")
+			}
+			opts.Detach = true
+		case "interactive":
+			if opt.Value != nil {
+				return opts, errors.New("--interactive takes no value")
+			}
+			opts.Interactive = true
+		case "tty":
+			if opt.Value != nil {
+				return opts, errors.New("--tty takes no value")
+			}
+			opts.TTY = true
+		case "verbose":
+			if opt.Value != nil {
+				return opts, errors.New("--verbose takes no value")
+			}
 			ctx.Verbose = true
 			if ctx.Store != nil {
 				ctx.Store.Verbose = true
 			}
-		} else if opt.Name == "entrypoint" && opt.Value != nil {
-			opts.Entrypoint = opt.Value
-		} else if opt.Name == "command" {
+		case "name":
+			if opt.Value == nil || *opt.Value == "" {
+				return opts, errors.New("--name needs a value")
+			}
+			opts.Name = *opt.Value
+		case "entrypoint":
+			if opt.Value != nil {
+				opts.Entrypoint = opt.Value
+			}
+		case "command":
 			return opts, errors.New("--command was removed; use --entrypoint or a command after IMAGE")
-		} else if opt.Name == "pull" && opt.Value != nil {
-			if *opt.Value != "missing" && *opt.Value != "always" && *opt.Value != "never" {
+		case "pull":
+			if opt.Value == nil || (*opt.Value != "missing" && *opt.Value != "always" && *opt.Value != "never") {
 				return opts, errors.New("--pull must be missing, always or never")
 			}
 			opts.Pull = *opt.Value
-		} else {
+		default:
 			if err := parser.apply(opt); err != nil {
 				return opts, err
 			}
@@ -571,8 +641,21 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 		fmt.Printf("quasidock %s\n", version.Version)
 		return 0, nil
 	}
-	if replacement := map[string]string{"list": "images", "rm": "rmi", "info": "image info", "ls": "image files", "cat": "image cat", "-v": "--verbose"}[cmd]; replacement != "" {
+	if replacement := map[string]string{"list": "images", "info": "image info", "ls": "image files", "cat": "image cat", "-v": "--verbose"}[cmd]; replacement != "" {
 		return 1, fmt.Errorf("%s was removed; use quasidock %s", cmd, replacement)
+	}
+	if cmd == "container-supervisor" {
+		if len(rest) != 2 {
+			return usageError()
+		}
+		_ = os.Setenv("QUASIDOCK_HOME", rest[0])
+		st, err := store.Open(rest[0], ctx.Verbose, "")
+		if err != nil {
+			return 1, err
+		}
+		ctx.Store = st
+		ctx.Store.Verbose = ctx.Verbose
+		return run.Supervise(ctx, rest[1])
 	}
 	if cmd == "login" {
 		opts, err := parseLoginOptions(rest)
@@ -603,7 +686,7 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 		return 0, nil
 	}
 	switch cmd {
-	case "build", "image", "images", "inspect", "tag", "pull", "push", "rmi", "run", "search", "trust", "signature", "prune", "repair", "grants":
+	case "build", "container", "ps", "stop", "rm", "logs", "image", "images", "inspect", "tag", "pull", "push", "rmi", "run", "search", "trust", "signature", "prune", "repair", "grants":
 	default:
 		return usageError()
 	}
@@ -616,11 +699,19 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 	ctx.Store.Verbose = ctx.Verbose
 
 	switch cmd {
+	case "container":
+		return containerCommand(ctx, rest)
+	case "ps":
+		return containerCommand(ctx, append([]string{"ls"}, rest...))
+	case "stop", "rm", "logs":
+		return containerCommand(ctx, append([]string{cmd}, rest...))
+	case "inspect":
+		return inspectAny(ctx, rest)
 	case "image":
 		return imageCommand(ctx, rest)
 	case "images":
 		return imageCommand(ctx, append([]string{"ls"}, rest...))
-	case "inspect", "tag", "pull", "push":
+	case "tag", "pull", "push":
 		return imageCommand(ctx, append([]string{cmd}, rest...))
 	case "rmi":
 		return imageCommand(ctx, append([]string{"rm"}, rest...))

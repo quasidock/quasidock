@@ -80,8 +80,8 @@ build_while_running() {
     z build "$recipe" >/dev/null 2>&1 && [ "$(installed_version)" = test-3 ] && expect_count deployments 3
 }
 check "build: a running version's files are kept" build_while_running
-conflicting_version() { z run "$BB" 2>&1 | grep -q 'another version'; }
-check "run rejects a different version while app data is in use" conflicting_version
+concurrent_version() { qd_run z "$BB" true >/dev/null 2>&1; }
+check "different versions of an app can run concurrently" concurrent_version
 prune_while_running() { z prune >/dev/null 2>&1 && expect_count deployments 3; }
 check "prune: keeps named images and a deployment in use" prune_while_running
 # `check` runs commands in a subshell, which can't wait for this shell's jobs.
@@ -92,28 +92,28 @@ check "the running app finishes normally" test $status -eq 0
 dry_run() { z prune --dry-run >/dev/null 2>&1 && expect_count deployments 3 && expect_count blobs 9; }
 check "prune --dry-run deletes nothing" dry_run
 prune_after_exit() {
-    z rmi "$first_digest" "$second_digest" >/dev/null 2>&1 &&
+    z container prune >/dev/null 2>&1 &&
+        z rmi "$first_digest" "$second_digest" >/dev/null 2>&1 &&
         z prune >/dev/null 2>&1 && expect_count deployments 1 && expect_count blobs 3
 }
 check "rmi and prune remove older images only when explicitly removed" prune_after_exit
 
-# --- tmp\ ----------------------------------------------------------------------
+# --- tmp\ and --rm --------------------------------------------------------------
 
-qd_run z --ephemeral $BB sh -c 'echo x > "$APPDATA/f" && sleep 5' &
+qd_run z --name ephem-run --rm $BB sh -c 'echo x > "$APPDATA/f" && sleep 5' &
 ephemeral=$!
-sleep 1
+sleep 2
 mkdir "$QUASIDOCK_HOME\\tmp\\stale-dir" && echo x >"$QUASIDOCK_HOME\\tmp\\stale-dir\\f" && echo x >"$QUASIDOCK_HOME\\tmp\\stale-file"
-run_dirs() { find "$QUASIDOCK_HOME/tmp" -mindepth 1 -maxdepth 1 -name 'run-*' | wc -l; }
 prune_tmp() {
-    z prune 2>&1 | grep -q 'kept the data of 1 running --ephemeral app' &&
+    z prune 2>&1 | grep -q 'kept 1 running container' &&
         [ ! -e "$QUASIDOCK_HOME\\tmp\\stale-dir" ] && [ ! -e "$QUASIDOCK_HOME\\tmp\\stale-file" ] &&
-        expect_count run_dirs 2 # The directory and its lock.
+        z container inspect ephem-run >/dev/null 2>&1
 }
-check "prune: clears tmp\\ but keeps a running --ephemeral app's data" prune_tmp
+check "prune: clears tmp\\ and keeps a running --rm container" prune_tmp
 wait $ephemeral
 status=$?
-ephemeral_done() { [ $status -eq 0 ] && expect_count run_dirs 0; }
-check "the --ephemeral run cleans up after itself" ephemeral_done
+ephemeral_done() { [ $status -eq 0 ] && ! z container inspect ephem-run >/dev/null 2>&1; }
+check "the --rm run cleans up its container after itself" ephemeral_done
 
 # --- rm, orphaned data and downloads ---------------------------------------------
 
@@ -124,6 +124,7 @@ rm_while_running() { qd_remove_app z $BB 2>&1 | grep -q 'in use' && expect_count
 check "rmi refuses the image of a running app" rm_while_running
 wait $running
 qd_remove_app z "$BB" >/dev/null 2>&1
+mkdir -p "$QUASIDOCK_HOME\\data\\$BB" && echo old >"$QUASIDOCK_HOME\\data\\$BB\\saved"
 orphaned_data() { z prune 2>&1 | grep -q "kept data of apps that aren't installed: $BB" && expect_count deployments 0; }
 check "prune: removes them afterwards, and lists orphaned data" orphaned_data
 check "prune --data deletes it" sh -c "\"\$0\" prune --data >/dev/null 2>&1 && [ ! -e '$QUASIDOCK_HOME\\data\\$BB' ]" "$quasidock"

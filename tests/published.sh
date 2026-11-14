@@ -119,7 +119,7 @@ stays_up() {
 serves_ids=" org.kanboard.Kanboard "
 serves() {
     local port=$((9100 + RANDOM % 800)) out="$logs\\$1.serve.log" server page=""
-    QUASIDOCK_HOME="$pull_store" bash "$QD_IMAGES_HELPER" run "$zigsaw" --ephemeral "$1" --no-browser --listen=127.0.0.1:$port >"$out" 2>&1 &
+    QUASIDOCK_HOME="$pull_store" bash "$QD_IMAGES_HELPER" run "$zigsaw" --rm "$1" --no-browser --listen=127.0.0.1:$port >"$out" 2>&1 &
     server=$!
     for _ in $(seq 40); do
         page=$(curl -s -m 5 "http://127.0.0.1:$port/?controller=AuthController&action=login") && [ -n "$page" ] && break

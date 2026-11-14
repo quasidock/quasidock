@@ -238,6 +238,53 @@ func (c *Child) Wait() (uint32, error) {
 	return uint32(code), nil
 }
 
+// WaitOrStop waits for the child process to exit or stopEvent to be signaled.
+// When stopEvent fires, it gives the process up to graceMs to exit after a
+// break signal before forcefully ending its job object. It returns the exit
+// code and true if stopping was triggered by stopEvent.
+func (c *Child) WaitOrStop(stopEvent win32.HANDLE, graceMs win32.DWORD) (uint32, bool, error) {
+	if stopEvent == 0 {
+		code, err := c.Wait()
+		return code, false, err
+	}
+	defer win32.CloseHandle(c.Job)
+	defer win32.CloseHandle(c.Process)
+
+	r := win32.WaitForMultipleObjects([]win32.HANDLE{c.Process, stopEvent}, false, win32.INFINITE)
+	switch r {
+	case win32.WAIT_OBJECT_0:
+		code, err := win32.GetExitCodeProcess(c.Process)
+		if err != nil {
+			return 0, false, fmt.Errorf("GetExitCodeProcess: %w", err)
+		}
+		EndJob(c.Job)
+		return uint32(code), false, nil
+	case win32.WAIT_OBJECT_0 + 1:
+		if graceMs > 0 {
+			if pid := win32.GetProcessId(c.Process); pid != 0 {
+				win32.GenerateConsoleCtrlEvent(win32.CTRL_BREAK_EVENT, pid)
+			}
+			if win32.WaitForSingleObject(c.Process, graceMs) == win32.WAIT_OBJECT_0 {
+				code, err := win32.GetExitCodeProcess(c.Process)
+				EndJob(c.Job)
+				if err != nil {
+					return 0, true, fmt.Errorf("GetExitCodeProcess: %w", err)
+				}
+				return uint32(code), true, nil
+			}
+		}
+		EndJob(c.Job)
+		win32.WaitForSingleObject(c.Process, 5000)
+		code, err := win32.GetExitCodeProcess(c.Process)
+		if err != nil {
+			return 1, true, nil
+		}
+		return uint32(code), true, nil
+	default:
+		return 0, false, fmt.Errorf("WaitForMultipleObjects: %d", r)
+	}
+}
+
 func (c *Child) WaitFor(ms win32.DWORD) (uint32, bool, error) {
 	switch win32.WaitForSingleObject(c.Process, ms) {
 	case win32.WAIT_OBJECT_0:
@@ -372,7 +419,7 @@ func StartDetached(exe, commandLine, cwd string) (Detached, error) {
 		var startup win32.STARTUPINFOW
 		startup.Cb = win32.DWORD(unsafe.Sizeof(startup))
 		var info win32.PROCESS_INFORMATION
-		flags := win32.DETACHED_PROCESS | win32.CREATE_UNICODE_ENVIRONMENT
+		flags := win32.CREATE_NO_WINDOW | win32.CREATE_NEW_PROCESS_GROUP | win32.CREATE_UNICODE_ENVIRONMENT
 		if breakaway {
 			flags |= win32.CREATE_BREAKAWAY_FROM_JOB
 		}

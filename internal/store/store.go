@@ -54,6 +54,7 @@ type Store struct {
 var subdirs = []string{
 	"blobs/sha256",
 	"images",
+	"containers",
 	"refs",
 	"deploy",
 	"lazy",
@@ -120,6 +121,26 @@ func (s *Store) FullRoot() string {
 func (s *Store) Path(parts ...string) string {
 	all := append([]string{s.Root}, parts...)
 	return filepath.Join(all...)
+}
+
+func (s *Store) ContainerDir(id string) string {
+	return s.Path("containers", id)
+}
+
+func (s *Store) ContainerDataDir(id string) string {
+	return s.Path("containers", id, "data")
+}
+
+func (s *Store) ContainerLogPath(id string) string {
+	return s.Path("containers", id, "container.log")
+}
+
+func (s *Store) ContainerStatePath(id string) string {
+	return s.Path("containers", id, "state.json")
+}
+
+func (s *Store) ContainerRunLockPath(id string) string {
+	return s.Path("containers", id, "run.lock")
 }
 
 func (s *Store) TmpPath(prefix string) string {

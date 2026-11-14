@@ -1,13 +1,10 @@
 package cli
 
 import (
-	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
 	"strings"
-	"text/template"
 
 	"github.com/quasidock/quasidock/internal/appcontainer"
 	"github.com/quasidock/quasidock/internal/catalog"
@@ -168,32 +165,15 @@ func imageList(ctx *context.Context, args []string) error {
 }
 
 func imageInspect(ctx *context.Context, args []string) error {
-	format := ""
-	var names []string
-	for i := 0; i < len(args); i++ {
-		arg := args[i]
-		if arg == "-f" || arg == "--format" {
-			i++
-			if i == len(args) {
-				return errors.New("inspect --format needs a template")
-			}
-			format = args[i]
-		} else if strings.HasPrefix(arg, "--format=") {
-			format = strings.TrimPrefix(arg, "--format=")
-		} else if strings.HasPrefix(arg, "-") {
-			return fmt.Errorf("unknown inspect option %q", arg)
-		} else {
-			names = append(names, arg)
-		}
-	}
-	if len(names) == 0 {
-		return errors.New("usage: quasidock image inspect [-f TEMPLATE] IMAGE [IMAGE...]")
+	format, names, err := parseInspectFlags(args, "usage: quasidock image inspect [-f TEMPLATE] IMAGE [IMAGE...]")
+	if err != nil {
+		return err
 	}
 	idx, err := ctx.Store.ImageCatalog()
 	if err != nil {
 		return err
 	}
-	images := make([]inspectedImage, 0, len(names))
+	items := make([]any, 0, len(names))
 	for _, name := range names {
 		ref, err := idx.Resolve(ctx.Env["QUASIDOCK_REGISTRY"], name)
 		if err != nil {
@@ -203,26 +183,46 @@ func imageInspect(ctx *context.Context, args []string) error {
 		if err != nil {
 			return err
 		}
-		images = append(images, out)
+		items = append(items, out)
 	}
-	if format != "" {
-		tmpl, err := template.New("inspect").Funcs(template.FuncMap{"json": func(v any) (string, error) { b, e := json.Marshal(v); return string(b), e }}).Parse(format)
+	return renderInspect(ctx.Stdout, format, items)
+}
+
+func inspectAny(ctx *context.Context, args []string) (uint32, error) {
+	format, names, err := parseInspectFlags(args, "usage: quasidock inspect [-f TEMPLATE] NAME|ID [NAME|ID...]")
+	if err != nil {
+		return 1, err
+	}
+	lock, err := ctx.Store.Lock(false)
+	if err != nil {
+		return 1, err
+	}
+	defer lock.Release()
+	idx, err := ctx.Store.ImageCatalog()
+	if err != nil {
+		return 1, err
+	}
+	items := make([]any, 0, len(names))
+	for _, name := range names {
+		rec, cerr := ctx.Store.ResolveContainer(name)
+		if cerr == nil {
+			items = append(items, rec)
+			continue
+		}
+		if !errors.Is(cerr, store.ErrContainerNotFound) {
+			return 1, cerr
+		}
+		ref, ierr := idx.Resolve(ctx.Env["QUASIDOCK_REGISTRY"], name)
+		if ierr != nil {
+			return 1, fmt.Errorf("no such container or image %q", name)
+		}
+		out, err := inspectImage(ctx, idx, *ref)
 		if err != nil {
-			return err
+			return 1, err
 		}
-		var buf bytes.Buffer
-		for _, img := range images {
-			if err := tmpl.Execute(&buf, img); err != nil {
-				return err
-			}
-			buf.WriteByte('\n')
-		}
-		_, err = ctx.Stdout.Write(buf.Bytes())
-		return err
+		items = append(items, out)
 	}
-	enc := json.NewEncoder(ctx.Stdout)
-	enc.SetIndent("", "  ")
-	return enc.Encode(images)
+	return 0, renderInspect(ctx.Stdout, format, items)
 }
 
 func pullImage(ctx *context.Context, image string, isLazy bool) (*oci.Image, error) {
