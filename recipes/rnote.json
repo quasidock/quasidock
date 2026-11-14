@@ -1,49 +1,28 @@
 {
-  "id": "com.github.flxzt.rnote",
+  "id": "rnote",
   "version": "0.14.2",
   "name": "Rnote",
   "summary": "Sketch and take handwritten notes",
   "homepage": "https://rnote.flxzt.net/",
   "license": "GPL-3.0-or-later",
-  "command": "bin/rnote.exe",
+  "entrypoint": "bin/rnote.exe",
   "path": ["bin"],
   "env": { "XDG_DATA_DIRS": "${app}\\share" },
-  "permissions": { "filesystem": ["cwd", "desktop", "documents", "downloads", "pictures"] },
-  "exports": {
-    "rnote": { "command": "bin/rnote.exe" },
-    "rnote-cli": { "command": "bin/rnote-cli.exe" }
+  "permissions": {
+    "filesystem": ["cwd"]
   },
-  "shortcuts": {
-    "Rnote": { "command": "rnote", "description": "Sketch and take handwritten notes" }
-  },
-  "associations": {
-    ".rnote": { "command": "rnote", "description": "Rnote document" },
-    ".xopp": { "command": "rnote", "description": "Xournal++ document" }
-  },
-  "runtimes": {
-    "gtk": "org.gtk.Gtk4:4.24.1@sha256:e61173f2deba589f1f1b40a38e5a4d6584c8efbbff1f40be5c173ccee5b27c49"
-  },
+  "from": { "gtk": "gtk4:4.24.1@sha256:e61173f2deba589f1f1b40a38e5a4d6584c8efbbff1f40be5c173ccee5b27c49" },
   "sdk": {
-    "rust": "org.rust-lang.rust:1.99.0@sha256:e7e9706485bba88759915d9509993d0e41d340d7d8dfec6426fce1feda9a10e2",
-    "gtksdk": "org.gtk.Gtk4.Sdk:4.24.1@sha256:31b88a3d1d0a4530f3a31cf558d7c6c6c58e04a42ced0d7aeb28d0cf501de104"
+    "rust": "rust:1.99.0@sha256:e7e9706485bba88759915d9509993d0e41d340d7d8dfec6426fce1feda9a10e2",
+    "gtksdk": "gtk4-sdk:4.24.1@sha256:31b88a3d1d0a4530f3a31cf558d7c6c6c58e04a42ced0d7aeb28d0cf501de104"
   },
-  "cleanup": [
-    "/share/applications",
-    "/share/metainfo",
-    "/share/mime",
-    "/share/dbus-1",
-    "/share/thumbnailers"
-  ],
-  "modules": [
+  "cleanup": ["/share/applications", "/share/metainfo", "/share/mime", "/share/dbus-1", "/share/thumbnailers"],
+  "stages": [
     {
       "name": "rnote",
       "env": { "CARGO_BUILD_JOBS": "8", "CARGO_PROFILE_RELEASE_DEBUG": "0" },
       "sources": [
-        {
-          "url": "https://github.com/flxzt/rnote/releases/download/v0.14.2/rnote-0.14.2.tar.xz",
-          "sha256": "2be53f2007944281ea3372248559e9338a0e5af1d64d173819dd4339d58ee210",
-          "strip": 1
-        },
+        { "url": "https://github.com/flxzt/rnote/releases/download/v0.14.2/rnote-0.14.2.tar.xz", "sha256": "2be53f2007944281ea3372248559e9338a0e5af1d64d173819dd4339d58ee210", "strip": 1 },
         { "path": "rnote/cargo_build.py", "dest": "zigsaw/cargo_build.py" },
         { "path": "rnote/fonts.rs", "dest": "zigsaw/fonts.rs" },
         { "path": "rnote/fonts.patch", "dest": "zigsaw/fonts.patch" },

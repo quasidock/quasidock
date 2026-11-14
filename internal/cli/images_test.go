@@ -47,7 +47,7 @@ func fixtureImage(t *testing.T, reg *testregistry.Registry, version string, payl
 		t.Fatal(err)
 	}
 	layer := oci.Descriptor{MediaType: oci.MediaTypeLayerTar, Digest: reg.PutBlob(archive.Bytes()), Size: int64(archive.Len())}
-	cfg := oci.AppConfig{ID: "test.cli.fixture", Version: version, Command: "fixture.exe", Args: []string{"default", version}, Path: []string{"."}, Env: map[string]string{"REMOVE_ME": "image"}, Permissions: oci.Permissions{Sandbox: oci.SandboxSoft}}
+	cfg := oci.AppConfig{ID: "test.cli.fixture", Version: version, Entrypoint: []string{"fixture.exe"}, Cmd: []string{"default", version}, Path: []string{"."}, Env: map[string]string{"REMOVE_ME": "image"}, Permissions: oci.Permissions{Sandbox: oci.SandboxSoft}}
 	b, err := json.Marshal(cfg)
 	if err != nil {
 		t.Fatal(err)

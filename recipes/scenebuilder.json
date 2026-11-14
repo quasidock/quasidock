@@ -1,64 +1,40 @@
 {
-  "id": "com.gluonhq.SceneBuilder",
+  "id": "scenebuilder",
   "version": "26.0.0",
   "name": "Scene Builder",
   "summary": "Design JavaFX user interfaces by drag and drop, saved as FXML",
   "homepage": "https://gluonhq.com/products/scene-builder/",
   "license": "BSD-3-Clause AND Apache-2.0 AND GPL-2.0-only WITH Classpath-exception-2.0 AND LGPL-2.1-or-later",
-  "command": "${java}\\bin\\javaw.exe",
-  "args": [
-    "--module-path", "${app}\\javafx\\lib",
-    "--add-modules", "javafx.fxml,javafx.media,javafx.swing,javafx.web",
+  "entrypoint": [
+    "${java}\\bin\\javaw.exe",
+    "--module-path",
+    "${app}\\javafx\\lib",
+    "--add-modules",
+    "javafx.fxml,javafx.media,javafx.swing,javafx.web",
     "--enable-native-access=javafx.graphics",
     "--sun-misc-unsafe-memory-access=allow",
     "--add-opens=javafx.fxml/javafx.fxml=ALL-UNNAMED",
     "-Djavafx.allowjs=true",
-    "-classpath", "${app}\\scenebuilder.jar",
+    "-classpath",
+    "${app}\\scenebuilder.jar",
     "com.oracle.javafx.scenebuilder.app.SceneBuilderApp"
   ],
-  "permissions": { "network": true, "filesystem": ["cwd", "desktop", "documents", "downloads"] },
+  "permissions": {
+    "network": true,
+    "filesystem": ["cwd"]
+  },
   "registry": ["Software\\JavaSoft\\Prefs\\com\\oracle\\javafx\\scenebuilder"],
-  "runtimes": { "java": "org.openjdk.java.Sdk:25.0.5_8@sha256:e0e6bf207799725067178eca9c1df29a564d47a618319aae46b23ee72e821418" },
-  "exports": {
-    "scenebuilder": {
-      "command": "${java}\\bin\\javaw.exe",
-      "args": [
-        "--module-path", "${app}\\javafx\\lib",
-        "--add-modules", "javafx.fxml,javafx.media,javafx.swing,javafx.web",
-        "--enable-native-access=javafx.graphics",
-        "--sun-misc-unsafe-memory-access=allow",
-        "--add-opens=javafx.fxml/javafx.fxml=ALL-UNNAMED",
-        "-Djavafx.allowjs=true",
-        "-classpath", "${app}\\scenebuilder.jar",
-        "com.oracle.javafx.scenebuilder.app.SceneBuilderApp"
-      ]
-    }
-  },
-  "shortcuts": {
-    "Scene Builder": { "command": "scenebuilder", "description": "Design JavaFX user interfaces", "icon": "SceneBuilder.ico" }
-  },
-  "associations": {
-    ".fxml": { "command": "scenebuilder", "description": "FXML document", "icon": "SceneBuilder.ico" }
-  },
+  "from": { "java": "java-sdk:25.0.5_8@sha256:e0e6bf207799725067178eca9c1df29a564d47a618319aae46b23ee72e821418" },
   "sdk": {
-    "maven": "org.apache.maven:3.10.0@sha256:05d74d8cf97a8ad0adafb3594488d660a9aad616bf189ac17bea1b1d8cd73043",
-    "busybox": "net.frippery.busybox:FRP-6075-g169694ebd@sha256:db9d39727bfdd4d176b5878c0a125daa8a2396ea21e0f01a6a372f53d9d97e5d"
+    "maven": "maven:3.10.0@sha256:05d74d8cf97a8ad0adafb3594488d660a9aad616bf189ac17bea1b1d8cd73043",
+    "busybox": "busybox:FRP-6075-g169694ebd@sha256:db9d39727bfdd4d176b5878c0a125daa8a2396ea21e0f01a6a372f53d9d97e5d"
   },
-  "modules": [
+  "stages": [
     {
       "name": "scenebuilder",
       "sources": [
-        {
-          "url": "https://github.com/gluonhq/scenebuilder/archive/refs/tags/26.0.0.tar.gz",
-          "sha256": "24b17752b1afd86b850c0420b67c798e7fb69121f99279bf1be321d31ef26cd1",
-          "strip": 1
-        },
-        {
-          "url": "https://download2.gluonhq.com/openjfx/26.0.2/openjfx-26.0.2_windows-x64_bin-sdk.zip",
-          "sha256": "02cc5fce8925bdd0ec58aaf88d7c2b0042d1e914a48b5e1abb6ae0d0364e326a",
-          "strip": 1,
-          "dest": "javafx"
-        }
+        { "url": "https://github.com/gluonhq/scenebuilder/archive/refs/tags/26.0.0.tar.gz", "sha256": "24b17752b1afd86b850c0420b67c798e7fb69121f99279bf1be321d31ef26cd1", "strip": 1 },
+        { "url": "https://download2.gluonhq.com/openjfx/26.0.2/openjfx-26.0.2_windows-x64_bin-sdk.zip", "sha256": "02cc5fce8925bdd0ec58aaf88d7c2b0042d1e914a48b5e1abb6ae0d0364e326a", "strip": 1, "dest": "javafx" }
       ],
       "vendor": {
         "commands": [

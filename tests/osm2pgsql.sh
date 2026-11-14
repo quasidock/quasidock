@@ -28,12 +28,12 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/images.sh"
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
 zigsaw=${1:-$root/out/bin/quasidock.exe}
 QUASIDOCK_HOME=${OSM2PGSQL_HOME:-${BUILD_HOME:-}}
-APP=org.osm2pgsql.osm2pgsql
-PG=org.postgresql.PostgreSQL
-for id in $APP $PG $PG.PostGIS; do
+APP=osm2pgsql
+PG=postgresql
+for id in $APP $PG; do
     if [ -z "$QUASIDOCK_HOME" ] || ! qd_cached "$zigsaw" "$id"; then
         echo "tests/osm2pgsql.sh needs a store with $id in OSM2PGSQL_HOME or BUILD_HOME;"
-        echo "build or pull osm2pgsql, PostgreSQL and PostGIS into one first."
+        echo "build or pull osm2pgsql and PostgreSQL into one first."
         exit 1
     fi
 done

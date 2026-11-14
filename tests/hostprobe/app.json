@@ -1,9 +1,8 @@
 {
   "id": "test.hostprobe",
   "version": "1",
-  "command": "hostprobe.exe",
-  "permissions": { "filesystem": ["documents"] },
-  "modules": [
+  "entrypoint": "hostprobe.exe",
+  "stages": [
     {
       "name": "probe",
       "sources": [

@@ -1,26 +1,23 @@
 {
-  "id": "org.gnu.gettext",
+  "id": "gettext",
   "version": "1.0",
-  "command": "bin/gettext.exe",
+  "entrypoint": "bin/gettext.exe",
   "path": ["bin"],
-  "permissions": { "filesystem": ["cwd"] },
-  "exports": {
-    "gettext": { "command": "bin/gettext.exe" },
-    "ngettext": { "command": "bin/ngettext.exe" },
-    "msgfmt": { "command": "bin/msgfmt.exe" },
-    "msgmerge": { "command": "bin/msgmerge.exe" },
-    "msginit": { "command": "bin/msginit.exe" },
-    "msgcat": { "command": "bin/msgcat.exe" },
-    "msgunfmt": { "command": "bin/msgunfmt.exe" },
-    "xgettext": { "command": "bin/xgettext.exe" },
-    "iconv": { "command": "bin/iconv.exe" }
+  "permissions": {
+    "filesystem": ["cwd"]
   },
   "sdk": {
-    "llvm": "com.github.mstorsjo.llvm-mingw:20261020@sha256:115b5e484a219e75e899eedcb456cfc3d7177859e704937f13db301b49fc9f64",
-    "busybox": "net.frippery.busybox:FRP-6075-g169694ebd@sha256:db9d39727bfdd4d176b5878c0a125daa8a2396ea21e0f01a6a372f53d9d97e5d"
+    "llvm": "llvm-mingw:20261020@sha256:115b5e484a219e75e899eedcb456cfc3d7177859e704937f13db301b49fc9f64",
+    "busybox": "busybox:FRP-6075-g169694ebd@sha256:db9d39727bfdd4d176b5878c0a125daa8a2396ea21e0f01a6a372f53d9d97e5d"
   },
-  "cleanup": ["/share/doc/gettext/examples", "/share/info", "/share/gettext/archive.dir.tar.gz", "/share/gettext/javaversion.class", "*.la"],
-  "modules": [
+  "cleanup": [
+    "/share/doc/gettext/examples",
+    "/share/info",
+    "/share/gettext/archive.dir.tar.gz",
+    "/share/gettext/javaversion.class",
+    "*.la"
+  ],
+  "stages": [
     {
       "name": "pmake",
       "build": [
@@ -29,13 +26,21 @@
     },
     {
       "name": "libiconv",
-      "env": { "SED": "sed", "GREP": "grep", "EGREP": "grep -E", "FGREP": "grep -F", "EGREP_TRADITIONAL": "grep -E", "AWK": "awk", "AR": "ar", "RANLIB": "ranlib", "RM": "rm -f", "CFLAGS": "-O2", "WINDRES": "windres" },
+      "env": {
+        "SED": "sed",
+        "GREP": "grep",
+        "EGREP": "grep -E",
+        "FGREP": "grep -F",
+        "EGREP_TRADITIONAL": "grep -E",
+        "AWK": "awk",
+        "AR": "ar",
+        "RANLIB": "ranlib",
+        "RM": "rm -f",
+        "CFLAGS": "-O2",
+        "WINDRES": "windres"
+      },
       "sources": [
-        {
-          "url": "https://ftp.gnu.org/gnu/libiconv/libiconv-1.19.tar.gz",
-          "sha256": "88dd96a8c0464eca144fc791ae60cd31cd8ee78321e67397e25fc095c4a19aa6",
-          "strip": 1
-        },
+        { "url": "https://ftp.gnu.org/gnu/libiconv/libiconv-1.19.tar.gz", "sha256": "88dd96a8c0464eca144fc791ae60cd31cd8ee78321e67397e25fc095c4a19aa6", "strip": 1 },
         { "path": "gtk4-sdk/autotools-mtimes.sh", "dest": "zigsaw/mtimes.sh" }
       ],
       "build": [
@@ -47,13 +52,25 @@
     },
     {
       "name": "gettext",
-      "env": { "SED": "sed", "GREP": "grep", "EGREP": "grep -E", "FGREP": "grep -F", "EGREP_TRADITIONAL": "grep -E", "AWK": "awk", "AR": "ar", "RANLIB": "ranlib", "RM": "rm -f", "CFLAGS": "-O2", "CXXFLAGS": "-O2", "CPPFLAGS": "-IB:/prefix/include", "LDFLAGS": "-s -LB:/prefix/lib", "PKG_CONFIG": "pkg-config", "WINDRES": "windres" },
+      "env": {
+        "SED": "sed",
+        "GREP": "grep",
+        "EGREP": "grep -E",
+        "FGREP": "grep -F",
+        "EGREP_TRADITIONAL": "grep -E",
+        "AWK": "awk",
+        "AR": "ar",
+        "RANLIB": "ranlib",
+        "RM": "rm -f",
+        "CFLAGS": "-O2",
+        "CXXFLAGS": "-O2",
+        "CPPFLAGS": "-IB:/prefix/include",
+        "LDFLAGS": "-s -LB:/prefix/lib",
+        "PKG_CONFIG": "pkg-config",
+        "WINDRES": "windres"
+      },
       "sources": [
-        {
-          "url": "https://ftp.gnu.org/gnu/gettext/gettext-1.0.tar.xz",
-          "sha256": "71132a3fb71e68245b8f2ac4e9e97137d3e5c02f415636eb508ae607bc01add7",
-          "strip": 1
-        },
+        { "url": "https://ftp.gnu.org/gnu/gettext/gettext-1.0.tar.xz", "sha256": "71132a3fb71e68245b8f2ac4e9e97137d3e5c02f415636eb508ae607bc01add7", "strip": 1 },
         { "path": "gtk4-sdk/autotools-mtimes.sh", "dest": "zigsaw/mtimes.sh" }
       ],
       "build": [

@@ -24,7 +24,7 @@ export MSYS_NO_PATHCONV=1
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/images.sh"
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
 zigsaw=${QUASIDOCK:-$root\\out\\bin\\quasidock.exe}
-ZOT=dev.zotregistry.zot
+ZOT=zot
 
 store=${ZOT_HOME:-${BUILD_HOME:-}}
 own_store=false
@@ -95,7 +95,7 @@ wait 2>/dev/null
 for _ in $(seq 20); do rm -rf "$dir" 2>/dev/null && break; sleep 0.5; done
 [ ! -e "$dir" ] || rm -rf "$dir"
 if $own_store; then
-    for id in $ZOT org.golang.go net.frippery.busybox; do qd_remove_app z $id >/dev/null 2>&1; done
+    for id in $ZOT go busybox; do qd_remove_app z $id >/dev/null 2>&1; done
     z prune --downloads >/dev/null 2>&1
     rm -rf "$store"
 fi

@@ -97,7 +97,7 @@ head -c 16777216 /dev/urandom >"$(cygpath -u "$fixture")/big.bin"
 printf 'hello lazy\n' >"$(cygpath -u "$fixture")/small.txt"
 printf 'never read but once\n' >"$(cygpath -u "$fixture")/never.txt"
 printf 'what a first run reads\n' >"$(cygpath -u "$fixture")/first.txt"
-printf '{ "id": "%s", "version": "1", "command": "busybox.exe", "exports": {}, "layer": "estargz", "prefetch": ["first.txt"],\n  "permissions": { "sandbox": "soft" },\n  "modules": [{ "name": "files", "sources": [\n    { "url": "https://frippery.org/files/busybox/busybox-w64-FRP-6075-g169694ebd.exe", "sha256": "07bb1e5b095b00d68a695481f9240879f33c5724b40aa2308f999d54ed78f075", "dest": "busybox.exe" },\n    { "path": "big.bin" }, { "path": "small.txt" }, { "path": "never.txt" }, { "path": "first.txt" } ] }] }\n' $APP >"$(cygpath -u "$fixture")/app.json"
+printf '{ "id": "%s", "version": "1", "entrypoint": "busybox.exe", "layer": "estargz", "prefetch": ["first.txt"],\n  "permissions": { "sandbox": "soft" },\n  "stages": [{ "name": "files", "sources": [\n    { "url": "https://frippery.org/files/busybox/busybox-w64-FRP-6075-g169694ebd.exe", "sha256": "07bb1e5b095b00d68a695481f9240879f33c5724b40aa2308f999d54ed78f075", "dest": "busybox.exe" },\n    { "path": "big.bin" }, { "path": "small.txt" }, { "path": "never.txt" }, { "path": "first.txt" } ] }] }\n' $APP >"$(cygpath -u "$fixture")/app.json"
 za build "$fixture\\app.json" >"$work\\build.txt" 2>&1 || { echo "building the fixture failed:"; tail -3 "$work\\build.txt"; exit 1; }
 qd_push za $APP "$repo:1" >/dev/null 2>&1 || { echo "pushing the fixture failed"; exit 1; }
 manifest=$(QUASIDOCK_HOME="$(store a)" qd_manifest "$zigsaw" "$APP" | head -1 | cut -d: -f2)

@@ -54,7 +54,7 @@ blobs_in() { ls "$work\\$1\\blobs\\sha256" 2>/dev/null | wc -l; }
 installed() { in_store "$1" inspect -f '{{.Quasidock.Version}}' "$APP" 2>/dev/null | tr -d '\r'; }
 
 recipe() { # <version>
-    printf '{ "id": "%s", "version": "%s", "command": "app.cmd", "permissions": { "sandbox": "soft" }, "exports": {},\n  "modules": [{ "name": "scripts", "sources": [{ "path": "app.cmd" }] }] }\n' "$APP" "$1" >"$work\\app.json"
+    printf '{ "id": "%s", "version": "%s", "entrypoint": "app.cmd", "permissions": { "sandbox": "soft" },\n  "stages": [{ "name": "scripts", "sources": [{ "path": "app.cmd" }] }] }\n' "$APP" "$1" >"$work\\app.json"
     printf '@echo version %s\r\n' "$1" >"$work\\app.cmd"
 }
 publish() { # <version> [<tag>]: the image's digest goes in $digest
@@ -274,7 +274,7 @@ pinned() {
     # A wrong signature, and an image a recipe names by digest: the recipe says
     # exactly what it wants, so a signature has nothing to add.
     store_with_key b1 one
-    printf '{ "id": "test.signing.user", "version": "1", "command": "use.cmd", "permissions": { "sandbox": "soft" }, "exports": {},\n  "runtimes": { "base": "%s:2@%s" },\n  "modules": [{ "name": "scripts", "sources": [{ "path": "use.cmd" }] }] }\n' "$repo" "$digest2" >"$work\\use.json"
+    printf '{ "id": "test.signing.user", "version": "1", "entrypoint": "use.cmd", "permissions": { "sandbox": "soft" },\n  "from": { "base": "%s:2@%s" },\n  "stages": [{ "name": "scripts", "sources": [{ "path": "use.cmd" }] }] }\n' "$repo" "$digest2" >"$work\\use.json"
     printf '@echo used\r\n' >"$work\\use.cmd"
     in_store b1 build "$work\\use.json"
 }

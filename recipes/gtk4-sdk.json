@@ -1,90 +1,54 @@
 {
-  "id": "org.gtk.Gtk4.Sdk",
+  "id": "gtk4-sdk",
   "version": "4.24.1",
   "name": "GTK SDK",
   "summary": "GTK 4, libadwaita and the stack below them, with headers, import libraries, introspection data and the tools to build GTK apps with llvm-mingw's Clang",
   "homepage": "https://www.gtk.org/",
   "license": "LGPL-2.1-or-later",
-  "command": "bin/gtk4-demo.exe",
+  "entrypoint": "bin/gtk4-demo.exe",
   "path": ["bin"],
-  "env": {
-    "PKG_CONFIG_PATH": "${app}\\lib\\pkgconfig;${app}\\share\\pkgconfig",
-    "RCFLAGS": "--use-temp-file"
-  },
-  "permissions": { "sandbox": "soft", "filesystem": ["cwd"] },
-  "exports": {
-    "cc": { "command": "${llvm}/bin/x86_64-w64-mingw32-clang.exe" },
-    "c++": { "command": "${llvm}/bin/x86_64-w64-mingw32-clang++.exe" },
-    "ar": { "command": "${llvm}/bin/llvm-ar.exe" },
-    "pkg-config": { "command": "${meson}/bin/pkgconf.exe" },
-    "meson": { "command": "${meson}/python.exe", "args": ["${meson}\\meson\\meson.py"] },
-    "ninja": { "command": "${meson}/ninja.exe" },
-    "sh": { "command": "${busybox}/busybox.exe", "args": ["sh"] },
-    "make": { "command": "${busybox}/busybox.exe", "args": ["make"] },
-    "glib-compile-resources": { "command": "bin/glib-compile-resources.exe" },
-    "glib-compile-schemas": { "command": "bin/glib-compile-schemas.exe" },
-    "gtk4-builder-tool": { "command": "bin/gtk4-builder-tool.exe" },
-    "msgfmt": { "command": "bin/msgfmt.exe" },
-    "msgmerge": { "command": "bin/msgmerge.exe" },
-    "xgettext": { "command": "bin/xgettext.exe" },
-    "windres": { "command": "${llvm}/bin/x86_64-w64-mingw32-windres.exe" },
-    "nm": { "command": "${llvm}/bin/llvm-nm.exe" },
-    "g-ir-scanner": { "command": "bin/g-ir-scanner.exe" },
-    "g-ir-compiler": { "command": "bin/g-ir-compiler.exe" }
+  "env": { "PKG_CONFIG_PATH": "${app}\\lib\\pkgconfig;${app}\\share\\pkgconfig", "RCFLAGS": "--use-temp-file" },
+  "permissions": {
+    "sandbox": "soft",
+    "filesystem": ["cwd"]
   },
   "cleanup": ["__pycache__"],
   "sdk": {
-    "cmake": "org.cmake.cmake:4.4.4@sha256:fdc6a6bb933b2d7994fba0ccdb07a2a91a02012a6e4879cf67ad451e53e6f53d",
-    "perl": "org.perl.perl:5.42.3.1@sha256:4459f0a9487860f976ef170b4e55c10e4889b2eff314c9eaacf4c42135406773",
-    "rust": "org.rust-lang.rust:1.99.0@sha256:e7e9706485bba88759915d9509993d0e41d340d7d8dfec6426fce1feda9a10e2",
-    "cargo-c": "com.github.lu-zero.cargo-c:0.10.25@sha256:5c3ab8267b4c4a8f4a1628ef7f0d8f62f9838a28f46df2800a13f542e71bed71"
+    "cmake": "cmake:4.4.4@sha256:fdc6a6bb933b2d7994fba0ccdb07a2a91a02012a6e4879cf67ad451e53e6f53d",
+    "perl": "perl:5.42.3.1@sha256:4459f0a9487860f976ef170b4e55c10e4889b2eff314c9eaacf4c42135406773",
+    "rust": "rust:1.99.0@sha256:e7e9706485bba88759915d9509993d0e41d340d7d8dfec6426fce1feda9a10e2",
+    "cargo-c": "cargo-c:0.10.25@sha256:5c3ab8267b4c4a8f4a1628ef7f0d8f62f9838a28f46df2800a13f542e71bed71"
   },
-  "runtimes": {
-    "meson": "com.mesonbuild.meson:1.12.1@sha256:7448a74d497dd62b290ce6a647f1de6d561e7267335d9058dff36dca9c3eddad",
-    "llvm": "com.github.mstorsjo.llvm-mingw:20261020@sha256:115b5e484a219e75e899eedcb456cfc3d7177859e704937f13db301b49fc9f64",
-    "busybox": "net.frippery.busybox:FRP-6075-g169694ebd@sha256:db9d39727bfdd4d176b5878c0a125daa8a2396ea21e0f01a6a372f53d9d97e5d"
+  "from": {
+    "meson": "meson:1.12.1@sha256:7448a74d497dd62b290ce6a647f1de6d561e7267335d9058dff36dca9c3eddad",
+    "llvm": "llvm-mingw:20261020@sha256:115b5e484a219e75e899eedcb456cfc3d7177859e704937f13db301b49fc9f64",
+    "busybox": "busybox:FRP-6075-g169694ebd@sha256:db9d39727bfdd4d176b5878c0a125daa8a2396ea21e0f01a6a372f53d9d97e5d"
   },
-  "modules": [
+  "stages": [
     {
       "name": "base",
-      "sources": [{ "image": "org.gtk.Gtk4.Sdk.Base:4.24.1@sha256:6c0f713be1848ba225024de99ab06b8ebaf88b3168069afa8affae69f0e48017" }]
+      "sources": [
+        { "image": "gtk4-sdk-base:4.24.1@sha256:6c0f713be1848ba225024de99ab06b8ebaf88b3168069afa8affae69f0e48017" }
+      ]
     },
     {
       "name": "hicolor-icon-theme",
       "sources": [
-        {
-          "url": "https://icon-theme.freedesktop.org/releases/hicolor-icon-theme-0.18.tar.xz",
-          "sha256": "db0e50a80aa3bf64bb45cbca5cf9f75efd9348cf2ac690b907435238c3cf81d7",
-          "strip": 1
-        }
+        { "url": "https://icon-theme.freedesktop.org/releases/hicolor-icon-theme-0.18.tar.xz", "sha256": "db0e50a80aa3bf64bb45cbca5cf9f75efd9348cf2ac690b907435238c3cf81d7", "strip": 1 }
       ],
-      "build": [
-        "meson setup out --prefix=\"$PREFIX\"",
-        "meson install -C out"
-      ]
+      "build": ["meson setup out --prefix=\"$PREFIX\"", "meson install -C out"]
     },
     {
       "name": "adwaita-icon-theme",
       "sources": [
-        {
-          "url": "https://download.gnome.org/sources/adwaita-icon-theme/51/adwaita-icon-theme-51.0.tar.xz",
-          "sha256": "ba561cf3c96305a47179fa5605856ad695c9238ea07f7093aebd9ba80c4e323b",
-          "strip": 1
-        }
+        { "url": "https://download.gnome.org/sources/adwaita-icon-theme/51/adwaita-icon-theme-51.0.tar.xz", "sha256": "ba561cf3c96305a47179fa5605856ad695c9238ea07f7093aebd9ba80c4e323b", "strip": 1 }
       ],
-      "build": [
-        "meson setup out --prefix=\"$PREFIX\"",
-        "meson install -C out"
-      ]
+      "build": ["meson setup out --prefix=\"$PREFIX\"", "meson install -C out"]
     },
     {
       "name": "libadwaita",
       "sources": [
-        {
-          "url": "https://download.gnome.org/sources/libadwaita/1.10/libadwaita-1.10.0.tar.xz",
-          "sha256": "b1bf56239269d101a6391ad4553c910eff9cc6170b803916405477ef60a66c84",
-          "strip": 1
-        }
+        { "url": "https://download.gnome.org/sources/libadwaita/1.10/libadwaita-1.10.0.tar.xz", "sha256": "b1bf56239269d101a6391ad4553c910eff9cc6170b803916405477ef60a66c84", "strip": 1 }
       ],
       "build": [
         "sed -i -e 's/i18n[.]merge_file(/configure_file(copy: true,/' -e '/^ *po_dir:/d' -e '/^ *type:/d' demo/data/meson.build",
@@ -99,11 +63,7 @@
       "name": "openssl",
       "env": { "CFLAGS": "-O2", "PERL": "perl", "PERL5OPT": "-IB:/src/openssl/zigsaw -Munixspec" },
       "sources": [
-        {
-          "url": "https://github.com/openssl/openssl/releases/download/openssl-3.5.9/openssl-3.5.9.tar.gz",
-          "sha256": "603f5602e2eef00d77fbd429d34dcd5822bb301757a1bc9cdb24c670f1eb859a",
-          "strip": 1
-        },
+        { "url": "https://github.com/openssl/openssl/releases/download/openssl-3.5.9/openssl-3.5.9.tar.gz", "sha256": "603f5602e2eef00d77fbd429d34dcd5822bb301757a1bc9cdb24c670f1eb859a", "strip": 1 },
         { "path": "gtk4-sdk/openssl-unixspec.pm", "dest": "zigsaw/unixspec.pm" }
       ],
       "build": [
@@ -119,31 +79,15 @@
     {
       "name": "sqlite",
       "sources": [
-        {
-          "url": "https://sqlite.org/2026/sqlite-amalgamation-3530400.zip",
-          "sha256": "1e71ddf93849c6a6ecf58b827c0692073d2dd7ee40196158068f7b29f422e87d",
-          "strip": 1
-        },
-        {
-          "url": "https://wrapdb.mesonbuild.com/v2/sqlite3_3.53.4-1/get_patch",
-          "sha256": "fe8033e209d350fa74e52ce1398253b373e7cfdd6809bc9f304e409e76f108af",
-          "type": "zip",
-          "strip": 1
-        }
+        { "url": "https://sqlite.org/2026/sqlite-amalgamation-3530400.zip", "sha256": "1e71ddf93849c6a6ecf58b827c0692073d2dd7ee40196158068f7b29f422e87d", "strip": 1 },
+        { "url": "https://wrapdb.mesonbuild.com/v2/sqlite3_3.53.4-1/get_patch", "sha256": "fe8033e209d350fa74e52ce1398253b373e7cfdd6809bc9f304e409e76f108af", "type": "zip", "strip": 1 }
       ],
-      "build": [
-        "meson setup out --prefix=\"$PREFIX\" --buildtype=release",
-        "meson install -C out"
-      ]
+      "build": ["meson setup out --prefix=\"$PREFIX\" --buildtype=release", "meson install -C out"]
     },
     {
       "name": "nghttp2",
       "sources": [
-        {
-          "url": "https://github.com/nghttp2/nghttp2/releases/download/v1.71.0/nghttp2-1.71.0.tar.xz",
-          "sha256": "c0f55121d88650e4b9227aec28cebaf664d2417ca60fe70be0f8d38829f52116",
-          "strip": 1
-        }
+        { "url": "https://github.com/nghttp2/nghttp2/releases/download/v1.71.0/nghttp2-1.71.0.tar.xz", "sha256": "c0f55121d88650e4b9227aec28cebaf664d2417ca60fe70be0f8d38829f52116", "strip": 1 }
       ],
       "build": [
         "cmake -S . -B out -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=\"$PREFIX\" -DENABLE_LIB_ONLY=ON -DBUILD_SHARED_LIBS=ON -DBUILD_STATIC_LIBS=OFF -DENABLE_DOC=OFF -DBUILD_TESTING=OFF",
@@ -154,11 +98,7 @@
     {
       "name": "libpsl",
       "sources": [
-        {
-          "url": "https://github.com/rockdaboot/libpsl/releases/download/0.23.3/libpsl-0.23.3.tar.gz",
-          "sha256": "93941f85a1e7bd593fa94f299233cb5dfc91cd144fd9a78a6ceb75001c5b03be",
-          "strip": 1
-        }
+        { "url": "https://github.com/rockdaboot/libpsl/releases/download/0.23.3/libpsl-0.23.3.tar.gz", "sha256": "93941f85a1e7bd593fa94f299233cb5dfc91cd144fd9a78a6ceb75001c5b03be", "strip": 1 }
       ],
       "build": [
         "meson setup out --prefix=\"$PREFIX\" --buildtype=release -Druntime=no -Dbuiltin=true -Dtests=false -Ddocs=false",
@@ -168,11 +108,7 @@
     {
       "name": "glib-networking",
       "sources": [
-        {
-          "url": "https://download.gnome.org/sources/glib-networking/2.90/glib-networking-2.90.1.tar.xz",
-          "sha256": "ea95636590098355a05e3027579dba1a9a950b05e456b2488ea03d82e4b6c18a",
-          "strip": 1
-        }
+        { "url": "https://download.gnome.org/sources/glib-networking/2.90/glib-networking-2.90.1.tar.xz", "sha256": "ea95636590098355a05e3027579dba1a9a950b05e456b2488ea03d82e4b6c18a", "strip": 1 }
       ],
       "build": [
         "sed -i 's/CertOpenSystemStoreW (0, source_cert_store_name)/CertOpenStore (CERT_STORE_PROV_SYSTEM_W, 0, 0, CERT_SYSTEM_STORE_CURRENT_USER | CERT_STORE_READONLY_FLAG, source_cert_store_name)/' tls/openssl/gtlsdatabase-openssl.c",
@@ -184,11 +120,7 @@
     {
       "name": "libsoup",
       "sources": [
-        {
-          "url": "https://download.gnome.org/sources/libsoup/3.8/libsoup-3.8.1.tar.xz",
-          "sha256": "5013dcef9136f6f861e6529fca578af50c1f52a39219027fb5aff652d1371a04",
-          "strip": 1
-        }
+        { "url": "https://download.gnome.org/sources/libsoup/3.8/libsoup-3.8.1.tar.xz", "sha256": "5013dcef9136f6f861e6529fca578af50c1f52a39219027fb5aff652d1371a04", "strip": 1 }
       ],
       "build": [
         "meson setup out --prefix=\"$PREFIX\" --buildtype=release -Dtls_check=false -Dgssapi=disabled -Dntlm=disabled -Dbrotli=disabled -Dzstd=disabled -Dintrospection=enabled -Dvapi=disabled -Ddocs=disabled -Ddoc_tests=false -Dtests=false -Dautobahn=disabled -Dsysprof=disabled -Dpkcs11_tests=disabled",
@@ -198,11 +130,7 @@
     {
       "name": "freetype",
       "sources": [
-        {
-          "url": "https://downloads.sourceforge.net/project/freetype/freetype2/2.15.0/freetype-2.15.0.tar.xz",
-          "sha256": "93cd47eb719c325107f2d3cf087d06299e944c3b48a40b55537302304dea1dd5",
-          "strip": 1
-        }
+        { "url": "https://downloads.sourceforge.net/project/freetype/freetype2/2.15.0/freetype-2.15.0.tar.xz", "sha256": "93cd47eb719c325107f2d3cf087d06299e944c3b48a40b55537302304dea1dd5", "strip": 1 }
       ],
       "build": [
         "meson setup out --prefix=\"$PREFIX\" --buildtype=release -Dbrotli=disabled -Dbzip2=disabled -Dharfbuzz=disabled -Dpng=disabled -Dzlib=disabled -Dtests=disabled",
@@ -212,11 +140,7 @@
     {
       "name": "libxml2",
       "sources": [
-        {
-          "url": "https://download.gnome.org/sources/libxml2/2.15/libxml2-2.15.4.tar.xz",
-          "sha256": "98087fd181d9070724f3fbc65c7377db03038eb92bd882374daff44940138821",
-          "strip": 1
-        }
+        { "url": "https://download.gnome.org/sources/libxml2/2.15/libxml2-2.15.4.tar.xz", "sha256": "98087fd181d9070724f3fbc65c7377db03038eb92bd882374daff44940138821", "strip": 1 }
       ],
       "build": [
         "sed -i \"/^r = run_command('git', 'describe', check: false)$/,/^endif$/d\" meson.build",
@@ -229,11 +153,7 @@
       "name": "librsvg",
       "env": { "PYTHONHASHSEED": "0" },
       "sources": [
-        {
-          "url": "https://download.gnome.org/sources/librsvg/2.63/librsvg-2.63.4.tar.xz",
-          "sha256": "31f07d9350dad3f8964fd613c31309ac160fdef13dfac59df6fd082de78d6e8f",
-          "strip": 1
-        }
+        { "url": "https://download.gnome.org/sources/librsvg/2.63/librsvg-2.63.4.tar.xz", "sha256": "31f07d9350dad3f8964fd613c31309ac160fdef13dfac59df6fd082de78d6e8f", "strip": 1 }
       ],
       "vendor": {
         "commands": ["cargo vendor --locked vendor >/dev/null"],
@@ -253,13 +173,19 @@
     },
     {
       "name": "hunspell",
-      "env": { "SED": "sed", "GREP": "grep", "EGREP": "grep -E", "FGREP": "grep -F", "AWK": "awk", "AR": "ar", "RANLIB": "ranlib", "CFLAGS": "-O2", "CXXFLAGS": "-O2" },
+      "env": {
+        "SED": "sed",
+        "GREP": "grep",
+        "EGREP": "grep -E",
+        "FGREP": "grep -F",
+        "AWK": "awk",
+        "AR": "ar",
+        "RANLIB": "ranlib",
+        "CFLAGS": "-O2",
+        "CXXFLAGS": "-O2"
+      },
       "sources": [
-        {
-          "url": "https://github.com/hunspell/hunspell/releases/download/v1.7.6/hunspell-1.7.6.tar.gz",
-          "sha256": "9c650ace31d4d8cc1da925a9507c3de1d50f1a54857af2f72429f517d5d53467",
-          "strip": 1
-        },
+        { "url": "https://github.com/hunspell/hunspell/releases/download/v1.7.6/hunspell-1.7.6.tar.gz", "sha256": "9c650ace31d4d8cc1da925a9507c3de1d50f1a54857af2f72429f517d5d53467", "strip": 1 },
         { "path": "gtk4-sdk/autotools-mtimes.sh", "dest": "zigsaw/mtimes.sh" }
       ],
       "build": [
@@ -273,13 +199,23 @@
     },
     {
       "name": "enchant",
-      "env": { "SED": "sed", "GREP": "grep", "EGREP": "grep -E", "FGREP": "grep -F", "AWK": "awk", "AR": "ar", "RANLIB": "ranlib", "NM": "nm", "RM": "rm -f", "CFLAGS": "-O2", "CXXFLAGS": "-O2", "PKG_CONFIG": "pkg-config", "DOXYGEN": "true" },
+      "env": {
+        "SED": "sed",
+        "GREP": "grep",
+        "EGREP": "grep -E",
+        "FGREP": "grep -F",
+        "AWK": "awk",
+        "AR": "ar",
+        "RANLIB": "ranlib",
+        "NM": "nm",
+        "RM": "rm -f",
+        "CFLAGS": "-O2",
+        "CXXFLAGS": "-O2",
+        "PKG_CONFIG": "pkg-config",
+        "DOXYGEN": "true"
+      },
       "sources": [
-        {
-          "url": "https://github.com/rrthomas/enchant/releases/download/v2.8.21/enchant-2.8.21.tar.gz",
-          "sha256": "dd2a762697c463148a8f59867089a5ebf2dd1449d869f93764b76c12bcf8acc0",
-          "strip": 1
-        },
+        { "url": "https://github.com/rrthomas/enchant/releases/download/v2.8.21/enchant-2.8.21.tar.gz", "sha256": "dd2a762697c463148a8f59867089a5ebf2dd1449d869f93764b76c12bcf8acc0", "strip": 1 },
         { "path": "gtk4-sdk/autotools-mtimes.sh", "dest": "zigsaw/mtimes.sh" },
         { "path": "gtk4-sdk/enchant.ordering", "dest": "zigsaw/enchant.ordering" }
       ],

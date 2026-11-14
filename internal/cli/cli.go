@@ -80,7 +80,7 @@ run options (before IMAGE):
   -i, --interactive                   keep STDIN open (attach console STDIN in foreground)
   -t, --tty                           allocate a pseudo-TTY flag on container config
   --pull=missing|always|never          default: missing; failed pulls never use stale images
-  --entrypoint=COMMAND                override the executable and clear the default CMD
+  --entrypoint=COMMAND                override the entrypoint and clear the default cmd
   -e, --env NAME[=VALUE]               set or inherit an environment variable
   --sandbox=soft|low|appcontainer      choose the Windows sandbox (default: image, then low)
   --filesystem=<location>[:ro]         grant cwd or an absolute host path
@@ -96,7 +96,7 @@ A bare cached app ID selects its last successful build/pull; full sha256 IDs
 select local manifests. Explicit names and tags select exactly that reference.
 Image IDs are manifest digests. images -q prints full IDs; inspect is local-only.
 Each run creates a container with isolated data under containers/<id>/data.
-Use an explicit command after IMAGE to replace the image's command and default args.
+Use an explicit command after IMAGE to replace the image's entrypoint and default cmd.
 Bind mounts (-v/--mount) and -p are not supported yet.
 
 Registry credentials use Windows Credential Manager, QUASIDOCK_REGISTRY_USERNAME /
@@ -164,7 +164,7 @@ func (p *settingsParser) apply(opt Option) error {
 		p.settings.Sandbox = &sb
 	case "filesystem", "nofilesystem":
 		g := oci.ParseFsGrant(val)
-		if g == nil || g.Where.Type == oci.FsGrantUnknown || g.Where.Type == oci.FsGrantFolder {
+		if g == nil || g.Where.Type == oci.FsGrantUnknown {
 			return fmt.Errorf("--%s must be cwd or an absolute path; got %q", name, val)
 		}
 		if name == "filesystem" {

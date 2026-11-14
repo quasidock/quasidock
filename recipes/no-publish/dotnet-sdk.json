@@ -1,11 +1,11 @@
 {
-  "id": "com.microsoft.dotnet.Sdk",
+  "id": "dotnet-sdk",
   "version": "10.0.402",
   "name": ".NET SDK",
   "summary": "Microsoft's tools to build .NET apps: the dotnet CLI, C#, F#, MSBuild and NuGet",
   "homepage": "https://dotnet.microsoft.com/",
   "license": "LicenseRef-Microsoft-.NET-Library",
-  "command": "dotnet.exe",
+  "entrypoint": "dotnet.exe",
   "path": [".", "${data}\\dotnet\\.dotnet\\tools"],
   "env": {
     "DOTNET_ROOT": "${app}",
@@ -20,19 +20,16 @@
     "MSBUILDDISABLENODEREUSE": "1",
     "UseSharedCompilation": "false"
   },
-  "permissions": { "sandbox": "soft", "network": true, "filesystem": ["cwd"] },
-  "exports": {
-    "dotnet": { "command": "dotnet.exe" },
-    "dnx": { "command": "dotnet.exe", "args": ["dnx"] }
+  "permissions": {
+    "sandbox": "soft",
+    "network": true,
+    "filesystem": ["cwd"]
   },
-  "modules": [
+  "stages": [
     {
       "name": "dotnet",
       "sources": [
-        {
-          "url": "https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.402/dotnet-sdk-10.0.402-win-x64.zip",
-          "sha256": "24d057ab968986a9d7c7a01606b2a0192cbe6485221ba38e9c685522e93d8798"
-        }
+        { "url": "https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.402/dotnet-sdk-10.0.402-win-x64.zip", "sha256": "24d057ab968986a9d7c7a01606b2a0192cbe6485221ba38e9c685522e93d8798" }
       ]
     }
   ]

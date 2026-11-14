@@ -1,31 +1,36 @@
 {
-  "id": "com.artifex.Ghostscript",
+  "id": "ghostscript",
   "version": "10.08.0",
   "name": "Ghostscript",
   "summary": "An interpreter for PostScript and PDF, and converter between them and images",
   "homepage": "https://www.ghostscript.com/",
   "license": "AGPL-3.0-or-later",
-  "command": "bin/gswin64c.exe",
+  "entrypoint": "bin/gswin64c.exe",
   "path": ["bin"],
-  "permissions": { "filesystem": ["cwd"] },
-  "exports": {
-    "gs": { "command": "bin/gswin64c.exe" },
-    "gswin64c": { "command": "bin/gswin64c.exe" }
+  "permissions": {
+    "filesystem": ["cwd"]
   },
   "sdk": {
-    "zig": "org.ziglang.zig:0.17.0@sha256:93ec2b6b36708ae80ffac87872e70dafaee350cd2d49a95dd2fa5847d0a10449",
-    "busybox": "net.frippery.busybox:FRP-6075-g169694ebd@sha256:db9d39727bfdd4d176b5878c0a125daa8a2396ea21e0f01a6a372f53d9d97e5d"
+    "zig": "zig:0.17.0@sha256:93ec2b6b36708ae80ffac87872e70dafaee350cd2d49a95dd2fa5847d0a10449",
+    "busybox": "busybox:FRP-6075-g169694ebd@sha256:db9d39727bfdd4d176b5878c0a125daa8a2396ea21e0f01a6a372f53d9d97e5d"
   },
-  "modules": [
+  "stages": [
     {
       "name": "ghostscript",
-      "env": { "SED": "sed", "GREP": "grep", "EGREP": "grep -E", "FGREP": "grep -F", "AWK": "awk", "AR": "ar", "RANLIB": "ranlib", "RM": "rm -f", "PATH_SEPARATOR": ";", "LD": "sh B:/src/ghostscript/zigsaw/ld.sh" },
+      "env": {
+        "SED": "sed",
+        "GREP": "grep",
+        "EGREP": "grep -E",
+        "FGREP": "grep -F",
+        "AWK": "awk",
+        "AR": "ar",
+        "RANLIB": "ranlib",
+        "RM": "rm -f",
+        "PATH_SEPARATOR": ";",
+        "LD": "sh B:/src/ghostscript/zigsaw/ld.sh"
+      },
       "sources": [
-        {
-          "url": "https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10080/ghostscript-10.08.0.tar.xz",
-          "sha256": "c20492bc8ebb96c87fa2e52a0926e1cda8cde95d66145e018ac713fed5da38cf",
-          "strip": 1
-        },
+        { "url": "https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10080/ghostscript-10.08.0.tar.xz", "sha256": "c20492bc8ebb96c87fa2e52a0926e1cda8cde95d66145e018ac713fed5da38cf", "strip": 1 },
         { "path": "gtk4-sdk/autotools-ld.sh", "dest": "zigsaw/ld.sh" }
       ],
       "build": [

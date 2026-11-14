@@ -1,16 +1,18 @@
 {
   "id": "test.build.xdll",
   "version": "1",
-  "command": "bin/xdll.exe",
+  "entrypoint": "bin/xdll.exe",
   "path": ["bin"],
-  "sdk": {
-    "llvm": "com.github.mstorsjo.llvm-mingw@@LLVM@",
-    "busybox": "net.frippery.busybox@@BUSYBOX@"
-  },
-  "modules": [
+  "sdk": { "llvm": "llvm-mingw@@LLVM@", "busybox": "busybox@@BUSYBOX@" },
+  "stages": [
     {
       "name": "xdll",
-      "sources": [{ "path": "shared.h" }, { "path": "a.cpp" }, { "path": "b.cpp" }, { "path": "main.cpp" }],
+      "sources": [
+        { "path": "shared.h" },
+        { "path": "a.cpp" },
+        { "path": "b.cpp" },
+        { "path": "main.cpp" }
+      ],
       "build": [
         "c++ -O2 -shared $LDFLAGS a.cpp -o a.dll -Wl,--out-implib,liba.dll.a",
         "c++ -O2 -shared $LDFLAGS b.cpp -o b.dll -Wl,--out-implib,libb.dll.a -L. -la",

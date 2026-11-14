@@ -1,31 +1,38 @@
 {
-  "id": "org.gdal.GDAL.Sdk",
+  "id": "gdal-sdk",
   "version": "3.13.3",
   "name": "GDAL SDK",
   "summary": "GDAL built with Clang (llvm-mingw), with static GEOS, PROJ, SQLite, json-c, expat and libiconv and their headers; GDAL's image takes its files from it",
   "homepage": "https://gdal.org/",
   "license": "MIT AND LGPL-2.1-or-later AND blessing AND Zlib AND libtiff AND IJG AND libpng-2.0 AND Apache-2.0 AND Qhull",
-  "command": "bin/gdalinfo.exe",
+  "entrypoint": "bin/gdalinfo.exe",
   "path": ["bin"],
   "env": { "GDAL_DATA": "${app}\\share\\gdal", "PROJ_DATA": "${app}\\share\\proj" },
-  "exports": {},
   "sdk": {
-    "meson": "com.mesonbuild.meson:1.12.1@sha256:9f1660936c3c00e44f1b90a83c72f20a28023b8f5f85bb61505f33c00ef4f767",
-    "cmake": "org.cmake.cmake:4.4.4@sha256:fa7efc2e143063055620628a8867dbd904bb0464a36f6a44943f7dba50a8bcd0",
-    "llvm": "com.github.mstorsjo.llvm-mingw:20261020@sha256:1fd5d6d8ada26770ad03d85e375e007e4b3bfcfa6d07201e93f5ad01a72c025e",
-    "busybox": "net.frippery.busybox:FRP-6075-g169694ebd@sha256:db9d39727bfdd4d176b5878c0a125daa8a2396ea21e0f01a6a372f53d9d97e5d"
+    "meson": "meson:1.12.1@sha256:9f1660936c3c00e44f1b90a83c72f20a28023b8f5f85bb61505f33c00ef4f767",
+    "cmake": "cmake:4.4.4@sha256:fa7efc2e143063055620628a8867dbd904bb0464a36f6a44943f7dba50a8bcd0",
+    "llvm": "llvm-mingw:20261020@sha256:1fd5d6d8ada26770ad03d85e375e007e4b3bfcfa6d07201e93f5ad01a72c025e",
+    "busybox": "busybox:FRP-6075-g169694ebd@sha256:db9d39727bfdd4d176b5878c0a125daa8a2396ea21e0f01a6a372f53d9d97e5d"
   },
   "cleanup": ["/lib/cmake", "*.la", "/share/bash-completion", "/share/doc", "/share/man"],
-  "modules": [
+  "stages": [
     {
       "name": "libiconv",
-      "env": { "SED": "sed", "GREP": "grep", "EGREP": "grep -E", "FGREP": "grep -F", "EGREP_TRADITIONAL": "grep -E", "AWK": "awk", "AR": "ar", "RANLIB": "ranlib", "RM": "rm -f", "CFLAGS": "-O2", "WINDRES": "windres" },
+      "env": {
+        "SED": "sed",
+        "GREP": "grep",
+        "EGREP": "grep -E",
+        "FGREP": "grep -F",
+        "EGREP_TRADITIONAL": "grep -E",
+        "AWK": "awk",
+        "AR": "ar",
+        "RANLIB": "ranlib",
+        "RM": "rm -f",
+        "CFLAGS": "-O2",
+        "WINDRES": "windres"
+      },
       "sources": [
-        {
-          "url": "https://ftp.gnu.org/gnu/libiconv/libiconv-1.19.tar.gz",
-          "sha256": "88dd96a8c0464eca144fc791ae60cd31cd8ee78321e67397e25fc095c4a19aa6",
-          "strip": 1
-        },
+        { "url": "https://ftp.gnu.org/gnu/libiconv/libiconv-1.19.tar.gz", "sha256": "88dd96a8c0464eca144fc791ae60cd31cd8ee78321e67397e25fc095c4a19aa6", "strip": 1 },
         { "path": "gtk4-sdk/autotools-mtimes.sh", "dest": "zigsaw/mtimes.sh" }
       ],
       "build": [
@@ -39,11 +46,7 @@
     {
       "name": "sqlite",
       "sources": [
-        {
-          "url": "https://sqlite.org/2026/sqlite-amalgamation-3530400.zip",
-          "sha256": "1e71ddf93849c6a6ecf58b827c0692073d2dd7ee40196158068f7b29f422e87d",
-          "strip": 1
-        }
+        { "url": "https://sqlite.org/2026/sqlite-amalgamation-3530400.zip", "sha256": "1e71ddf93849c6a6ecf58b827c0692073d2dd7ee40196158068f7b29f422e87d", "strip": 1 }
       ],
       "build": [
         "mkdir -p \"$PREFIX/bin\" \"$PREFIX/include\" \"$PREFIX/lib\"",
@@ -56,11 +59,7 @@
     {
       "name": "json-c",
       "sources": [
-        {
-          "url": "https://s3.amazonaws.com/json-c_releases/releases/json-c-0.19.tar.gz",
-          "sha256": "37ad0249902e301bd9052bf712e511fcc6acff4ecaad4b5900aad9ce564e26de",
-          "strip": 1
-        }
+        { "url": "https://s3.amazonaws.com/json-c_releases/releases/json-c-0.19.tar.gz", "sha256": "37ad0249902e301bd9052bf712e511fcc6acff4ecaad4b5900aad9ce564e26de", "strip": 1 }
       ],
       "build": [
         "cmake -S . -B out -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=\"$PREFIX\" -DBUILD_SHARED_LIBS=OFF -DBUILD_STATIC_LIBS=ON -DBUILD_TESTING=OFF -DBUILD_APPS=OFF -DDISABLE_EXTRA_LIBS=ON -DDISABLE_WERROR=ON",
@@ -72,11 +71,7 @@
     {
       "name": "geos",
       "sources": [
-        {
-          "url": "https://github.com/libgeos/geos/archive/refs/tags/3.15.0.tar.gz",
-          "sha256": "134aaf78026f4311737e20ff1465cd31a48c4ca8858fb68e99d13ccd3d52753a",
-          "strip": 1
-        }
+        { "url": "https://github.com/libgeos/geos/archive/refs/tags/3.15.0.tar.gz", "sha256": "134aaf78026f4311737e20ff1465cd31a48c4ca8858fb68e99d13ccd3d52753a", "strip": 1 }
       ],
       "build": [
         "sed -i 's|^#include <memory> // for unique_ptr typedef$|&\\n#include <type_traits>|' include/geos/geom/CoordinateSequence.h && grep -q '^#include <type_traits>$' include/geos/geom/CoordinateSequence.h",
@@ -91,11 +86,7 @@
     {
       "name": "proj",
       "sources": [
-        {
-          "url": "https://download.osgeo.org/proj/proj-9.9.0.tar.gz",
-          "sha256": "791a0610547eeabb17006cfd49cdbd2034f3240f47ed5e88a1031811f4e2bcf3",
-          "strip": 1
-        }
+        { "url": "https://download.osgeo.org/proj/proj-9.9.0.tar.gz", "sha256": "791a0610547eeabb17006cfd49cdbd2034f3240f47ed5e88a1031811f4e2bcf3", "strip": 1 }
       ],
       "build": [
         "cmake -S . -B out -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=\"$PREFIX\" -DBUILD_SHARED_LIBS=OFF -DBUILD_APPS=OFF -DBUILD_TESTING=OFF -DENABLE_TIFF=OFF -DENABLE_CURL=OFF -DEMBED_PROJ_DATA_PATH=OFF -DNLOHMANN_JSON_ORIGIN=internal -DSQLite3_INCLUDE_DIR=\"$PREFIX/include\" -DSQLite3_LIBRARY=\"$PREFIX/lib/libsqlite3.a\" -DEXE_SQLITE3=\"$PREFIX/bin/sqlite3.exe\"",
@@ -109,11 +100,7 @@
     {
       "name": "expat",
       "sources": [
-        {
-          "url": "https://github.com/libexpat/libexpat/releases/download/R_2_10_0/expat-2.10.0.tar.gz",
-          "sha256": "5466a341f9c692ef7a958a6881311be597f8e1ce345984cf78414f54793dea4c",
-          "strip": 1
-        }
+        { "url": "https://github.com/libexpat/libexpat/releases/download/R_2_10_0/expat-2.10.0.tar.gz", "sha256": "5466a341f9c692ef7a958a6881311be597f8e1ce345984cf78414f54793dea4c", "strip": 1 }
       ],
       "build": [
         "cmake -S . -B out -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=\"$PREFIX\" -DEXPAT_SHARED_LIBS=OFF -DEXPAT_BUILD_TOOLS=OFF -DEXPAT_BUILD_EXAMPLES=OFF -DEXPAT_BUILD_TESTS=OFF -DEXPAT_BUILD_DOCS=OFF -DEXPAT_BUILD_PKGCONFIG=ON",
@@ -126,11 +113,7 @@
       "name": "gdal",
       "env": { "CFLAGS": "-DXML_STATIC", "CXXFLAGS": "-DXML_STATIC" },
       "sources": [
-        {
-          "url": "https://download.osgeo.org/gdal/3.13.3/gdal-3.13.3.tar.gz",
-          "sha256": "5e0c388d83da2d686cc00a40272882432cdb54edff43d4af173e532844a0a0ea",
-          "strip": 1
-        }
+        { "url": "https://download.osgeo.org/gdal/3.13.3/gdal-3.13.3.tar.gz", "sha256": "5e0c388d83da2d686cc00a40272882432cdb54edff43d4af173e532844a0a0ea", "strip": 1 }
       ],
       "build": [
         "sed -i 's|^#include <cstddef>$|&\\n#include <cstdlib>|' port/cpl_vsil_cache.cpp && grep -q '^#include <cstdlib>$' port/cpl_vsil_cache.cpp",

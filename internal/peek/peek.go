@@ -24,9 +24,9 @@ type LayerInfo struct {
 func getLayers(app remote.Info) []LayerInfo {
 	layers := app.Manifest.Layers
 	result := make([]LayerInfo, len(layers))
-	runtimes := make([]oci.Runtime, 0, len(app.Config.Runtimes))
-	for _, r := range app.Config.Runtimes {
-		runtimes = append(runtimes, r)
+	from := make([]oci.Runtime, 0, len(app.Config.From))
+	for _, r := range app.Config.From {
+		from = append(from, r)
 	}
 
 	for n := 0; n < len(layers); n++ {
@@ -34,9 +34,9 @@ func getLayers(app remote.Info) []LayerInfo {
 		desc := layers[i]
 		id := app.Config.ID
 		ver := app.Config.Version
-		if i < len(runtimes) {
-			id = runtimes[i].ID
-			ver = runtimes[i].Version
+		if i < len(from) {
+			id = from[i].ID
+			ver = from[i].Version
 		}
 		fmtKind, ok := format.FormatOfDescriptor(desc)
 		if !ok {

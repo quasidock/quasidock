@@ -95,19 +95,19 @@ slowest() {
 smoke_args() {
     case $1 in
     # GTK's option parser: it has no --version.
-    com.github.flxzt.rnote) printf '%s\n' --help ;;
-    net.frippery.busybox) printf '%s\n' true ;;
-    org.nodejs.node) printf '%s\n' '-e 0' ;;
-    org.python.python) printf '%s\n' '-c pass' ;;
-    org.ziglang.zig | org.golang.go | org.apache.pdfbox | land.oras.oras | dev.sigstore.cosign) printf '%s\n' version ;;
-    org.7_zip.7zip) printf '%s\n' i ;;
-    org.videolan.VLC) printf '%s\n' '-I dummy vlc://quit' ;;
+    rnote) printf '%s\n' --help ;;
+    busybox) printf '%s\n' true ;;
+    node) printf '%s\n' '-e 0' ;;
+    python) printf '%s\n' '-c pass' ;;
+    zig | go | pdfbox | oras | cosign) printf '%s\n' version ;;
+    7zip) printf '%s\n' i ;;
+    vlc) printf '%s\n' '-I dummy vlc://quit' ;;
     *) printf '%s\n' --version ;;
     esac
 }
 # GUI apps with no option that exits: they must still be running after ten
 # seconds, when the run is stopped.
-stays_up_ids=" com.vscodium.codium org.notepad_plus_plus.NotepadPlusPlus org.sumatrapdfreader.SumatraPDF org.gtk.Gtk3demo com.gluonhq.SceneBuilder io.qt.Qt6 io.github.nuttyartist.notes "
+stays_up_ids=" vscodium notepad-plus-plus sumatrapdf gtk3demo scenebuilder qt6 notes "
 stays_up() {
     QUASIDOCK_HOME="$pull_store" timeout 10 bash "$QD_IMAGES_HELPER" run "$zigsaw" "$1" >/dev/null 2>&1
     [ $? -eq 124 ]
@@ -116,7 +116,7 @@ stays_up() {
 # told --no-browser: it must serve its login page at the address --listen
 # gives. zigsaw itself in the background, not a function running it, so
 # that `kill` ends zigsaw, and the run's job the server.
-serves_ids=" org.kanboard.Kanboard "
+serves_ids=" kanboard "
 serves() {
     local port=$((9100 + RANDOM % 800)) out="$logs\\$1.serve.log" server page=""
     QUASIDOCK_HOME="$pull_store" bash "$QD_IMAGES_HELPER" run "$zigsaw" --rm "$1" --no-browser --listen=127.0.0.1:$port >"$out" 2>&1 &
@@ -329,7 +329,7 @@ for name in $published_recipes; do
     fi
     # What Rust's toolchain links, GNU ld, must leave no import unbound
     # (docs/iteration-12.md).
-    if grep -q '"org\.rust-lang\.rust[:@]' "$recipe"; then
+    if grep -q '"rust[:@]' "$recipe"; then
         check "$id: the loader binds all its programs' imports" all_bound "$pull_store" "$published"
     fi
     latest_is_version() {

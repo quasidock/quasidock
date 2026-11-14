@@ -1,53 +1,36 @@
 {
-  "id": "community.files.Files",
+  "id": "files",
   "version": "4.3",
   "name": "Files - Zigsaw build",
   "summary": "Browse and organize your files and folders",
   "homepage": "https://files.community/",
   "license": "MIT",
-  "command": "bin/Files.exe",
+  "entrypoint": "bin/Files.exe",
   "path": ["bin"],
   "permissions": {
     "sandbox": "soft",
     "network": true,
-    "filesystem": ["cwd", "desktop", "documents", "downloads", "music", "pictures", "videos"],
+    "filesystem": ["cwd"],
     "unsupported": {
       "low": "Windows' storage APIs refuse a program without a package there, so it shows no drives",
       "appcontainer": "Windows' storage APIs refuse a program without a package there, so it shows no drives"
     }
   },
   "registry": ["Software\\Files Community"],
-  "exports": {
-    "files": { "command": "bin/Files.exe" }
-  },
-  "shortcuts": {
-    "Files - Zigsaw build": { "command": "files", "description": "Browse and organize your files and folders" }
-  },
-  "runtimes": {
-    "dotnet": "com.microsoft.dotnet:10.0.13@sha256:a9e05a1fe615515ed8e890187690c9bfc55193305cc103b4a340a8782b5a9c0a"
-  },
+  "from": { "dotnet": "dotnet:10.0.13@sha256:a9e05a1fe615515ed8e890187690c9bfc55193305cc103b4a340a8782b5a9c0a" },
   "sdk": {
-    "dotnetsdk": "com.microsoft.dotnet.Sdk:10.0.402@sha256:7687b4c6ce4f2fc43cf123426b5cf31fbe1b253978281ce56fe4fa36b1b28240",
-    "busybox": "net.frippery.busybox:FRP-6075-g169694ebd@sha256:db9d39727bfdd4d176b5878c0a125daa8a2396ea21e0f01a6a372f53d9d97e5d"
+    "dotnetsdk": "dotnet-sdk:10.0.402@sha256:7687b4c6ce4f2fc43cf123426b5cf31fbe1b253978281ce56fe4fa36b1b28240",
+    "busybox": "busybox:FRP-6075-g169694ebd@sha256:db9d39727bfdd4d176b5878c0a125daa8a2396ea21e0f01a6a372f53d9d97e5d"
   },
   "cleanup": ["*.pdb"],
-  "modules": [
+  "stages": [
     {
       "name": "files",
       "sources": [
-        {
-          "url": "https://github.com/files-community/Files/archive/refs/tags/v4.3.tar.gz",
-          "sha256": "1c235ad8c2e6a5f056726c58e4cc7cde5a54339edb4cfd3531bd081cf4e2afda",
-          "strip": 1
-        },
+        { "url": "https://github.com/files-community/Files/archive/refs/tags/v4.3.tar.gz", "sha256": "1c235ad8c2e6a5f056726c58e4cc7cde5a54339edb4cfd3531bd081cf4e2afda", "strip": 1 },
         { "path": "files/unpackaged.patch", "dest": "zigsaw/unpackaged.patch" },
         { "path": "files/name.patch", "dest": "zigsaw/name.patch" },
-        {
-          "url": "https://api.nuget.org/v3-flatcontainer/microsoft.windows.sdk.contracts/10.0.26100.8249/microsoft.windows.sdk.contracts.10.0.26100.8249.nupkg",
-          "sha256": "0e1c25793ed1265d49ed5846f1f9dd5a5a32fd44d3e9c16e74b7fda018e5fbd8",
-          "type": "zip",
-          "dest": "zigsaw/contracts"
-        }
+        { "url": "https://api.nuget.org/v3-flatcontainer/microsoft.windows.sdk.contracts/10.0.26100.8249/microsoft.windows.sdk.contracts.10.0.26100.8249.nupkg", "sha256": "0e1c25793ed1265d49ed5846f1f9dd5a5a32fd44d3e9c16e74b7fda018e5fbd8", "type": "zip", "dest": "zigsaw/contracts" }
       ],
       "vendor": {
         "commands": [

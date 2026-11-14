@@ -1,15 +1,26 @@
 {
   "id": "test.gtk.hello",
   "version": "1",
-  "command": "bin/hello-gtk.exe",
+  "entrypoint": "bin/hello-gtk.exe",
   "path": ["bin"],
-  "permissions": { "network": true, "filesystem": ["cwd"] },
-  "runtimes": { "gtk": "org.gtk.Gtk4@@GTK@" },
-  "sdk": { "gtksdk": "org.gtk.Gtk4.Sdk@@GTKSDK@" },
-  "modules": [
+  "permissions": {
+    "network": true,
+    "filesystem": ["cwd"]
+  },
+  "from": { "gtk": "gtk4@@GTK@" },
+  "sdk": { "gtksdk": "gtk4-sdk@@GTKSDK@" },
+  "stages": [
     {
       "name": "hello",
-      "sources": [{ "path": "meson.build" }, { "path": "hello.c" }, { "path": "soup.c" }, { "path": "svg.c" }, { "path": "spell.c" }, { "path": "font.c" }, { "path": "icon.c" }],
+      "sources": [
+        { "path": "meson.build" },
+        { "path": "hello.c" },
+        { "path": "soup.c" },
+        { "path": "svg.c" },
+        { "path": "spell.c" },
+        { "path": "font.c" },
+        { "path": "icon.c" }
+      ],
       "build": ["meson setup out --prefix=\"$PREFIX\"", "meson install -C out"]
     }
   ]

@@ -1,19 +1,22 @@
 {
-  "id": "com.microsoft.dotnet",
+  "id": "dotnet",
   "version": "10.0.13",
   "name": ".NET Runtime",
   "summary": "Microsoft's .NET runtime, with ASP.NET Core and Windows Desktop (WPF and Windows Forms), for .NET apps to run on",
   "homepage": "https://dotnet.microsoft.com/",
   "license": "LicenseRef-Microsoft-.NET-Library",
-  "command": "dotnet.exe",
+  "entrypoint": "dotnet.exe",
   "env": { "DOTNET_ROOT": "${app}" },
-  "permissions": { "filesystem": ["cwd"] },
-  "exports": {},
+  "permissions": {
+    "filesystem": ["cwd"]
+  },
   "cleanup": ["/sdk", "/sdk-manifests", "/packs", "/templates", "/dnx.cmd"],
-  "modules": [
+  "stages": [
     {
       "name": "dotnet",
-      "sources": [{ "image": "com.microsoft.dotnet.Sdk:10.0.402@sha256:7687b4c6ce4f2fc43cf123426b5cf31fbe1b253978281ce56fe4fa36b1b28240" }]
+      "sources": [
+        { "image": "dotnet-sdk:10.0.402@sha256:7687b4c6ce4f2fc43cf123426b5cf31fbe1b253978281ce56fe4fa36b1b28240" }
+      ]
     }
   ]
 }

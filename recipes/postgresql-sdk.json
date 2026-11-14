@@ -1,43 +1,41 @@
 {
-  "id": "org.postgresql.PostgreSQL.Sdk",
+  "id": "postgresql-sdk",
   "version": "18.6",
   "name": "PostgreSQL SDK",
   "summary": "PostgreSQL built with Clang (llvm-mingw), with headers, libraries, pg_config and pgxs for building extensions; PostgreSQL's image takes its files from it",
   "homepage": "https://www.postgresql.org/",
   "license": "PostgreSQL",
-  "command": "bin/pg_config.exe",
+  "entrypoint": "bin/pg_config.exe",
   "path": ["bin"],
-  "exports": {
-    "pg_config": { "command": "bin/pg_config.exe" }
-  },
   "sdk": {
-    "meson": "com.mesonbuild.meson:1.12.1@sha256:9f1660936c3c00e44f1b90a83c72f20a28023b8f5f85bb61505f33c00ef4f767",
-    "cmake": "org.cmake.cmake:4.4.4@sha256:fdc6a6bb933b2d7994fba0ccdb07a2a91a02012a6e4879cf67ad451e53e6f53d",
-    "llvm": "com.github.mstorsjo.llvm-mingw:20261020@sha256:1fd5d6d8ada26770ad03d85e375e007e4b3bfcfa6d07201e93f5ad01a72c025e",
-    "busybox": "net.frippery.busybox:FRP-6075-g169694ebd@sha256:db9d39727bfdd4d176b5878c0a125daa8a2396ea21e0f01a6a372f53d9d97e5d",
-    "perl": "org.perl.perl:5.42.3.1@sha256:0a4e1bd6c15cb3d2ff507685d62b3cd5769dbbd71c5e7c68ffe44c8d9b4bca85",
-    "python": "org.python.python:3.14.10@sha256:ccd0d0e3ef77fd28cfa787f19405ffe747d47f1483312df00819dce1a356c5b4"
+    "meson": "meson:1.12.1@sha256:9f1660936c3c00e44f1b90a83c72f20a28023b8f5f85bb61505f33c00ef4f767",
+    "cmake": "cmake:4.4.4@sha256:fdc6a6bb933b2d7994fba0ccdb07a2a91a02012a6e4879cf67ad451e53e6f53d",
+    "llvm": "llvm-mingw:20261020@sha256:1fd5d6d8ada26770ad03d85e375e007e4b3bfcfa6d07201e93f5ad01a72c025e",
+    "busybox": "busybox:FRP-6075-g169694ebd@sha256:db9d39727bfdd4d176b5878c0a125daa8a2396ea21e0f01a6a372f53d9d97e5d",
+    "perl": "perl:5.42.3.1@sha256:0a4e1bd6c15cb3d2ff507685d62b3cd5769dbbd71c5e7c68ffe44c8d9b4bca85",
+    "python": "python:3.14.10@sha256:ccd0d0e3ef77fd28cfa787f19405ffe747d47f1483312df00819dce1a356c5b4"
   },
-  "cleanup": ["/lib/cmake", "/share/doc", "/share/man", "/bin/xml2-config", "/bin/xmllint.exe", "/bin/xmlcatalog.exe", "/bin/test_cloexec.exe"],
-  "modules": [
+  "cleanup": [
+    "/lib/cmake",
+    "/share/doc",
+    "/share/man",
+    "/bin/xml2-config",
+    "/bin/xmllint.exe",
+    "/bin/xmlcatalog.exe",
+    "/bin/test_cloexec.exe"
+  ],
+  "stages": [
     {
       "name": "flex-bison",
       "sources": [
-        {
-          "url": "https://github.com/lexxmark/winflexbison/releases/download/v2.5.25/win_flex_bison-2.5.25.zip",
-          "sha256": "8d324b62be33604b2c45ad1dd34ab93d722534448f55a16ca7292de32b6ac135"
-        }
+        { "url": "https://github.com/lexxmark/winflexbison/releases/download/v2.5.25/win_flex_bison-2.5.25.zip", "sha256": "8d324b62be33604b2c45ad1dd34ab93d722534448f55a16ca7292de32b6ac135" }
       ],
       "build": ["./win_flex.exe --version && ./win_bison.exe --version"]
     },
     {
       "name": "zlib",
       "sources": [
-        {
-          "url": "https://github.com/madler/zlib/releases/download/v1.4/zlib-1.4.tar.xz",
-          "sha256": "4f11c512053d7bab8d9e9b89bde3575add3e4c50a383b42ef6cb837035fc5a7c",
-          "strip": 1
-        }
+        { "url": "https://github.com/madler/zlib/releases/download/v1.4/zlib-1.4.tar.xz", "sha256": "4f11c512053d7bab8d9e9b89bde3575add3e4c50a383b42ef6cb837035fc5a7c", "strip": 1 }
       ],
       "build": [
         "cmake -S . -B out -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=\"$PREFIX\" -DZLIB_BUILD_TESTING=OFF -DZLIB_BUILD_SHARED=OFF",
@@ -50,11 +48,7 @@
     {
       "name": "lz4",
       "sources": [
-        {
-          "url": "https://github.com/lz4/lz4/releases/download/v1.10.0/lz4-1.10.0.tar.gz",
-          "sha256": "537512904744b35e232912055ccf8ec66d768639ff3abe5788d90d792ec5f48b",
-          "strip": 1
-        }
+        { "url": "https://github.com/lz4/lz4/releases/download/v1.10.0/lz4-1.10.0.tar.gz", "sha256": "537512904744b35e232912055ccf8ec66d768639ff3abe5788d90d792ec5f48b", "strip": 1 }
       ],
       "build": [
         "cmake -S build/cmake -B out -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=\"$PREFIX\" -DBUILD_SHARED_LIBS=OFF -DBUILD_STATIC_LIBS=ON -DLZ4_BUILD_CLI=OFF -DLZ4_BUILD_LEGACY_LZ4C=OFF",
@@ -66,11 +60,7 @@
     {
       "name": "zstd",
       "sources": [
-        {
-          "url": "https://github.com/facebook/zstd/releases/download/v1.5.7/zstd-1.5.7.tar.gz",
-          "sha256": "eb33e51f49a15e023950cd7825ca74a4a2b43db8354825ac24fc1b7ee09e6fa3",
-          "strip": 1
-        }
+        { "url": "https://github.com/facebook/zstd/releases/download/v1.5.7/zstd-1.5.7.tar.gz", "sha256": "eb33e51f49a15e023950cd7825ca74a4a2b43db8354825ac24fc1b7ee09e6fa3", "strip": 1 }
       ],
       "build": [
         "cmake -S build/cmake -B out -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=\"$PREFIX\" -DZSTD_BUILD_SHARED=OFF -DZSTD_BUILD_PROGRAMS=OFF -DZSTD_BUILD_TESTS=OFF",
@@ -82,11 +72,7 @@
     {
       "name": "libxml2",
       "sources": [
-        {
-          "url": "https://download.gnome.org/sources/libxml2/2.15/libxml2-2.15.4.tar.xz",
-          "sha256": "98087fd181d9070724f3fbc65c7377db03038eb92bd882374daff44940138821",
-          "strip": 1
-        }
+        { "url": "https://download.gnome.org/sources/libxml2/2.15/libxml2-2.15.4.tar.xz", "sha256": "98087fd181d9070724f3fbc65c7377db03038eb92bd882374daff44940138821", "strip": 1 }
       ],
       "build": [
         "sed -i \"/^r = run_command('git', 'describe', check: false)$/,/^endif$/d\" meson.build",
@@ -100,17 +86,9 @@
     },
     {
       "name": "openssl",
-      "env": {
-        "CFLAGS": "-O2",
-        "PERL": "perl",
-        "PERL5OPT": "-IB:/src/openssl/zigsaw -Munixspec"
-      },
+      "env": { "CFLAGS": "-O2", "PERL": "perl", "PERL5OPT": "-IB:/src/openssl/zigsaw -Munixspec" },
       "sources": [
-        {
-          "url": "https://github.com/openssl/openssl/releases/download/openssl-3.5.9/openssl-3.5.9.tar.gz",
-          "sha256": "603f5602e2eef00d77fbd429d34dcd5822bb301757a1bc9cdb24c670f1eb859a",
-          "strip": 1
-        },
+        { "url": "https://github.com/openssl/openssl/releases/download/openssl-3.5.9/openssl-3.5.9.tar.gz", "sha256": "603f5602e2eef00d77fbd429d34dcd5822bb301757a1bc9cdb24c670f1eb859a", "strip": 1 },
         { "path": "gtk4-sdk/openssl-unixspec.pm", "dest": "zigsaw/unixspec.pm" }
       ],
       "build": [
@@ -127,11 +105,7 @@
     {
       "name": "icu-headers",
       "sources": [
-        {
-          "url": "https://github.com/unicode-org/icu/releases/download/release-72-1/icu4c-72_1-src.tgz",
-          "sha256": "a2d2d38217092a7ed56635e34467f92f976b370e20182ad325edea6681a71d68",
-          "strip": 1
-        },
+        { "url": "https://github.com/unicode-org/icu/releases/download/release-72-1/icu4c-72_1-src.tgz", "sha256": "a2d2d38217092a7ed56635e34467f92f976b370e20182ad325edea6681a71d68", "strip": 1 },
         { "path": "postgresql/icu-uc.pc", "dest": "zigsaw/icu-uc.pc" },
         { "path": "postgresql/icu-i18n.pc", "dest": "zigsaw/icu-i18n.pc" }
       ],
@@ -144,23 +118,14 @@
     {
       "name": "python-dev",
       "sources": [
-        {
-          "url": "https://www.nuget.org/api/v2/package/python/3.14.10",
-          "sha256": "f54ba67c9951c3d773ea47d2bb095150c037c399f0423a968bcda22809241784",
-          "type": "zip",
-          "dest": "nupkg"
-        }
+        { "url": "https://www.nuget.org/api/v2/package/python/3.14.10", "sha256": "f54ba67c9951c3d773ea47d2bb095150c037c399f0423a968bcda22809241784", "type": "zip", "dest": "nupkg" }
       ],
       "build": ["./nupkg/tools/python.exe -B -c 'import sysconfig; print(sysconfig.get_platform())'"]
     },
     {
       "name": "postgresql",
       "sources": [
-        {
-          "url": "https://ftp.postgresql.org/pub/source/v18.6/postgresql-18.6.tar.gz",
-          "sha256": "983ee554ec53dbeb9b70797bef9fcf4e67e117e7e48ca1463cc80b3ff8e8ff3f",
-          "strip": 1
-        },
+        { "url": "https://ftp.postgresql.org/pub/source/v18.6/postgresql-18.6.tar.gz", "sha256": "983ee554ec53dbeb9b70797bef9fcf4e67e117e7e48ca1463cc80b3ff8e8ff3f", "strip": 1 },
         { "path": "postgresql/signal-pipes.patch", "dest": "zigsaw/signal-pipes.patch" },
         { "path": "postgresql/clang-mingw.patch", "dest": "zigsaw/clang-mingw.patch" },
         { "path": "postgresql/initdb-nul.patch", "dest": "zigsaw/initdb-nul.patch" },
@@ -183,7 +148,9 @@
     },
     {
       "name": "pg-server",
-      "sources": [{ "path": "postgresql/pg-server.c" }],
+      "sources": [
+        { "path": "postgresql/pg-server.c" }
+      ],
       "build": [
         "cc -O2 $LDFLAGS -I B:/src/postgresql/src/include -I B:/src/postgresql/out/src/include -I B:/src/postgresql/src/include/port/win32 -D_POSIX_C_SOURCE -o \"$PREFIX/bin/pg-server.exe\" pg-server.c B:/src/postgresql/out/src/common/libpgcommon.a B:/src/postgresql/out/src/port/libpgport.a -lws2_32 -lsecur32 -lbcrypt -ladvapi32",
         "\"$PREFIX/bin/pg-server.exe\" --version"

@@ -1,5 +1,5 @@
 {
-  "id": "io.qt.Qt6",
+  "id": "qt6",
   "version": "6.12.0",
   "name": "Qt",
   "summary": "Qt 6 (Core, Gui, Widgets, Network, Svg, Sql, image formats, translations, QML, Qt Quick) for apps built with Qt's SDK, with Designer, Linguist and qml",
@@ -44,24 +44,13 @@
     "plugins/imageformats/qwbmp.dll",
     "plugins/imageformats/qwebp.dll"
   ],
-  "command": "bin/designer.exe",
+  "entrypoint": "bin/designer.exe",
   "path": ["bin"],
-  "permissions": { "filesystem": ["cwd", "documents"] },
+  "permissions": {
+    "filesystem": ["cwd"]
+  },
   "registry": ["Software\\QtProject"],
-  "exports": {
-    "designer": { "command": "bin/designer.exe" },
-    "linguist": { "command": "bin/linguist.exe" },
-    "pixeltool": { "command": "bin/pixeltool.exe" },
-    "qml": { "command": "bin/qml.exe" },
-    "qtdiag": { "command": "bin/qtdiag.exe" }
-  },
-  "shortcuts": {
-    "Qt Widgets Designer": { "command": "designer", "description": "Design Qt Widgets forms" },
-    "Qt Linguist": { "command": "linguist", "description": "Translate Qt apps" }
-  },
-  "sdk": {
-    "qtsdk": "io.qt.Qt6.Sdk:6.12.0@sha256:965dba80c2f86cd874d5603658b48ed0d0c8f01d1204aba2cb1c077fb7ba0128"
-  },
+  "sdk": { "qtsdk": "qt6-sdk:6.12.0@sha256:965dba80c2f86cd874d5603658b48ed0d0c8f01d1204aba2cb1c077fb7ba0128" },
   "cleanup": [
     "/include",
     "/lib",
@@ -131,10 +120,12 @@
     "/qml/QtTest",
     "/qml/Qt/test"
   ],
-  "modules": [
+  "stages": [
     {
       "name": "qt",
-      "sources": [{ "image": "io.qt.Qt6.Sdk:6.12.0@sha256:965dba80c2f86cd874d5603658b48ed0d0c8f01d1204aba2cb1c077fb7ba0128" }]
+      "sources": [
+        { "image": "qt6-sdk:6.12.0@sha256:965dba80c2f86cd874d5603658b48ed0d0c8f01d1204aba2cb1c077fb7ba0128" }
+      ]
     },
     {
       "name": "qt-conf",

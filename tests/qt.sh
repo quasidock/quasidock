@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Qt end to end: an app built against Qt's SDK image (io.qt.Qt6.Sdk), with
-# CMake and llvm-mingw's Clang, runs on Qt's runtime image (io.qt.Qt6),
+# Qt end to end: an app built against Qt's SDK image (qt6-sdk), with
+# CMake and llvm-mingw's Clang, runs on Qt's runtime image (qt6),
 # opens a window and paints it, in each sandbox; Qt finds its plugins and
 # translations in the runtime's deployment (it's relocatable), has the SVG,
 # WebP and TIFF image plugins and Schannel for TLS, and keeps an app's files
@@ -38,16 +38,16 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/images.sh"
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
 zigsaw=${1:-$root/out/bin/quasidock.exe}
 QUASIDOCK_HOME=${QT_HOME:-${BUILD_HOME:-}}
-if [ -z "$QUASIDOCK_HOME" ] || ! qd_cached "$zigsaw" "io.qt.Qt6" || ! qd_cached "$zigsaw" "io.qt.Qt6.Sdk"; then
-    echo "tests/qt.sh needs a store with io.qt.Qt6 and io.qt.Qt6.Sdk in QT_HOME or BUILD_HOME;"
+if [ -z "$QUASIDOCK_HOME" ] || ! qd_cached "$zigsaw" "qt6" || ! qd_cached "$zigsaw" "qt6-sdk"; then
+    echo "tests/qt.sh needs a store with qt6 and qt6-sdk in QT_HOME or BUILD_HOME;"
     echo "build recipes\\qt6-sdk.json and recipes\\qt6.json into one first."
     exit 1
 fi
 export QUASIDOCK_HOME
 work=$(cygpath -w "$(mktemp -d)")
 APP=test.qt.hello
-FLAMESHOT=org.flameshot.Flameshot
-NOTES=io.github.nuttyartist.notes
+FLAMESHOT=flameshot
+NOTES=notes
 mkdir -p "$work\\folders\\Pictures"
 
 failures=0
@@ -80,7 +80,7 @@ install_again() {
 
 for f in hello.cpp CMakeLists.txt; do cp "$root\\tests\\qt\\$f" "$work\\"; done
 cp -r "$root\\tests\\qt\\quick" "$work\\"
-sed -e "s/@QT@/$(manifest_of io.qt.Qt6)/" -e "s/@QTSDK@/$(manifest_of io.qt.Qt6.Sdk)/" \
+sed -e "s/@QT@/$(manifest_of qt6)/" -e "s/@QTSDK@/$(manifest_of qt6-sdk)/" \
     "$root\\tests\\qt\\hello.json.in" >"$work\\hello.json"
 
 check "an app builds against Qt's SDK image with CMake, finding Qt" z build "$work\\hello.json"
@@ -159,7 +159,7 @@ check "it has the Controls styles for Windows, and Material and Universal, but n
 printf '%s\n' 'import QtQuick' 'Window {' '    visible: true' \
     '    Timer { interval: 200; running: true; onTriggered: { console.log("ran on " + Qt.platform.os); Qt.quit() } }' \
     '}' >"$work\\ran.qml"
-check "the runtime's qml tool runs a QML file" sh -c "timeout 60 bash '$QD_IMAGES_HELPER' run \"\$0\" --env=QT_FORCE_STDERR_LOGGING=1 --entrypoint=qml io.qt.Qt6 ran.qml 2>&1 | tr -d '\r' | grep -q 'ran on windows'" "$zigsaw"
+check "the runtime's qml tool runs a QML file" sh -c "timeout 60 bash '$QD_IMAGES_HELPER' run \"\$0\" --env=QT_FORCE_STDERR_LOGGING=1 --entrypoint=qml qt6 ran.qml 2>&1 | tr -d '\r' | grep -q 'ran on windows'" "$zigsaw"
 
 # Building without a recipe: the SDK's exports, from the store's bin, as
 # cmake (with its ninja, llvm-mingw's c++ and windres); the program then
@@ -170,14 +170,14 @@ check "the runtime's qml tool runs a QML file" sh -c "timeout 60 bash '$QD_IMAGE
 # LOG_DIR.
 mkdir -p "$work\\loose" && cp "$work\\hello.cpp" "$work\\CMakeLists.txt" "$work\\loose\\"
 loose_cmake() {
-    local cmake=(bash "$QD_IMAGES_HELPER" run "$zigsaw" --entrypoint=cmake io.qt.Qt6.Sdk)
+    local cmake=(bash "$QD_IMAGES_HELPER" run "$zigsaw" --entrypoint=cmake qt6-sdk)
     (cd "$work\\loose" && "${cmake[@]}" -S . -B out -DCMAKE_BUILD_TYPE=Release && "${cmake[@]}" --build out) >"$work\\loose.log" 2>&1 || {
         [ -z "${LOG_DIR:-}" ] || cp "$work\\loose.log" "$LOG_DIR\\qt-loose-cmake.log"
         tail -5 "$work\\loose.log"
         return 1
     }
     local out
-    out=$(cd "$work\\loose" && timeout 120 bash "$QD_IMAGES_HELPER" run "$zigsaw" --entrypoint="$work\\loose\\out\\hello-qt.exe" io.qt.Qt6 2>&1 | tr -d '\r')
+    out=$(cd "$work\\loose" && timeout 120 bash "$QD_IMAGES_HELPER" run "$zigsaw" --entrypoint="$work\\loose\\out\\hello-qt.exe" qt6 2>&1 | tr -d '\r')
     grep -q '^painted a window with windows$' <<<"$out" || { echo "got: $out"; return 1; }
 }
 check "the SDK's cmake builds a Qt program, which runs on the runtime" loose_cmake
@@ -210,8 +210,8 @@ app_window() {
     sleep 1
     [ "$title" = "$want" ] || { echo "window: \"$title\"${running:+, $running $process process(es) still running}"; return 1; }
 }
-designer_window() { app_window designer "Qt Widgets Designer" "$@" io.qt.Qt6; }
-linguist_window() { app_window linguist "Qt Linguist" "$@" --entrypoint=linguist io.qt.Qt6; }
+designer_window() { app_window designer "Qt Widgets Designer" "$@" qt6; }
+linguist_window() { app_window linguist "Qt Linguist" "$@" --entrypoint=linguist qt6; }
 check "Designer opens its window" designer_window
 check "with --sandbox=soft" designer_window --sandbox=soft
 check "with --sandbox=appcontainer" designer_window --sandbox=appcontainer
@@ -221,7 +221,7 @@ check "with --sandbox=appcontainer" linguist_window --sandbox=appcontainer
 # Programs in the runtime's bin, beside Qt6Core.dll, would take bin for Qt's
 # prefix without its qt.conf (Qt looks for lib\libQt6Core.a to tell), and
 # find no platform plugin.
-check "the runtime's qtdiag finds the windows platform plugin" sh -c "timeout 60 bash '$QD_IMAGES_HELPER' run \"\$0\" --entrypoint=qtdiag io.qt.Qt6 2>&1 | tr -d '\r' | grep -q '^Qt 6\\.12\\.0 .* on \"windows\"'" "$zigsaw"
+check "the runtime's qtdiag finds the windows platform plugin" sh -c "timeout 60 bash '$QD_IMAGES_HELPER' run \"\$0\" --entrypoint=qtdiag qt6 2>&1 | tr -d '\r' | grep -q '^Qt 6\\.12\\.0 .* on \"windows\"'" "$zigsaw"
 
 # Flameshot, on the runtime. Built here unless the store has it, which takes
 # a few minutes.

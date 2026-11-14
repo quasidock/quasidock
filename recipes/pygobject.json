@@ -1,22 +1,20 @@
 {
-  "id": "org.gnome.PyGObject",
+  "id": "pygobject",
   "version": "3.58.1",
   "name": "PyGObject",
   "summary": "Python 3.14 with PyGObject and pycairo, for Python apps on GTK's runtimes",
   "homepage": "https://pygobject.gnome.org/",
   "license": "LGPL-2.1-or-later AND PSF-2.0",
-  "command": "python.exe",
+  "entrypoint": "python.exe",
   "path": ["."],
-  "env": {
-    "PYTHONPYCACHEPREFIX": "${data}\\cache\\pycache",
-    "PYTHONNOUSERSITE": "1"
-  },
-  "exports": {},
+  "env": { "PYTHONPYCACHEPREFIX": "${data}\\cache\\pycache", "PYTHONNOUSERSITE": "1" },
   "cleanup": ["/include", "/libs", "/Lib/pkgconfig", "__pycache__"],
-  "modules": [
+  "stages": [
     {
       "name": "pygobject",
-      "sources": [{ "image": "org.gnome.PyGObject.Sdk:3.58.1@sha256:7e122384cf9a04c7f4f1d3b09cd6aaa0bd95a0ef96121249672ecda232a91210" }]
+      "sources": [
+        { "image": "pygobject-sdk:3.58.1@sha256:7e122384cf9a04c7f4f1d3b09cd6aaa0bd95a0ef96121249672ecda232a91210" }
+      ]
     }
   ]
 }

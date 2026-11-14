@@ -206,7 +206,7 @@ func installedNode(root string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	ref, err := st.ResolveLocalImage("", "org.nodejs.node")
+	ref, err := st.ResolveLocalImage("", "node")
 	if err != nil {
 		return "", err
 	}

@@ -91,11 +91,11 @@ check "attempts to run a command, one at a time, don't" one_at_a_time
 
 export_args() {
     local want got
-    want=$(for a in "$deploy" "a b" "%PATH%" x; do hex "$a"; done)
-    got=$(bash "$QD_IMAGES_HELPER" run "$quasidock" --entrypoint=echo-args-pre $APP x | tr -d '\r')
+    want=$(for a in "$deploy" "a b" "%PATH%"; do hex "$a"; done)
+    got=$(bash "$QD_IMAGES_HELPER" run "$quasidock" $APP | tr -d '\r')
     [ "$got" = "$want" ] || { diff <(echo "$want") <(echo "$got") | head -4; return 1; }
 }
-check "an export's own arguments come first, also exactly" export_args
+check "the image's cmd arguments are passed, also exactly" export_args
 exit_code() { bash "$QD_IMAGES_HELPER" run "$quasidock" --entrypoint=exit-code $APP 7; [ $? -eq 7 ]; }
 check "--entrypoint finds a .cmd, and its exit code comes back" exit_code
 line_break() {

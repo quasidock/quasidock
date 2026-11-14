@@ -1,8 +1,8 @@
 {
-  "id": "io.qt.Qt6.Sdk",
+  "id": "qt6-sdk",
   "version": "6.12.0",
   "name": "Qt 6 SDK",
-  "summary": "Qt 6's Widgets set, QML and Qt Quick built with Clang (llvm-mingw), with CMake, Ninja and Clang for building Qt apps (qtbase and more from io.qt.Qt6.Sdk.Base)",
+  "summary": "Qt 6's Widgets set, QML and Qt Quick built with Clang (llvm-mingw), with CMake, Ninja and Clang for building Qt apps (qtbase and more from qt6-sdk-base)",
   "homepage": "https://www.qt.io/",
   "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
   "layer": "estargz",
@@ -464,51 +464,31 @@
     "include/QtCore/QTranslator",
     "include/QtCore/qtranslator.h"
   ],
-  "command": "bin/qtpaths.exe",
+  "entrypoint": "bin/qtpaths.exe",
   "path": ["bin"],
-  "env": {
-    "CMAKE_PREFIX_PATH": "${app}",
-    "RCFLAGS": "--use-temp-file"
-  },
-  "permissions": { "sandbox": "soft", "filesystem": ["cwd"] },
-  "exports": {
-    "cc": { "command": "${llvm}/bin/x86_64-w64-mingw32-clang.exe" },
-    "c++": { "command": "${llvm}/bin/x86_64-w64-mingw32-clang++.exe" },
-    "ar": { "command": "${llvm}/bin/llvm-ar.exe" },
-    "windres": { "command": "${llvm}/bin/x86_64-w64-mingw32-windres.exe" },
-    "cmake": { "command": "${cmake}/bin/cmake.exe" },
-    "ninja": { "command": "${cmake}/bin/ninja.exe" },
-    "sh": { "command": "${busybox}/busybox.exe", "args": ["sh"] },
-    "make": { "command": "${busybox}/busybox.exe", "args": ["make"] },
-    "qmake": { "command": "bin/qmake.exe" },
-    "qtpaths": { "command": "bin/qtpaths.exe" },
-    "lupdate": { "command": "bin/lupdate.exe" },
-    "lrelease": { "command": "bin/lrelease.exe" }
+  "env": { "CMAKE_PREFIX_PATH": "${app}", "RCFLAGS": "--use-temp-file" },
+  "permissions": {
+    "sandbox": "soft",
+    "filesystem": ["cwd"]
   },
   "cleanup": ["*.bat"],
-  "runtimes": {
-    "cmake": "org.cmake.cmake:4.4.4@sha256:fa7efc2e143063055620628a8867dbd904bb0464a36f6a44943f7dba50a8bcd0",
-    "llvm": "com.github.mstorsjo.llvm-mingw:20261020@sha256:69f40e5c8bfbf0d42be44d3ddaa0df8d07775af88b9cf593595b00b0f779d718",
-    "busybox": "net.frippery.busybox:FRP-6075-g169694ebd@sha256:db9d39727bfdd4d176b5878c0a125daa8a2396ea21e0f01a6a372f53d9d97e5d"
+  "from": {
+    "cmake": "cmake:4.4.4@sha256:fa7efc2e143063055620628a8867dbd904bb0464a36f6a44943f7dba50a8bcd0",
+    "llvm": "llvm-mingw:20261020@sha256:69f40e5c8bfbf0d42be44d3ddaa0df8d07775af88b9cf593595b00b0f779d718",
+    "busybox": "busybox:FRP-6075-g169694ebd@sha256:db9d39727bfdd4d176b5878c0a125daa8a2396ea21e0f01a6a372f53d9d97e5d"
   },
-  "modules": [
+  "stages": [
     {
       "name": "base",
-      "sources": [{ "image": "io.qt.Qt6.Sdk.Base:6.12.0@sha256:9b87aa9aed10798a0b989175b89360d08a162914cfaa8493432176e1cd591042" }]
+      "sources": [
+        { "image": "qt6-sdk-base:6.12.0@sha256:9b87aa9aed10798a0b989175b89360d08a162914cfaa8493432176e1cd591042" }
+      ]
     },
     {
       "name": "qtdeclarative",
       "sources": [
-        {
-          "url": "https://github.com/qt/qtdeclarative/archive/refs/tags/v6.12.0.tar.gz",
-          "sha256": "0b71aa358703de8217177dbb620c86af9e9804482e607bb2cadbf116a65bd9c6",
-          "strip": 1
-        },
-        {
-          "url": "https://www.python.org/ftp/python/3.14.7/python-3.14.7-embed-amd64.zip",
-          "sha256": "d297e5ff019966817ad8502465176139f2d3d840fa4ed84b13bed399a6ab1f15",
-          "dest": "zigsaw/python"
-        }
+        { "url": "https://github.com/qt/qtdeclarative/archive/refs/tags/v6.12.0.tar.gz", "sha256": "0b71aa358703de8217177dbb620c86af9e9804482e607bb2cadbf116a65bd9c6", "strip": 1 },
+        { "url": "https://www.python.org/ftp/python/3.14.7/python-3.14.7-embed-amd64.zip", "sha256": "d297e5ff019966817ad8502465176139f2d3d840fa4ed84b13bed399a6ab1f15", "dest": "zigsaw/python" }
       ],
       "build": [
         "cmake -S . -B out -DCMAKE_BUILD_TYPE=Release -DCMAKE_SYSTEM_VERSION=10.0.26300 -DCMAKE_INSTALL_PREFIX=\"$PREFIX\" -DQT_BUILD_EXAMPLES=OFF -DQT_BUILD_TESTS=OFF -DBUILD_WITH_PCH=OFF -DQT_GENERATE_SBOM=OFF -DQT_UNITY_BUILD=ON -DFEATURE_quickcontrols2_imagine=OFF -DFEATURE_quickcontrols2_stylekit=OFF -DPython_EXECUTABLE=B:/src/qtdeclarative/zigsaw/python/python.exe",
@@ -521,11 +501,7 @@
     {
       "name": "qttools",
       "sources": [
-        {
-          "url": "https://github.com/qt/qttools/archive/refs/tags/v6.12.0.tar.gz",
-          "sha256": "eff0ab495ca82147052ed7a2e92cc222a6171ae28f7d0a11aa867054139092cf",
-          "strip": 1
-        }
+        { "url": "https://github.com/qt/qttools/archive/refs/tags/v6.12.0.tar.gz", "sha256": "eff0ab495ca82147052ed7a2e92cc222a6171ae28f7d0a11aa867054139092cf", "strip": 1 }
       ],
       "build": [
         "cmake -S . -B out -DCMAKE_BUILD_TYPE=Release -DCMAKE_SYSTEM_VERSION=10.0.26300 -DCMAKE_INSTALL_PREFIX=\"$PREFIX\" -DQT_BUILD_EXAMPLES=OFF -DQT_BUILD_TESTS=OFF -DBUILD_WITH_PCH=OFF -DQT_GENERATE_SBOM=OFF -DFEATURE_assistant=OFF -DFEATURE_clang=OFF -DFEATURE_qdoc=OFF -DFEATURE_qdbus=OFF -DFEATURE_distancefieldgenerator=OFF -DFEATURE_qtattributionsscanner=OFF",
@@ -536,11 +512,7 @@
     {
       "name": "qttranslations",
       "sources": [
-        {
-          "url": "https://github.com/qt/qttranslations/archive/refs/tags/v6.12.0.tar.gz",
-          "sha256": "8be0626ad9c84b09a64ab521e5049bbd009f1335c2283c996954736c7e71484d",
-          "strip": 1
-        }
+        { "url": "https://github.com/qt/qttranslations/archive/refs/tags/v6.12.0.tar.gz", "sha256": "8be0626ad9c84b09a64ab521e5049bbd009f1335c2283c996954736c7e71484d", "strip": 1 }
       ],
       "build": [
         "cmake -S . -B out -DCMAKE_BUILD_TYPE=Release -DCMAKE_SYSTEM_VERSION=10.0.26300 -DCMAKE_INSTALL_PREFIX=\"$PREFIX\" -DQT_BUILD_EXAMPLES=OFF -DQT_BUILD_TESTS=OFF -DBUILD_WITH_PCH=OFF -DQT_GENERATE_SBOM=OFF",

@@ -32,9 +32,9 @@ if [ -z "$QUASIDOCK_HOME" ]; then
 fi
 export QUASIDOCK_HOME
 work=$(cygpath -w "$(mktemp -d)")
-ORAS=land.oras.oras
-SKOPEO=io.podman.skopeo
-COSIGN=dev.sigstore.cosign
+ORAS=oras
+SKOPEO=skopeo
+COSIGN=cosign
 : "${AUTH_REGISTRY:?run this with tests/zot.sh}"
 registry=localhost:5000
 
@@ -88,7 +88,7 @@ done
 mkdir -p "$work\\cwd" && cd "$work\\cwd" || exit 1
 printf 'hello from zigsaw\n' >hello.txt
 image=$registry/oci/busybox
-digest=$(qd_push z net.frippery.busybox "$image:1" 2>&1 | grep -o 'manifest sha256:[0-9a-f]*' | cut -d' ' -f2)
+digest=$(qd_push z busybox "$image:1" 2>&1 | grep -o 'manifest sha256:[0-9a-f]*' | cut -d' ' -f2)
 [ -n "$digest" ] || echo "pushing BusyBox's image to $image:1 failed"
 
 # --- ORAS -----------------------------------------------------------------------
@@ -119,7 +119,7 @@ check "skopeo --version says 1.24.1" sh -c "bash '$QD_IMAGES_HELPER' run \"\$0\"
 check "skopeo lists the tags of zigsaw's image" sh -c "bash '$QD_IMAGES_HELPER' run \"\$0\" $SKOPEO list-tags --tls-verify=false docker://$image | grep -q '\"1\"'" "$zigsaw"
 # Not plain `inspect`: skopeo takes zigsaw's images, whose config is
 # zigsaw's own, for artifacts, and inspects only images.
-check "  shows its manifest" sh -c "bash '$QD_IMAGES_HELPER' run \"\$0\" $SKOPEO inspect --raw --tls-verify=false docker://$image:1 | grep -q '\"org.opencontainers.image.title\": \"net.frippery.busybox\"'" "$zigsaw"
+check "  shows its manifest" sh -c "bash '$QD_IMAGES_HELPER' run \"\$0\" $SKOPEO inspect --raw --tls-verify=false docker://$image:1 | grep -q '\"org.opencontainers.image.title\": \"busybox\"'" "$zigsaw"
 skopeo_copy() {
     printf '%s' "$AUTH_PASSWORD" | r $SKOPEO -- login --tls-verify=false -u "$AUTH_USER" --password-stdin "$AUTH_REGISTRY" || return 1
     r $SKOPEO -- copy --src-tls-verify=false --dest-tls-verify=false "docker://$image:1" "docker://$AUTH_REGISTRY/oci/busybox:1" || return 1
@@ -162,7 +162,7 @@ cosign_program=$(find "$(cygpath -u "$QUASIDOCK_HOME\\deploy")" -maxdepth 2 -ina
 signing_env=(env COSIGN_KEY="$work\\cwd\\cosign.key" COSIGN_PASSWORD=zigsaw-test COSIGN="$cosign_program" QUASIDOCK_REGISTRY="$registry/oci" QUASIDOCK="$zigsaw")
 printf '{ "id": "signed", "version": "1" }\n' >signed-recipe.json
 signs_blob() {
-    qd_push z net.frippery.busybox "$signed:1" >/dev/null 2>&1 && qd_push z net.frippery.busybox "$signed:latest" >/dev/null 2>&1 || return 1
+    qd_push z busybox "$signed:1" >/dev/null 2>&1 && qd_push z busybox "$signed:latest" >/dev/null 2>&1 || return 1
     "${signing_env[@]}" bash "$root\\scripts\\sign-images.sh" "$(cygpath -w "$work\\cwd\\signed-recipe.json")"
 }
 check "scripts/sign-images.sh signs with the real cosign, and pushes with zigsaw" signs_blob
@@ -198,7 +198,7 @@ wrong_passphrase() {
     grep -qF "COSIGN_PASSWORD doesn't open" <<<"$out" || { echo "$out"; return 1; }
 }
 check "  a passphrase that doesn't open the key says so, before signing anything" wrong_passphrase
-QUASIDOCK_HOME="$work\\checks" qd_remove_app "$zigsaw" net.frippery.busybox >/dev/null 2>&1
+QUASIDOCK_HOME="$work\\checks" qd_remove_app "$zigsaw" busybox >/dev/null 2>&1
 
 # A release, with programs that only have to be the same bytes.
 fake_release() { # <dir> <what the programs hold>
@@ -248,7 +248,7 @@ check_gap "  skopeo copies into an OCI layout there" sh -c "bash '$QD_IMAGES_HEL
 check "no run labelled or granted the repository" sh -c "! icacls '$root' | grep -q -e 'Mandatory Label' -e 'S-1-15-'"
 
 cd "$root" || exit 1
-QUASIDOCK_HOME="$work\\pulled" qd_remove_app "$zigsaw" net.frippery.busybox >/dev/null 2>&1
+QUASIDOCK_HOME="$work\\pulled" qd_remove_app "$zigsaw" busybox >/dev/null 2>&1
 for id in $installed_here; do qd_remove_app z "$id" >/dev/null 2>&1; done
 if [ -n "$temp_store" ]; then
     z prune --downloads --data >/dev/null 2>&1

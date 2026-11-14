@@ -1,18 +1,16 @@
 {
   "id": "test.build.maven",
   "version": "1",
-  "command": "${java}\\bin\\java.exe",
-  "args": ["-jar", "${app}\\hello.jar"],
-  "exports": {},
-  "runtimes": { "java": "org.openjdk.java@@JAVA@" },
-  "sdk": {
-    "maven": "org.apache.maven@@MAVEN@",
-    "busybox": "net.frippery.busybox@@BUSYBOX@"
-  },
-  "modules": [
+  "entrypoint": ["${java}\\bin\\java.exe", "-jar", "${app}\\hello.jar"],
+  "from": { "java": "java@@JAVA@" },
+  "sdk": { "maven": "maven@@MAVEN@", "busybox": "busybox@@BUSYBOX@" },
+  "stages": [
     {
       "name": "hello",
-      "sources": [{ "path": "pom.xml" }, { "path": "Hello.java", "dest": "src/main/java/Hello.java" }],
+      "sources": [
+        { "path": "pom.xml" },
+        { "path": "Hello.java", "dest": "src/main/java/Hello.java" }
+      ],
       "vendor": {
         "commands": [
           "mvn -B -ntp -Dmaven.repo.local=vendor package -DskipTests",

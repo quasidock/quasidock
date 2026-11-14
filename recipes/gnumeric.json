@@ -1,40 +1,25 @@
 {
-  "id": "org.gnome.Gnumeric",
+  "id": "gnumeric",
   "version": "1.12.62",
   "name": "Gnumeric",
   "summary": "A spreadsheet that reads and writes Excel, OpenDocument and many other formats, on GTK 3",
   "homepage": "https://gnome.pages.gitlab.gnome.org/gnumeric-web/",
   "license": "GPL-2.0-only OR GPL-3.0-only",
-  "command": "bin/gnumeric.exe",
+  "entrypoint": "bin/gnumeric.exe",
   "path": ["bin"],
   "env": { "XDG_DATA_DIRS": "${app}\\share" },
-  "permissions": { "filesystem": ["cwd", "desktop", "documents", "downloads"] },
-  "exports": {
-    "gnumeric": { "command": "bin/gnumeric.exe" },
-    "ssconvert": { "command": "bin/ssconvert.exe" },
-    "ssindex": { "command": "bin/ssindex.exe" },
-    "ssgrep": { "command": "bin/ssgrep.exe" },
-    "ssdiff": { "command": "bin/ssdiff.exe" }
+  "permissions": {
+    "filesystem": ["cwd"]
   },
-  "shortcuts": {
-    "Gnumeric": { "command": "gnumeric", "description": "Make and edit spreadsheets", "icon": "share/icons/gnumeric.ico" }
-  },
-  "associations": {
-    ".gnumeric": { "command": "gnumeric", "description": "Gnumeric spreadsheet", "icon": "share/icons/gnumeric.ico" },
-    ".xlsx": { "command": "gnumeric", "description": "Excel spreadsheet", "icon": "share/icons/gnumeric.ico" },
-    ".xls": { "command": "gnumeric", "description": "Excel 97-2003 spreadsheet", "icon": "share/icons/gnumeric.ico" },
-    ".ods": { "command": "gnumeric", "description": "OpenDocument spreadsheet", "icon": "share/icons/gnumeric.ico" },
-    ".csv": { "command": "gnumeric", "description": "Comma-separated values", "icon": "share/icons/gnumeric.ico" }
-  },
-  "runtimes": {
-    "gtk": "org.gtk.Gtk4:4.24.1@sha256:e61173f2deba589f1f1b40a38e5a4d6584c8efbbff1f40be5c173ccee5b27c49",
-    "gtk3": "org.gtk.Gtk3:3.24.52@sha256:fc4deee61a122ee76c7ea15a5745b52247357d8ae4044cd39e411d99645a45e9"
+  "from": {
+    "gtk": "gtk4:4.24.1@sha256:e61173f2deba589f1f1b40a38e5a4d6584c8efbbff1f40be5c173ccee5b27c49",
+    "gtk3": "gtk3:3.24.52@sha256:fc4deee61a122ee76c7ea15a5745b52247357d8ae4044cd39e411d99645a45e9"
   },
   "sdk": {
-    "gtksdk": "org.gtk.Gtk4.Sdk:4.24.1@sha256:31b88a3d1d0a4530f3a31cf558d7c6c6c58e04a42ced0d7aeb28d0cf501de104",
-    "gtk3sdk": "org.gtk.Gtk3.Sdk:3.24.52@sha256:100f44c0111f325b3289c380071f2c6039908f70b34c7ef3ec469fe69312773c",
-    "cmake": "org.cmake.cmake:4.4.4@sha256:fdc6a6bb933b2d7994fba0ccdb07a2a91a02012a6e4879cf67ad451e53e6f53d",
-    "perl": "org.perl.perl:5.42.3.1@sha256:0a4e1bd6c15cb3d2ff507685d62b3cd5769dbbd71c5e7c68ffe44c8d9b4bca85"
+    "gtksdk": "gtk4-sdk:4.24.1@sha256:31b88a3d1d0a4530f3a31cf558d7c6c6c58e04a42ced0d7aeb28d0cf501de104",
+    "gtk3sdk": "gtk3-sdk:3.24.52@sha256:100f44c0111f325b3289c380071f2c6039908f70b34c7ef3ec469fe69312773c",
+    "cmake": "cmake:4.4.4@sha256:fdc6a6bb933b2d7994fba0ccdb07a2a91a02012a6e4879cf67ad451e53e6f53d",
+    "perl": "perl:5.42.3.1@sha256:0a4e1bd6c15cb3d2ff507685d62b3cd5769dbbd71c5e7c68ffe44c8d9b4bca85"
   },
   "cleanup": [
     "/include",
@@ -56,22 +41,15 @@
     "/share/man",
     "/share/doc"
   ],
-  "modules": [
+  "stages": [
     {
       "name": "build-tools",
-      "build": [
-        "mkdir -p \"$PREFIX/bin\"",
-        "printf '%s\\n' '#!/bin/sh' 'exec python \"$@\"' > \"$PREFIX/bin/python3\""
-      ]
+      "build": ["mkdir -p \"$PREFIX/bin\"", "printf '%s\\n' '#!/bin/sh' 'exec python \"$@\"' > \"$PREFIX/bin/python3\""]
     },
     {
       "name": "libxslt",
       "sources": [
-        {
-          "url": "https://download.gnome.org/sources/libxslt/1.1/libxslt-1.1.45.tar.xz",
-          "sha256": "9acfe68419c4d06a45c550321b3212762d92f41465062ca4ea19e632ee5d216e",
-          "strip": 1
-        }
+        { "url": "https://download.gnome.org/sources/libxslt/1.1/libxslt-1.1.45.tar.xz", "sha256": "9acfe68419c4d06a45c550321b3212762d92f41465062ca4ea19e632ee5d216e", "strip": 1 }
       ],
       "build": [
         "x=$(pkg-config --variable=prefix libxml-2.0) && mkdir -p zigsaw/libxml2 && sed \"s|B:/prefix|$x|g\" \"$x/lib/cmake/libxml2/libxml2-config.cmake\" > zigsaw/libxml2/libxml2-config.cmake",
@@ -82,13 +60,21 @@
     },
     {
       "name": "libgsf",
-      "env": { "SED": "sed", "GREP": "grep", "EGREP": "grep -E", "FGREP": "grep -F", "AWK": "awk", "AR": "ar", "RANLIB": "ranlib", "RM": "rm -f", "CFLAGS": "-O2", "PATH_SEPARATOR": ";", "PERL": "perl" },
+      "env": {
+        "SED": "sed",
+        "GREP": "grep",
+        "EGREP": "grep -E",
+        "FGREP": "grep -F",
+        "AWK": "awk",
+        "AR": "ar",
+        "RANLIB": "ranlib",
+        "RM": "rm -f",
+        "CFLAGS": "-O2",
+        "PATH_SEPARATOR": ";",
+        "PERL": "perl"
+      },
       "sources": [
-        {
-          "url": "https://download.gnome.org/sources/libgsf/1.14/libgsf-1.14.60.tar.xz",
-          "sha256": "83e12c36a099a8a7019bf425e2c24af66eeb2ef5874251e694431a07d9805dae",
-          "strip": 1
-        },
+        { "url": "https://download.gnome.org/sources/libgsf/1.14/libgsf-1.14.60.tar.xz", "sha256": "83e12c36a099a8a7019bf425e2c24af66eeb2ef5874251e694431a07d9805dae", "strip": 1 },
         { "path": "gtk4-sdk/autotools-mtimes.sh", "dest": "zigsaw/mtimes.sh" }
       ],
       "build": [
@@ -108,11 +94,7 @@
       "name": "intltool",
       "env": { "SED": "sed", "GREP": "grep", "EGREP": "grep -E", "FGREP": "grep -F", "AWK": "awk", "PATH_SEPARATOR": ";" },
       "sources": [
-        {
-          "url": "https://launchpad.net/intltool/trunk/0.51.0/+download/intltool-0.51.0.tar.gz",
-          "sha256": "67c74d94196b153b774ab9f89b2fa6c6ba79352407037c8c14d5aeb334e959cd",
-          "strip": 1
-        },
+        { "url": "https://launchpad.net/intltool/trunk/0.51.0/+download/intltool-0.51.0.tar.gz", "sha256": "67c74d94196b153b774ab9f89b2fa6c6ba79352407037c8c14d5aeb334e959cd", "strip": 1 },
         { "path": "gtk4-sdk/autotools-mtimes.sh", "dest": "zigsaw/mtimes.sh" }
       ],
       "build": [
@@ -128,13 +110,23 @@
     },
     {
       "name": "goffice",
-      "env": { "SED": "sed", "GREP": "grep", "EGREP": "grep -E", "FGREP": "grep -F", "AWK": "awk", "AR": "ar", "RANLIB": "ranlib", "RM": "rm -f", "CFLAGS": "-O2 -Wno-implicit-function-declaration", "CPP": "cc -E", "PATH_SEPARATOR": ";", "PERL": "perl", "PERLIO": "perlio" },
+      "env": {
+        "SED": "sed",
+        "GREP": "grep",
+        "EGREP": "grep -E",
+        "FGREP": "grep -F",
+        "AWK": "awk",
+        "AR": "ar",
+        "RANLIB": "ranlib",
+        "RM": "rm -f",
+        "CFLAGS": "-O2 -Wno-implicit-function-declaration",
+        "CPP": "cc -E",
+        "PATH_SEPARATOR": ";",
+        "PERL": "perl",
+        "PERLIO": "perlio"
+      },
       "sources": [
-        {
-          "url": "https://download.gnome.org/sources/goffice/0.10/goffice-0.10.62.tar.xz",
-          "sha256": "500eaff50628faa75adb3cd560236a4db498d9e7c52c036b78fa9a57f21805b3",
-          "strip": 1
-        },
+        { "url": "https://download.gnome.org/sources/goffice/0.10/goffice-0.10.62.tar.xz", "sha256": "500eaff50628faa75adb3cd560236a4db498d9e7c52c036b78fa9a57f21805b3", "strip": 1 },
         { "path": "gtk4-sdk/autotools-mtimes.sh", "dest": "zigsaw/mtimes.sh" },
         { "path": "gnumeric/pdpmake.sh", "dest": "zigsaw/pdpmake.sh" }
       ],
@@ -150,13 +142,27 @@
     },
     {
       "name": "gnumeric",
-      "env": { "SED": "sed", "GREP": "grep", "EGREP": "grep -E", "FGREP": "grep -F", "AWK": "awk", "AR": "ar", "RANLIB": "ranlib", "RM": "rm -f", "CFLAGS": "-O2 -DGNM_VAR_DECL=extern -Wno-implicit-function-declaration", "CPP": "cc -E", "PATH_SEPARATOR": ";", "PERL": "perl", "PERLIO": "perlio", "YACC": "true", "ITSTOOL": "true", "XMLLINT": "xmllint", "GLIB_GENMARSHAL": "glib-genmarshal" },
+      "env": {
+        "SED": "sed",
+        "GREP": "grep",
+        "EGREP": "grep -E",
+        "FGREP": "grep -F",
+        "AWK": "awk",
+        "AR": "ar",
+        "RANLIB": "ranlib",
+        "RM": "rm -f",
+        "CFLAGS": "-O2 -DGNM_VAR_DECL=extern -Wno-implicit-function-declaration",
+        "CPP": "cc -E",
+        "PATH_SEPARATOR": ";",
+        "PERL": "perl",
+        "PERLIO": "perlio",
+        "YACC": "true",
+        "ITSTOOL": "true",
+        "XMLLINT": "xmllint",
+        "GLIB_GENMARSHAL": "glib-genmarshal"
+      },
       "sources": [
-        {
-          "url": "https://download.gnome.org/sources/gnumeric/1.12/gnumeric-1.12.62.tar.xz",
-          "sha256": "89331121321b9bad72d37af5a6d13a0a636f0fbb0880f0ea1f2cf8b7ab9ae631",
-          "strip": 1
-        },
+        { "url": "https://download.gnome.org/sources/gnumeric/1.12/gnumeric-1.12.62.tar.xz", "sha256": "89331121321b9bad72d37af5a6d13a0a636f0fbb0880f0ea1f2cf8b7ab9ae631", "strip": 1 },
         { "path": "gtk4-sdk/autotools-mtimes.sh", "dest": "zigsaw/mtimes.sh" },
         { "path": "gnumeric/pdpmake.sh", "dest": "zigsaw/pdpmake.sh" }
       ],

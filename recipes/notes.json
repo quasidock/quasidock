@@ -1,46 +1,21 @@
 {
-  "id": "io.github.nuttyartist.notes",
+  "id": "notes",
   "version": "2.3.1",
   "name": "Notes",
   "summary": "Takes notes in Markdown, in folders and with tags, and shows a note's to-do lists as a kanban board",
   "homepage": "https://www.notes-foss.com/",
   "license": "MPL-2.0",
-  "command": "bin/Notes.exe",
+  "entrypoint": "bin/Notes.exe",
   "path": ["bin"],
-  "permissions": { "filesystem": ["documents"] },
-  "exports": {
-    "notes": { "command": "bin/Notes.exe" }
-  },
-  "shortcuts": {
-    "Notes": { "command": "notes", "description": "Take notes" }
-  },
-  "runtimes": {
-    "qt": "io.qt.Qt6:6.12.0@sha256:4a6ae197bfabbc24239ac6c946e38a6e8f665dae5f5eb60c297ace8a93c4dcc3"
-  },
-  "sdk": {
-    "qtsdk": "io.qt.Qt6.Sdk:6.12.0@sha256:965dba80c2f86cd874d5603658b48ed0d0c8f01d1204aba2cb1c077fb7ba0128"
-  },
-  "modules": [
+  "from": { "qt": "qt6:6.12.0@sha256:4a6ae197bfabbc24239ac6c946e38a6e8f665dae5f5eb60c297ace8a93c4dcc3" },
+  "sdk": { "qtsdk": "qt6-sdk:6.12.0@sha256:965dba80c2f86cd874d5603658b48ed0d0c8f01d1204aba2cb1c077fb7ba0128" },
+  "stages": [
     {
       "name": "notes",
       "sources": [
-        {
-          "url": "https://github.com/nuttyartist/notes/archive/refs/tags/v2.3.1.tar.gz",
-          "sha256": "de1dc90cc1b8af665a5f0aac3f2bcbf36620607b6a28d9be889fb3045f5518bd",
-          "strip": 1
-        },
-        {
-          "url": "https://github.com/b00f/qautostart/archive/efdb2e5a25e5646390f8658e3321f6e9a4c3561a.tar.gz",
-          "sha256": "5eb501b31916fdb516979c6a19dc17a64711186090a29f92be4a6f0704e819cd",
-          "strip": 1,
-          "dest": "3rdParty/qautostart"
-        },
-        {
-          "url": "https://github.com/pbek/qmarkdowntextedit/archive/c6420c537e219a7b7685f2bbe5e0862af631d91c.tar.gz",
-          "sha256": "7c8b1e752c793fed257334352ca6967f17258df744e7ef61b094e2261a5d12f1",
-          "strip": 1,
-          "dest": "3rdParty/qmarkdowntextedit"
-        }
+        { "url": "https://github.com/nuttyartist/notes/archive/refs/tags/v2.3.1.tar.gz", "sha256": "de1dc90cc1b8af665a5f0aac3f2bcbf36620607b6a28d9be889fb3045f5518bd", "strip": 1 },
+        { "url": "https://github.com/b00f/qautostart/archive/efdb2e5a25e5646390f8658e3321f6e9a4c3561a.tar.gz", "sha256": "5eb501b31916fdb516979c6a19dc17a64711186090a29f92be4a6f0704e819cd", "strip": 1, "dest": "3rdParty/qautostart" },
+        { "url": "https://github.com/pbek/qmarkdowntextedit/archive/c6420c537e219a7b7685f2bbe5e0862af631d91c.tar.gz", "sha256": "7c8b1e752c793fed257334352ca6967f17258df744e7ef61b094e2261a5d12f1", "strip": 1, "dest": "3rdParty/qmarkdowntextedit" }
       ],
       "build": [
         "sed -i 's/^    Quick)$/    Quick CorePrivate GuiPrivate WidgetsPrivate)/' CMakeLists.txt",

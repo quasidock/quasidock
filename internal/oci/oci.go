@@ -70,14 +70,13 @@ const (
 )
 
 type Permissions struct {
-	Sandbox     Sandbox     `json:"sandbox,omitempty"`
-	Network     bool        `json:"network,omitempty"`
-	Filesystem  []string    `json:"filesystem,omitempty"`
-	Services    []Service   `json:"services,omitempty"`
-	Uses        []Use       `json:"uses,omitempty"`
+	Sandbox     Sandbox      `json:"sandbox,omitempty"`
+	Network     bool         `json:"network,omitempty"`
+	Filesystem  []string     `json:"filesystem,omitempty"`
+	Services    []Service    `json:"services,omitempty"`
+	Uses        []Use        `json:"uses,omitempty"`
 	Unsupported *Unsupported `json:"unsupported,omitempty"`
-	Commands    *bool       `json:"commands,omitempty"`
-	Host        *bool       `json:"host,omitempty"`
+	Host        *bool        `json:"host,omitempty"`
 }
 
 type Unsupported struct {
@@ -113,51 +112,14 @@ type Use struct {
 	Port uint16 `json:"port"`
 }
 
-type Export struct {
-	Command string   `json:"command"`
-	Args    []string `json:"args,omitempty"`
-	Drop    []string `json:"drop,omitempty"`
-}
-
-type Shortcut struct {
-	Command     string  `json:"command"`
-	Description *string `json:"description,omitempty"`
-	Icon        *string `json:"icon,omitempty"`
-}
-
-type Association struct {
-	Command     string  `json:"command"`
-	Description *string `json:"description,omitempty"`
-	Icon        *string `json:"icon,omitempty"`
-}
-
-type Scheme struct {
-	Command     string  `json:"command"`
-	Description *string `json:"description,omitempty"`
-	Icon        *string `json:"icon,omitempty"`
-}
-
 type Runtime struct {
-	ID         string                    `json:"id"`
-	Version    string                    `json:"version"`
-	Image      string                    `json:"image"`
-	Layer      string                    `json:"layer"`
-	Path       []string                  `json:"path,omitempty"`
-	Env        map[string]string         `json:"env,omitempty"`
-	Aliases    map[string]Export         `json:"aliases,omitempty"`
-	Extensions map[string]ExtensionPoint `json:"extensions,omitempty"`
-	Uses       []Use                     `json:"uses,omitempty"`
-}
-
-type ExtensionPoint struct {
-	Version string   `json:"version"`
-	Join    []string `json:"join,omitempty"`
-}
-
-type Extends struct {
-	Point   string   `json:"point"`
-	Version string   `json:"version"`
-	Needs   []string `json:"needs,omitempty"`
+	ID      string            `json:"id"`
+	Version string            `json:"version"`
+	Image   string            `json:"image"`
+	Layer   string            `json:"layer"`
+	Path    []string          `json:"path,omitempty"`
+	Env     map[string]string `json:"env,omitempty"`
+	Uses    []Use             `json:"uses,omitempty"`
 }
 
 type Build struct {
@@ -170,27 +132,20 @@ type Build struct {
 }
 
 type AppConfig struct {
-	ID           string                    `json:"id"`
-	Version      string                    `json:"version"`
-	Name         *string                   `json:"name,omitempty"`
-	Summary      *string                   `json:"summary,omitempty"`
-	Homepage     *string                   `json:"homepage,omitempty"`
-	License      *string                   `json:"license,omitempty"`
-	Command      string                    `json:"command"`
-	Args         []string                  `json:"args,omitempty"`
-	Path         []string                  `json:"path,omitempty"`
-	Env          map[string]string         `json:"env,omitempty"`
-	Permissions  Permissions               `json:"permissions,omitempty"`
-	Exports      map[string]Export         `json:"exports,omitempty"`
-	Aliases      map[string]Export         `json:"aliases,omitempty"`
-	Shortcuts    map[string]Shortcut       `json:"shortcuts,omitempty"`
-	Associations map[string]Association    `json:"associations,omitempty"`
-	Schemes      map[string]Scheme         `json:"schemes,omitempty"`
-	Registry     []string                  `json:"registry,omitempty"`
-	Runtimes     map[string]Runtime        `json:"runtimes,omitempty"`
-	Extensions   map[string]ExtensionPoint `json:"extensions,omitempty"`
-	Extends      *Extends                  `json:"extends,omitempty"`
-	Build        *Build                    `json:"build,omitempty"`
+	ID          string             `json:"id"`
+	Version     string             `json:"version"`
+	Name        *string            `json:"name,omitempty"`
+	Summary     *string            `json:"summary,omitempty"`
+	Homepage    *string            `json:"homepage,omitempty"`
+	License     *string            `json:"license,omitempty"`
+	Entrypoint  []string           `json:"entrypoint"`
+	Cmd         []string           `json:"cmd,omitempty"`
+	Path        []string           `json:"path,omitempty"`
+	Env         map[string]string  `json:"env,omitempty"`
+	Permissions Permissions        `json:"permissions,omitempty"`
+	Registry    []string           `json:"registry,omitempty"`
+	From        map[string]Runtime `json:"from,omitempty"`
+	Build       *Build             `json:"build,omitempty"`
 }
 
 func ToJSON(v any) ([]byte, error) {
@@ -218,8 +173,8 @@ func ParseConfig(what, configType string, data []byte) (*AppConfig, error) {
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("%s: its app config can't be read: %w", what, err)
 	}
-	if (configType == MediaTypeConfigV1 || configType == LegacyMediaTypeConfigV1) && len(cfg.Runtimes) > 0 {
-		return nil, fmt.Errorf("%s: a v1 config can't have runtimes", what)
+	if (configType == MediaTypeConfigV1 || configType == LegacyMediaTypeConfigV1) && len(cfg.From) > 0 {
+		return nil, fmt.Errorf("%s: a v1 config can't have base images", what)
 	}
 	if err := ValidateConfig(what, &cfg); err != nil {
 		return nil, err
@@ -233,14 +188,14 @@ func ValidateLayers(what string, m *Manifest, c *AppConfig) error {
 			return fmt.Errorf("%s has a layer of type %s, which quasidock can't unpack", what, l.MediaType)
 		}
 	}
-	expectedLayers := len(c.Runtimes) + 1
+	expectedLayers := len(c.From) + 1
 	if len(m.Layers) != expectedLayers {
-		return fmt.Errorf("%s has %d layer(s), but its config accounts for %d: one per runtime, and the app's own", what, len(m.Layers), expectedLayers)
+		return fmt.Errorf("%s has %d layer(s), but its config accounts for %d: one per base image, and the app's own", what, len(m.Layers), expectedLayers)
 	}
 	idx := 0
-	for alias, r := range c.Runtimes {
+	for alias, r := range c.From {
 		if r.Layer != m.Layers[idx].Digest {
-			return fmt.Errorf("%s: runtime %s's layer %s isn't in its manifest's place for it", what, alias, r.Layer)
+			return fmt.Errorf("%s: base image %s's layer %s isn't in its manifest's place for it", what, alias, r.Layer)
 		}
 		idx++
 	}
@@ -577,41 +532,36 @@ func UsesRoots(env map[string]string, args []string) bool {
 }
 
 func ValidateConfig(what string, c *AppConfig) error {
-	if err := validateRuntimes(what, c.Runtimes); err != nil {
+	if err := validateFrom(what, c.From); err != nil {
 		return err
 	}
-	aliases := make([]string, 0, len(c.Runtimes))
-	for k := range c.Runtimes {
+	aliases := make([]string, 0, len(c.From))
+	for k := range c.From {
 		aliases = append(aliases, k)
 	}
 	if err := ValidateEntryPoints(what, c, aliases); err != nil {
 		return err
 	}
-	if c.Extends != nil && len(c.Runtimes) > 0 {
-		return fmt.Errorf("%s extends %s, so it can't have runtimes: the runs it joins wouldn't have them", what, c.Extends.Point)
-	}
 
-	runtimesList := make([]Runtime, 0, len(c.Runtimes))
-	for _, r := range c.Runtimes {
-		runtimesList = append(runtimesList, r)
+	fromList := make([]Runtime, 0, len(c.From))
+	for _, r := range c.From {
+		fromList = append(fromList, r)
 	}
-	scope := useScope{own: c.Permissions.Uses, runtimes: runtimesList}
-	where := "the app's arguments, variables and exports' arguments"
-	for _, a := range c.Args {
+	scope := useScope{own: c.Permissions.Uses, runtimes: fromList}
+	where := "the app's entrypoint, cmd and variables"
+	for _, a := range c.Entrypoint {
 		if name, ok := undeclaredUse(a, scope); ok {
-			return fmt.Errorf("%s: ${%s} names a port neither the app nor its runtimes use (%s may name those)", what, name, where)
+			return fmt.Errorf("%s: ${%s} names a port neither the app nor its base images use (%s may name those)", what, name, where)
+		}
+	}
+	for _, a := range c.Cmd {
+		if name, ok := undeclaredUse(a, scope); ok {
+			return fmt.Errorf("%s: ${%s} names a port neither the app nor its base images use (%s may name those)", what, name, where)
 		}
 	}
 	for _, v := range c.Env {
 		if name, ok := undeclaredUse(v, scope); ok {
-			return fmt.Errorf("%s: ${%s} names a port neither the app nor its runtimes use (%s may name those)", what, name, where)
-		}
-	}
-	for _, e := range c.Exports {
-		for _, a := range e.Args {
-			if name, ok := undeclaredUse(a, scope); ok {
-				return fmt.Errorf("%s: ${%s} names a port neither the app nor its runtimes use (%s may name those)", what, name, where)
-			}
+			return fmt.Errorf("%s: ${%s} names a port neither the app nor its base images use (%s may name those)", what, name, where)
 		}
 	}
 	return nil
@@ -639,20 +589,23 @@ func ValidateEntryPoints(what string, c *AppConfig, aliases []string) error {
 	if c.License != nil && !isValidLicense(*c.License) {
 		return fmt.Errorf("%s: license %q must be an SPDX expression, such as \"GPL-2.0-or-later\" or \"MIT OR Apache-2.0\"", what, *c.License)
 	}
-	if !IsValidCommand(c.Command, aliases) {
-		return fmt.Errorf("%s: command %q must be a relative path inside the app, or start with a runtime's ${alias}\\", what, c.Command)
+	if len(c.Entrypoint) == 0 {
+		return fmt.Errorf("%s: entrypoint must not be empty", what)
+	}
+	if !IsValidCommand(c.Entrypoint[0], aliases) {
+		return fmt.Errorf("%s: entrypoint %q must be a relative path inside the app, or start with a base image's ${alias}\\", what, c.Entrypoint[0])
 	}
 	for _, p := range c.Path {
 		if !IsValidPathEntry(p, aliases) {
-			return fmt.Errorf("%s: path entry %q must be a relative path inside the app, or start with ${app}, ${data}, ${cache} or a runtime's ${alias}", what, p)
+			return fmt.Errorf("%s: path entry %q must be a relative path inside the app, or start with ${app}, ${data}, ${cache} or a base image's ${alias}", what, p)
 		}
 	}
 	for _, spec := range c.Permissions.Filesystem {
 		if ParseFsGrant(spec) == nil {
-			return fmt.Errorf("%s: filesystem permission %q must be \"cwd\", one of the user's folders (%s) or an absolute path, optionally with \":ro\"", what, spec, UserFolderList)
+			return fmt.Errorf("%s: filesystem permission %q must be \"cwd\" or an absolute path, optionally with \":ro\"", what, spec)
 		}
 	}
-	if err := validateServices(what, c); err != nil {
+	if err := validateServices(what, c, aliases); err != nil {
 		return err
 	}
 	if err := validateUses(what, "", c.Permissions.Uses, c.Permissions.Services); err != nil {
@@ -673,82 +626,6 @@ func ValidateEntryPoints(what string, c *AppConfig, aliases []string) error {
 			return fmt.Errorf("%s: it asks for the %s sandbox and says it can't run under it", what, chosenSb)
 		}
 	}
-	for name, exp := range c.Exports {
-		if !IsValidExportName(name) {
-			return fmt.Errorf("%s: export name %q must be letters, digits, '.', '-', '_', '+' (and not quasidock's own)", what, name)
-		}
-		if !IsValidCommand(exp.Command, aliases) {
-			return fmt.Errorf("%s: export %s command %q must be a relative path inside the app, or start with a runtime's ${alias}\\", what, name, exp.Command)
-		}
-		if len(exp.Drop) > 0 {
-			return fmt.Errorf("%s: export %s has \"drop\", which only aliases may have", what, name)
-		}
-	}
-	if len(c.Aliases) > 0 {
-		if err := validateAliases(what, "", c.Aliases, aliases); err != nil {
-			return err
-		}
-	}
-	if len(c.Shortcuts) > 0 {
-		seen := make(map[string]bool)
-		for name, sc := range c.Shortcuts {
-			if !IsValidShortcutName(name) {
-				return fmt.Errorf("%s: shortcut name %q must be 1-64 bytes without control characters or any of <>:\"/\\|?*, not start or end with a space or '.', and not be a device name such as CON", what, name)
-			}
-			lower := strings.ToLower(name)
-			if seen[lower] {
-				return fmt.Errorf("%s: shortcuts with case-insensitive name %q would be the same file", what, name)
-			}
-			seen[lower] = true
-			if _, ok := c.Exports[sc.Command]; !ok {
-				return fmt.Errorf("%s: shortcut %q runs %q, which isn't one of the app's exports", what, name, sc.Command)
-			}
-			if sc.Icon != nil && !IsValidCommand(*sc.Icon, aliases) {
-				return fmt.Errorf("%s: shortcut %q icon %q must be a relative path inside the app, or start with a runtime's ${alias}\\", what, name, *sc.Icon)
-			}
-			if sc.Description != nil && len(*sc.Description) > 256 {
-				return fmt.Errorf("%s: shortcut %q description is longer than 256 bytes", what, name)
-			}
-		}
-	}
-	if len(c.Associations) > 0 {
-		seenExt := make(map[string]bool)
-		for ext, assoc := range c.Associations {
-			if !IsValidExtension(ext) {
-				return fmt.Errorf("%s: association %q must be a file extension: a '.', then 1-32 letters, digits, '-', '_' or '+'", what, ext)
-			}
-			lower := strings.ToLower(ext)
-			if seenExt[lower] {
-				return fmt.Errorf("%s: associations are the same extension: %s", what, ext)
-			}
-			seenExt[lower] = true
-			if _, ok := c.Exports[assoc.Command]; !ok {
-				return fmt.Errorf("%s: association %q opens with %q, which isn't one of the app's exports", what, ext, assoc.Command)
-			}
-			if assoc.Icon != nil && !IsValidCommand(*assoc.Icon, aliases) {
-				return fmt.Errorf("%s: association %q icon %q must be a relative path inside the app, or start with a runtime's ${alias}\\", what, ext, *assoc.Icon)
-			}
-			if assoc.Description != nil && (len(*assoc.Description) == 0 || len(*assoc.Description) > 256 || strings.ContainsAny(*assoc.Description, "\r\n")) {
-				return fmt.Errorf("%s: association %q description must be 1-256 bytes on one line", what, ext)
-			}
-		}
-	}
-	if len(c.Schemes) > 0 {
-		for schemeName, sch := range c.Schemes {
-			if !IsValidScheme(schemeName) {
-				return fmt.Errorf("%s: scheme %q must be a URL scheme of up to 64 bytes: a lowercase letter, then lowercase letters, digits, '+', '-' or '.', and not one of Windows' own, such as file or ms-settings", what, schemeName)
-			}
-			if _, ok := c.Exports[sch.Command]; !ok {
-				return fmt.Errorf("%s: scheme %q opens with %q, which isn't one of the app's exports", what, schemeName, sch.Command)
-			}
-			if sch.Icon != nil && !IsValidCommand(*sch.Icon, aliases) {
-				return fmt.Errorf("%s: scheme %q icon %q must be a relative path inside the app, or start with a runtime's ${alias}\\", what, schemeName, *sch.Icon)
-			}
-			if sch.Description != nil && !isOneLine(*sch.Description, 256) {
-				return fmt.Errorf("%s: scheme %q description must be 1-256 bytes on one line", what, schemeName)
-			}
-		}
-	}
 	if len(c.Registry) > 0 {
 		for i, key := range c.Registry {
 			if !IsValidRegistryKey(key) {
@@ -761,28 +638,10 @@ func ValidateEntryPoints(what string, c *AppConfig, aliases []string) error {
 			}
 		}
 	}
-	if len(c.Extensions) > 0 {
-		if err := validateExtensionPoints(what, "", c.Extensions); err != nil {
-			return err
-		}
-	}
-	if c.Extends != nil {
-		if !IsValidID(c.Extends.Point) {
-			return fmt.Errorf("%s: extends point %q must be an extension point's name: 1-57 characters of letters, digits, '.', '-', '_'", what, c.Extends.Point)
-		}
-		if !isOneLine(c.Extends.Version, 64) {
-			return fmt.Errorf("%s: extends version must be 1-64 bytes on one line", what)
-		}
-		for _, needed := range c.Extends.Needs {
-			if !IsValidID(needed) || strings.EqualFold(needed, c.ID) {
-				return fmt.Errorf("%s: extends needs %q, which must be another extension's id", what, needed)
-			}
-		}
-	}
 	return nil
 }
 
-func validateServices(what string, c *AppConfig) error {
+func validateServices(what string, c *AppConfig, aliases []string) error {
 	services := c.Permissions.Services
 	if c.Permissions.Services != nil && len(services) == 0 {
 		return fmt.Errorf("%s: services must list at least one, or be left out", what)
@@ -804,14 +663,17 @@ func validateServices(what string, c *AppConfig) error {
 				return fmt.Errorf("%s: services %s and %s both have port %d", what, earlier.Name, s.Name, s.Port)
 			}
 		}
-		if s.Command != "" {
-			if _, ok := c.Exports[s.Command]; !ok {
-				return fmt.Errorf("%s: service %s is served by %q, which isn't one of the app's exports", what, s.Name, s.Command)
-			}
+		if s.Command != "" && !IsValidCommand(s.Command, aliases) {
+			return fmt.Errorf("%s: service %s command %q must be a relative path inside the app, or start with a base image's ${alias}\\", what, s.Name, s.Command)
 		}
 	}
-	where := "the app's arguments, variables and exports' arguments"
-	for _, a := range c.Args {
+	where := "the app's entrypoint, cmd and variables"
+	for _, a := range c.Entrypoint {
+		if name, ok := undeclaredService(a, services); ok {
+			return fmt.Errorf("%s: ${%s} names a service the app doesn't have (%s may name its own)", what, name, where)
+		}
+	}
+	for _, a := range c.Cmd {
 		if name, ok := undeclaredService(a, services); ok {
 			return fmt.Errorf("%s: ${%s} names a service the app doesn't have (%s may name its own)", what, name, where)
 		}
@@ -819,13 +681,6 @@ func validateServices(what string, c *AppConfig) error {
 	for _, v := range c.Env {
 		if name, ok := undeclaredService(v, services); ok {
 			return fmt.Errorf("%s: ${%s} names a service the app doesn't have (%s may name its own)", what, name, where)
-		}
-	}
-	for _, e := range c.Exports {
-		for _, a := range e.Args {
-			if name, ok := undeclaredService(a, services); ok {
-				return fmt.Errorf("%s: ${%s} names a service the app doesn't have (%s may name its own)", what, name, where)
-			}
 		}
 	}
 	return nil
@@ -878,94 +733,27 @@ func isValidServiceName(name string) bool {
 	return true
 }
 
-func validateExtensionPoints(what, owner string, points map[string]ExtensionPoint) error {
-	for name, p := range points {
-		if !IsValidID(name) {
-			return fmt.Errorf("%s: %sextension point %q must be 1-57 characters of letters, digits, '.', '-', '_'", what, owner, name)
-		}
-		if !isOneLine(p.Version, 64) {
-			return fmt.Errorf("%s: %sextension point %s's version must be 1-64 bytes on one line", what, owner, name)
-		}
-		for _, v := range p.Join {
-			if !isValidJoinName(v) {
-				return fmt.Errorf("%s: %sextension point %s joins %q, which must be a variable's name, not PATH (extensions' path entries go on PATH anyway)", what, owner, name, v)
-			}
-		}
-	}
-	return nil
-}
-
-func isValidJoinName(name string) bool {
-	if len(name) == 0 || len(name) > 64 || strings.EqualFold(name, "PATH") {
-		return false
-	}
-	for i := 0; i < len(name); i++ {
-		c := name[i]
-		if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
-			c == '_' || c == '-' || c == '.' || c == '(' || c == ')' {
-			continue
-		}
-		return false
-	}
-	return true
-}
-
-func validateAliases(what, owner string, aliases map[string]Export, runtimes []string) error {
-	for name, e := range aliases {
-		if !IsValidExportName(name) {
-			return fmt.Errorf("%s: %salias name %q must be letters, digits, '.', '-', '_', '+' (and not quasidock's own)", what, owner, name)
-		}
-		if !IsValidCommand(e.Command, runtimes) {
-			if len(runtimes) == 0 {
-				return fmt.Errorf("%s: %salias %s command %q must be a relative path inside the image", what, owner, name, e.Command)
-			}
-			return fmt.Errorf("%s: %salias %s command %q must be a relative path inside the image, or start with one of its runtimes' ${alias}\\", what, owner, name, e.Command)
-		}
-		for _, arg := range e.Args {
-			if strings.Contains(arg, "${data}") || strings.Contains(arg, "${cache}") {
-				return fmt.Errorf("%s: %salias %s argument %q can't use ${data} or ${cache}", what, owner, name, arg)
-			}
-		}
-		for _, d := range e.Drop {
-			if len(d) == 0 || strings.ContainsAny(d, "\r\n") || strings.Trim(d, " \t") != d {
-				return fmt.Errorf("%s: %salias %s drops %q: arguments to drop must be non-empty, on one line, without spaces or tabs at either end", what, owner, name, d)
-			}
-		}
-	}
-	return nil
-}
-
-func validateRuntimes(what string, runtimes map[string]Runtime) error {
+func validateFrom(what string, from map[string]Runtime) error {
 	seenIDs := make(map[string]string)
-	for alias, r := range runtimes {
+	for alias, r := range from {
 		if !IsValidAlias(alias) {
-			return fmt.Errorf("%s: runtime alias %q must be lowercase letters, digits, '-' or '_', start with a letter, and not be app, data or cache", what, alias)
+			return fmt.Errorf("%s: base image alias %q must be lowercase letters, digits, '-' or '_', start with a letter, and not be app, data or cache", what, alias)
 		}
 		if !IsValidID(r.ID) || len(r.Version) == 0 || DigestHex(r.Image) == "" || DigestHex(r.Layer) == "" {
-			return fmt.Errorf("%s: runtime %s needs a valid id, version, image digest and layer digest", what, alias)
+			return fmt.Errorf("%s: base image %s needs a valid id, version, image digest and layer digest", what, alias)
 		}
 		for _, p := range r.Path {
 			if !isValidAnchoredPath(p, Anchors{App: true, Data: true}, true) {
-				return fmt.Errorf("%s: runtime %s's path entry %q must be inside it, or start with ${app}, ${data} or ${cache}", what, alias, p)
+				return fmt.Errorf("%s: base image %s's path entry %q must be inside it, or start with ${app}, ${data} or ${cache}", what, alias, p)
 			}
 		}
 		lowerID := strings.ToLower(r.ID)
 		if earlier, ok := seenIDs[lowerID]; ok {
-			return fmt.Errorf("%s: runtimes %s and %s are both %s", what, earlier, alias, r.ID)
+			return fmt.Errorf("%s: base images %s and %s are both %s", what, earlier, alias, r.ID)
 		}
 		seenIDs[lowerID] = alias
 
-		owner := fmt.Sprintf("runtime %s's ", alias)
-		if len(r.Aliases) > 0 {
-			if err := validateAliases(what, owner, r.Aliases, nil); err != nil {
-				return err
-			}
-		}
-		if len(r.Extensions) > 0 {
-			if err := validateExtensionPoints(what, owner, r.Extensions); err != nil {
-				return err
-			}
-		}
+		owner := fmt.Sprintf("base image %s's ", alias)
 		if err := validateUses(what, owner, r.Uses, nil); err != nil {
 			return err
 		}
@@ -992,27 +780,6 @@ func IsValidAlias(name string) bool {
 	reserved := []string{"app", "data", "cache", "roots"}
 	for _, r := range reserved {
 		if name == r {
-			return false
-		}
-	}
-	return true
-}
-
-func IsValidExportName(name string) bool {
-	if len(name) == 0 || len(name) > 64 || name[0] == '.' {
-		return false
-	}
-	for i := 0; i < len(name); i++ {
-		c := name[i]
-		if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
-			c == '.' || c == '-' || c == '_' || c == '+' {
-			continue
-		}
-		return false
-	}
-	reserved := []string{"quasidock", "quasidock-relay", "quasidock-host", "zigsaw", "zigsaw-shim", "zigsaw-shimw"}
-	for _, r := range reserved {
-		if strings.EqualFold(name, r) {
 			return false
 		}
 	}
@@ -1079,78 +846,6 @@ func isValidLicense(l string) bool {
 	return true
 }
 
-func IsValidShortcutName(name string) bool {
-	if len(name) == 0 || len(name) > 64 {
-		return false
-	}
-	for i := 0; i < len(name); i++ {
-		c := name[i]
-		if c < 32 || c == 127 || c == '<' || c == '>' || c == ':' || c == '"' ||
-			c == '/' || c == '\\' || c == '|' || c == '?' || c == '*' {
-			return false
-		}
-	}
-	if name[0] == ' ' || name[0] == '.' || name[len(name)-1] == ' ' || name[len(name)-1] == '.' {
-		return false
-	}
-	stem := name
-	if dot := strings.IndexByte(name, '.'); dot != -1 {
-		stem = name[:dot]
-	}
-	reserved := []string{"CON", "PRN", "AUX", "NUL"}
-	for _, r := range reserved {
-		if strings.EqualFold(stem, r) {
-			return false
-		}
-	}
-	if len(stem) == 4 && (strings.EqualFold(stem[:3], "COM") || strings.EqualFold(stem[:3], "LPT")) &&
-		stem[3] >= '0' && stem[3] <= '9' {
-		return false
-	}
-	return true
-}
-
-func IsValidExtension(ext string) bool {
-	if len(ext) < 2 || len(ext) > 33 || ext[0] != '.' {
-		return false
-	}
-	for i := 1; i < len(ext); i++ {
-		c := ext[i]
-		if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
-			c == '-' || c == '_' || c == '+' {
-			continue
-		}
-		return false
-	}
-	return true
-}
-
-func IsValidScheme(scheme string) bool {
-	if len(scheme) == 0 || len(scheme) > 64 || scheme[0] < 'a' || scheme[0] > 'z' {
-		return false
-	}
-	for i := 0; i < len(scheme); i++ {
-		c := scheme[i]
-		if (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '+' || c == '-' || c == '.' {
-			continue
-		}
-		return false
-	}
-	reserved := []string{"file", "shell", "javascript", "vbscript", "data", "about", "res", "blob", "mk", "its", "mhtml"}
-	for _, r := range reserved {
-		if scheme == r {
-			return false
-		}
-	}
-	prefixes := []string{"ms-", "microsoft", "windows", "search", "zigsaw", "quasidock"}
-	for _, p := range prefixes {
-		if strings.HasPrefix(scheme, p) {
-			return false
-		}
-	}
-	return true
-}
-
 func IsValidRegistryKey(key string) bool {
 	if len(key) == 0 || len(key) > 255 {
 		return false
@@ -1188,51 +883,17 @@ func registryKeyWithin(outer, inner string) bool {
 	return len(inner) == len(outer) || inner[len(outer)] == '\\'
 }
 
-type UserFolder string
-
-const (
-	UserFolderDesktop   UserFolder = "desktop"
-	UserFolderDocuments UserFolder = "documents"
-	UserFolderDownloads UserFolder = "downloads"
-	UserFolderMusic     UserFolder = "music"
-	UserFolderPictures  UserFolder = "pictures"
-	UserFolderVideos    UserFolder = "videos"
-
-	UserFolderList = "desktop, documents, downloads, music, pictures, videos"
-)
-
-func ParseUserFolder(name string) (UserFolder, bool) {
-	switch strings.ToLower(name) {
-	case "desktop":
-		return UserFolderDesktop, true
-	case "documents":
-		return UserFolderDocuments, true
-	case "downloads":
-		return UserFolderDownloads, true
-	case "music":
-		return UserFolderMusic, true
-	case "pictures":
-		return UserFolderPictures, true
-	case "videos":
-		return UserFolderVideos, true
-	default:
-		return "", false
-	}
-}
-
 type FsGrantWhereType int
 
 const (
 	FsGrantCwd FsGrantWhereType = iota
 	FsGrantPath
-	FsGrantFolder
 	FsGrantUnknown
 )
 
 type FsGrantWhere struct {
-	Type   FsGrantWhereType
-	Path   string
-	Folder UserFolder
+	Type FsGrantWhereType
+	Path string
 }
 
 type FsGrant struct {
@@ -1252,8 +913,6 @@ func ParseFsGrant(spec string) *FsGrant {
 	var where FsGrantWhere
 	if s == "cwd" {
 		where = FsGrantWhere{Type: FsGrantCwd}
-	} else if f, ok := ParseUserFolder(s); ok {
-		where = FsGrantWhere{Type: FsGrantFolder, Folder: f}
 	} else if filepath.IsAbs(s) && len(s) > 2 {
 		where = FsGrantWhere{Type: FsGrantPath, Path: s}
 	} else if isPermissionName(s) {
@@ -1341,7 +1000,6 @@ func DescribePermissions(p Permissions) string {
 			parts = append(parts, fmt.Sprintf("the directory you run it from%s", access))
 		case FsGrantPath:
 			parts = append(parts, fmt.Sprintf("%s%s", g.Where.Path, access))
-		case FsGrantFolder:
 		case FsGrantUnknown:
 			parts = append(parts, fmt.Sprintf("%q, which this quasidock doesn't know", g.Where.Path))
 		}
@@ -1362,7 +1020,6 @@ func (a AccessInfo) IsEmpty() bool {
 	return a.Permissions.Sandbox != SandboxSoft &&
 		!a.Permissions.Network &&
 		len(a.Permissions.Filesystem) == 0 &&
-		(a.Permissions.Commands == nil || !*a.Permissions.Commands) &&
 		(a.Permissions.Host == nil || !*a.Permissions.Host) &&
 		len(a.Uses) == 0 &&
 		len(a.Registry) == 0
@@ -1394,7 +1051,7 @@ func AddedAccess(before, after AccessInfo) AccessInfo {
 	var fs []string
 	for _, spec := range after.Permissions.Filesystem {
 		want := ParseFsGrant(spec)
-		if want == nil || want.Where.Type == FsGrantFolder {
+		if want == nil {
 			continue
 		}
 		had := false
@@ -1431,12 +1088,6 @@ func AddedAccess(before, after AccessInfo) AccessInfo {
 	if after.Permissions.Sandbox == SandboxSoft && before.Permissions.Sandbox != SandboxSoft {
 		addedSb = SandboxSoft
 	}
-	var addedCmds *bool
-	if after.Permissions.Commands != nil && *after.Permissions.Commands &&
-		(before.Permissions.Commands == nil || !*before.Permissions.Commands) {
-		t := true
-		addedCmds = &t
-	}
 	var addedHost *bool
 	if after.Permissions.Host != nil && *after.Permissions.Host &&
 		(before.Permissions.Host == nil || !*before.Permissions.Host) {
@@ -1449,7 +1100,6 @@ func AddedAccess(before, after AccessInfo) AccessInfo {
 			Sandbox:    addedSb,
 			Network:    after.Permissions.Network && !before.Permissions.Network,
 			Filesystem: fs,
-			Commands:   addedCmds,
 			Host:       addedHost,
 		},
 		Uses:     uses,
@@ -1464,8 +1114,6 @@ func covers(had, want FsGrantWhere) bool {
 	switch want.Type {
 	case FsGrantCwd:
 		return true
-	case FsGrantFolder:
-		return had.Folder == want.Folder
 	case FsGrantPath:
 		return isWithin(want.Path, had.Path)
 	case FsGrantUnknown:

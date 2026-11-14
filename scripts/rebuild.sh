@@ -78,7 +78,7 @@ for file in "${recipe_files[@]}"; do
 done
 while IFS=: read -r file pinned_id _; do
     recipe=${file%.json}
-    # A recipe can pin the same image in its SDK and among its runtimes.
+    # A recipe can pin the same image in its "sdk" and "from" base images.
     case " ${consumers[$pinned_id]:-} " in
     *" $recipe "*) ;;
     *)

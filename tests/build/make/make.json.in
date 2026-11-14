@@ -1,14 +1,9 @@
 {
   "id": "test.build.make",
   "version": "1",
-  "command": "bin/hello.exe",
-  "exports": {},
-  "sdk": {
-    "make": "org.gnu.make@@MAKE@",
-    "zig": "org.ziglang.zig@@ZIG@",
-    "busybox": "net.frippery.busybox@@BUSYBOX@"
-  },
-  "modules": [
+  "entrypoint": "bin/hello.exe",
+  "sdk": { "make": "make@@MAKE@", "zig": "zig@@ZIG@", "busybox": "busybox@@BUSYBOX@" },
+  "stages": [
     {
       "name": "hello",
       "sources": [

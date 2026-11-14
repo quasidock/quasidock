@@ -15,7 +15,7 @@
  * stays in the foreground, as long as the run: pg_ctl start would end with
  * its own run. Ctrl+C reaches postgres, which shuts down fast; this waits.
  *
- * Installed extensions (images that extend org.postgresql.PostgreSQL) name
+ * Installed extensions (images based on postgresql) name
  * their directories in PG_EXTENSION_DIRS, and what a server must load at
  * start in PG_PRELOAD_LIBRARIES, each a ;-list, as zigsaw joins them. The
  * server gets extension_control_path and dynamic_library_path with each
