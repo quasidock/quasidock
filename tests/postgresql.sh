@@ -46,7 +46,10 @@ for id in $APP; do
 done
 export QUASIDOCK_HOME
 work=$(cygpath -w "$(mktemp -d)")
-data="$QUASIDOCK_HOME\\data\\$APP"
+volume=postgresql-test-$$
+"$zigsaw" volume create "$volume" >/dev/null || exit 1
+data=$("$zigsaw" volume inspect -f '{{.Mountpoint}}' "$volume" | tr -d '\r') || exit 1
+trap '"$zigsaw" volume rm "$volume" >/dev/null 2>&1' EXIT
 port=$((57000 + RANDOM % 900))
 # Every run gets it: the server listens there, or in an AppContainer is
 # published there, and its clients connect there (PGPORT).
@@ -81,7 +84,7 @@ gap() {
 pg() {
     local command=$1
     shift
-    timeout 120 bash "$QD_IMAGES_HELPER" run "$zigsaw" ${SANDBOX:+--sandbox=$SANDBOX} $on_port --entrypoint=$command $APP "$@"
+    timeout 120 bash "$QD_IMAGES_HELPER" run "$zigsaw" --rm -v "$volume:\${data}" ${SANDBOX:+--sandbox=$SANDBOX} $on_port --entrypoint=$command $APP "$@"
 }
 # sql <statement...>: psql's unaligned output, one line per row.
 sql() {
@@ -104,7 +107,7 @@ start() {
     local log="$work\\server-${SANDBOX:-low}${RUN_OPTIONS:+-options}.out" i
     rm -rf "$data\\data" "$data\\pgpass.conf" "$work\\server.exit"
     (
-        timeout 600 bash "$QD_IMAGES_HELPER" run "$zigsaw" ${SANDBOX:+--sandbox=$SANDBOX} ${RUN_OPTIONS:-} $on_port $APP "$@" >"$log" 2>&1
+        timeout 600 bash "$QD_IMAGES_HELPER" run "$zigsaw" --rm -v "$volume:\${data}" ${SANDBOX:+--sandbox=$SANDBOX} ${RUN_OPTIONS:-} $on_port $APP "$@" >"$log" 2>&1
         echo $? >"$work\\server.exit"
     ) </dev/null >/dev/null 2>&1 &
     for i in $(seq 60); do
@@ -204,9 +207,10 @@ check "the cluster is UTF-8, in the builtin provider's C.UTF-8" is "UTF8|b|C.UTF
     "select pg_encoding_to_char(encoding), datlocprovider, datlocale from pg_database where datname = 'postgres'"
 check "with the server's default settings" is "100|128MB" "select current_setting('max_connections') || '|' || current_setting('shared_buffers')"
 check "its password is in the app's data" grep -q '^\*:\*:\*:postgres:[A-Za-z0-9]\{24\}$' "$data\\pgpass.conf"
-nopass() { timeout 60 bash "$QD_IMAGES_HELPER" run "$zigsaw" --env="PGPASSFILE=$data\\none" $on_port --entrypoint=psql $APP -X -w -c "select 1" 2>&1 | grep -q 'no password supplied'; }
+nopass() { timeout 60 bash "$QD_IMAGES_HELPER" run "$zigsaw" --rm -v "$volume:\${data}" --env="PGPASSFILE=$data\\none" $on_port --entrypoint=psql $APP -X -w -c "select 1" 2>&1 | grep -q 'no password supplied'; }
 check "a client without it is refused" nopass
-check "a connection over TLS 1.3" sh -c "bash '$QD_IMAGES_HELPER' run \"\$0\" --entrypoint=psql $APP 'host=localhost port=$port sslmode=require' -XAt -c 'select ssl, version from pg_stat_ssl where pid = pg_backend_pid()' | tr -d '\r' | grep -qx 't|TLSv1.3'" "$zigsaw"
+tls() { pg psql "host=localhost port=$port sslmode=require" -XAt -c 'select ssl, version from pg_stat_ssl where pid = pg_backend_pid()' | tr -d '\r' | grep -qx 't|TLSv1.3'; }
+check "a connection over TLS 1.3" tls
 check "pgcrypto hashes with OpenSSL" is "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad" \
     "create extension pgcrypto" "select encode(digest('abc', 'sha256'), 'hex')"
 check "ICU collations sort German and Swedish apart" is "aäz|azä" \
@@ -275,7 +279,7 @@ for SANDBOX in soft appcontainer; do
         "select pyv()"
     if [ $SANDBOX = appcontainer ]; then
         # The service, which the relay publishes.
-        outside() { timeout 60 bash "$QD_IMAGES_HELPER" run "$zigsaw" --sandbox=soft $on_port --entrypoint=psql $APP -XAt -c "select 1" | tr -d '\r' | grep -qx 1; }
+        outside() { timeout 60 bash "$QD_IMAGES_HELPER" run "$zigsaw" --rm -v "$volume:\${data}" --sandbox=soft $on_port --entrypoint=psql $APP -XAt -c "select 1" | tr -d '\r' | grep -qx 1; }
         check "appcontainer: a client outside the container reaches the server in it" outside
     fi
     check "$SANDBOX: pg_ctl stops it from another run" stop

@@ -288,7 +288,7 @@ not_in_hkcu() { ! reg query "HKCU\\$key" >/dev/null 2>&1 && ! reg query "$record
 in_order() {
     local sb
     for sb in soft low appcontainer; do
-        qd_run z --sandbox="$sb" --name "reg-$sb" --entrypoint=cmd $REG /c "reg add HKCU\\$key /v $sb /d $sb /f >NUL && reg query HKCU\\$key /v $sb >NUL" || return 1
+        qd_run z --sandbox="$sb" --name "reg-$sb" --entrypoint=cmd $REG /c "reg add HKCU\\$key /v $sb /d $sb /f && reg query HKCU\\$key /v $sb" || { echo "$sb registry write/query failed"; return 1; }
     done
 }
 rm_leaves_nothing() {

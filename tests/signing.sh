@@ -278,14 +278,17 @@ check "  and it says when there was nothing to take" rm_nothing
 # --- What a build pins ----------------------------------------------------------------
 
 pinned() {
-    # A wrong signature, and an image a recipe names by digest: the recipe says
-    # exactly what it wants, so a signature has nothing to add.
+    # A digest pin fixes the bytes; the registry's trusted signing key still
+    # authenticates their publisher when the dependency is fetched.
     store_with_key b1 one
     printf '{ "id": "test.signing.user", "version": "1", "entrypoint": "use.cmd", "permissions": { "sandbox": "soft" },\n  "from": { "base": "%s:2@%s" },\n  "stages": [{ "name": "scripts", "sources": [{ "path": "use.cmd" }] }] }\n' "$repo" "$digest2" >"$work\\use.json"
     printf '@echo used\r\n' >"$work\\use.cmd"
-    in_store b1 build "$work\\use.json"
+    local out
+    out=$(in_store b1 build "$work\\use.json" 2>&1) && { echo "accepted the wrong signature"; return 1; }
+    grep -q "it's signed, but" <<<"$out" || { echo "$out"; return 1; }
+    sign_as one "$repo:2" >/dev/null 2>&1 && in_store b1 build "$work\\use.json"
 }
-check "a build's image, pinned by digest, isn't checked" pinned
+check "a build verifies signatures on pinned dependencies" pinned
 
 # --- A registry having a bad day -----------------------------------------------------
 

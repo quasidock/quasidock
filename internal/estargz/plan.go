@@ -88,7 +88,7 @@ func MakePlan(newReader *Reader, oldReaders []*Reader, totalSize int64) (*Plan, 
 			if e.Offset <= 0 {
 				continue
 			}
-			compLen := e.NextOffset() - e.Offset
+			compLen := min(e.NextOffset(), oldR.payloadEnd) - e.Offset
 			if compLen <= 0 {
 				continue
 			}
@@ -147,7 +147,7 @@ func MakePlan(newReader *Reader, oldReaders []*Reader, totalSize int64) (*Plan, 
 			curOffset = e.Offset
 		}
 
-		compLen := e.NextOffset() - e.Offset
+		compLen := min(e.NextOffset(), newReader.payloadEnd) - e.Offset
 		if compLen <= 0 {
 			continue
 		}
@@ -248,7 +248,8 @@ func (p *Plan) Coalesce(haveFrom int64) {
 		p.mergeAdjacent()
 	}
 
-	// 3. Adjust for bytes already present from haveFrom
+	// 3. Serve the already downloaded tail through the fetcher's cache. Keep
+	// it in the plan so the reconstructed blob includes its TOC and footer.
 	if haveFrom > 0 && haveFrom < p.TotalSize {
 		var newPieces []Piece
 		for _, pc := range p.Pieces {
@@ -263,6 +264,7 @@ func (p *Plan) Coalesce(haveFrom int64) {
 				newPieces = append(newPieces, pc)
 			}
 		}
+		newPieces = append(newPieces, Piece{Type: PieceFetch, Offset: haveFrom, Length: p.TotalSize - haveFrom})
 		p.Pieces = newPieces
 		p.mergeAdjacent()
 	}

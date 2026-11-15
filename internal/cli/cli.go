@@ -510,9 +510,14 @@ func trustCommand(ctx *context.Context, rest []string) (uint32, error) {
 		return 0, trust.List(ctx.Store)
 	}
 	if rest[0] == "add" && len(rest) == 3 {
-		_, _, err := trust.Add(ctx.Store, rest[1], rest[2])
+		key, added, err := trust.Add(ctx.Store, rest[1], rest[2])
 		if err != nil {
 			return 1, err
+		}
+		if added {
+			ctx.Note("added key %s for %s", key.Fingerprint, strings.TrimRight(rest[1], "/"))
+		} else {
+			ctx.Note("%s already has key %s", strings.TrimRight(rest[1], "/"), key.Fingerprint)
 		}
 		return 0, nil
 	}

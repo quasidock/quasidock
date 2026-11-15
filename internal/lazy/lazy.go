@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/quasidock/quasidock/internal/cloudfiles"
 	"github.com/quasidock/quasidock/internal/estargz"
 	"github.com/quasidock/quasidock/internal/format"
 	"github.com/quasidock/quasidock/internal/oci"
@@ -160,6 +161,10 @@ const (
 var pullHolds []*store.Lock
 
 func Prepare(st *store.Store, reg *registry.Registry, desc oci.Descriptor, verbose bool) (PreparedKind, error) {
+	if os.Getenv("QUASIDOCK_TEST_LAZY_REFUSE") == "1" {
+		fmt.Fprintln(os.Stderr, "  lazy     store volume can't have Cloud Files placeholders, so it's downloaded whole")
+		return PreparedWhole, nil
+	}
 	hexDig := oci.DigestHex(desc.Digest)
 	short := oci.ShortDigest(desc.Digest)
 	deployPath, err := st.DeployPath(desc.Digest)
@@ -194,6 +199,9 @@ func Prepare(st *store.Store, reg *registry.Registry, desc oci.Descriptor, verbo
 
 	if err := format.CheckDeployable(desc, reader); err != nil {
 		return PreparedWhole, err
+	}
+	if want := desc.Annotations[estargz.TOCJSONDigestAnnotation]; want != "" && want != reader.TOCDigest() {
+		return PreparedWhole, estargz.ErrTOCMismatch
 	}
 
 	// Verify all chunks have digests in TOC
@@ -256,6 +264,7 @@ func Prepare(st *store.Store, reg *registry.Registry, desc oci.Descriptor, verbo
 	}
 
 	keep = true
+	fmt.Fprintf(os.Stderr, "  lazy     layer %s is downloading in the background\n", short)
 	return PreparedLazy, nil
 }
 
@@ -326,19 +335,36 @@ func StartHelper(st *store.Store, hexDig string, verbose bool) (Started, error) 
 		return Started{}, err
 	}
 
-	cmd := exec.Command(exe, "lazy-helper", st.Root, hexDig)
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		CreationFlags: uint32(win32.CREATE_NEW_PROCESS_GROUP | win32.DETACHED_PROCESS),
-	}
-
-	logFile, err := os.OpenFile(FilePath(st, hexDig, "log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	logPath := FilePath(st, hexDig, "log")
+	logHandle, err := win32.CreateFile(logPath, win32.GENERIC_WRITE, win32.FILE_SHARE_READ|win32.FILE_SHARE_WRITE|win32.FILE_SHARE_DELETE, nil, win32.OPEN_ALWAYS, win32.FILE_ATTRIBUTE_NORMAL, 0)
+	var logFile *os.File
 	if err == nil {
-		cmd.Stderr = logFile
+		logFile = os.NewFile(logHandle, logPath)
+		_, _ = logFile.Seek(0, io.SeekEnd)
 		defer logFile.Close()
 	}
-
+	newCommand := func(breakaway bool) *exec.Cmd {
+		cmd := exec.Command(exe, "lazy-helper", st.Root, hexDig)
+		flags := win32.CREATE_NEW_PROCESS_GROUP | win32.DETACHED_PROCESS
+		if breakaway {
+			flags |= win32.CREATE_BREAKAWAY_FROM_JOB
+		}
+		cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: uint32(flags)}
+		if logFile != nil {
+			cmd.Stderr = logFile
+		}
+		return cmd
+	}
+	cmd := newCommand(true)
 	if err := cmd.Start(); err != nil {
-		return Started{}, fmt.Errorf("starting lazy-helper: %w", err)
+		if !errors.Is(err, syscall.ERROR_ACCESS_DENIED) {
+			return Started{}, fmt.Errorf("starting lazy-helper: %w", err)
+		}
+		cmd = newCommand(false)
+		if err := cmd.Start(); err != nil {
+			return Started{}, fmt.Errorf("starting lazy-helper: %w", err)
+		}
+		fmt.Fprintln(os.Stderr, "note: quasidock is in a job that keeps what it starts; the lazy download lasts as long as that job")
 	}
 
 	handles := []win32.HANDLE{readyEv, win32.HANDLE(cmd.Process.Pid)}
@@ -480,6 +506,10 @@ func helperExe(st *store.Store) (string, error) {
 }
 
 func Prune(st *store.Store, currentExeName string) (int, error) {
+	used, err := st.UsedLayers(true)
+	if err != nil {
+		return 0, err
+	}
 	lazyDir := filepath.Join(st.Root, "lazy")
 	entries, err := os.ReadDir(lazyDir)
 	if err != nil {
@@ -495,10 +525,15 @@ func Prune(st *store.Store, currentExeName string) (int, error) {
 		p := filepath.Join(lazyDir, name)
 
 		if oci.IsSha256Hex(name) {
+			if _, needed := used[name]; needed || st.DeploymentInUse("sha256:"+name) {
+				continue
+			}
+			Stop(st, name)
 			deployPath, err := st.DeployPath("sha256:" + name)
 			if err == nil {
 				if _, err := os.Stat(deployPath); err == nil {
-					continue
+					_ = cloudfiles.Unregister(deployPath)
+					_, _ = st.DeleteDeployment("sha256:" + name)
 				}
 			}
 			if HelperAlive(st, name) {

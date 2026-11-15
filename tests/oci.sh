@@ -73,7 +73,7 @@ r() {
     shift
     while [ $# -gt 0 ] && [ "$1" != -- ]; do opts+=("$1"); shift; done
     shift
-    timeout 120 bash "$QD_IMAGES_HELPER" run "$zigsaw" "${opts[@]}" "$app" "$@"
+    timeout 120 bash "$QD_IMAGES_HELPER" run "$zigsaw" --rm --interactive -v "oci-$app-$$:\${data}" "${opts[@]}" "$app" "$@"
 }
 installed_here=""
 for recipe in busybox go oras skopeo cosign; do
@@ -82,6 +82,11 @@ for recipe in busybox go oras skopeo cosign; do
     installed_here="$installed_here $id"
     z build "$root\\recipes\\$recipe.json" >"$work\\build-$recipe.log" 2>&1 || echo "building $recipe.json failed: $(tail -1 "$work\\build-$recipe.log")"
 done
+
+for app in $ORAS $SKOPEO $COSIGN; do
+    z volume create "oci-$app-$$" >/dev/null || exit 1
+done
+trap 'for app in $ORAS $SKOPEO $COSIGN; do z volume rm "oci-$app-$$" >/dev/null 2>&1; done' EXIT
 
 # Runs from the work directory, never the repository: the three have the
 # cwd permission, which low runs label and AppContainer runs grant.
@@ -102,7 +107,9 @@ pulled() {
 check "  and pulls it into another folder, the same bytes" pulled
 oras_login() {
     printf '%s' "$AUTH_PASSWORD" | r $ORAS -- login --plain-http -u "$AUTH_USER" --password-stdin "$AUTH_REGISTRY" || return 1
-    find "$(cygpath -u "$QUASIDOCK_HOME\\data\\$ORAS")" -name config.json -path '*.docker*' -exec grep -l "$AUTH_REGISTRY" {} + | grep -q . ||
+    local data
+    data=$(z volume inspect -f '{{.Mountpoint}}' "oci-$ORAS-$$" | tr -d '\r') || return
+    find "$(cygpath -u "$data")" -name config.json -path '*.docker*' -exec grep -l "$AUTH_REGISTRY" {} + | grep -q . ||
         { echo "no .docker\\config.json with the login in its data"; return 1; }
 }
 check "oras logs in to the registry that wants a login, in its own data" oras_login
@@ -119,7 +126,7 @@ check "skopeo --version says 1.24.1" sh -c "bash '$QD_IMAGES_HELPER' run \"\$0\"
 check "skopeo lists the tags of zigsaw's image" sh -c "bash '$QD_IMAGES_HELPER' run \"\$0\" $SKOPEO list-tags --tls-verify=false docker://$image | grep -q '\"1\"'" "$zigsaw"
 # Not plain `inspect`: skopeo takes zigsaw's images, whose config is
 # zigsaw's own, for artifacts, and inspects only images.
-check "  shows its manifest" sh -c "bash '$QD_IMAGES_HELPER' run \"\$0\" $SKOPEO inspect --raw --tls-verify=false docker://$image:1 | grep -q '\"org.opencontainers.image.title\": \"busybox\"'" "$zigsaw"
+check "  shows its manifest" sh -c "bash '$QD_IMAGES_HELPER' run \"\$0\" $SKOPEO inspect --raw --tls-verify=false docker://$image:1 | grep -q '\"org.opencontainers.image.title\": *\"busybox\"'" "$zigsaw"
 skopeo_copy() {
     printf '%s' "$AUTH_PASSWORD" | r $SKOPEO -- login --tls-verify=false -u "$AUTH_USER" --password-stdin "$AUTH_REGISTRY" || return 1
     r $SKOPEO -- copy --src-tls-verify=false --dest-tls-verify=false "docker://$image:1" "docker://$AUTH_REGISTRY/oci/busybox:1" || return 1

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -133,8 +134,9 @@ func checkNoReservedNames(sr *io.SectionReader) error {
 
 // Reader wraps the stargz-snapshotter estargz.Reader.
 type Reader struct {
-	r  *ce.Reader
-	sr *io.SectionReader
+	r          *ce.Reader
+	sr         *io.SectionReader
+	payloadEnd int64
 }
 
 // Open opens an eStargz reader from a SectionReader.
@@ -143,7 +145,11 @@ func Open(sr *io.SectionReader) (*Reader, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Reader{r: r, sr: sr}, nil
+	tocOffset, _, err := ce.OpenFooter(sr)
+	if err != nil {
+		return nil, err
+	}
+	return &Reader{r: r, sr: sr, payloadEnd: tocOffset}, nil
 }
 
 // Raw returns the underlying *ce.Reader.
@@ -198,6 +204,12 @@ func (r *Reader) AllEntries() []*ce.TOCEntry {
 		})
 	}
 	walk(root)
+	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].Offset == entries[j].Offset {
+			return entries[i].Name < entries[j].Name
+		}
+		return entries[i].Offset < entries[j].Offset
+	})
 	return entries
 }
 

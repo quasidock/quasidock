@@ -143,7 +143,9 @@ type CallbackInfo struct {
 
 type FetchDataParams struct {
 	ParamSize           uint32
+	_                   uint32
 	Flags               uint32
+	_                   uint32
 	RequiredOffset      int64
 	RequiredLength      int64
 	OptionalOffset      int64
@@ -178,9 +180,9 @@ type OperationInfo struct {
 
 type TransferParams struct {
 	ParamSize        uint32
+	_                uint32
 	Flags            uint32
 	CompletionStatus int32
-	_                uint32
 	Buffer           uintptr
 	Offset           int64
 	Length           int64
@@ -397,10 +399,36 @@ type Connection struct {
 	Key int64
 }
 
-func (c Connection) Disconnect() {
+func Connect(root string, fetch func(*CallbackInfo, *FetchDataParams)) (Connection, error) {
+	api := getAPI()
+	if api == nil {
+		return Connection{}, ErrUnsupported
+	}
+	callback := syscall.NewCallback(func(info, params uintptr) uintptr {
+		fetch((*CallbackInfo)(unsafe.Pointer(info)), (*FetchDataParams)(unsafe.Pointer(params)))
+		return 0
+	})
+	table := []CallbackRegistration{
+		{Type: CF_CALLBACK_TYPE_FETCH_DATA, Callback: callback},
+		{Type: CF_CALLBACK_TYPE_NONE},
+	}
+	var conn Connection
+	r, _, _ := syscall.SyscallN(api.cfConnectSyncRoot,
+		uintptr(unsafe.Pointer(win32.UTF16Ptr(root))),
+		uintptr(unsafe.Pointer(&table[0])), 0,
+		CF_CONNECT_FLAG_REQUIRE_PROCESS_INFO|CF_CONNECT_FLAG_REQUIRE_FULL_FILE_PATH,
+		uintptr(unsafe.Pointer(&conn.Key)))
+	return conn, check("connecting to sync root", root, int32(r))
+}
+
+func (c *Connection) Disconnect() {
+	if c.Key == 0 {
+		return
+	}
 	if api := getAPI(); api != nil && api.cfDisconnectSyncRoot != 0 {
 		_, _, _ = syscall.SyscallN(api.cfDisconnectSyncRoot, uintptr(c.Key))
 	}
+	c.Key = 0
 }
 
 type Placeholder struct {

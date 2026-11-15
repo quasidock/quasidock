@@ -22,6 +22,7 @@
 # server's output is left there.
 
 set -u
+set -o pipefail
 export MSYS_NO_PATHCONV=1
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/images.sh"
 
@@ -39,7 +40,10 @@ for id in $APP $PG; do
 done
 export QUASIDOCK_HOME
 work=$(cygpath -w "$(mktemp -d)")
-data="$QUASIDOCK_HOME\\data\\$PG"
+volume=osm2pgsql-test-$$
+"$zigsaw" volume create "$volume" >/dev/null || exit 1
+data=$("$zigsaw" volume inspect -f '{{.Mountpoint}}' "$volume" | tr -d '\r') || exit 1
+trap '"$zigsaw" volume rm "$volume" >/dev/null 2>&1' EXIT
 port=$((58000 + RANDOM % 900))
 
 failures=0
@@ -71,7 +75,7 @@ gap() {
 pg() {
     local command=$1
     shift
-    timeout 120 bash "$QD_IMAGES_HELPER" run "$zigsaw" --sandbox=soft --entrypoint=$command $PG "$@"
+    timeout 120 bash "$QD_IMAGES_HELPER" run "$zigsaw" --rm -v "$volume:\${data}" --sandbox=soft --entrypoint=$command $PG "$@"
 }
 # sql <database> <statement...>: psql's unaligned output, one line per row.
 sql() {
@@ -93,7 +97,7 @@ start() {
     local log="$work\\server.out" i
     rm -rf "$data\\data" "$data\\pgpass.conf" "$work\\server.exit"
     (
-        timeout 600 bash "$QD_IMAGES_HELPER" run "$zigsaw" --sandbox=soft $PG -p $port >"$log" 2>&1
+        timeout 600 bash "$QD_IMAGES_HELPER" run "$zigsaw" --rm -v "$volume:\${data}" --sandbox=soft $PG -p $port >"$log" 2>&1
         echo $? >"$work\\server.exit"
     ) </dev/null >/dev/null 2>&1 &
     for i in $(seq 60); do
@@ -146,7 +150,7 @@ versions() {
 # without PGPASSWORD.
 prompted() {
     local out
-    out=$(printf '%s\n' "$password" | timeout 120 bash "$QD_IMAGES_HELPER" run "$zigsaw" ${SANDBOX:+--sandbox=$SANDBOX} --entrypoint=osm2pgsql $APP \
+    out=$(printf '%s\n' "$password" | timeout 120 bash "$QD_IMAGES_HELPER" run "$zigsaw" --interactive ${SANDBOX:+--sandbox=$SANDBOX} --entrypoint=osm2pgsql $APP \
         -H localhost -P $port -U postgres -W -d "$1" -O pgsql tiny.osm 2>&1) || { echo "$out" | tail -3; return 1; }
 }
 # compressed <database> <file>: the flex style's points from a compressed file.
@@ -161,6 +165,31 @@ bzip2 -c tiny.osm >tiny.osm.bz2
 
 check "PostgreSQL serves a cluster, under soft" start
 password=$(cut -d: -f5 "$data\\pgpass.conf" 2>/dev/null | tr -d '\r')
+
+# The bundled PostgreSQL image no longer includes the legacy PostGIS
+# extension recipes (docs/recipes.md). Custom stores with PostGIS still run
+# the full import checks below; the base image must explain the missing
+# extension and still exercise osm2pgsql's database-independent tools.
+if ! sql postgres "select exists (select 1 from pg_available_extensions where name = 'postgis')" | grep -qx t; then
+    sql postgres "create database osm_no_postgis" >/dev/null || exit 1
+    missing_postgis() {
+        local out
+        out=$(o osm2pgsql -H localhost -P $port -U postgres -d osm_no_postgis -O pgsql tiny.osm) && { echo "import succeeded without PostGIS"; return 1; }
+        grep -q 'postgis extension is not enabled' <<<"$out" || { echo "$out"; return 1; }
+    }
+    for SANDBOX in soft low appcontainer; do
+        check "$SANDBOX: osm2pgsql reports its bundled versions" versions
+        check "$SANDBOX: osm2pgsql-expire lists the map's tiles" has '^14/8529/5974$' osm2pgsql-expire -z 14 tiny.osm
+        check "$SANDBOX: import explains that the server needs PostGIS" missing_postgis
+    done
+    unset SANDBOX
+    check "the server stops" stop
+    cd "$root" || exit 1
+    rm -rf "$work"
+    echo "PostGIS imports require a PostgreSQL image with the PostGIS extension."
+    echo "$failures check(s) failed."
+    exit $((failures > 0))
+fi
 
 counts="(select count(*) from planet_osm_point) || '|' || (select count(*) from planet_osm_line) || '|' || (select count(*) from planet_osm_polygon)"
 park="select st_srid(geom) || '|' || (round(st_area(geom)) = round(st_area(st_transform(st_difference(st_makeenvelope(7.418, 43.734, 7.421, 43.736, 4326), st_makeenvelope(7.419, 43.7345, 7.420, 43.7355, 4326)), 32632)))) from zs_areas where kind = 'park'"

@@ -49,7 +49,7 @@ check() {
 g() {
     local command=$1
     shift
-    timeout 120 bash "$QD_IMAGES_HELPER" run "$zigsaw" ${SANDBOX:+--sandbox=$SANDBOX} --entrypoint="$command" $APP "$@" | tr -d '\r'
+    timeout 120 bash "$QD_IMAGES_HELPER" run "$zigsaw" --interactive ${SANDBOX:+--sandbox=$SANDBOX} --entrypoint="$command" $APP "$@" | tr -d '\r'
 }
 # has <pattern> <command> [args...]: the command's output has a line matching.
 has() {
@@ -92,7 +92,7 @@ for SANDBOX in soft low appcontainer; do
     check "${label}ogr2ogr makes a GeoPackage, with its R-tree" gpkg
     check "${label}and KML, read back with expat" kml
     check "${label}ogr2ogr clips with GEOS" clip
-    check "${label}gdal raster info" has '"size":\[' gdal raster info --format=json r.tif
+    check "${label}gdal raster info" has '"size":[[:space:]]*\[' gdal raster info --format=json r.tif
 done
 unset SANDBOX
 

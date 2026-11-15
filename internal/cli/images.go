@@ -312,6 +312,9 @@ func imageRemove(ctx *context.Context, args []string) error {
 				failures = append(failures, err)
 			}
 		}
+		if _, err := lazy.Prune(ctx.Store, ""); err != nil {
+			failures = append(failures, err)
+		}
 		if _, err := ctx.Store.DeleteUnusedDeployments(ref.Manifest); err != nil {
 			failures = append(failures, err)
 		}

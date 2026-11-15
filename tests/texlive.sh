@@ -39,17 +39,11 @@ if [ -z "$QUASIDOCK_HOME" ] || ! qd_cached "$zigsaw" "$APP"; then
 fi
 export QUASIDOCK_HOME
 work=$(cygpath -w "$(mktemp -d)")
-data="$QUASIDOCK_HOME\\data\\$APP"
-# First use is what's checked: the formats, fontconfig's cache and
-# luaotfload's names are made in an empty data directory. One the store had
-# is set aside, and put back at the end.
-kept=
-if [ -e "$data" ]; then
-    kept="$data.texlive-sh"
-    rm -rf "$kept" && mv "$data" "$kept" || { echo "setting $data aside failed"; exit 1; }
-fi
-put_back() { [ -z "$kept" ] || { rm -rf "$data" && mv "$kept" "$data"; }; }
-trap put_back EXIT
+# The suite explicitly shares its caches between disposable containers.
+volume=texlive-test-$$
+"$zigsaw" volume create "$volume" >/dev/null || exit 1
+data=$("$zigsaw" volume inspect -f '{{.Mountpoint}}' "$volume" | tr -d '\r') || exit 1
+trap '"$zigsaw" volume rm "$volume" >/dev/null 2>&1' EXIT
 
 failures=0
 gaps=0
@@ -85,12 +79,12 @@ z() { "$zigsaw" "$@"; }
 tl() {
     local program=$1
     shift
-    timeout 300 bash "$QD_IMAGES_HELPER" run "$zigsaw" ${SANDBOX:+--sandbox=$SANDBOX} --entrypoint "bin/windows/$program.exe" $APP -interaction=nonstopmode "$@"
+    timeout 300 bash "$QD_IMAGES_HELPER" run "$zigsaw" --rm -v "$volume:\${data}" ${SANDBOX:+--sandbox=$SANDBOX} --entrypoint "bin/windows/$program.exe" $APP -interaction=nonstopmode "$@"
 }
 tl_plain() {
     local program=$1
     shift
-    timeout 300 bash "$QD_IMAGES_HELPER" run "$zigsaw" ${SANDBOX:+--sandbox=$SANDBOX} --entrypoint "bin/windows/$program.exe" $APP "$@"
+    timeout 300 bash "$QD_IMAGES_HELPER" run "$zigsaw" --rm -v "$volume:\${data}" ${SANDBOX:+--sandbox=$SANDBOX} --entrypoint "bin/windows/$program.exe" $APP "$@"
 }
 
 . "$(dirname "$0")/acprobe.sh"
@@ -117,9 +111,15 @@ check "LuaLaTeX typesets with a font found by name" typeset lualatex fonts.tex l
 check "luaotfload keeps its font names in the data directory" test -d "$data\\texmf-var\\luatex-cache"
 check "LuaLaTeX again, with its format and font names made" typeset lualatex fonts.tex lua2
 
-var_is() { local got; got=$(tl_plain kpsewhich -var-value="$1" | tr -d '\r'); [ "$(cygpath -w "$got")" = "$2" ] || { echo "$1 is $got"; return 1; }; }
-check "kpathsea's TEXMFVAR is in the data directory" var_is TEXMFVAR "$data\\texmf-var"
-check "and TEXMFHOME" var_is TEXMFHOME "$data\\texmf"
+var_is() {
+    local got container_data name=texlive-env-$$-$1
+    got=$(qd_run z --name "$name" -v "$volume:\${data}" --entrypoint=bin/windows/kpsewhich.exe $APP -var-value="$1" | tr -d '\r') || return
+    container_data=$(qd_container_data "$zigsaw" "$name") || return
+    z rm "$name" >/dev/null || return
+    [ "$(cygpath -w "$got")" = "$container_data\\$2" ] || { echo "$1 is $got"; return 1; }
+}
+check "kpathsea's TEXMFVAR is in the container's data directory" var_is TEXMFVAR texmf-var
+check "and TEXMFHOME" var_is TEXMFHOME texmf
 
 bib() {
     tl pdflatex cite.tex >cite.out 2>&1 && tl_plain bibtex cite >>cite.out 2>&1 && tl_plain makeindex cite >>cite.out 2>&1 &&
@@ -128,12 +128,16 @@ bib() {
     grep -q 'TeX' cite.ind || { echo "no TeX in cite.ind"; return 1; }
 }
 check "BibTeX and MakeIndex run" bib
-check "Biber starts" sh -c "bash '$QD_IMAGES_HELPER' run \"\$0\" --entrypoint bin/windows/biber.exe $APP --version 2>&1 | tr -d '\r' | grep -q '^biber version: '" "$zigsaw"
+biber_starts() {
+    mkdir -p "$work\\biber"
+    timeout 300 bash "$QD_IMAGES_HELPER" run "$zigsaw" --rm --env="PAR_GLOBAL_TEMP=$work\\biber" --entrypoint=bin/windows/biber.exe $APP --version 2>&1 | tr -d '\r' | grep -qiE '^biber (version: *)?[0-9]'
+}
+check "Biber starts" biber_starts
 mp() { tl_plain mpost fig.mp >mpost.out 2>&1 || { tail -5 mpost.out; return 1; }; test -s fig-1.mps; }
 check "MetaPost draws a figure" mp
 latexmk() {
     rm -f mk.pdf
-    timeout 300 bash "$QD_IMAGES_HELPER" run "$zigsaw" $APP -pdf -jobname=mk hello.tex >latexmk.out 2>&1 || { tail -5 latexmk.out; return 1; }
+    timeout 300 bash "$QD_IMAGES_HELPER" run "$zigsaw" --rm -v "$volume:\${data}" $APP -pdf -jobname=mk hello.tex >latexmk.out 2>&1 || { tail -5 latexmk.out; return 1; }
     test -s mk.pdf
 }
 check "latexmk, on Perl's image, makes a PDF" latexmk

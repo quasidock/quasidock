@@ -102,7 +102,9 @@ run() {
 
 # Like run, but the app reads the caller's stdin.
 run_input() {
-    timeout "$limit" bash "$QD_IMAGES_HELPER" run "$zigsaw" --sandbox="$sb" "$@"
+    local shared=()
+    case $current_tool in git|node) shared=(-v "matrix-$current_tool-$sb-$$:\${data}") ;; esac
+    timeout "$limit" bash "$QD_IMAGES_HELPER" run "$zigsaw" --rm --interactive "${shared[@]}" --sandbox="$sb" "$@"
     local code=$?
     [ $code -eq 124 ] && echo "error: timed out after ${limit}s"
     return $code
@@ -117,11 +119,20 @@ first_error() {
 }
 
 sandboxes="soft appcontainer low"
+matrix_volumes=()
+trap 'for volume in "${matrix_volumes[@]}"; do "$zigsaw" volume rm "$volume" >/dev/null 2>&1; done' EXIT
 
 # Starts a tool's checks. Each sandbox gets a fresh working directory.
 tool() {
     current_tool=$1
     for sb in $sandboxes; do mkdir -p "$work\\$current_tool\\$sb"; done
+    case $current_tool in git|node)
+        for sb in $sandboxes; do
+            local volume=matrix-$current_tool-$sb-$$
+            "$zigsaw" volume create "$volume" >/dev/null || exit 1
+            matrix_volumes+=("$volume")
+        done ;;
+    esac
 }
 
 # in_each <file> <content>: writes a file into each sandbox's working
@@ -221,9 +232,11 @@ expect ok ok ok "fetch over https" run $NODE -e 'fetch("https://example.com").th
 expect ok "$(ac_if final-path-dos self-path-dos nul)" ok "npm install" run --entrypoint=npm $NODE install --no-audit --no-fund is-number
 # The recipe points npm's global prefix at ${data}\npm and puts it on PATH.
 npm_global() {
+    local data
+    data=$("$zigsaw" volume inspect -f '{{.Mountpoint}}' "matrix-node-$sb-$$" | tr -d '\r') || return
     run --entrypoint=npm $NODE install -g --no-audit --no-fund semver@7 &&
         run --entrypoint=npm $NODE ls -g | grep -q semver &&
-        [ -f "$QUASIDOCK_HOME\\data\\$NODE\\npm\\node_modules\\semver\\package.json" ]
+        [ -f "$data\\npm\\node_modules\\semver\\package.json" ]
 }
 # npm itself lstat()s each directory of the data directory's path.
 expect ok gap ok "npm install -g into data dir" npm_global

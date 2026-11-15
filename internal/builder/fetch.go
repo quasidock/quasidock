@@ -145,6 +145,9 @@ func (f *Fetcher) FetchAll(srcs []recipe.Source) error {
 	if len(todo) < numWorkers {
 		numWorkers = len(todo)
 	}
+	if f.ctx.Verbose {
+		f.ctx.Note("fetch %d files, %d at a time", len(todo), numWorkers)
+	}
 
 	var nextIdx atomic.Uint64
 	var firstErr error
