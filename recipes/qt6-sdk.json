@@ -481,7 +481,7 @@
     {
       "name": "base",
       "sources": [
-        { "image": "qt6-sdk-base:6.12.0@sha256:1bbcbb39c133ef9669d63b75e5cd859a4ee1d318668e1c4ea908fd8ef666a133" }
+        { "image": "qt6-sdk-base:6.12.0@sha256:9300d3987b27b00ca7af7dfb39dc3cd115049a1339168bee5c9920461fdc4a9a" }
       ]
     },
     {
