@@ -116,7 +116,16 @@ deploy_of() { echo "$(store "$1")\\deploy\\$hex"; }
 lazy_of() { echo "$(store "$1")\\lazy\\$hex"; }
 helper_pid() { tr -d '\r\n ' 2>/dev/null <"$(lazy_of "$1")\\state.json" | grep -o '"pid":[0-9]*' | cut -d: -f2; }
 helper_running() { local p; p=$(helper_pid "$1") && [ -n "$p" ] && [ "$p" != 0 ] && tasklist /fi "PID eq $p" /nh 2>/dev/null | grep -q " $p "; }
-helper_gone() { ! helper_running "$1"; }
+helper_gone() {
+    # Closing a Windows job initiates termination; the helper can still be
+    # visible briefly before its process and file locks have gone away.
+    local i
+    for i in $(seq 50); do
+        helper_running "$1" || return 0
+        sleep 0.1
+    done
+    return 1
+}
 # The recipe's prefetch: first.txt first, then the landmark, then the rest.
 prioritized_first() {
     local names
@@ -258,8 +267,8 @@ check "the job's end ended the helper" helper_gone d
 # Stdout only, as above: outside that job may still be inside another.
 restarted_outside() {
     local out
-    out=$(qd_run zd $APP cat "$(deploy_of d)\\small.txt" 2>/dev/null | tr -d '\r')
-    [ "$out" = 'hello lazy' ] || { echo "cat said '$out'"; return 1; }
+    out=$(qd_run zd $APP cat "$(deploy_of d)\\small.txt" 2>"$work\\restart.stderr" | tr -d '\r')
+    [ "$out" = 'hello lazy' ] || { echo "cat said '$out'"; tail -12 "$work\\restart.stderr"; return 1; }
 }
 check "the next run, outside it, starts the helper again" restarted_outside
 # As a pull that stopped would leave it: placeholders, a helper, and no ref.
