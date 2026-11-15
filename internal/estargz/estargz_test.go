@@ -187,3 +187,56 @@ func TestPlanDeltaUpdate(t *testing.T) {
 		t.Fatalf("expected copied bytes preserved after coalesce for large gap")
 	}
 }
+
+func TestPlanAddedFirstFile(t *testing.T) {
+	data := make([]byte, 600*1024)
+	state := uint32(1)
+	for i := range data {
+		state ^= state << 13
+		state ^= state >> 17
+		state ^= state << 5
+		data[i] = byte(state)
+	}
+	blobs := make([][]byte, 2)
+	readers := make([]*Reader, 2)
+	for i := range blobs {
+		files := map[string]string{"busybox.exe": string(data)}
+		if i == 1 {
+			files["a.txt"] = "version 2"
+		}
+		var blob bytes.Buffer
+		if _, err := Convert(buildSampleTar(files), &blob, nil); err != nil {
+			t.Fatal(err)
+		}
+		blobs[i] = blob.Bytes()
+		var err error
+		readers[i], err = Open(io.NewSectionReader(bytes.NewReader(blobs[i]), 0, int64(len(blobs[i]))))
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	plan, err := MakePlan(readers[1], readers[:1], int64(len(blobs[1])))
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan.Coalesce(int64(len(blobs[1]) - 16*1024))
+	if plan.Copied()*4 < int64(len(blobs[1]))*3 {
+		for _, r := range readers {
+			for _, e := range r.AllEntries() {
+				t.Logf("%s: %s offset=%d next=%d", e.Name, e.Type, e.Offset, e.NextOffset())
+			}
+		}
+		t.Fatalf("copied only %d of %d bytes", plan.Copied(), len(blobs[1]))
+	}
+	var rebuilt bytes.Buffer
+	for _, piece := range plan.Pieces {
+		source, offset := blobs[1], piece.Offset
+		if piece.Type == PieceCopy {
+			source, offset = blobs[piece.SourceIndex], piece.SourceOffset
+		}
+		rebuilt.Write(source[offset : offset+piece.Length])
+	}
+	if !bytes.Equal(rebuilt.Bytes(), blobs[1]) {
+		t.Fatalf("rebuilt %d bytes, want the exact %d-byte blob", rebuilt.Len(), len(blobs[1]))
+	}
+}

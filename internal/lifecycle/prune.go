@@ -198,6 +198,9 @@ func Prune(ctx *context.Context, opts PruneOptions) error {
 	}
 
 	var blobs tally
+	if !opts.DryRun {
+		_, _ = lazy.Prune(ctx.Store, "")
+	}
 	blobDir := ctx.Store.Path("blobs", "sha256")
 	if entries, err := os.ReadDir(blobDir); err == nil {
 		for _, entry := range entries {

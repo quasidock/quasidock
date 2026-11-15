@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/quasidock/quasidock/internal/win32"
+	"golang.org/x/crypto/bcrypt"
 )
 
 func main() {
@@ -17,9 +18,9 @@ func main() {
 	user := args[1]
 	password := args[2]
 
-	hash, err := bcryptHash([]byte(password), 10)
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "bcryptHash failed: %v\n", err)
+		fmt.Fprintf(os.Stderr, "bcrypt failed: %v\n", err)
 		win32.ExitProcess(1)
 	}
 

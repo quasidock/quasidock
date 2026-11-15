@@ -5,6 +5,7 @@ go 1.26.7
 require (
 	github.com/containerd/stargz-snapshotter/estargz v0.19.1
 	github.com/ulikunitz/xz v0.5.17
+	golang.org/x/crypto v0.59.0
 )
 
 require (

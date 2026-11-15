@@ -15,9 +15,11 @@ func TestStructSizesAndOffsets(t *testing.T) {
 	if off := unsafe.Offsetof(CallbackInfo{}.RequestKey); off != 144 {
 		t.Errorf("offsetof(CallbackInfo.RequestKey) = %d, want 144", off)
 	}
-	if off := unsafe.Offsetof(FetchDataParams{}.RequiredOffset); off != 8 {
-		// Note: in Go without extra packing, check offset
-		t.Logf("offsetof(FetchDataParams.RequiredOffset) = %d", off)
+	if off := unsafe.Offsetof(FetchDataParams{}.RequiredOffset); off != 16 {
+		t.Errorf("offsetof(FetchDataParams.RequiredOffset) = %d, want 16", off)
+	}
+	if off := unsafe.Offsetof(TransferParams{}.CompletionStatus); off != 12 {
+		t.Errorf("offsetof(TransferParams.CompletionStatus) = %d, want 12", off)
 	}
 	if sz := unsafe.Sizeof(TransferParams{}); sz != 40 {
 		t.Errorf("sizeof(TransferParams) = %d, want 40", sz)
