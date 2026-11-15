@@ -24,7 +24,7 @@ import (
 
 func containerCommand(ctx *context.Context, args []string) (uint32, error) {
 	if len(args) == 0 {
-		return 1, errors.New("usage: quasidock container <ls|inspect|stop|rm|logs|prune>")
+		return 1, errors.New("usage: quasidock container <ls|inspect|start|restart|kill|stop|rm|logs|prune>")
 	}
 	cmd, rest := args[0], args[1:]
 	if cmd == "--help" || cmd == "help" {
@@ -36,8 +36,8 @@ func containerCommand(ctx *context.Context, args []string) (uint32, error) {
 		return 0, containerList(ctx, rest)
 	case "inspect":
 		return 0, containerInspect(ctx, rest)
-	case "stop":
-		return 0, containerStop(ctx, rest)
+	case "start", "restart", "kill", "stop":
+		return 0, containerLifecycle(ctx, cmd, rest)
 	case "rm", "remove":
 		return 0, containerRemove(ctx, rest)
 	case "logs":
@@ -175,49 +175,88 @@ func containerInspect(ctx *context.Context, args []string) error {
 	return renderInspect(ctx.Stdout, format, recs)
 }
 
-func containerStop(ctx *context.Context, args []string) error {
+func parseLifecycleArgs(command string, args []string) (int, run.KillSignal, []string, error) {
 	timeout := 10
+	signal := run.SignalKILL
 	var targets []string
+	parseTime := func(raw string) error {
+		v, err := strconv.Atoi(raw)
+		if err != nil || v < 0 || uint64(v) > uint64((1<<63-1)/int64(time.Second)) {
+			return fmt.Errorf("invalid --time %q: expected non-negative seconds within the supported duration", raw)
+		}
+		timeout = v
+		return nil
+	}
+	parseSignal := func(raw string) error {
+		switch strings.ToUpper(raw) {
+		case "KILL", "SIGKILL", "9":
+			signal = run.SignalKILL
+		case "TERM", "SIGTERM", "15":
+			signal = run.SignalTERM
+		default:
+			return fmt.Errorf("unsupported signal %q: use KILL or TERM", raw)
+		}
+		return nil
+	}
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
+		var parse func(string) error
+		var option string
+		if command == "stop" || command == "restart" {
+			parse, option = parseTime, "--time"
+		} else if command == "kill" {
+			parse, option = parseSignal, "--signal"
+		}
 		switch {
-		case arg == "-t" || arg == "--time":
+		case arg == "--":
+			targets = append(targets, args[i+1:]...)
+			i = len(args)
+		case (command == "stop" || command == "restart") && (arg == "-t" || arg == "--time"),
+			command == "kill" && (arg == "-s" || arg == "--signal"):
 			i++
 			if i == len(args) {
-				return errors.New("stop --time needs a number of seconds")
+				return 0, "", nil, fmt.Errorf("%s %s needs a value", command, option)
 			}
-			v, err := strconv.Atoi(args[i])
-			if err != nil || v < 0 {
-				return fmt.Errorf("invalid --time %q: expected non-negative integer", args[i])
+			if err := parse(args[i]); err != nil {
+				return 0, "", nil, err
 			}
-			timeout = v
-		case strings.HasPrefix(arg, "--time="):
-			raw := strings.TrimPrefix(arg, "--time=")
-			v, err := strconv.Atoi(raw)
-			if err != nil || v < 0 {
-				return fmt.Errorf("invalid --time %q: expected non-negative integer", raw)
+		case (command == "stop" || command == "restart") && (strings.HasPrefix(arg, "--time=") || strings.HasPrefix(arg, "-t=")),
+			command == "kill" && (strings.HasPrefix(arg, "--signal=") || strings.HasPrefix(arg, "-s=")):
+			if err := parse(arg[strings.IndexByte(arg, '=')+1:]); err != nil {
+				return 0, "", nil, err
 			}
-			timeout = v
-		case strings.HasPrefix(arg, "-t="):
-			raw := strings.TrimPrefix(arg, "-t=")
-			v, err := strconv.Atoi(raw)
-			if err != nil || v < 0 {
-				return fmt.Errorf("invalid -t %q: expected non-negative integer", raw)
-			}
-			timeout = v
 		case strings.HasPrefix(arg, "-"):
-			return fmt.Errorf("unknown stop option %q", arg)
+			return 0, "", nil, fmt.Errorf("unknown %s option %q", command, arg)
 		default:
 			targets = append(targets, arg)
 		}
 	}
 	if len(targets) == 0 {
-		return errors.New("usage: quasidock stop [-t SECONDS] CONTAINER [CONTAINER...]")
+		return 0, "", nil, fmt.Errorf("usage: quasidock %s [OPTIONS] CONTAINER [CONTAINER...]", command)
+	}
+	return timeout, signal, targets, nil
+}
+
+func containerLifecycle(ctx *context.Context, command string, args []string) error {
+	timeout, signal, targets, err := parseLifecycleArgs(command, args)
+	if err != nil {
+		return err
 	}
 	var errs []error
 	for _, target := range targets {
-		if _, err := run.StopContainer(ctx, target, timeout); err != nil {
-			errs = append(errs, err)
+		var err error
+		switch command {
+		case "start":
+			_, err = run.StartContainer(ctx, target)
+		case "restart":
+			_, err = run.RestartContainer(ctx, target, timeout)
+		case "kill":
+			_, err = run.KillContainer(ctx, target, signal)
+		case "stop":
+			_, err = run.StopContainer(ctx, target, timeout)
+		}
+		if err != nil {
+			errs = append(errs, fmt.Errorf("%s %s: %w", command, target, err))
 			continue
 		}
 		fmt.Fprintln(ctx.Stdout, target)
@@ -242,28 +281,9 @@ func containerRemove(ctx *context.Context, args []string) error {
 	}
 	var errs []error
 	for _, target := range targets {
-		rec, err := ctx.Store.ResolveContainer(target)
-		if err != nil {
+		if _, err := run.RemoveContainer(ctx, target, force); err != nil {
 			errs = append(errs, err)
 			continue
-		}
-		if rec.State.Running || ctx.Store.IsContainerRunning(rec.ID) {
-			if !force {
-				errs = append(errs, fmt.Errorf("cannot remove running container %s: stop it first or use -f", rec.ShortID()))
-				continue
-			}
-			if _, err := run.StopContainer(ctx, rec.ID, 0); err != nil {
-				errs = append(errs, err)
-				continue
-			}
-		}
-		_ = hkcu.SettleLeftovers(ctx.Store, rec.AppID)
-		if err := ctx.Store.RemoveContainer(rec.ID); err != nil && !(rec.HostConfig.AutoRemove && errors.Is(err, store.ErrContainerNotFound)) {
-			errs = append(errs, err)
-			continue
-		}
-		if err := grants.RepairMounts(ctx.Store); err != nil {
-			errs = append(errs, err)
 		}
 		fmt.Fprintln(ctx.Stdout, target)
 	}

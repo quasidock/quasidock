@@ -4,8 +4,8 @@ Quasidock runs sandboxed Windows programs from OCI-distributed images using a
 Docker-style CLI. It is a Go fork of [Zigsaw](https://github.com/zigsaw-io/zigsaw),
 focused on image distribution and native Windows execution.
 
-Version **0.8.0** supports Docker-style container lifecycle management (`run`, `ps`,
-`logs`, `stop`, `rm`, `inspect`, `prune`), per-container isolated data, image
+Version **0.9** supports Docker-style container lifecycle management (`run`, `ps`,
+`logs`, `start`, `restart`, `kill`, `stop`, `rm`, `inspect`, `prune`), per-container isolated data, image
 management, named volumes, local directory bind mounts, and Quasidock images for
 `windows/amd64`. Dockerfiles, the Docker Engine API, and general Docker images
 are not supported.
@@ -82,6 +82,9 @@ removes leftover legacy app data once unused.
 | `container ls` | `ps` | List running containers (`-a` includes exited; `-q` prints IDs) |
 | `container inspect` | `inspect` | Container JSON metadata or `-f TEMPLATE` (`inspect` falls back to images) |
 | `container logs` | `logs` | Fetch captured output (`-f`/`--follow`, `-n`/`--tail LINES`) |
+| `container start` | `start` | Start existing containers in the background |
+| `container restart` | `restart` | Stop and start containers (`-t`/`--time SECONDS`, default 10s) |
+| `container kill` | `kill` | Immediately terminate process trees; `-s`/`--signal TERM` requests graceful shutdown |
 | `container stop` | `stop` | Stop running containers (`-t`/`--time SECONDS`, default 10s) |
 | `container rm` | `rm` | Remove containers (`-f`/`--force` stops running containers first) |
 | `container prune` | — | Remove all stopped containers |
@@ -104,6 +107,9 @@ quasidock run --rm node node.exe -e 'console.log(process.version)'
 quasidock run -d --name node-demo node node.exe -e 'setInterval(() => {}, 1000)'
 quasidock logs node-demo
 quasidock stop node-demo
+quasidock start node-demo
+quasidock restart -t 5 node-demo
+quasidock kill node-demo
 quasidock rm node-demo
 quasidock run --entrypoint=node.exe node -e 'console.log(process.version)'
 quasidock run --pull=never -e EXAMPLE=value node node.exe -e 'console.log(process.env.EXAMPLE)'
@@ -134,6 +140,30 @@ Each `run` allocates an isolated container under `containers/<id>/` with its own
 including different versions of the same app—can run concurrently without sharing
 state unless mounted storage is explicitly shared. Containers persist after exit
 unless `--rm` is set. Docker-style `-p` port publishing remains deferred.
+
+`start` and `restart` reuse the same container ID, saved command, image digest,
+working directory, private data, mounts, and registry state. They append to the
+existing log and never pull a newer image. `start` succeeds without another launch
+when a container is already running; `restart` also starts stopped containers.
+Both launch in the background; attached start is unsupported. A failed start keeps
+the existing record and data for retry. Restart preserves a running `--rm`
+container through the stop/start cycle, then automatic removal resumes on its
+next exit. It also retains the record if the replacement launch fails.
+
+`kill` defaults to `KILL` and waits for process-tree and runtime cleanup. `TERM`
+sends Ctrl+Break to a detached container's console process group and returns after
+Windows accepts the request; applications may ignore it. TERM has no timeout or
+automatic escalation. Signals also accept `SIGKILL`/`9` and `SIGTERM`/`15`,
+case-insensitively. Foreground TERM is unsupported so native terminal Ctrl+C keeps
+its existing behavior; KILL works for foreground containers. `stop` and `restart`
+wait their requested grace period before forcing termination; `-t 0` forces it
+immediately. Killing a stopped container is an error.
+
+Values inherited with `run -e NAME`, including absent variables, are saved when
+the container is created and reused across starts. Existing stopped records from
+older binaries capture missing snapshots on their first start. Finish active
+containers before replacing the binary: live supervisors from older binaries use
+a different control protocol.
 
 ## Persistent storage
 

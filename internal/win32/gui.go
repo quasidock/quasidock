@@ -182,6 +182,15 @@ func GenerateConsoleCtrlEvent(event, group DWORD) bool {
 	return r != 0
 }
 
+// SendConsoleBreak reports whether Windows accepted the targeted signal.
+func SendConsoleBreak(group DWORD) error {
+	r, _, err := procGenerateConsoleCtrlEvent.Call(uintptr(CTRL_BREAK_EVENT), uintptr(group))
+	if r == 0 {
+		return err
+	}
+	return nil
+}
+
 func SetCurrentDirectory(path string) error {
 	r, _, err := procSetCurrentDirectoryW.Call(uintptr(unsafe.Pointer(UTF16Ptr(path))))
 	if r == 0 {
