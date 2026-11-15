@@ -39,6 +39,8 @@ if [ "${1:-}" != --inner ]; then
     bash "$(cygpath -u "$repo")/scripts/package.sh" "$(cygpath -u "$stage\\package")" >"$stage\\package.log" 2>&1 ||
         { echo "packaging failed: $(tail -1 "$stage\\package.log")"; exit 1; }
     for d in tests recipes scripts go.mod; do cp -r "$(cygpath -u "$repo")/$d" "$(cygpath -u "$stage")/"; done
+    mkdir -p "$stage\\internal\\version"
+    cp "$repo\\internal\\version\\version.go" "$stage\\internal\\version\\"
     mkdir -p "$stage\\out" "$stage\\tmp" "$stage\\bin" "$stage\\seed"
     cp -r "$(cygpath -u "$repo")/out/bin" "$(cygpath -u "$repo")/out/test" "$(cygpath -u "$stage")/out/"
     if [ -n "${SEED_DOWNLOADS:-}" ]; then
@@ -154,10 +156,12 @@ for sb in soft low appcontainer; do
     check "it runs under $sb" runs_in "$sb"
 done
 keeps_data() {
-    qd_run z $BB sh -c 'echo kept > "$USERPROFILE/kept.txt"; true' &&
-        [ "$(qd_run z $BB sh -c 'cat "$USERPROFILE/kept.txt"; true' | tr -d '\r')" = kept ]
+    z volume create su-data >/dev/null &&
+        qd_run z --rm -v 'su-data:${data}' $BB sh -c 'echo kept > "$USERPROFILE/kept.txt"; true' &&
+        [ "$(qd_run z --rm -v 'su-data:${data}' $BB sh -c 'cat "$USERPROFILE/kept.txt"; true' | tr -d '\r')" = kept ] &&
+        z volume rm su-data >/dev/null
 }
-check "its data stays between runs" keeps_data
+check "a named volume keeps data between containers" keeps_data
 
 logs_in() {
     # Nothing answers there: the login fails, and Credential Manager has to be
@@ -209,7 +213,7 @@ real_clean() {
     no_label "$USERPROFILE" || { echo "$USERPROFILE is labelled"; return 1; }
     local out
     out=$(z grants | tr -d '\r')
-    [ -z "$out" ] || { echo "grants says: $out"; return 1; }
+    [ "$out" = 'quasidock has changed nothing outside its stores.' ] || { echo "grants says: $out"; return 1; }
 }
 check "nothing it changed is left on your folders" real_clean
 uninstalls() {

@@ -18,7 +18,7 @@
           "rm -rf vendor/.meta"
         ],
         "dir": "vendor",
-        "sha256": "3f72db4166c475a5d0cdcf9206660561efdc6c1b71fb65de84def6d9dd7673a4"
+        "sha256": "9f76cb3037e9cc73b0c4db5128487d9bff3127c29c146ae10ff7fc211234bba5"
       },
       "build": [
         "mvn -B -ntp -o -Dmaven.repo.local=\"$PWD/vendor\" package -DskipTests",

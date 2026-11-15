@@ -1138,7 +1138,12 @@ func Errno(err error) int32 {
 
 func WSASocket(af, kind, proto int32, info *WSAPROTOCOL_INFOW, group uint32, flags DWORD) (SOCKET, error) {
 	r, _, err := procWSASocketW.Call(uintptr(af), uintptr(kind), uintptr(proto), uintptr(unsafe.Pointer(info)), uintptr(group), uintptr(flags))
-	return SOCKET(r), err
+	// LazyProc.Call always returns a non-nil error, including on success.
+	// Winsock's return value determines whether that error is meaningful.
+	if SOCKET(r) == INVALID_SOCKET {
+		return INVALID_SOCKET, err
+	}
+	return SOCKET(r), nil
 }
 
 func Closesocket(s SOCKET) (int32, error) {
@@ -1158,7 +1163,10 @@ func Listen(s SOCKET, backlog int32) (int32, error) {
 
 func Accept(s SOCKET, addr unsafe.Pointer, addrlen *int32) (SOCKET, error) {
 	r, _, err := procAccept.Call(uintptr(s), uintptr(addr), uintptr(unsafe.Pointer(addrlen)))
-	return SOCKET(r), err
+	if SOCKET(r) == INVALID_SOCKET {
+		return INVALID_SOCKET, err
+	}
+	return SOCKET(r), nil
 }
 
 func Connect(s SOCKET, addr unsafe.Pointer, addrlen int32) (int32, error) {
@@ -1181,7 +1189,10 @@ func Recv(s SOCKET, buf []byte, flags int32) (int32, error) {
 		ptr = uintptr(unsafe.Pointer(&buf[0]))
 	}
 	r, _, err := procRecv.Call(uintptr(s), ptr, uintptr(len(buf)), uintptr(flags))
-	return int32(r), err
+	if int32(r) == SOCKET_ERROR {
+		return SOCKET_ERROR, err
+	}
+	return int32(r), nil
 }
 
 func Shutdown(s SOCKET, how int32) (int32, error) {

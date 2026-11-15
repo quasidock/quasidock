@@ -127,9 +127,10 @@ param(
         # has nothing in it, and until then says what another store still needs.
         $record = 'HKCU:\' + $(if ($env:QUASIDOCK_GRANTS_KEY) { $env:QUASIDOCK_GRANTS_KEY } else { 'Software\Quasidock\Grants' })
         if (Test-Path -LiteralPath $record) {
-            $left = @((Get-Item -LiteralPath $record).Property)
-            if ($left.Count -eq 0) { Remove-Item -LiteralPath $record -Force }
-            else { Write-Warning "quasidock's record still has what other stores changed: $($left -join '; '). A quasidock using them takes it back." }
+            $recordKey = Get-Item -LiteralPath $record
+            $left = @($recordKey.Property)
+            if ($left.Count -eq 0 -and $recordKey.SubKeyCount -eq 0) { Remove-Item -LiteralPath $record -Force }
+            else { Write-Warning "quasidock's record still has entries for other stores. A quasidock using them takes it back." }
         }
         Write-Host "quasidock is removed from $Dir. Its store, with downloads and apps' data, is $store; delete that too if you don't want them."
         return

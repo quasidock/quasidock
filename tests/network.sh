@@ -28,8 +28,8 @@ zigsaw=${1:-$root/out/bin/quasidock.exe}
 work=$(cygpath -w "$(mktemp -d)")
 QUASIDOCK_HOME="$work\\store"
 export QUASIDOCK_HOME
-APP=test.netprobe
-RACE=test.netprobe.race
+APP=test.netprobe.$$
+RACE=$APP.race
 
 failures=0
 check() {
@@ -302,11 +302,11 @@ killed() {
 check "a killed run's exemption is taken back by \`zigsaw repair\`" killed
 # An exemption you made yourself, with CheckNetIsolation, isn't zigsaw's.
 yours() {
-    CheckNetIsolation.exe LoopbackExempt -a -n=zigsaw.$APP >/dev/null || { echo "CheckNetIsolation -a failed"; return 1; }
+    CheckNetIsolation.exe LoopbackExempt -a -n=quasidock.$APP >/dev/null || { echo "CheckNetIsolation -a failed"; return 1; }
     local ok=0
     pings connects --sandbox=appcontainer --share=network || ok=1
     exempt || { echo "not exempt after the run"; ok=1; }
-    CheckNetIsolation.exe LoopbackExempt -d -n=zigsaw.$APP >/dev/null
+    CheckNetIsolation.exe LoopbackExempt -d -n=quasidock.$APP >/dev/null
     return $ok
 }
 check "an exemption you made stays after the run" yours
@@ -319,7 +319,7 @@ upstream() { qd_run z "$@" --entrypoint=quasidock-netprobe.exe $APP env UPSTREAM
 reaches_upstream() {
     local expected=$1 out
     shift
-    out=$(qd_run z "$@" --entrypoint=quasidock-netprobe.exe $APP ping "$(upstream "$@")" 2>&1 | tr -d '\r')
+    out=$(qd_run z "$@" --entrypoint=quasidock-netprobe.exe $APP ping UPSTREAM_PORT 2>&1 | tr -d '\r')
     [ "$out" = "$expected" ] || { echo "got $out"; return 1; }
 }
 direct_use() {

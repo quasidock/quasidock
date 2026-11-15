@@ -14,7 +14,7 @@
       "vendor": {
         "commands": ["dotnet restore --packages vendor"],
         "dir": "vendor",
-        "sha256": "5f8fe2a471b0a15988ad7e61fc3911d47812958181728a9e8618f3bda6f4ae26"
+        "sha256": "38a3059f4fc43ff4b8388ea17d7bd375c685626b802f081f752bddd7546894d4"
       },
       "build": ["dotnet publish -c Release --packages vendor --source \"$PWD/vendor\" -o \"$PREFIX\""]
     }

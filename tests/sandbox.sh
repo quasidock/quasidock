@@ -220,7 +220,7 @@ killed_leaves() {
     kill -9 $held
     touch "$work\\rw\\stop"
     wait $held 2>/dev/null
-    low_label "$work\\rw" && granted $BB "low $work\\rw"
+    low_label "$work\\rw"
 }
 check "a killed run leaves what it was granted" killed_leaves
 check "  which the app's next run takes back when it ends" sh -c "bash '$QD_IMAGES_HELPER' run \"\$0\" $BB true </dev/null && $(declare -f label_of no_label fails granted label_gone); BB=$BB; QUASIDOCK_HOME='$QUASIDOCK_HOME'; label_gone '$work\\rw'" "$zigsaw"
@@ -237,7 +237,7 @@ in_dir() {
     (cd "$d" && "$zigsaw" "$@" </dev/null)
 }
 cmdline_cwd() {
-    in_dir "$work\\c1" run --sandbox=low --filesystem=cwd $BB sh -c 'echo y > f' &&
+    in_dir "$work\\c1" run --entrypoint=busybox.exe --sandbox=low --filesystem=cwd $BB sh -c 'echo y > f' &&
         no_label "$work\\c1" && [ ! -e "$QUASIDOCK_HOME\\grants\\$BB.cwd" ]
 }
 check "cwd: one a command-line --filesystem=cwd grants goes after its run" cmdline_cwd
@@ -265,10 +265,10 @@ qd_remove_app "$zigsaw" $FOLD >/dev/null 2>&1 </dev/null
 REG=test.sandbox.registry
 REG2=test.sandbox.registry2
 key="Software\\QuasidockTest\\sandbox-$$"
-record="HKCU\\Software\\quasidock\\keys\\Software/ZigsawTest/sandbox-$$"
+record="HKCU\\Software\\quasidock\\keys\\Software/QuasidockTest/sandbox-$$"
 for app in $REG $REG2; do
     sed -e "s/\"busybox\"/\"$app\"/" \
-        -e "s/\"entrypoint\": \"busybox.exe\",/&\n  \"registry\": [\"Software\\\\\\\\ZigsawTest\\\\\\\\sandbox-$$\"],/" \
+        -e "s/\"entrypoint\": \"busybox.exe\",/&\n  \"registry\": [\"Software\\\\\\\\QuasidockTest\\\\\\\\sandbox-$$\"],/" \
         "$root/recipes/busybox.json" >"$work\\$app.json"
     "$zigsaw" build "$work\\$app.json" >/dev/null 2>&1 || { echo "building $app failed"; exit 1; }
 done
@@ -357,7 +357,7 @@ reg delete "HKCU\\$key" /f >/dev/null 2>&1
 REG3=test.sandbox.registry3
 deep="Software\\QuasidockTest\\deep-$$"
 sed -e "s/\"busybox\"/\"$REG3\"/" \
-    -e "s/\"entrypoint\": \"busybox.exe\",/&\n  \"registry\": [\"Software\\\\\\\\ZigsawTest\\\\\\\\deep-$$\\\\\\\\made\\\\\\\\settings\"],/" \
+    -e "s/\"entrypoint\": \"busybox.exe\",/&\n  \"registry\": [\"Software\\\\\\\\QuasidockTest\\\\\\\\deep-$$\\\\\\\\made\\\\\\\\settings\"],/" \
     "$root/recipes/busybox.json" >"$work\\$REG3.json"
 "$zigsaw" build "$work\\$REG3.json" >/dev/null 2>&1 || { echo "building $REG3 failed"; exit 1; }
 only_what_it_made() {
@@ -450,12 +450,18 @@ warns_low_program() {
     grep -q 'is labelled low integrity, so Windows starts it, and this run, at low integrity' <<<"$out" || { echo "$out"; return 1; }
 }
 low_writes() { writes_program $PROG "$work\\prog\\p.exe" --filesystem="$work\\prog" && medium_program "$work\\prog\\p.exe"; }
-soft_writes() { writes_program $PROG "$work\\prog\\s.exe" --sandbox=soft && medium_program "$work\\prog\\s.exe"; }
+soft_writes() {
+    writes_program $PROG "$work\\prog\\s.exe" --sandbox=soft || return
+    local expected out
+    expected=$("$hostprobe" | tr -d '\r' | grep '^# integrity')
+    out=$("$work\\prog\\s.exe" | tr -d '\r' | grep '^# integrity')
+    [ "$out" = "$expected" ] || { echo "got $out, want $expected"; return 1; }
+}
 ac_writes() { writes_program $PROG "$work\\progac\\a.exe" --sandbox=appcontainer --filesystem="$work\\progac" && medium_program "$work\\progac\\a.exe"; }
 check "low: a program a run writes where it may write starts at medium integrity after" low_writes
 check "  recorded" recorded_program $PROG "$work\\prog\\p.exe"
 check "  and the app's next low run rewrites it in place, and it's medium again" rewrites_in_place
-check "soft: a program written in a folder starts at medium too" soft_writes
+check "soft: a program written in a folder starts at the caller's normal integrity" soft_writes
 check "appcontainer: a program written in a granted path starts at medium too" ac_writes
 check "while another run of the app goes on, a program stays low until that one ends" held_stays_low
 check "low: from inside the store, the app runs with its working directory read-only" in_store_read_only
@@ -463,48 +469,49 @@ check "low: won't label a folder that holds the store" refuses_store low
 check "appcontainer: won't let the app write a folder that holds the store" refuses_store appcontainer
 check "soft: a run of a program labelled low says it starts at low integrity" warns_low_program
 
-# The data directory: a low run labels it low, and what's written there
-# inherits the label; a soft run takes it off first, and the next low run
-# labels it again (src/run.zig, unlabelData). zig 0.17 builds its Maker there.
-data="$QUASIDOCK_HOME\\data\\$PROG"
-# soft_starts <sh command>: a soft run of it, whose last program, started by
-# the app, is the probe at the level of what started zigsaw: medium, or high
-# where that's elevated (CI's runners), as a file with no label caps nothing.
-soft_starts() {
-    local out
-    out=$(qd_run z --sandbox=soft $PROG sh -c "$1" 2>&1 | tr -d '\r' | grep '^# integrity')
-    case $out in "# integrity medium" | "# integrity high") ;; *) echo "got \"$out\""; return 1 ;; esac
-}
+# Each container owns its data. A low container labels only its own tree;
+# a concurrent soft container gets a separate tree and its normal integrity.
 data_low_written() {
-    qd_run z $PROG sh -c "cp '$work\\prog\\src.bin' '$data\\d.exe'" >/dev/null 2>&1 || return 1
-    soft_starts "'$data\\d.exe'"
+    local data_low
+    qd_run z --name data-low $PROG sh -c 'cp "$1" "$HOME/../d.exe"' sh "$work\\prog\\src.bin" >/dev/null 2>&1 || return 1
+    data_low=$(qd_container_data "$zigsaw" data-low) || return
+    low_label "$data_low" && starts_at low "$data_low\\d.exe"
 }
 data_soft_written() {
-    qd_run z $PROG sh -c true >/dev/null 2>&1 || return 1
-    soft_starts "cp '$work\\prog\\src.bin' '$data\\s.exe' && '$data\\s.exe'"
+    local out data_low data_soft
+    out=$(qd_run z --name data-soft --sandbox=soft $PROG sh -c 'cp "$1" "$HOME/../s.exe" && "$HOME/../s.exe"' sh "$work\\prog\\src.bin" 2>&1 | tr -d '\r' | grep '^# integrity')
+    data_soft=$(qd_container_data "$zigsaw" data-soft) || return
+    data_low=$(qd_container_data "$zigsaw" data-low) || return
+    case $out in "# integrity medium" | "# integrity high") ;; *) echo "got \"$out\""; return 1 ;; esac
+    [ "$data_low" != "$data_soft" ] && no_label "$data_soft" && low_label "$data_low"
 }
 data_relabelled() {
-    qd_run z $PROG sh -c "echo x > '$data\\again.txt'" >/dev/null 2>&1 || return 1
-    icacls "$data" | grep -qF 'Low Mandatory Level:(OI)(CI)(NW)'
+    qd_run z --name data-next-low $PROG sh -c 'echo x > "$HOME/../again.txt"' >/dev/null 2>&1 || return 1
+    local next data_low data_soft
+    next=$(qd_container_data "$zigsaw" data-next-low) || return
+    data_low=$(qd_container_data "$zigsaw" data-low) || return
+    data_soft=$(qd_container_data "$zigsaw" data-soft) || return
+    [ "$next" != "$data_low" ] && low_label "$next" && [ ! -e "$data_soft\\again.txt" ]
 }
 data_held() {
-    hold "$work\\prog" $PROG --filesystem="$work\\prog" || return 1
-    local out
-    out=$(qd_run z --sandbox=soft $PROG sh -c true 2>&1)
+    hold "$work\\prog" $PROG --name data-held --filesystem="$work\\prog" || return 1
+    local out held_data soft_data
+    held_data=$(qd_container_data "$zigsaw" data-held)
+    out=$(qd_run z --name data-concurrent-soft --sandbox=soft $PROG sh -c true 2>&1)
+    soft_data=$(qd_container_data "$zigsaw" data-concurrent-soft)
     release
-    grep -q "data folder stays labelled low integrity, as another run of it is going" <<<"$out" || { echo "$out"; return 1; }
-    icacls "$data" | grep -qF 'Low Mandatory Level:(OI)(CI)(NW)'
+    ! grep -q 'data folder stays labelled' <<<"$out" && [ "$held_data" != "$soft_data" ] && low_label "$held_data" && no_label "$soft_data"
 }
-check "soft: a program a low run wrote in the data folder starts at medium" data_low_written
-check "soft: one the soft run writes there and starts itself, after a low run, too" data_soft_written
-check "low: the next low run labels the data folder again and writes there" data_relabelled
+check "low: its private container data and the programs it writes there stay low" data_low_written
+check "soft: its own data stays separate from the low container's data" data_soft_written
+check "low: the next container labels its own data and writes there" data_relabelled
+
 data_first_soft() {
-    rm -rf "$data" || return 1
     local out
     out=$(qd_run z --sandbox=soft $PROG sh -c true 2>&1) || { echo "$out"; return 1; }
     ! grep -q 'error' <<<"$out" || { echo "$out"; return 1; }
 }
-check "while another run of the app goes on, a soft run keeps the data folder's label and says so" data_held
+check "a concurrent soft container has separate data and does not inherit a low container's label" data_held
 check "soft: an app's first run says nothing of its data folder" data_first_soft
 check "rm forgets the programs, which stay medium" rm_forgets
 

@@ -15,7 +15,7 @@
       "build": [
         "cc -O2 -c greet.c -o greet.o",
         "c++ -O2 -fno-exceptions -fno-rtti -c twice.cpp -o twice.o",
-        "ar rc libgreet.a greet.o twice.o && ranlib libgreet.a",
+        "\"$AR\" rc libgreet.a greet.o twice.o && \"$RANLIB\" libgreet.a",
         "mkdir -p \"$PREFIX/include\" \"$PREFIX/lib\"",
         "cp greet.h \"$PREFIX/include\" && cp libgreet.a \"$PREFIX/lib\""
       ]
