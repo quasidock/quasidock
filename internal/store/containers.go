@@ -24,6 +24,7 @@ var (
 )
 
 type ContainerState struct {
+	RunID      string `json:"RunID,omitempty"`
 	Status     string `json:"Status"`
 	Running    bool   `json:"Running"`
 	Pid        uint32 `json:"Pid"`
@@ -56,12 +57,15 @@ type ContainerHostConfig struct {
 	Ports        []string      `json:"Ports,omitempty"`
 }
 
-// ContainerRunSpec records the CLI launch inputs needed by a detached supervisor.
+// ContainerRunSpec records the original launch inputs, independently of the
+// resolved command, so retained containers can be started again.
 type ContainerRunSpec struct {
-	Args       []string `json:"Args,omitempty"`
-	Entrypoint *string  `json:"Entrypoint,omitempty"`
-	Env        []string `json:"Env,omitempty"`
-	HostCwd    string   `json:"HostCwd,omitempty"`
+	// A nil value records an explicitly inherited variable that was absent.
+	InheritedEnv map[string]*string `json:"InheritedEnv,omitempty"`
+	Args         []string           `json:"Args,omitempty"`
+	Entrypoint   *string            `json:"Entrypoint,omitempty"`
+	Env          []string           `json:"Env,omitempty"`
+	HostCwd      string             `json:"HostCwd,omitempty"`
 }
 
 type ContainerRecord struct {
@@ -158,6 +162,36 @@ func (s *Store) IsContainerRunning(id string) bool {
 	return IsLocked(s.ContainerRunLockPath(id))
 }
 
+// ContainerOperation serializes commands without holding the container index
+// while waiting for a supervisor. Its lock lives outside the removable record.
+type ContainerOperation struct {
+	store *Store
+	id    string
+	lock  *Lock
+}
+
+func (s *Store) ContainerOperationLockPath(id string) string {
+	return s.Path("containers", "operations", id+".lock")
+}
+
+func (s *Store) LockContainer(id string) (*ContainerOperation, error) {
+	if !oci.IsSha256Hex(id) {
+		return nil, fmt.Errorf("invalid container ID %q", id)
+	}
+	lk, err := OpenLock(s.ContainerOperationLockPath(id), true, true)
+	if err != nil {
+		return nil, err
+	}
+	return &ContainerOperation{store: s, id: id, lock: lk}, nil
+}
+
+func (o *ContainerOperation) Release() { o.lock.Release() }
+
+// Remove removes the stopped container while the caller owns its operation lock.
+func (o *ContainerOperation) Remove() error {
+	return o.store.removeContainer(o.id)
+}
+
 func (s *Store) writeContainerStateNoLock(rec *ContainerRecord) error {
 	data, err := json.MarshalIndent(rec, "", "  ")
 	if err != nil {
@@ -206,10 +240,11 @@ func (s *Store) reconcileContainerNoLock(rec *ContainerRecord) (*ContainerRecord
 		return nil, nil
 	}
 	staleRunning := rec.State.Running || (rec.State.Status == "created" && rec.State.Launched)
-	if !staleRunning || s.IsContainerRunning(rec.ID) {
+	staleAutoRemove := rec.HostConfig.AutoRemove && rec.State.Status == "exited" && rec.State.Launched
+	if (!staleRunning && !staleAutoRemove) || s.IsContainerRunning(rec.ID) {
 		return rec, nil
 	}
-	if rec.HostConfig.AutoRemove {
+	if rec.HostConfig.AutoRemove && !IsLocked(s.ContainerOperationLockPath(rec.ID)) {
 		_ = s.deleteContainerDirNoLock(rec.ID)
 		return nil, nil
 	}
@@ -463,6 +498,15 @@ func isHexPrefix(s string) bool {
 }
 
 func (s *Store) RemoveContainer(id string) error {
+	op, err := s.LockContainer(id)
+	if err != nil {
+		return err
+	}
+	defer op.Release()
+	return op.Remove()
+}
+
+func (s *Store) removeContainer(id string) error {
 	lk, err := s.containersLock(true)
 	if err != nil {
 		return err
@@ -525,29 +569,51 @@ func (s *Store) PruneContainers(dryRun bool) ([]ContainerRecord, uint64, int, er
 	var running int
 	now := time.Now().UTC()
 	for _, c := range all {
-		if dryRun && !s.IsContainerRunning(c.ID) && (c.State.Running || c.State.Status == "created" && c.State.Launched) {
-			c.State.Running = false
-			c.State.Status = "exited"
-		}
-		if c.State.Running || s.IsContainerRunning(c.ID) {
+		// Never wait on an operation while holding the index: the command may
+		// itself need the index to finish a launch or a shutdown.
+		if IsLocked(s.ContainerOperationLockPath(c.ID)) {
 			running++
 			continue
 		}
-		// Give a newly created container a short grace window while its detached supervisor initializes.
-		if c.State.Status == "created" && !c.State.Launched && c.State.Error == "" && c.State.FinishedAt == "" {
-			if createdAt, err := time.Parse(time.RFC3339Nano, c.Created); err == nil && now.Sub(createdAt) < 10*time.Second {
+		var operation *Lock
+		if !dryRun {
+			operation, err = TryLock(s.ContainerOperationLockPath(c.ID), true)
+			if err != nil {
+				return removed, freed, running, err
+			}
+			if operation == nil {
 				running++
 				continue
 			}
 		}
-		sz := containerDirSize(s.ContainerDir(c.ID))
-		if !dryRun {
-			if err := s.deleteContainerDirNoLock(c.ID); err != nil {
-				continue
+		func() {
+			if operation != nil {
+				defer operation.Release()
 			}
-		}
-		removed = append(removed, c)
-		freed += sz
+			if dryRun && !s.IsContainerRunning(c.ID) && (c.State.Running || c.State.Status == "created" && c.State.Launched) {
+				c.State.Running = false
+				c.State.Status = "exited"
+			}
+			if c.State.Running || s.IsContainerRunning(c.ID) {
+				running++
+				return
+			}
+			// Give a newly created container a short grace window while its detached supervisor initializes.
+			if c.State.Status == "created" && !c.State.Launched && c.State.Error == "" && c.State.FinishedAt == "" {
+				if createdAt, err := time.Parse(time.RFC3339Nano, c.Created); err == nil && now.Sub(createdAt) < 10*time.Second {
+					running++
+					return
+				}
+			}
+			sz := containerDirSize(s.ContainerDir(c.ID))
+			if !dryRun {
+				if err := s.deleteContainerDirNoLock(c.ID); err != nil {
+					return
+				}
+			}
+			removed = append(removed, c)
+			freed += sz
+		}()
 	}
 	return removed, freed, running, nil
 }

@@ -142,13 +142,25 @@ quasidock rm $cid
 
 - **Foreground vs detached**: foreground runs call `executeContainer` in place
   (keeping stdin open with `-i`, otherwise attaching `\\.\NUL`). `-d` /
-  `--detach` launches `quasidock container-supervisor <store> <containerID>`,
-  waits up to 30 s on `Local\quasidock-ctr-ready-<id>`, and prints the 64-hex
-  container ID. Standard output and error drain concurrently into
+  `--detach` launches `quasidock container-supervisor <store> <containerID> <runID>`
+  with a hidden console, waits up to 30 s on an event scoped to that launch
+  attempt, and prints the 64-hex container ID. A startup timeout terminates the
+  supervisor using its owned process handle; closing its Job Object kills the
+  application tree. Standard output and error drain concurrently into
   `containers\<id>\container.log`.
-- **Stopping, reaping, and `--rm`**: `quasidock stop [-t SECONDS]` signals
-  `Local\quasidock-ctr-stop-<id>`, delivering `CTRL_BREAK_EVENT` to the job and
-  falling back to `TerminateJobObject` after the timeout (default 10 s). Listing,
+- **Starting and restarting**: saved `RunSpec` inputs and the pinned image digest
+  recreate the command without allocating another container or resolving a newer
+  tag. Logs append across launches. Operation locks in `containers\operations\`
+  serialize commands and removal; pruning skips active operations. Restart holds
+  this reservation across shutdown and launch. Exit cleanup checks the run ID
+  under the same lock before automatic removal, so the outgoing supervisor cannot
+  remove a replacement run.
+- **Stopping, killing, and `--rm`**: launch-scoped control events and atomic
+  request/result files acknowledge signals. The supervisor sends targeted
+  `CTRL_BREAK_EVENT` for TERM or calls `TerminateJobObject` for KILL. TERM does
+  not escalate; `stop` and `restart` escalate after their caller-selected timeout
+  (default 10 s). Foreground TERM is rejected to retain native console behavior.
+  Listing,
   inspecting, or pruning reconciles dead `"running"` containers whose exclusive
   `run.lock` was released (marking them `"exited"` with code `137` if none was
   recorded, or deleting them if `--rm`). `--rm` containers delete
@@ -159,7 +171,9 @@ quasidock rm $cid
   entries; points `USERPROFILE` and `HOME` at `containers\<id>\data\home`; sets
   `APPDATA`, `LOCALAPPDATA`, `TEMP`, and `TMP` inside it; initializes Quick Access
   state; strips inherited `QUASIDOCK_*` variables; and sets `QUASIDOCK_ID` so
-  child `quasidock` processes restore the caller's environment. `${data}`,
+  child `quasidock` processes restore the caller's environment. Bare `-e NAME`
+  values or absences are snapshotted in `RunSpec.InheritedEnv` for later starts.
+  `${data}`,
   `${cache}`, and `${roots}` resolve to `data`, `data\cache`, and
   `certs\roots-<8hex>.pem`. [`internal/hkcu`](../internal/hkcu/hkcu.go) mounts
   `<data>\registry\user.dat` with `RegLoadAppKey` so each container gets its own

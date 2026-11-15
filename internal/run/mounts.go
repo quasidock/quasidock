@@ -55,6 +55,14 @@ func validateMountSources(ctx *context.Context, specs []mounts.Spec, cwd string)
 }
 
 func prepareContainerMounts(ctx *context.Context, c *store.ContainerRecord, sandbox oci.Sandbox, host []HostGrant, cwd string) (*grants.MountSession, error) {
+	for _, m := range c.Mounts {
+		if err := mounts.Detach(c.DataDir, m); err != nil {
+			return nil, err
+		}
+	}
+	if err := os.MkdirAll(c.DataDir, 0o755); err != nil {
+		return nil, err
+	}
 	if len(c.Mounts) > 0 {
 		// Label/grant the empty private data tree before attaching external trees,
 		// so inherited ACL changes cannot propagate through their junctions.
