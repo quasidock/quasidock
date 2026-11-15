@@ -169,34 +169,29 @@ func ExportPEM() ([]byte, error) {
 }
 
 func getPurposes(certCtx uintptr) (Purposes, error) {
-	prop, err := getUsage(certCtx, win32.CERT_FIND_PROP_ONLY_ENHKEY_USAGE_FLAG)
-	if err != nil {
-		return Purposes{}, err
-	}
-	if prop.Any {
-		return getUsage(certCtx, win32.CERT_FIND_EXT_ONLY_ENHKEY_USAGE_FLAG)
-	}
-	return prop, nil
+	// Windows intersects the extension and store property when flags are zero.
+	return getUsage(certCtx, 0)
 }
 
 func getUsage(certCtx uintptr, flags win32.DWORD) (Purposes, error) {
 	var size win32.DWORD
-	if !win32.CertGetEnhancedKeyUsage(certCtx, flags, 0, &size) {
-		if isNotFoundErr() {
+	if ok, lastError := win32.CertGetEnhancedKeyUsage(certCtx, flags, 0, &size); !ok {
+		if lastError == syscall.Errno(win32.CRYPT_E_NOT_FOUND) {
 			return Purposes{Any: true}, nil
 		}
-		return Purposes{Any: false}, nil
+		return Purposes{}, fmt.Errorf("query certificate usages: %w", lastError)
 	}
 	buf := make([]byte, size)
-	if !win32.CertGetEnhancedKeyUsage(certCtx, flags, uintptr(unsafe.Pointer(&buf[0])), &size) {
-		if isNotFoundErr() {
+	ok, lastError := win32.CertGetEnhancedKeyUsage(certCtx, flags, uintptr(unsafe.Pointer(&buf[0])), &size)
+	if !ok {
+		if lastError == syscall.Errno(win32.CRYPT_E_NOT_FOUND) {
 			return Purposes{Any: true}, nil
 		}
-		return Purposes{Any: false}, nil
+		return Purposes{}, fmt.Errorf("read certificate usages: %w", lastError)
 	}
 	u := (*win32.CertEnhKeyUsage)(unsafe.Pointer(&buf[0]))
 	if u.Count == 0 {
-		if isNotFoundErr() {
+		if lastError == syscall.Errno(win32.CRYPT_E_NOT_FOUND) {
 			return Purposes{Any: true}, nil
 		}
 		return Purposes{Any: false}, nil
@@ -214,9 +209,4 @@ func getUsage(certCtx uintptr, flags win32.DWORD) (Purposes, error) {
 		oids = append(oids, string(b))
 	}
 	return Purposes{Any: false, OIDs: oids}, nil
-}
-
-func isNotFoundErr() bool {
-	errno := syscall.GetLastError()
-	return errno == syscall.Errno(win32.CRYPT_E_NOT_FOUND)
 }

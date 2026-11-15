@@ -1455,14 +1455,17 @@ func CertEnumCertificatesInStore(certStore uintptr, prevCertContext uintptr) uin
 	return r1
 }
 
-func CertGetEnhancedKeyUsage(certContext uintptr, flags DWORD, usage uintptr, size *DWORD) bool {
-	r1, _, _ := procCertGetEnhancedKeyUsage.Call(
+// CertGetEnhancedKeyUsage preserves lastError even on success: an empty usage
+// list with CRYPT_E_NOT_FOUND means unrestricted, while zero means no uses.
+func CertGetEnhancedKeyUsage(certContext uintptr, flags DWORD, usage uintptr, size *DWORD) (bool, syscall.Errno) {
+	r1, _, err := procCertGetEnhancedKeyUsage.Call(
 		certContext,
 		uintptr(flags),
 		usage,
 		uintptr(unsafe.Pointer(size)),
 	)
-	return r1 != 0
+	lastError, _ := err.(syscall.Errno)
+	return r1 != 0, lastError
 }
 
 // Credentials
