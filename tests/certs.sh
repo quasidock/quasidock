@@ -57,7 +57,11 @@ port=$((47000 + RANDOM % 900))
 crlport=$((port + 900))
 pgport=$((port + 1000))
 url="https://localhost:$port"
-pgdata="$QUASIDOCK_HOME\\data\\$PG"
+pgvolume=
+if has $PG; then
+    pgvolume=certs-postgresql-$$
+    "$zigsaw" volume create "$pgvolume" >/dev/null || exit 1
+fi
 
 . "$(dirname "$0")/acprobe.sh"
 
@@ -92,9 +96,14 @@ row() {
     esac
 }
 z() {
-    local sandbox=$1
+    local sandbox=$1 arg limit=120 shared=()
     shift
-    timeout 120 bash "$QD_IMAGES_HELPER" run "$zigsaw" --sandbox="$sandbox" "$@"
+    for arg in "$@"; do
+        [ "$arg" != "$PG" ] || shared=(-v "$pgvolume:\${data}")
+        # Zig fetch compiles Maker on first use with an empty container cache.
+        [ "$arg" != "$ZIG" ] || limit=${CERTS_ZIG_TIMEOUT:-600}
+    done
+    timeout "$limit" bash "$QD_IMAGES_HELPER" run "$zigsaw" --rm "${shared[@]}" --sandbox="$sandbox" "$@"
 }
 # says <want> <command...>: the last line the command prints is want; else
 # it says what came, and the last line of its errors.
@@ -207,7 +216,7 @@ cleanup() {
     fi
     [ -z "$pgserver" ] || { z soft --port=postgresql=$pgport --entrypoint=pg_ctl $PG stop -m fast >/dev/null 2>&1; wait "$pgserver" 2>/dev/null; }
     [ -z "$server" ] || { kill "$server" 2>/dev/null; wait "$server" 2>/dev/null; }
-    if has $PG; then rm -rf "$pgdata\\data" "$pgdata\\pgpass.conf"; fi
+    [ -z "$pgvolume" ] || "$zigsaw" volume rm "$pgvolume" >/dev/null 2>&1
     acprobe_rm "$zigsaw" 2>/dev/null
     rm -rf "$work"
 }
@@ -256,14 +265,13 @@ printf '%s\n' 'pub fn build(_: *@import("std").Build) void {}' >build.zig
 printf '{"repositories": [{"type": "composer", "url": "%s"}, {"packagist.org": false}], "require": {"zigsaw/certs": "1.0.0"}}\n' "$url" >composer.json
 if has $JDK; then z soft --entrypoint=javac $JDK -d classes Get.java >/dev/null 2>&1 || echo "compiling Get.java failed"; fi
 
-bash "$QD_IMAGES_HELPER" run "$zigsaw" $PY server.py $port leaf.crt leaf.key ready $crlport ca.crl >server.out 2>&1 &
+bash "$QD_IMAGES_HELPER" run "$zigsaw" --rm $PY server.py $port leaf.crt leaf.key ready $crlport ca.crl >server.out 2>&1 &
 server=$!
 for i in $(seq 30); do [ -e ready ] && break; sleep 1; done
 [ -e ready ] || { echo "the HTTPS server didn't start:"; tail -5 server.out; exit 1; }
 
 if has $PG; then
-    rm -rf "$pgdata\\data" "$pgdata\\pgpass.conf"
-    bash "$QD_IMAGES_HELPER" run "$zigsaw" --port=postgresql=$pgport $PG -c ssl=on -c "ssl_cert_file=$work\\leaf.crt" -c "ssl_key_file=$work\\leaf.key" >pg.out 2>&1 &
+    bash "$QD_IMAGES_HELPER" run "$zigsaw" --rm -v "$pgvolume:\${data}" --port=postgresql=$pgport $PG -c ssl=on -c "ssl_cert_file=$work\\leaf.crt" -c "ssl_key_file=$work\\leaf.key" >pg.out 2>&1 &
     pgserver=$!
     for i in $(seq 60); do z soft --port=postgresql=$pgport --entrypoint=pg_isready $PG -q 2>/dev/null && break; sleep 1; done
     z soft --port=postgresql=$pgport --entrypoint=pg_isready $PG -q 2>/dev/null || { echo "PostgreSQL's server didn't start:"; tail -5 pg.out; exit 1; }
