@@ -7,8 +7,8 @@
   "license": "MPL-2.0",
   "entrypoint": "bin/Notes.exe",
   "path": ["bin"],
-  "from": { "qt": "qt6:6.12.0@sha256:7190cd43b951f3319098504f6198790eb0ff1943c222c1be96d58698f36f25bc" },
-  "sdk": { "qtsdk": "qt6-sdk:6.12.0@sha256:e6a78f79a49519c647b0f18cff6b1c622b436db239cb9af2467781a1f98e2589" },
+  "from": { "qt": "qt6:6.12.0@sha256:509204351aac6fd0f35f280f610866b84de89d29e24ce8c372085bb1121044be" },
+  "sdk": { "qtsdk": "qt6-sdk:6.12.0@sha256:8bd2cde304bee7d25bb2cd2300389ea805b9fbadaa58ac17c67fc08ff1022b3e" },
   "stages": [
     {
       "name": "notes",
