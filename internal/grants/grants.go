@@ -12,6 +12,7 @@ import (
 	"github.com/quasidock/quasidock/internal/oci"
 	"github.com/quasidock/quasidock/internal/store"
 	"github.com/quasidock/quasidock/internal/win32"
+	"github.com/quasidock/quasidock/internal/written"
 )
 
 // Own tracks the store root and quasidock executable directory so no run may write to them.
@@ -201,29 +202,37 @@ func Settle(st *store.Store, id string) error {
 	}
 	defer lock.Release()
 
-	// In Go rewrite, settle checks remaining recorded grants and cleans up obsolete ones
-	grants, err := st.ReadGrants(id)
+	recorded, err := st.ReadGrants(id)
 	if err != nil {
 		return err
 	}
-	if len(grants) == 0 {
-		return nil
-	}
-
-	var kept []store.Grant
-	for _, g := range grants {
+	for _, g := range recorded {
 		if g.Kind == store.GrantLoopback {
-			// Loopback ends with run
-			continue
+			if err := unexempt(id); err != nil {
+				return err
+			}
 		}
-		if _, err := os.Stat(g.Path); err != nil {
-			// Path deleted
-			continue
-		}
-		kept = append(kept, g)
 	}
+	// Mount sessions restore host permissions when the final owner releases
+	// them. Drop their legacy per-app records, but retain written programs so
+	// later low runs can relabel them before writing them again.
+	if err := written.Settle(st, id); err != nil {
+		return err
+	}
+	if err := st.WriteGrants(id, nil); err != nil {
+		return err
+	}
+	return st.WriteCwdGrants(id, nil)
+}
 
-	return st.WriteGrants(id, kept)
+func unexempt(id string) error {
+	sid, err := appcontainer.PackageSid(id)
+	if err != nil {
+		return err
+	}
+	defer win32.FreeSid(sid)
+	_, err = appcontainer.Unexempt(sid)
+	return err
 }
 
 // SettleUnlessRunning settles the app's grants after what it may reach changed,
@@ -281,6 +290,9 @@ func UndoAll(ctx *context.Context, id string) error {
 	if err == nil && len(recorded) > 0 {
 		for _, g := range recorded {
 			if g.Kind == store.GrantLoopback {
+				if err := unexempt(id); err != nil {
+					return err
+				}
 				continue
 			}
 			if !store.Exists(g.Path) {
@@ -304,6 +316,9 @@ func UndoAll(ctx *context.Context, id string) error {
 				win32.LocalFree(capability)
 			}
 		}
+	}
+	if err := written.Settle(ctx.Store, id); err != nil {
+		return err
 	}
 	return ctx.Store.DeleteGrants(id)
 }

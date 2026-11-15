@@ -286,8 +286,8 @@ func (t *Tree) AddDirFiles(dirPath, base string) error {
 		}
 
 		// Reject symlinks/reparse points
-		if info.Mode()&os.ModeSymlink != 0 {
-			return fmt.Errorf("%s is a symlink; app files can only be files and directories", path)
+		if info.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0 {
+			return fmt.Errorf("%s is a link or special file; app files can only be files and directories", path)
 		}
 
 		if info.IsDir() {

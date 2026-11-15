@@ -270,6 +270,13 @@ func ExplicitGrant(path string, sid win32.PSID) (win32.DWORD, error) {
 }
 
 func RestoreGrant(path string, sid win32.PSID, mask win32.DWORD) error {
+	current, err := ExplicitGrant(path, sid)
+	if err != nil {
+		return err
+	}
+	if current == mask {
+		return nil
+	}
 	d, err := readDacl(path)
 	if err != nil {
 		return err
@@ -286,6 +293,13 @@ func RestoreGrant(path string, sid win32.PSID, mask win32.DWORD) error {
 }
 
 func RestoreLabel(path string, level *uint32) error {
+	current, err := OwnLabel(path)
+	if err != nil {
+		return err
+	}
+	if current == nil && level == nil || current != nil && level != nil && *current == *level {
+		return nil
+	}
 	if level == nil {
 		return Unlabel(path)
 	}

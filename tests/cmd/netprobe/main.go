@@ -39,10 +39,11 @@ func serve(port string) {
 func ping(port string) {
 	conn, err := net.DialTimeout("tcp", "127.0.0.1:"+port, 3*time.Second)
 	if err != nil {
-		fmt.Println("error")
+		fmt.Println("dropped")
 		win32.ExitProcess(1)
 	}
 	defer conn.Close()
+	_ = conn.SetDeadline(time.Now().Add(3 * time.Second))
 
 	_, err = conn.Write([]byte("ping"))
 	if err != nil {

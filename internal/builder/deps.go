@@ -127,5 +127,5 @@ func failUnpinned(ctx *context.Context, recipePath string, kind DependencyKind, 
 	if digest == "" {
 		return fmt.Errorf("%s: %s %s %q must be pinned with \"@sha256:...\", and quasidock can't find the digest: build or pull the image first", recipePath, kind, alias, reference)
 	}
-	return fmt.Errorf("%s: %s %s isn't pinned to a digest. Pin it with:\n  %q: %q@%s", recipePath, kind, alias, key, reference, digest)
+	return fmt.Errorf("%s: %s %s isn't pinned to a digest. Pin it with:\n  %q: %q", recipePath, kind, alias, key, reference+"@"+digest)
 }

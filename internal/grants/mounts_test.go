@@ -76,8 +76,8 @@ func TestMountGrantsSharedAcrossStoresAndCrashRepair(t *testing.T) {
 	}
 	// Simulate owner death without calling Close, then reconcile from another store.
 	locks[1].Release()
-	if err := RepairMounts(stores[0]); err != nil {
-		t.Fatal(err)
+	if session, err := BeginMounts(stores[0], records[0], oci.SandboxSoft, nil); err != nil || session != nil {
+		t.Fatalf("a run without host grants did not repair dead owners: %v %v", session, err)
 	}
 	after, err := acl.OwnLabel(source)
 	if err != nil {

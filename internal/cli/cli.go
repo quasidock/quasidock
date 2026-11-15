@@ -810,11 +810,7 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 		}
 		fmt.Printf("%-32s %-20s %s\n", "ID", "VERSION", "SUMMARY")
 		for _, m := range matches {
-			summary := ""
-			if m.Entry.Summary != nil {
-				summary = *m.Entry.Summary
-			}
-			fmt.Printf("%-32s %-20s %s\n", m.Entry.ID, m.Entry.Version, summary)
+			fmt.Printf("%-32s %-20s %s\n", m.Entry.ID, m.Entry.Version, m.Entry.Describe())
 		}
 		return 0, nil
 

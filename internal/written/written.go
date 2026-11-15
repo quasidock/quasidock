@@ -318,8 +318,11 @@ func Settle(st *store.Store, id string) error {
 			continue
 		}
 		kept = append(kept, p)
-		label, err := acl.EffectiveLabel(p)
-		if err != nil || label == nil || *label > win32.SECURITY_MANDATORY_LOW_RID {
+		// Restoring the parent directory can already have removed an inherited
+		// low label. Recorded executables still need an explicit medium label
+		// so an elevated caller cannot start that formerly low-written code high.
+		label, err := acl.OwnLabel(p)
+		if err != nil || label != nil && *label >= win32.SECURITY_MANDATORY_MEDIUM_RID {
 			continue
 		}
 		_ = acl.LabelProgram(p, acl.IntegrityMedium)

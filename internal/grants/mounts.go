@@ -196,7 +196,7 @@ func settleMountSources(st *store.Store, sources []mountSource) error {
 
 func BeginMounts(st *store.Store, c *store.ContainerRecord, sandbox oci.Sandbox, requests []MountRequest) (*MountSession, error) {
 	if len(requests) == 0 {
-		return nil, nil
+		return nil, RepairMounts(st)
 	}
 	h, err := mountMutex()
 	if err != nil {
