@@ -69,6 +69,7 @@
     {
       "name": "relocate",
       "build": [
+        "sed -i 's|^set(__qt_initial_c_compiler .*|set(__qt_initial_c_compiler \"cc.exe\")|; s|^set(__qt_initial_cxx_compiler .*|set(__qt_initial_cxx_compiler \"c++.exe\")|' \"$PREFIX/lib/cmake/Qt6/qt.toolchain.cmake\"",
         "sed -i 's|^prefix=B:/prefix$|prefix=${pcfiledir}/../..|' \"$PREFIX\"/lib/pkgconfig/*.pc",
         "! grep -l 'B:/prefix' \"$PREFIX\"/lib/pkgconfig/*.pc",
         "! find \"$PREFIX\" -name '*.dll' -exec objdump -p {} + | grep -iE 'DLL Name: lib(c\\+\\+|unwind|winpthread)'"
