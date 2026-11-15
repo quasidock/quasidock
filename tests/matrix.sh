@@ -239,10 +239,10 @@ npm_global() {
         [ -f "$data\\npm\\node_modules\\semver\\package.json" ]
 }
 # npm itself lstat()s each directory of the data directory's path.
-expect ok gap ok "npm install -g into data dir" npm_global
+expect ok "$(ac_if final-path-dos self-path-dos nul drive-root)" ok "npm install -g into data dir" npm_global
 # Its command is semver.cmd, a batch file in ${data}\npm.
 global_bin() { [ "$(run --entrypoint=semver $NODE 1.2.3 | tr -d '\r')" = 1.2.3 ]; }
-expect ok "$(ac_if final-path-dos self-path-dos nul)" ok "global package's .cmd command" global_bin
+expect ok "$(ac_if final-path-dos self-path-dos nul drive-root)" ok "global package's .cmd command" global_bin
 
 tool python
 in_each a.py 'print("hi")'
@@ -252,7 +252,7 @@ expect ok "$(ac_if final-path-dos)" ok "realpath resolves cwd" run $PY -c 'impor
 # programs need them: a host whose root it hasn't yet fails (example.com, on
 # 2026-10-28). ghcr.io's is there wherever zigsaw pulls, as zig's std reads
 # the same store.
-ghcr_token='https://ghcr.io/token?scope=repository:zigsaw-io/python:pull'
+ghcr_token='https://ghcr.io/token?scope=repository:quasidock/quasidock/python:pull'
 expect ok ok ok "https with system certs" run $PY -c "import urllib.request as u; u.urlopen('$ghcr_token', timeout=20)"
 expect ok fails ok "network denied by --unshare" run --unshare=network $PY -c "import urllib.request as u; u.urlopen('$ghcr_token', timeout=10)"
 expect fails fails fails "can't write into app dir" run $PY -c 'import os, sys; open(os.path.join(sys.prefix, "x.txt"), "w")'
