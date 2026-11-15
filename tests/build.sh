@@ -70,7 +70,6 @@ zigsaw=${1:-$root/out/bin/quasidock.exe}
 QUASIDOCK_HOME=$(cygpath -w "$(mktemp -d)")
 export QUASIDOCK_HOME
 work=$(cygpath -w "$(mktemp -d)")
-bin="$QUASIDOCK_HOME\\bin"
 # tests/cmd/imports: whether the loader binds every import of a program.
 (cd "$root" && go run ./scripts/build.go imports) || { echo "building the import checker failed"; exit 1; }
 imports="$root\\out\\test\\quasidock-imports.exe"
@@ -100,7 +99,8 @@ check() {
     if out=$("$@" 2>&1); then
         printf 'ok    %s\n' "$label"
     else
-        printf 'FAIL  %s\n      %s\n' "$label" "$(grep -v '^\s*$' <<<"$out" | tail -1 | cut -c1-110)"
+        printf 'FAIL  %s\n' "$label"
+        grep -v '^\s*$' <<<"$out" | tail -12 | sed 's/^/      /'
         failures=$((failures + 1))
     fi
 }
@@ -457,13 +457,16 @@ z build "$root\\recipes\\node.json" >/dev/null 2>&1 || { echo "building node fai
 check "prettier builds on the node runtime its recipe pins" z build "$root\\recipes\\prettier.json"
 formats() {
     printf 'const   x={a:1,\n  b:[1,2,3]}\n' >"$work\\ugly.js"
-    (cd "$work" && "$bin\\prettier.exe" --write ugly.js >/dev/null) && [ "$(tr -d '\r' <"$work\\ugly.js")" = "const x = { a: 1, b: [1, 2, 3] };" ]
+    (cd "$work" && qd_run z --rm prettier --write ugly.js >/dev/null) && [ "$(tr -d '\r' <"$work\\ugly.js")" = "const x = { a: 1, b: [1, 2, 3] };" ]
 }
 check "prettier formats a file in the working directory" formats
 npm_prefix() {
-    [ "$(qd_run z --entrypoint=node prettier -e 'console.log(process.env.NPM_CONFIG_PREFIX)' | tr -d '\r')" = "$QUASIDOCK_HOME\\data\\prettier\\npm" ]
+    local out data
+    out=$(qd_run z --name prettier-env --entrypoint='${node}\node.exe' prettier -e 'console.log(process.env.NPM_CONFIG_PREFIX)' | tr -d '\r') || return
+    data=$(qd_container_data "$zigsaw" prettier-env) || return
+    [ "$out" = "$data\\npm" ] || { echo "got $out, want $data\\npm"; return 1; }
 }
-check "node's variables point into prettier's data directory" npm_prefix
+check "node's variables point into the container's data directory" npm_prefix
 fi
 
 # --- build commands ---------------------------------------------------------------
@@ -514,7 +517,7 @@ gzip_layer() {
         tar -tzf "$(cygpath -u "$QUASIDOCK_HOME\\blobs\\sha256\\$(own_layer $HELLO)")" | grep -q '^notes.txt$'
 }
 check "its layer is a gzip-compressed tar, which tar lists" gzip_layer
-records_sdk() { config_of $HELLO | tr -d ' \r\n' | grep -q "\"sdk\":{\"zig\":\"$zig_digest\",\"busybox\":\"$bb_digest\"}"; }
+records_sdk() { [ "$(z inspect -f '{{index .Quasidock.Build.SDK "zig"}} {{index .Quasidock.Build.SDK "busybox"}}' $HELLO | tr -d '\r')" = "$zig_digest $bb_digest" ]; }
 check "the config records the SDK" records_sdk
 check "the build drive is free afterwards, and the build root gone" free_afterwards
 
@@ -527,7 +530,14 @@ warm_hello() {
 start=$SECONDS
 check "a rebuild with zig's kept cache makes the same image" warm_hello
 printf '      (%d s; the first build took %d s)\n' $((SECONDS - start)) "$hello_time"
-check "zig run as an app has its cache in its data directory" sh -c "bash '$QD_IMAGES_HELPER' run \"\$0\" zig env | grep '\.global_cache_dir' | grep -qF 'data\\\\zig\\\\cache\"'" "$zigsaw"
+zig_cache() {
+    local out data cache
+    out=$(qd_run z --name zig-env zig env | tr -d '\r') || return
+    data=$(qd_container_data "$zigsaw" zig-env) || return
+    cache="$data\\cache"
+    grep 'global_cache_dir' <<<"$out" | grep -qF "${cache//\\/\\\\}"
+}
+check "zig run as an app has its cache in its container's data directory" zig_cache
 # A toolchain's image asks for soft: at low, what it built would be labelled
 # low, and Windows starts a program labelled low at low integrity, wherever
 # it's started from.
@@ -621,7 +631,7 @@ check "build steps can't reach the network by default" sh -c "! \"\$0\" build '$
 online() {
     z build "$work\\online.json" 2>&1 | grep -q 'warning: a build step used the network' &&
         [ "$(tr -d '\r' <"$QUASIDOCK_HOME\\deploy\\$(own_layer test.build.online)\\x.txt")" = served ] &&
-        config_of test.build.online | grep -q '"network": true'
+        [ "$(z inspect -f '{{.Quasidock.Build.Network}}' test.build.online | tr -d '\r')" = true ]
 }
 check "a module with \"network\": true can, and the image records it" online
 
@@ -644,7 +654,7 @@ vendored() {
     out=$(z build "$work\\vendored.json" 2>&1) || { echo "$out" | tail -3; return 1; }
     grep -q '^\[m vendor 1/2\]' <<<"$out" && ! grep -q 'used the network' <<<"$out" &&
         [ "$(tr -d '\r' <"$QUASIDOCK_HOME\\deploy\\$(own_layer test.build.vendored)\\x.txt")" = served ] &&
-        config_of test.build.vendored | tr -d ' \r\n' | grep -q "\"vendor\":{\"m\":\"$vendor_hash\"},\"network\":false"
+        [ "$(z inspect -f '{{index .Quasidock.Build.Vendor "m"}} {{.Quasidock.Build.Network}}' test.build.vendored | tr -d '\r')" = "$vendor_hash false" ]
 }
 check "pinned, it builds offline from what the step fetched, and the config records it" vendored
 vendor_recipe ", \"sha256\": \"$(printf '0%.0s' $(seq 64))\"" >"$work\\misvendored.json"
@@ -676,7 +686,7 @@ sh_recipe test.build.slow '"sleep 4", "echo slow > \"$PREFIX/x.txt\""' >"$work\\
 z build "$work\\slow.json" >"$work\\slow.log" 2>&1 &
 slow=$!
 for _ in $(seq 150); do grep -q 'm 1/2' "$work\\slow.log" 2>/dev/null && break; sleep 0.2; done
-check "a second build waits for the first to finish with B:" sh -c "\"\$0\" build --rebuild '$work\\ok.json' 2>&1 | grep -q 'waiting for another zigsaw build'" "$zigsaw"
+check "a second build waits for the first to finish with B:" sh -c "\"\$0\" build --rebuild '$work\\ok.json' 2>&1 | grep -q 'waiting for another quasidock build'" "$zigsaw"
 wait $slow
 check "and the first finishes normally" grep -q 'installed test.build.slow' "$work\\slow.log"
 
@@ -1012,7 +1022,10 @@ if section dotnet; then
 # so .NET's recipes are in recipes/no-publish: the images are built here from
 # Microsoft's download, and the runtime from the SDK image's own files.
 check "dotnet-sdk.json builds the .NET SDK image" z build "$root\\recipes\\no-publish\\dotnet-sdk.json"
-check "dotnet.json builds the .NET runtime image from it" z build "$root\\recipes\\no-publish\\dotnet.json"
+dotnet_sdk_digest=$(manifest_of dotnet-sdk)
+sed -E "s/dotnet-sdk:[^\"@]*@sha256:[0-9a-f]{64}/dotnet-sdk@$dotnet_sdk_digest/" \
+    "$root\\recipes\\no-publish\\dotnet.json" >"$work\\dotnet-runtime.json"
+check "dotnet.json builds the .NET runtime image from the local SDK" z build "$work\\dotnet-runtime.json"
 dotnet_version=$(grep -o '"version": *"[^"]*"' "$root\\recipes\\no-publish\\dotnet.json" | cut -d'"' -f4)
 runtime_files() {
     local d="$QUASIDOCK_HOME\\deploy\\$(own_layer dotnet)"
@@ -1034,10 +1047,12 @@ sdk_builds_cwd() {
 }
 check "the SDK run as an app makes, builds and runs a project in the working directory" sdk_builds_cwd
 nuget_in_data() {
-    qd_run z dotnet-sdk nuget locals global-packages --list | tr -d '\r' |
-        grep -qF "global-packages: $QUASIDOCK_HOME\\data\\dotnet-sdk\\dotnet\\.nuget\\packages"
+    local out data
+    out=$(qd_run z --name nuget-data dotnet-sdk nuget locals global-packages --list | tr -d '\r') || return
+    data=$(qd_container_data "$zigsaw" nuget-data) || return
+    grep -qF "global-packages: $data\\dotnet\\.nuget\\packages" <<<"$out"
 }
-check "NuGet keeps its packages in the SDK's data directory" nuget_in_data
+check "NuGet keeps its packages in the container's data directory" nuget_in_data
 # A program built with the SDK image, its NuGet package from nuget.org through
 # a vendor step, that runs on the runtime image: its apphost finds .NET through
 # the DOTNET_ROOT the runtime's variables set, not a .NET installed on the
@@ -1100,10 +1115,11 @@ check "the JRE has java and javaw, not the JDK's javac" jre_files
 mkdir -p "$work\\javatiny"
 printf 'public class Tiny { public static void main(String[] a) { System.out.println("home " + System.getProperty("user.home")); } }\n' >"$work\\javatiny\\Tiny.java"
 jdk_runs_cwd() {
-    local sb out
+    local sb out data
     for sb in soft low appcontainer; do
-        out=$(cd "$work\\javatiny" && qd_run z --sandbox=$sb java-sdk Tiny.java 2>/dev/null | tr -d '\r')
-        [ "$out" = "home $QUASIDOCK_HOME\\data\\java-sdk\\home" ] || { echo "$sb, got: $out"; return 1; }
+        out=$(cd "$work\\javatiny" && qd_run z --name jdk-home-$sb --sandbox=$sb java-sdk Tiny.java 2>/dev/null | tr -d '\r')
+        data=$(qd_container_data "$zigsaw" jdk-home-$sb) || return
+        [ "$out" = "home $data\\home" ] || { echo "$sb, got: $out"; return 1; }
     done
 }
 check "the JDK run as an app runs a program in the working directory, its user.home in its data, under soft, low and appcontainer" jdk_runs_cwd
@@ -1141,13 +1157,14 @@ check "built again, it's the same image" swing_again
 # java_app_runs <id> <how it says it was built>: the fixture's program, from a
 # vendored package, on the JRE, with its home in its data, in each sandbox.
 java_app_runs() {
-    local id=$1 built=$2 sb out
+    local id=$1 built=$2 sb out data
     for sb in soft low appcontainer; do
-        out=$(qd_run z --sandbox=$sb $id zigsaw 2>/dev/null | tr -d '\r')
+        out=$(qd_run z --name $id-$sb --sandbox=$sb $id zigsaw 2>/dev/null | tr -d '\r')
+        data=$(qd_container_data "$zigsaw" $id-$sb) || return
         [ "$(sed -E 's/from Java [0-9][^,]*/from Java (version)/' <<<"$out")" = "hello, zigsaw, from Java (version)$built
 Built with a vendored package
 runs on $(jre_dir)
-home is $QUASIDOCK_HOME\\data\\$id\\home" ] || { echo "$sb, got: $out"; return 1; }
+home is $data\\home" ] || { echo "$sb, got: $out"; return 1; }
     done
 }
 # Maven, on the JDK: its vendor step is the build itself, with the local
@@ -1228,6 +1245,7 @@ fi
 # Removing the apps also deletes their AppContainer profiles. The images
 # builds use stay until prune --downloads, and only zigsaw can delete their
 # protected deployments. Enumerate every cached manifest through the CLI.
+check "stopped build-test containers are removed" z container prune
 for digest in $(z images -q); do z rmi "$digest" >/dev/null 2>&1; done
 check "every image is removed" sh -c "[ -z \"\$(\"\$0\" images -q)\" ]" "$zigsaw"
 z prune --downloads --data >/dev/null 2>&1

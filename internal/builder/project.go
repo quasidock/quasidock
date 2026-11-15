@@ -232,6 +232,14 @@ func (w *walkState) walk(path, rel, topRel string) error {
 		}
 
 		full := filepath.Join(path, name)
+		if entry.Type()&(os.ModeSymlink|os.ModeIrregular) != 0 {
+			// Windows junctions are ModeIrregular since Go 1.23. Readlink
+			// distinguishes them from other reparse points, such as cloud files.
+			_, linkErr := os.Readlink(full)
+			if entry.Type()&os.ModeSymlink != 0 || linkErr == nil {
+				return fmt.Errorf("%s is a link, which an image can't hold; leave it out with the source's \"skip\"", full)
+			}
+		}
 		if isDir {
 			if store.Exists(filepath.Join(full, ".git")) {
 				oldRules := w.rules

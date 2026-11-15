@@ -1,6 +1,7 @@
 package lifecycle
 
 import (
+	"sort"
 	"strings"
 
 	"github.com/quasidock/quasidock/internal/context"
@@ -64,6 +65,7 @@ func Install(ctx *context.Context, image *oci.Image) error {
 			for k := range cfg.Build.Host {
 				hostTools = append(hostTools, k)
 			}
+			sort.Strings(hostTools)
 			ctx.Note("  warning: built with the host's %s, so this image won't rebuild the same elsewhere", strings.Join(hostTools, ", "))
 		}
 	}
