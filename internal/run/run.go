@@ -114,18 +114,14 @@ type Options struct {
 	TTY         bool
 	ContainerID string
 	Settings    Settings
+	operation   *store.ContainerOperation
+	runLock     *store.Lock
 }
 
 // ReadyEventName returns the named manual-reset Win32 event signaled by a
 // detached container supervisor once the container process has launched.
-func ReadyEventName(id string) string {
-	return `Local\quasidock-ctr-ready-` + id
-}
-
-// StopEventName returns the named manual-reset Win32 event signaled to ask a
-// running container to stop gracefully before force termination.
-func StopEventName(id string) string {
-	return `Local\quasidock-ctr-stop-` + id
+func ReadyEventName(id, runID string) string {
+	return `Local\quasidock-ctr-ready-` + id + "-" + runID
 }
 
 type HostGrant struct {
@@ -244,6 +240,12 @@ func Run(ctx *context.Context, opts Options) (uint32, error) {
 	if opts.Entrypoint != nil {
 		rec.Config.Entrypoint = []string{*opts.Entrypoint}
 	}
+	snapshotInheritedEnv(ctx.Env, &rec.RunSpec)
+	rec.State.RunID, err = newRunID()
+	if err != nil {
+		img.Release()
+		return 1, err
+	}
 
 	created, err := ctx.Store.CreateContainer(opts.Name, rec)
 	if err != nil {
@@ -252,93 +254,119 @@ func Run(ctx *context.Context, opts Options) (uint32, error) {
 		return 1, err
 	}
 	opts.ContainerID = created.ID
+	op, err := ctx.Store.LockContainer(created.ID)
+	if err != nil {
+		img.Release()
+		return 1, err
+	}
+	defer op.Release()
+	if _, err := ctx.Store.ReadContainer(created.ID); err != nil {
+		img.Release()
+		return 1, err
+	}
 
 	if opts.Detach {
 		img.Release()
 		storeLock.Release()
-		return detachContainer(ctx, created, opts.AutoRemove, hostCwd)
+		if err := launchSupervisor(ctx, created, hostCwd); err != nil {
+			if !ctx.Store.IsContainerRunning(created.ID) {
+				recordLaunchFailure(ctx.Store, created.ID, created.State.RunID, err)
+			}
+			if opts.AutoRemove && !ctx.Store.IsContainerRunning(created.ID) {
+				_ = op.Remove()
+			}
+			return 1, err
+		}
+		fmt.Fprintln(ctx.Stdout, created.ID)
+		return 0, nil
 	}
 
 	storeLock.Release()
+	opts.operation = op
 	return executeContainer(ctx, created, selected, img, lazyLayers, failuresBefore, opts, hostCwd, false, 0)
 }
 
-func detachContainer(ctx *context.Context, created *store.ContainerRecord, autoRemove bool, hostCwd string) (uint32, error) {
-	readyEvent, err := win32.CreateEvent(ReadyEventName(created.ID), true, false)
+func launchSupervisor(ctx *context.Context, created *store.ContainerRecord, hostCwd string) error {
+	readyEvent, err := win32.CreateEvent(ReadyEventName(created.ID, created.State.RunID), true, false)
 	if err != nil {
-		if autoRemove {
-			_ = ctx.Store.RemoveContainer(created.ID)
-		}
-		return 1, fmt.Errorf("creating container ready event: %w", err)
+		return fmt.Errorf("creating container ready event: %w", err)
 	}
 	defer win32.CloseHandle(readyEvent)
 
 	exePath, err := os.Executable()
 	if err != nil {
-		if autoRemove {
-			_ = ctx.Store.RemoveContainer(created.ID)
-		}
-		return 1, err
+		return err
 	}
 	var supArgs []string
 	if ctx.Verbose {
 		supArgs = append(supArgs, "--verbose")
 	}
-	supArgs = append(supArgs, "container-supervisor", ctx.Store.Root, created.ID)
+	supArgs = append(supArgs, "container-supervisor", ctx.Store.Root, created.ID, created.State.RunID)
 	cmdline := process.BuildCommandLine(exePath, supArgs)
 	det, err := process.StartDetached(exePath, cmdline, hostCwd)
 	if err != nil {
-		if autoRemove {
-			_ = ctx.Store.RemoveContainer(created.ID)
-		}
-		return 1, fmt.Errorf("starting detached supervisor: %w", err)
+		return fmt.Errorf("starting detached supervisor: %w", err)
 	}
 	defer win32.CloseHandle(det.Process)
+	return awaitSupervisor(ctx, created, det.Process, readyEvent, 30000)
+}
 
-	waitRes := win32.WaitForMultipleObjects([]win32.HANDLE{det.Process, readyEvent}, false, 30000)
-	switch waitRes {
-	case win32.WAIT_OBJECT_0 + 1:
+func awaitSupervisor(ctx *context.Context, created *store.ContainerRecord, supervisor, readyEvent win32.HANDLE, timeoutMs win32.DWORD) error {
+	waitRes := win32.WaitForMultipleObjects([]win32.HANDLE{readyEvent, supervisor}, false, timeoutMs)
+	if waitRes == win32.WAIT_OBJECT_0 || waitRes == win32.WAIT_OBJECT_0+1 {
 		rec, readErr := ctx.Store.ReadContainer(created.ID)
-		if readErr == nil && rec != nil && rec.State.Error != "" {
-			if autoRemove {
-				_ = ctx.Store.RemoveContainer(created.ID)
+		if readErr != nil {
+			return readErr
+		}
+		if rec.State.RunID == created.State.RunID && rec.State.Launched {
+			return nil
+		}
+		if rec.State.Error != "" {
+			if !waitForContainer(ctx.Store, created.ID, time.Now().Add(5*time.Second)) {
+				return fmt.Errorf("container %s failed startup but did not finish cleanup: %s", created.ShortID(), rec.State.Error)
 			}
-			return 1, errors.New(rec.State.Error)
+			return errors.New(rec.State.Error)
 		}
-		out := ctx.Stdout
-		if out == nil {
-			out = os.Stdout
-		}
-		fmt.Fprintln(out, created.ID)
-		return 0, nil
-	case win32.WAIT_OBJECT_0:
-		rec, readErr := ctx.Store.ReadContainer(created.ID)
-		if autoRemove {
-			_ = ctx.Store.RemoveContainer(created.ID)
-		}
-		if readErr == nil && rec != nil && rec.State.Error != "" {
-			return 1, errors.New(rec.State.Error)
-		}
-		return 1, errors.New("container supervisor exited before container started")
-	case win32.WAIT_TIMEOUT:
-		if autoRemove {
-			_ = ctx.Store.RemoveContainer(created.ID)
-		}
-		return 1, fmt.Errorf("timed out waiting for container %s to start", created.ShortID())
-	default:
-		if autoRemove {
-			_ = ctx.Store.RemoveContainer(created.ID)
-		}
-		return 1, fmt.Errorf("waiting for detached container %s: %d", created.ShortID(), waitRes)
+		return errors.New("container supervisor exited before container started")
 	}
+	// This is the handle returned by CreateProcess, not a PID from metadata.
+	if !win32.TerminateProcess(supervisor, 1) {
+		return errors.New("canceling container startup failed")
+	}
+	if win32.WaitForSingleObject(supervisor, 5000) != win32.WAIT_OBJECT_0 ||
+		!waitForContainer(ctx.Store, created.ID, time.Now().Add(5*time.Second)) {
+		return fmt.Errorf("container %s startup cancellation did not complete", created.ShortID())
+	}
+	_ = hkcu.SettleLeftovers(ctx.Store, created.AppID)
+	_ = grants.RepairMounts(ctx.Store)
+	if waitRes != win32.WAIT_TIMEOUT {
+		return fmt.Errorf("waiting for container %s startup failed: %d", created.ShortID(), waitRes)
+	}
+	return fmt.Errorf("timed out waiting for container %s to start", created.ShortID())
 }
 
 // Supervise executes a previously created container in the background under a
 // detached supervisor process.
-func Supervise(ctx *context.Context, containerID string) (uint32, error) {
+func Supervise(ctx *context.Context, containerID, runID string) (uint32, error) {
+	if !oci.IsSha256Hex(containerID) || !validRunID(runID) {
+		return 1, errors.New("invalid container supervisor arguments")
+	}
+	readyEvent, _ := win32.OpenEvent(ReadyEventName(containerID, runID), win32.EVENT_MODIFY_STATE)
+	if readyEvent != 0 {
+		defer win32.CloseHandle(readyEvent)
+		defer win32.SetEvent(readyEvent)
+	}
+	runLock, err := store.OpenLock(ctx.Store.ContainerRunLockPath(containerID), true, false)
+	if err != nil {
+		return 1, err
+	}
+	defer runLock.Release()
 	rec, err := ctx.Store.ReadContainer(containerID)
 	if err != nil {
 		return 1, err
+	}
+	if rec.State.RunID != runID {
+		return 1, errors.New("container launch attempt was superseded")
 	}
 	var sandboxPtr *oci.Sandbox
 	if rec.HostConfig.Sandbox != "" {
@@ -356,6 +384,7 @@ func Supervise(ctx *context.Context, containerID string) (uint32, error) {
 		TTY:         rec.Config.Tty,
 		ContainerID: rec.ID,
 		Name:        rec.BareName(),
+		runLock:     runLock,
 		Settings: Settings{
 			Sandbox:      sandboxPtr,
 			Filesystem:   append([]string(nil), rec.HostConfig.Filesystem...),
@@ -367,26 +396,21 @@ func Supervise(ctx *context.Context, containerID string) (uint32, error) {
 		},
 	}
 
-	readyEvent, _ := win32.OpenEvent(ReadyEventName(containerID), win32.EVENT_MODIFY_STATE)
-	if readyEvent != 0 {
-		defer win32.CloseHandle(readyEvent)
-	}
-
 	storeLock, err := ctx.Store.Lock(false)
 	if err != nil {
-		recordLaunchFailure(ctx.Store, rec.ID, err)
+		recordLaunchFailure(ctx.Store, rec.ID, runID, err)
 		return 1, err
 	}
 	selected, err := ctx.Store.ResolveLocalImage("", rec.Image)
 	if err != nil {
 		storeLock.Release()
-		recordLaunchFailure(ctx.Store, rec.ID, err)
+		recordLaunchFailure(ctx.Store, rec.ID, runID, err)
 		return 1, err
 	}
 	lazyLayers, err := lazyLayersOf(ctx, selected.Manifest)
 	if err != nil {
 		storeLock.Release()
-		recordLaunchFailure(ctx.Store, rec.ID, err)
+		recordLaunchFailure(ctx.Store, rec.ID, runID, err)
 		return 1, err
 	}
 	_ = lazy.EnsureServed(ctx.Store, lazyLayers, ctx.Verbose)
@@ -399,7 +423,7 @@ func Supervise(ctx *context.Context, containerID string) (uint32, error) {
 	img, err := ctx.Store.LoadImageRef(*selected)
 	if err != nil {
 		storeLock.Release()
-		recordLaunchFailure(ctx.Store, rec.ID, err)
+		recordLaunchFailure(ctx.Store, rec.ID, runID, err)
 		return 1, err
 	}
 	storeLock.Release()
@@ -411,72 +435,20 @@ func Supervise(ctx *context.Context, containerID string) (uint32, error) {
 	return executeContainer(ctx, rec, selected, img, lazyLayers, failuresBefore, opts, hostCwd, true, readyEvent)
 }
 
-func recordLaunchFailure(st *store.Store, id string, err error) {
+func recordLaunchFailure(st *store.Store, id, runID string, err error) {
 	if err == nil {
 		return
 	}
 	_, _ = st.UpdateContainer(id, func(c *store.ContainerRecord) error {
-		c.State.Running = false
-		c.State.Status = "created"
-		c.State.Pid = 0
-		c.State.ExitCode = 1
-		c.State.Error = err.Error()
-		c.State.FinishedAt = time.Now().UTC().Format(time.RFC3339Nano)
+		if c.State.RunID != runID {
+			return nil
+		}
+		c.State = store.ContainerState{
+			RunID: runID, Status: "created", ExitCode: 1, Error: err.Error(),
+			FinishedAt: time.Now().UTC().Format(time.RFC3339Nano),
+		}
 		return nil
 	})
-}
-
-// StopContainer asks a running container to stop gracefully and force-terminates
-// its process if timeoutSec expires first.
-func StopContainer(ctx *context.Context, idOrName string, timeoutSec int) (*store.ContainerRecord, error) {
-	rec, err := ctx.Store.ResolveContainer(idOrName)
-	if err != nil {
-		return nil, err
-	}
-	if !rec.State.Running && !ctx.Store.IsContainerRunning(rec.ID) {
-		return rec, nil
-	}
-	readStopped := func() (*store.ContainerRecord, error) {
-		updated, err := ctx.Store.ReadContainer(rec.ID)
-		if rec.HostConfig.AutoRemove && errors.Is(err, store.ErrContainerNotFound) {
-			rec.State.Running = false
-			rec.State.Status = "exited"
-			rec.State.Pid = 0
-			return rec, nil
-		}
-		return updated, err
-	}
-
-	if ev, err := win32.OpenEvent(StopEventName(rec.ID), win32.EVENT_MODIFY_STATE); err == nil && ev != 0 {
-		win32.SetEvent(ev)
-		win32.CloseHandle(ev)
-	}
-
-	if timeoutSec > 0 {
-		deadline := time.Now().Add(time.Duration(timeoutSec) * time.Second)
-		for time.Now().Before(deadline) {
-			if !ctx.Store.IsContainerRunning(rec.ID) {
-				return readStopped()
-			}
-			time.Sleep(25 * time.Millisecond)
-		}
-	}
-
-	if ctx.Store.IsContainerRunning(rec.ID) && rec.State.Pid != 0 {
-		if h, err := win32.OpenProcess(win32.PROCESS_TERMINATE|win32.SYNCHRONIZE, false, win32.DWORD(rec.State.Pid)); err == nil && h != 0 {
-			_ = win32.TerminateProcess(h, 1)
-			win32.CloseHandle(h)
-		}
-		deadline := time.Now().Add(5 * time.Second)
-		for time.Now().Before(deadline) {
-			if !ctx.Store.IsContainerRunning(rec.ID) {
-				break
-			}
-			time.Sleep(25 * time.Millisecond)
-		}
-	}
-
-	return readStopped()
 }
 
 func executeContainer(
@@ -491,11 +463,14 @@ func executeContainer(
 	detached bool,
 	readyEvent win32.HANDLE,
 ) (uint32, error) {
-	runLock, err := store.OpenLock(ctx.Store.ContainerRunLockPath(created.ID), true, false)
-	if err != nil {
-		img.Release()
-		recordLaunchFailure(ctx.Store, created.ID, err)
-		return 1, err
+	runLock := opts.runLock
+	if runLock == nil {
+		var err error
+		runLock, err = store.OpenLock(ctx.Store.ContainerRunLockPath(created.ID), true, false)
+		if err != nil {
+			img.Release()
+			return 1, err // A losing launcher must not overwrite the active run.
+		}
 	}
 
 	var code uint32 = 1
@@ -506,6 +481,9 @@ func executeContainer(
 		now := time.Now().UTC().Format(time.RFC3339Nano)
 		if launched {
 			_, _ = ctx.Store.UpdateContainer(created.ID, func(c *store.ContainerRecord) error {
+				if c.State.RunID != created.State.RunID {
+					return nil
+				}
 				c.State.Running = false
 				c.State.Status = "exited"
 				c.State.Pid = 0
@@ -518,6 +496,9 @@ func executeContainer(
 			})
 		} else {
 			_, _ = ctx.Store.UpdateContainer(created.ID, func(c *store.ContainerRecord) error {
+				if c.State.RunID != created.State.RunID {
+					return nil
+				}
 				c.State.Running = false
 				c.State.Status = "created"
 				c.State.Pid = 0
@@ -529,10 +510,15 @@ func executeContainer(
 				return nil
 			})
 		}
+		if readyEvent != 0 {
+			win32.SetEvent(readyEvent)
+		}
 		runLock.Release()
+		if opts.operation != nil {
+			opts.operation.Release()
+		}
 		if created.HostConfig.AutoRemove && (launched || !detached) {
-			_ = hkcu.SettleLeftovers(ctx.Store, img.Config.ID)
-			_ = ctx.Store.RemoveContainer(created.ID)
+			autoRemoveContainer(ctx, created)
 		}
 	}()
 
@@ -715,7 +701,7 @@ func launchContainer(
 	_ = environment.Expand(&appEnv, placeholders, cfg.Env)
 
 	sharedPathDirs := sharedPath(ctx, cfg, settings, sandbox)
-	envVars, err := environment.Build(ctx.Env, environment.Spec{
+	envVars, err := environment.Build(containerHostEnv(ctx.Env, created.RunSpec), environment.Spec{
 		ID:         cfg.ID,
 		Profile:    profile,
 		Path:       appPath,
@@ -881,13 +867,9 @@ func launchContainer(
 		capSid, _ := appcontainer.AppCapability(cfg.ID)
 		hkcuAccess = hkcu.Access{Type: hkcu.AccessCapability, SID: capSid}
 	}
-	keepRegistry := !created.HostConfig.AutoRemove
-	for _, m := range created.Mounts {
-		if mounts.Within(filepath.Join(dataDir, "registry"), m.Destination) {
-			keepRegistry = true
-		}
-	}
-	keysSession, err := hkcu.Enter(ctx.Store, cfg.ID, cfg.Registry, dataDir, hkcuAccess, keepRegistry)
+	// An AutoRemove container may be explicitly restarted. Keep its hive until
+	// record removal, which deletes private data while preserving mounted data.
+	keysSession, err := hkcu.Enter(ctx.Store, cfg.ID, cfg.Registry, dataDir, hkcuAccess, true)
 	if err != nil {
 		return 1, false, fmt.Errorf("entering container registry: %w", err)
 	}
@@ -906,11 +888,11 @@ func launchContainer(
 		return 1, false, err
 	}
 
-	stopEvent, err := win32.CreateEvent(StopEventName(created.ID), true, false)
+	controlEvent, err := win32.CreateEvent(controlEventName(created.ID, created.State.RunID), false, false)
 	if err != nil {
-		return 1, false, fmt.Errorf("creating container stop event: %w", err)
+		return 1, false, fmt.Errorf("creating container control event: %w", err)
 	}
-	defer win32.CloseHandle(stopEvent)
+	defer win32.CloseHandle(controlEvent)
 
 	logFile, err := os.OpenFile(created.LogPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
@@ -1029,11 +1011,15 @@ func launchContainer(
 
 	pid := uint32(win32.GetProcessId(hProcess))
 	startedAt := time.Now().UTC().Format(time.RFC3339Nano)
-	_, _ = ctx.Store.UpdateContainer(created.ID, func(c *store.ContainerRecord) error {
+	_, stateErr := ctx.Store.UpdateContainer(created.ID, func(c *store.ContainerRecord) error {
+		if c.State.RunID != created.State.RunID {
+			return errors.New("container launch attempt was superseded")
+		}
 		c.Path = cmd.Exe
 		c.Args = append([]string(nil), allArgs...)
 		c.Config.WorkingDir = cwd
 		c.State = store.ContainerState{
+			RunID:     created.State.RunID,
 			Status:    "running",
 			Running:   true,
 			Pid:       pid,
@@ -1043,12 +1029,23 @@ func launchContainer(
 		}
 		return nil
 	})
+	child.Process = hProcess
+	if stateErr != nil {
+		process.EndJob(job)
+		pipeWG.Wait()
+		if watcher != nil {
+			written.Finish(ctx.Store, cfg.ID, watcher)
+		}
+		return 1, false, stateErr
+	}
 	if readyEvent != 0 {
 		win32.SetEvent(readyEvent)
 	}
+	if opts.operation != nil {
+		opts.operation.Release()
+	}
 
-	child.Process = hProcess
-	code, _, err := child.WaitOrStop(stopEvent, 10000)
+	code, err := waitControlled(ctx, created, &child, detached, controlEvent)
 	pipeWG.Wait()
 
 	if code != 0 {

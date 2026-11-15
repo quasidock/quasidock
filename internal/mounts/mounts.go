@@ -208,6 +208,36 @@ func IsReparse(path string) (bool, error) {
 	return attrs&win32.FILE_ATTRIBUTE_REPARSE_POINT != 0, err
 }
 
+// Detach removes a retained mount link before permissions are applied to the
+// private data tree again. It never follows the link or a reparse ancestor.
+func Detach(data string, m Mount) error {
+	if !Within(m.Destination, data) {
+		return errors.New("mount destination escapes container data")
+	}
+	parts, err := filepath.Rel(filepath.Dir(data), m.Destination)
+	if err != nil {
+		return err
+	}
+	p := filepath.Dir(data)
+	for _, part := range strings.Split(parts, string(filepath.Separator)) {
+		p = filepath.Join(p, part)
+		reparse, err := IsReparse(p)
+		if errors.Is(err, syscall.ERROR_FILE_NOT_FOUND) || errors.Is(err, syscall.ERROR_PATH_NOT_FOUND) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if reparse {
+			if !strings.EqualFold(p, filepath.Clean(m.Destination)) {
+				return fmt.Errorf("mount destination traverses reparse point %s", p)
+			}
+			return win32.RemoveDirectory(p)
+		}
+	}
+	return nil
+}
+
 // Attach creates an NTFS directory junction, refusing aliases in its ancestry.
 func Attach(data string, m Mount) error {
 	if !Within(m.Destination, data) {

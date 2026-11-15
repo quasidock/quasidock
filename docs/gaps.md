@@ -5,6 +5,12 @@ Known limitations, platform constraints, and incomplete features in Quasidock
 
 ## Runs, sandboxes, and grants
 
+- **Lifecycle signals and attachment.** `start` and `restart` launch in the
+  background; `start -a`/`-i` and automatic restart policies are unsupported.
+  `kill --signal TERM` maps to Ctrl+Break for detached console process groups,
+  which applications may ignore. Foreground TERM is rejected to preserve native
+  terminal Ctrl+C. KILL ends the Job Object for either mode. Finish active runs
+  before upgrading a binary whose supervisor uses the older stop-event protocol.
 - **Absolute paths recorded inside container data break if deployments move.**
   A command or launcher that embeds an image's deployment path (such as pip
   entry-point executables pointing at `python.exe`) stops working once that
@@ -98,7 +104,8 @@ Known limitations, platform constraints, and incomplete features in Quasidock
   `tests/ctrlc.sh` builds `node` and runs `tests/cmd/ctrlc/main.go`, whose
   `CreatePseudoConsole` helpers are implemented while `main()` currently exits
   `0` without running a live interactive Ctrl+C test
-  ([iteration 2](iteration-2.md)).
+  ([iteration 2](iteration-2.md)). The offline CLI lifecycle test separately checks
+  that a foreground application receives native Ctrl+C through a pseudoconsole.
 - **Windows Server 2025 AppContainer restrictions.** Server 2025 blocks opening
   `NUL` inside AppContainers ([Zigsaw iteration 46](../legacy/iteration-46.md))
   and blocks path lookups on `zig env`, `kpathsea` (`GetLongPathNameW`), and

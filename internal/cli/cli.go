@@ -37,6 +37,12 @@ Docker-style container commands:
                                        inspect containers or images (JSON by default)
   container logs | logs [-f|--follow] [-n|--tail LINES] CONTAINER
                                        fetch the logs of a container
+  container start | start CONTAINER [CONTAINER...]
+                                       start existing containers in background
+  container restart | restart [-t|--time SECONDS] CONTAINER [CONTAINER...]
+                                       restart containers (default grace: 10 seconds)
+  container kill | kill [-s|--signal KILL|TERM] CONTAINER [CONTAINER...]
+                                       kill a process tree, or request graceful shutdown
   container stop | stop [-t|--time SECONDS] CONTAINER [CONTAINER...]
                                        stop one or more running containers
   container rm | rm [-f|--force] CONTAINER [CONTAINER...]
@@ -681,7 +687,7 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 		return 1, fmt.Errorf("%s was removed; use quasidock %s", cmd, replacement)
 	}
 	if cmd == "container-supervisor" {
-		if len(rest) != 2 {
+		if len(rest) != 3 {
 			return usageError()
 		}
 		_ = os.Setenv("QUASIDOCK_HOME", rest[0])
@@ -691,7 +697,7 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 		}
 		ctx.Store = st
 		ctx.Store.Verbose = ctx.Verbose
-		return run.Supervise(ctx, rest[1])
+		return run.Supervise(ctx, rest[1], rest[2])
 	}
 	if cmd == "login" {
 		opts, err := parseLoginOptions(rest)
@@ -722,7 +728,7 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 		return 0, nil
 	}
 	switch cmd {
-	case "build", "volume", "container", "ps", "stop", "rm", "logs", "image", "images", "inspect", "tag", "pull", "push", "rmi", "run", "search", "trust", "signature", "prune", "repair", "grants":
+	case "build", "volume", "container", "ps", "start", "restart", "kill", "stop", "rm", "logs", "image", "images", "inspect", "tag", "pull", "push", "rmi", "run", "search", "trust", "signature", "prune", "repair", "grants":
 	default:
 		return usageError()
 	}
@@ -741,7 +747,7 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 		return containerCommand(ctx, rest)
 	case "ps":
 		return containerCommand(ctx, append([]string{"ls"}, rest...))
-	case "stop", "rm", "logs":
+	case "start", "restart", "kill", "stop", "rm", "logs":
 		return containerCommand(ctx, append([]string{cmd}, rest...))
 	case "inspect":
 		return inspectAny(ctx, rest)

@@ -92,6 +92,17 @@ func TestJunctionCleanupPreservesBackingData(t *testing.T) {
 			if size := TreeSize(container); size != 0 {
 				t.Fatalf("counted mounted bytes: %d", size)
 			}
+			// Starting a retained container must expose the private tree for ACL
+			// setup, then reattach the same backing data without copying/deletion.
+			if err := Detach(data, m); err != nil {
+				t.Fatal(err)
+			}
+			if err := Detach(data, m); err != nil {
+				t.Fatalf("detaching missing link: %v", err)
+			}
+			if err := Attach(data, m); err != nil {
+				t.Fatalf("reattaching retained mount: %v", err)
+			}
 			if err := RemoveTree(container); err != nil {
 				t.Fatal(err)
 			}
@@ -118,6 +129,9 @@ func TestAttachRejectsExistingContentAndReparseAncestors(t *testing.T) {
 	}
 	if err := Attach(data, Mount{Source: source, Destination: filepath.Join(data, "link", "nested")}); err == nil {
 		t.Fatal("followed destination junction")
+	}
+	if err := Detach(data, Mount{Source: source, Destination: filepath.Join(data, "link", "nested")}); err == nil {
+		t.Fatal("detached through destination junction")
 	}
 	if _, err := os.Stat(filepath.Join(source, "nested")); !os.IsNotExist(err) {
 		t.Fatal("wrote through destination junction")

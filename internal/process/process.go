@@ -428,8 +428,12 @@ func StartDetached(exe, commandLine, cwd string) (Detached, error) {
 	for _, breakaway := range []bool{true, false} {
 		var startup win32.STARTUPINFOW
 		startup.Cb = win32.DWORD(unsafe.Sizeof(startup))
+		// Keep a console for targeted CTRL_BREAK delivery, without opening a
+		// visible terminal window. Children continue to use explicit pipes.
+		startup.DwFlags = win32.STARTF_USESHOWWINDOW
+		startup.WShowWindow = 0 // SW_HIDE
 		var info win32.PROCESS_INFORMATION
-		flags := win32.CREATE_NO_WINDOW | win32.CREATE_NEW_PROCESS_GROUP | win32.CREATE_UNICODE_ENVIRONMENT
+		flags := win32.CREATE_NEW_CONSOLE | win32.CREATE_UNICODE_ENVIRONMENT
 		if breakaway {
 			flags |= win32.CREATE_BREAKAWAY_FROM_JOB
 		}
