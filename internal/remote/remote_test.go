@@ -1,13 +1,49 @@
 package remote
 
 import (
+	"bytes"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/quasidock/quasidock/internal/oci"
 	"github.com/quasidock/quasidock/internal/registry"
 	"github.com/quasidock/quasidock/internal/store"
 )
+
+func TestRemoteBlobReadAcrossCachedTail(t *testing.T) {
+	data := []byte("0123456789")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.ServeContent(w, r, "blob", time.Time{}, bytes.NewReader(data))
+	}))
+	defer server.Close()
+	ref, err := registry.ParseReference(strings.TrimPrefix(server.URL, "http://") + "/fixture:1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	reg, err := registry.New(ref, "pull", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blob := &RemoteBlob{Reg: reg, Desc: oci.Descriptor{Digest: "sha256:" + strings.Repeat("a", 64), Size: int64(len(data))}, TailStart: 5, Tail: data[5:]}
+	buf := make([]byte, 8)
+	if n, err := blob.ReadAt(buf, 2); n != 8 || err != nil || string(buf) != "23456789" {
+		t.Fatalf("crossing tail: n=%d err=%v data=%q", n, err, buf)
+	}
+	if blob.Fetched != 3 {
+		t.Fatalf("fetched %d bytes, want only the 3 uncached bytes", blob.Fetched)
+	}
+	var tail bytes.Buffer
+	if err := blob.fetchTo(7, 10, &tail); err != nil || tail.String() != "789" {
+		t.Fatalf("cached tail: %q %v", tail.String(), err)
+	}
+	if n, err := blob.ReadAt(buf, 8); n != 2 || err != io.EOF || string(buf[:n]) != "89" {
+		t.Fatalf("partial EOF: %d %v %q", n, err, buf[:n])
+	}
+}
 
 func repeatStr(s string, count int) string {
 	return strings.Repeat(s, count)

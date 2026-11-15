@@ -128,9 +128,9 @@ param(
         $record = 'HKCU:\' + $(if ($env:QUASIDOCK_GRANTS_KEY) { $env:QUASIDOCK_GRANTS_KEY } else { 'Software\Quasidock\Grants' })
         if (Test-Path -LiteralPath $record) {
             $recordKey = Get-Item -LiteralPath $record
-            $left = @($recordKey.Property)
+            $left = @($recordKey.Property) + @($recordKey.GetSubKeyNames())
             if ($left.Count -eq 0 -and $recordKey.SubKeyCount -eq 0) { Remove-Item -LiteralPath $record -Force }
-            else { Write-Warning "quasidock's record still has entries for other stores. A quasidock using them takes it back." }
+            else { Write-Warning "quasidock's record still has what other stores changed: $($left -join '; '). A quasidock using them takes it back." }
         }
         Write-Host "quasidock is removed from $Dir. Its store, with downloads and apps' data, is $store; delete that too if you don't want them."
         return

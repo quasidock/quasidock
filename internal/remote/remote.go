@@ -481,20 +481,17 @@ func (b *RemoteBlob) ReadAt(p []byte, offset int64) (int, error) {
 		b.Tail = tailBuf
 	}
 
-	if uOffset >= b.TailStart {
-		tailSlice := b.Tail[uOffset-b.TailStart:]
-		n := copy(p, tailSlice)
-		return n, nil
-	}
-
 	n := len(p)
-	if uint64(n) > b.TailStart-uOffset {
-		n = int(b.TailStart - uOffset)
+	if uint64(n) > size-uOffset {
+		n = int(size - uOffset)
 	}
 
 	w := &fixedBufferWriter{buf: p[:n]}
 	if err := b.fetchTo(uOffset, uOffset+uint64(n), w); err != nil {
 		return 0, err
+	}
+	if n < len(p) {
+		return n, io.EOF
 	}
 	return n, nil
 }
@@ -515,6 +512,10 @@ func (b *RemoteBlob) fetchTo(start, end uint64, out io.Writer) error {
 			return fmt.Errorf("%s doesn't have layer %s", b.Reg.Ref, b.Desc.Digest)
 		}
 		b.Fetched += (sentEnd - start)
+	}
+	if b.Tail != nil && end > b.TailStart {
+		_, err := out.Write(b.Tail[max(start, b.TailStart)-b.TailStart : end-b.TailStart])
+		return err
 	}
 	return nil
 }
@@ -891,6 +892,9 @@ func downloadByPlan(st *store.Store, reg *registry.Registry, desc oci.Descriptor
 				if err != nil && err != io.EOF {
 					return false, err
 				}
+				if n == 0 {
+					return false, io.ErrUnexpectedEOF
+				}
 				if _, err := mw.Write(copyBuf[:n]); err != nil {
 					return false, err
 				}
@@ -1016,7 +1020,7 @@ func UploadIfMissing(st *store.Store, reg *registry.Registry, desc oci.Descripto
 		return err
 	}
 	if up.Kind == registry.UploadMounted {
-		if desc.Size > 1<<20 && verbose {
+		if verbose {
 			fmt.Fprintf(os.Stderr, "mounted %s (%d bytes) from %s\n", desc.Digest, desc.Size, mountFrom)
 		}
 		return nil

@@ -148,6 +148,17 @@ reinstall_with_record() {
 }
 check "uninstalling leaves what another store still needs in the record, and says so" reinstall_with_record
 
+reinstall_with_record_subkey() {
+    local out
+    reg delete "HKCU\\$QUASIDOCK_GRANTS_KEY" /f >/dev/null 2>&1
+    install >/dev/null 2>&1 || return 1
+    reg add "HKCU\\$QUASIDOCK_GRANTS_KEY\\OtherStore" /v Grant /d kept /f >/dev/null 2>&1 || return 1
+    out=$(install -Uninstall 2>&1) || { echo "$out"; return 1; }
+    grep -q "still has what other stores changed: OtherStore" <<<"$out" &&
+        reg query "HKCU\\$QUASIDOCK_GRANTS_KEY\\OtherStore" /v Grant >/dev/null 2>&1
+}
+check "uninstalling preserves nonempty record subkeys without prompting" reinstall_with_record_subkey
+
 reg delete "HKCU\\$QUASIDOCK_GRANTS_KEY" /f >/dev/null 2>&1
 reg delete "HKCU\\$env_key" /f >/dev/null 2>&1
 reg query 'HKCU\Software\QuasidockTest' 2>/dev/null | grep -q . || reg delete 'HKCU\Software\QuasidockTest' /f >/dev/null 2>&1

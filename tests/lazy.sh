@@ -55,6 +55,16 @@ zd() { QUASIDOCK_HOME="$(store d)" QUASIDOCK_TEST_LAZY_GATE="$gate" "$zigsaw" "$
 ze() { QUASIDOCK_HOME="$(store e)" QUASIDOCK_TEST_LAZY_REFUSE=1 "$zigsaw" "$@"; }
 
 cleanup() {
+    if [ -n "${LOG_DIR:-}" ]; then
+        local logs
+        logs=$(cygpath -u "$LOG_DIR")
+        mkdir -p "$logs"
+        cp "$work\\b.log" "$logs/lazy-download.log" 2>/dev/null || true
+        for s in b c d e; do
+            cp "$(lazy_of "$s")\\log" "$logs/lazy-$s.log" 2>/dev/null || true
+            cp "$(lazy_of "$s")\\state.json" "$logs/lazy-$s-state.json" 2>/dev/null || true
+        done
+    fi
     # rm stops a lazy layer's helper; one whose app is gone already, by its pid.
     for s in b c d e a; do
         QUASIDOCK_HOME="$(store $s)" qd_remove_app "$zigsaw" $APP >/dev/null 2>&1
@@ -234,7 +244,7 @@ touch "$(cygpath -u "$gate")"
 zc pull --yes --lazy "$repo:1" >/dev/null 2>&1
 removed() {
     local pid; pid=$(helper_pid c)
-    zc rm $APP >/dev/null 2>&1 || return 1
+    QUASIDOCK_HOME="$(store c)" qd_remove_app "$zigsaw" $APP >/dev/null 2>&1 || return 1
     [ ! -e "$(deploy_of c)" ] && [ ! -e "$(lazy_of c)" ] || { echo "something is left"; return 1; }
     [ -z "$pid" ] || [ "$pid" = 0 ] || ! tasklist /fi "PID eq $pid" /nh 2>/dev/null | grep -q " $pid "
 }

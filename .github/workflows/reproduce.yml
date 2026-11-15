@@ -340,9 +340,9 @@ jobs:
           POSTGRES_HOME: ${{ runner.temp }}\store
         run: bash tests/postgresql.sh 2>&1 | tee "$(cygpath -u "$LOG_DIR")/postgresql.txt"
 
-      # osm2pgsql as published, against PostgreSQL's server with PostGIS
-      # under soft, in the seeded store: under soft and low, and in an
-      # AppContainer, through the port it declares it uses.
+      # osm2pgsql as published: tile expiry and missing-PostGIS diagnostics
+      # against the base PostgreSQL image. A custom image with PostGIS also
+      # enables the full import checks, including AppContainer forwarding.
       - name: tests/osm2pgsql.sh
         if: ${{ !cancelled() }}
         shell: bash
