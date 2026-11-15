@@ -2,13 +2,22 @@ package roots
 
 import (
 	"bytes"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/x509"
 	"encoding/pem"
+	"math/big"
 	"os"
+	"runtime"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
+	"unsafe"
 
 	"github.com/quasidock/quasidock/internal/store"
+	"github.com/quasidock/quasidock/internal/win32"
 )
 
 func TestAllowsServerAuth(t *testing.T) {
@@ -23,6 +32,69 @@ func TestAllowsServerAuth(t *testing.T) {
 	}
 	if (Purposes{OIDs: nil}).Allows(serverAuth) {
 		t.Error("expected empty OIDs not to allow serverAuth")
+	}
+}
+
+func TestCertificatePurposes(t *testing.T) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	crypt := syscall.NewLazyDLL("crypt32.dll")
+	create := crypt.NewProc("CertCreateCertificateContext")
+	free := crypt.NewProc("CertFreeCertificateContext")
+	setUsage := crypt.NewProc("CertSetEnhancedKeyUsage")
+	for _, tc := range []struct {
+		name     string
+		ext      []x509.ExtKeyUsage
+		property *[]string
+		want     bool
+	}{
+		{name: "unrestricted", want: true},
+		{name: "server extension", ext: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}, want: true},
+		{name: "client extension", ext: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}},
+		{name: "empty property", property: &[]string{}},
+		{name: "server property", property: &[]string{serverAuth}, want: true},
+		{name: "property cannot widen extension", ext: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}, property: &[]string{serverAuth}},
+		{name: "property restricts extension", ext: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}, property: &[]string{"1.3.6.1.5.5.7.3.2"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			template := &x509.Certificate{SerialNumber: big.NewInt(1), NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour), ExtKeyUsage: tc.ext}
+			der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx, _, err := create.Call(win32.X509_ASN_ENCODING, uintptr(unsafe.Pointer(&der[0])), uintptr(len(der)))
+			if ctx == 0 {
+				t.Fatal(err)
+			}
+			defer free.Call(ctx)
+			if tc.property != nil {
+				var encoded [][]byte
+				var pointers []uintptr
+				for _, oid := range *tc.property {
+					b := append([]byte(oid), 0)
+					encoded = append(encoded, b)
+					pointers = append(pointers, uintptr(unsafe.Pointer(&b[0])))
+				}
+				usage := win32.CertEnhKeyUsage{Count: uint32(len(pointers))}
+				if len(pointers) != 0 {
+					usage.Identifiers = &pointers[0]
+				}
+				ok, _, err := setUsage.Call(ctx, uintptr(unsafe.Pointer(&usage)))
+				runtime.KeepAlive(encoded)
+				if ok == 0 {
+					t.Fatal(err)
+				}
+			}
+			purposes, err := getPurposes(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := purposes.Allows(serverAuth); got != tc.want {
+				t.Fatalf("allows server authentication = %v, want %v (purposes: %+v)", got, tc.want, purposes)
+			}
+		})
 	}
 }
 
