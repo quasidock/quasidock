@@ -149,32 +149,32 @@ func run(args []string) error {
 		}
 		return verify(ctx, rp, false)
 	case "prepare":
-		if len(args) != 6 {
-			return fmt.Errorf("prepare RECIPE MODE REPORTS WORKDIR OUTPUT")
+		if len(args) != 5 {
+			return fmt.Errorf("prepare RECIPE REPORTS WORKDIR OUTPUT")
 		}
 		r, e := find(args[1])
 		if e != nil {
 			return e
 		}
-		reports, e := publishing.ReadReports(args[3])
+		reports, e := publishing.ReadReports(args[2])
 		if e != nil {
 			return e
 		}
-		data, e := publishing.Prepare(r, reports, args[2], commit, tag)
+		data, e := publishing.Prepare(r, reports, commit, tag)
 		if e != nil {
 			return e
 		}
-		if e = copyTree("recipes", filepath.Join(args[4], "recipes")); e != nil {
+		if e = copyTree("recipes", filepath.Join(args[3], "recipes")); e != nil {
 			return e
 		}
-		path, e := filepath.Abs(filepath.Join(args[4], "recipes", r.File))
+		path, e := filepath.Abs(filepath.Join(args[3], "recipes", r.File))
 		if e != nil {
 			return e
 		}
 		if e = os.WriteFile(path, data, 0644); e != nil {
 			return e
 		}
-		return os.WriteFile(args[5], []byte("recipe="+path+"\nid="+r.ID+"\n"), 0644)
+		return os.WriteFile(args[4], []byte("recipe="+path+"\nid="+r.ID+"\n"), 0644)
 	case "record":
 		if len(args) != 4 {
 			return fmt.Errorf("record RECIPE PREPARED REPORTDIR")
@@ -230,36 +230,39 @@ func run(args []string) error {
 		fmt.Printf("digest=%s\n", report.Digest)
 		return nil
 	case "collect":
-		if len(args) != 4 {
-			return fmt.Errorf("collect MODE REPORTS OUTDIR")
+		if len(args) != 3 {
+			return fmt.Errorf("collect REPORTS OUTDIR")
 		}
-		reports, e := publishing.ReadReports(args[2])
+		reports, e := publishing.ReadReports(args[1])
 		if e != nil {
 			return e
 		}
-		if e = publishing.Validate(recipes, reports, args[1], commit, tag); e != nil {
+		if e = publishing.Validate(recipes, reports, commit, tag); e != nil {
 			return e
 		}
-		if e = os.MkdirAll(args[3], 0755); e != nil {
+		if e = os.MkdirAll(filepath.Join(args[2], "recipes"), 0755); e != nil {
 			return e
 		}
 		var patch, summary strings.Builder
-		fmt.Fprintf(&summary, "# Publication %s\n\nMode: %s. Source commit: `%s`.\n\n", tag, args[1], commit)
+		fmt.Fprintf(&summary, "# Publication %s\n\nSource commit: `%s`.\n\n", tag, commit)
 		for _, r := range recipes {
 			rp := reports[r.ID]
+			if e = os.WriteFile(filepath.Join(args[2], "recipes", r.File), rp.RecipeJSON, 0644); e != nil {
+				return e
+			}
 			fmt.Fprintf(&summary, "- `%s:%s` → `%s`\n", r.ID, r.Version, rp.Digest)
 			if string(r.Bytes) != string(rp.RecipeJSON) {
 				patch.WriteString(fullPatch("recipes/"+r.File, r.Bytes, rp.RecipeJSON))
 			}
 		}
-		summary.WriteString("\nMake all listed image packages and `catalog` public under https://github.com/orgs/quasidock/packages. Then review and commit pins.patch, dispatch publish mode, and run Reproduce.\n")
-		if e = os.WriteFile(filepath.Join(args[3], "pins.patch"), []byte(patch.String()), 0644); e != nil {
+		summary.WriteString("\nThis run verifies anonymous access and promotes the signed candidates to version/latest tags, with the catalog last. New packages must be public under https://github.com/orgs/quasidock/packages for anonymous verification to pass.\n\nThe recipes/ directory contains the exact published inputs. If pins.patch is nonempty, review and commit it to synchronize source recipes before running Reproduce; another publication run is not required.\n")
+		if e = os.WriteFile(filepath.Join(args[2], "pins.patch"), []byte(patch.String()), 0644); e != nil {
 			return e
 		}
-		if e = os.WriteFile(filepath.Join(args[3], "summary.md"), []byte(summary.String()), 0644); e != nil {
+		if e = os.WriteFile(filepath.Join(args[2], "summary.md"), []byte(summary.String()), 0644); e != nil {
 			return e
 		}
-		return writeJSON(filepath.Join(args[3], "images.json"), reports)
+		return writeJSON(filepath.Join(args[2], "images.json"), reports)
 	case "catalog", "verify", "promote", "verify-release":
 		if len(args) < 2 {
 			return fmt.Errorf("%s REPORTS [TAG]", args[0])
@@ -268,13 +271,9 @@ func run(args []string) error {
 		if e != nil {
 			return e
 		}
-		// Both modes are accepted here, but the reports must still match this run
-		// and a complete dependency-consistent recipe set.
-		mode := "publish"
-		if args[0] == "catalog" {
-			mode = "bootstrap"
-		}
-		if e = publishing.Validate(recipes, reports, mode, commit, tag); e != nil {
+		// Staging, verification and promotion all use the same complete set of
+		// recipes prepared from this run's dependency results.
+		if e = publishing.Validate(recipes, reports, commit, tag); e != nil {
 			return e
 		}
 		ctx := context.New()

@@ -243,8 +243,9 @@ overrides, cached image selections, and existing containers remain intact; no
 store migration is required. To select another registry, set `QUASIDOCK_REGISTRY`.
 
 Maintainers publish all distributable recipe images with the manual **Publish
-images** workflow. Bootstrap produces candidate images and a reviewable pin patch;
-publish mode verifies committed pins before updating release tags and the catalog.
+images** workflow. One run refreshes dependency pins, builds and signs candidates,
+verifies them, and updates release tags and the catalog. A pin patch records any
+dependency changes for source control.
 See [publishing setup and rollout](docs/publishing.md), including the signing key
 and one-time public package settings. Complete that rollout before releasing 0.8.
 
