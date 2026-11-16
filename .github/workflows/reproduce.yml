@@ -225,7 +225,11 @@ jobs:
           QUASIDOCK_HOME: ${{ runner.temp }}\store
         run: |
           mkdir -p "$(cygpath -u "$LOG_DIR")"
-          bash tests/seed-store.sh --build busybox node --pull zig rust ripgrep bat go fzf zot oras skopeo cosign cmake zstd mingit python java-sdk java maven gradle pdfbox plantuml zls texlive gdal postgresql osm2pgsql perl php composer 2>&1 | tee "$(cygpath -u "$LOG_DIR")/seed.txt"
+          bash tests/seed-store.sh --build busybox node --pull zig rust ripgrep bat go fzf zot oras skopeo cosign cmake zstd mingit python python-sdk java-sdk java maven gradle pdfbox plantuml zls texlive gdal postgresql osm2pgsql perl php composer 2>&1 | tee "$(cygpath -u "$LOG_DIR")/seed.txt"
+
+      - name: Dockerfile conversion with native toolchains
+        shell: pwsh
+        run: ./tests/dockerfile.ps1 -SeedDownloads "$env:RUNNER_TEMP\store\cache\downloads"
 
       # The suites run whether or not the steps before them passed.
       - name: tests/store.sh

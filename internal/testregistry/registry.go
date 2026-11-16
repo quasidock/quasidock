@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"strings"
 	"sync"
 )
@@ -75,6 +76,21 @@ func (r *Registry) serve(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	path := strings.TrimPrefix(req.URL.Path, "/v2/")
+	if strings.HasSuffix(path, "/tags/list") {
+		repo := strings.TrimSuffix(path, "/tags/list")
+		var tags []string
+		for key := range r.manifests {
+			if strings.HasPrefix(key, repo+"/") {
+				tag := strings.TrimPrefix(key, repo+"/")
+				if !strings.ContainsAny(tag, "/:") {
+					tags = append(tags, tag)
+				}
+			}
+		}
+		sort.Strings(tags)
+		_ = json.NewEncoder(w).Encode(map[string]any{"name": repo, "tags": tags})
+		return
+	}
 	if i := strings.Index(path, "/manifests/"); i >= 0 {
 		repo, tag := path[:i], path[i+len("/manifests/"):]
 		if req.Method == http.MethodPut {

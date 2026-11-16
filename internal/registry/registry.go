@@ -1029,6 +1029,7 @@ type request struct {
 }
 
 type response struct {
+	Link            string
 	Status          int
 	Body            []byte
 	Location        string
@@ -1176,6 +1177,7 @@ func (r *Registry) exchangeUnchecked(req request, auth string) (response, error)
 		Status:          hres.StatusCode,
 		Location:        hres.Header.Get("Location"),
 		WWWAuthenticate: hres.Header.Get("Www-Authenticate"),
+		Link:            hres.Header.Get("Link"),
 		Range:           hres.Header.Get("Range"),
 		ContentRange:    hres.Header.Get("Content-Range"),
 	}

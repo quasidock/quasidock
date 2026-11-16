@@ -771,7 +771,8 @@ func (s *Store) Deploy(desc oci.Descriptor) (string, error) {
 		return "", err
 	}
 
-	if err := os.Rename(tree, dest); err != nil {
+	// Windows scanners can briefly hold newly extracted tool executables open.
+	if err := RenameRetrying(tree, dest, 5000); err != nil {
 		return "", err
 	}
 

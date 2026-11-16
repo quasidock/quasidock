@@ -53,6 +53,7 @@ For container run examples and CLI usage, see [README.md](../README.md) or run
 | `license` | No | SPDX license identifier or expression (for example `"GPL-2.0-or-later"` or `"MIT OR Apache-2.0"`). |
 | `path` | No | String array of directories added to `PATH` when this image runs or provides `from`/`sdk` tools. Defaults to `["."]`. |
 | `env` | No | Map of environment variables set for the image and downstream builds; values support placeholders. |
+| `workdir` | No | `/`-separated directory relative to the app root, used for all container launches and restarts. Must exist in the built app. Requires app config v3; omission preserves existing behavior and v2 output. |
 | `permissions` | No | Sandbox, network, filesystem, host, and service permissions object. |
 | `registry` | No | Array of `HKCU\Software\...` subkeys persisted per container (for example `"Software\\JavaSoft\\Prefs\\net\\sourceforge\\plantuml"`). Excludes `Software` itself, `Classes`, `Microsoft`, `Policies`, `Wow6432Node`, `AppDataLow`, and `quasidock`, and keys must not overlap. |
 | `from` | No | Map `{ "<alias>": "<image-ref>@sha256:..." }` of pinned base images shipped as lower OCI layers with the app. Single-level only: `from` images cannot declare `from` images of their own. |
@@ -452,7 +453,7 @@ Each entry in `stages` supports:
 - `vendor`: `{ "commands": [...], "dir": "...", "sha256": "..." }` (requires
   `build`; see [Vendor steps](#vendor-steps)).
 
-Each entry in `sources` must set **exactly one** of `url`, `path`, or `image`:
+Each entry in `sources` must set **exactly one** of `url`, `path`, `image`, or `context`:
 
 - `url`: HTTP/HTTPS download. Requires `sha256` (64 lowercase hex characters;
   omit once only when discovering an archive hash). Optional `type` (`file`,
@@ -465,6 +466,13 @@ Each entry in `sources` must set **exactly one** of `url`, `path`, or `image`:
   filename globs without `/` or `\`).
 - `image`: image reference (`@sha256:...` pinned); `sha256`, `type`, `strip`, and
   `skip` are not allowed.
+- `context`: `{ "root": ".", "dockerfile": "Dockerfile", "paths": ["package*.json"] }`
+  selects live files with Docker COPY semantics. `root` is relative to the recipe;
+  `dockerfile` and `paths` are relative to that root. `.dockerignore` and a
+  Dockerfile-specific ignore file apply instead of `.gitignore`. `dest` is required;
+  multiple sources require a trailing `/`. Archives are copied without extraction.
+  `sha256`, `type`, `strip`, and `skip` do not apply. See
+  [Dockerfile conversion](dockerfile-conversion.md).
 
 For example, [sqlite.json](../recipes/sqlite.json) builds `zlib` and then
 `sqlite3.exe` with `zig`:

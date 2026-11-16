@@ -98,7 +98,7 @@ smoke_args() {
     rnote) printf '%s\n' --help ;;
     busybox) printf '%s\n' true ;;
     node) printf '%s\n' '-e 0' ;;
-    python) printf '%s\n' '-c pass' ;;
+    python | python-sdk) printf '%s\n' '-c pass' ;;
     zig | go | pdfbox | oras | cosign) printf '%s\n' version ;;
     7zip) printf '%s\n' i ;;
     vlc) printf '%s\n' '-I dummy vlc://quit' ;;

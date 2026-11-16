@@ -310,8 +310,8 @@ func TestAllRecipesParse(t *testing.T) {
 		}
 		files = append(files, matches...)
 	}
-	if len(files) != 73 {
-		t.Fatalf("expected 73 recipes, got %d", len(files))
+	if len(files) != 74 {
+		t.Fatalf("expected 74 recipes, got %d", len(files))
 	}
 	for _, path := range files {
 		data, err := os.ReadFile(path)

@@ -1,0 +1,26 @@
+{
+  "id": "python-sdk",
+  "version": "3.14.10",
+  "name": "Python SDK",
+  "summary": "Native Windows Python with pip, headers and libraries for application builds",
+  "homepage": "https://www.python.org/",
+  "license": "PSF-2.0",
+  "entrypoint": "python.exe",
+  "path": [".", "Scripts"],
+  "env": { "PYTHONDONTWRITEBYTECODE": "1" },
+  "permissions": { "sandbox": "soft", "network": true, "filesystem": ["cwd"] },
+  "stages": [
+    {
+      "name": "python",
+      "sources": [
+        { "url": "https://www.nuget.org/api/v2/package/python/3.14.10", "sha256": "f54ba67c9951c3d773ea47d2bb095150c037c399f0423a968bcda22809241784", "type": "zip" }
+      ],
+      "shell": "cmd",
+      "build": [
+        "xcopy /E /I /Y tools \"%PREFIX%\" >NUL",
+        "copy /Y \"%PREFIX%\\python.exe\" \"%PREFIX%\\python3.exe\" >NUL"
+      ]
+    }
+  ],
+  "cleanup": ["__pycache__"]
+}

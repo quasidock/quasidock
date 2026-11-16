@@ -2,6 +2,7 @@ package builder
 
 import (
 	"fmt"
+	"github.com/quasidock/quasidock/internal/buildcontext"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,10 +16,11 @@ import (
 const ManifestName = "quasidock.json"
 
 type Snapshot struct {
-	Dir   string
-	Tree  *tree.Tree
-	Hash  string
-	Files int
+	Context *buildcontext.Snapshot
+	Dir     string
+	Tree    *tree.Tree
+	Hash    string
+	Files   int
 }
 
 type snapshotEntry struct {
@@ -40,6 +42,30 @@ func TakeSnapshots(ctx *context.Context, r *recipe.Recipe, recipePath string) (*
 
 	for _, m := range r.Stages {
 		for i, src := range m.Sources {
+			if c := src.Context; c != nil {
+				root := c.Root
+				if !filepath.IsAbs(root) {
+					root = filepath.Join(baseDir, root)
+				}
+				root, _ = filepath.Abs(root)
+				exclude, _ := filepath.Abs(recipePath)
+				var captured *buildcontext.Snapshot
+				for _, e := range s.entries {
+					if e.snapshot.Context != nil && e.snapshot.Context.Root == root && e.snapshot.Context.Dockerfile == c.Dockerfile {
+						captured = e.snapshot.Context
+						break
+					}
+				}
+				if captured == nil {
+					var err error
+					captured, err = buildcontext.Read(root, c.Dockerfile, exclude)
+					if err != nil {
+						return nil, fmt.Errorf("stage %s: %w", m.Name, err)
+					}
+				}
+				s.entries = append(s.entries, snapshotEntry{module: m.Name, index: i, snapshot: Snapshot{Dir: captured.Root, Tree: captured.Tree, Hash: captured.Hash, Context: captured}})
+				continue
+			}
 			if src.Path == nil {
 				continue
 			}
@@ -109,6 +135,10 @@ func (s *Snapshots) Recheck(ctx *context.Context, module string) error {
 }
 
 func isSnapshotUnchanged(s Snapshot) (bool, error) {
+	if s.Context != nil {
+		err := s.Context.Recheck()
+		return err == nil, err
+	}
 	nodes := s.Tree.Sorted()
 	for _, node := range nodes {
 		if node.Content.Kind == tree.ContentFile && node.Content.FilePath != "" {

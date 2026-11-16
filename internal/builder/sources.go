@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/ulikunitz/xz"
 
@@ -18,6 +19,7 @@ import (
 )
 
 type Sources struct {
+	prefix    string
 	ctx       *context.Context
 	fetcher   *Fetcher
 	projects  *Snapshots
@@ -52,6 +54,26 @@ func (s *Sources) Add(t *tree.Tree, m recipe.Stage, recipePath string) error {
 		if s.projects != nil {
 			if snap := s.projects.Get(m.Name, i); snap != nil {
 				s.hashes = append(s.hashes, snap.Hash)
+				if src.Context != nil {
+					directory := false
+					if s.prefix != "" {
+						info, err := os.Stat(filepath.Join(s.prefix, filepath.FromSlash(dest)))
+						directory = err == nil && info.IsDir()
+					}
+					for _, n := range t.Sorted() {
+						if strings.EqualFold(n.Path, strings.TrimSuffix(dest, "/")) && n.Content.Kind == tree.ContentDir {
+							directory = true
+						}
+					}
+					copied, err := snap.Context.Copy(src.Context.Paths, dest, directory)
+					if err != nil {
+						return fmt.Errorf("stage %s: %w", m.Name, err)
+					}
+					if err := t.AddTree(copied, ""); err != nil {
+						return err
+					}
+					continue
+				}
 				if err := t.AddTree(snap.Tree, normDest); err != nil {
 					return fmt.Errorf("%s: %s is a file in one source and a directory in another: %w", recipePath, t.Conflict(), err)
 				}
