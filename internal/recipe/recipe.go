@@ -25,14 +25,23 @@ func (k Kind) IsArchive() bool {
 }
 
 type Source struct {
-	URL    *string  `json:"url,omitempty"`
-	Path   *string  `json:"path,omitempty"`
-	Image  *string  `json:"image,omitempty"`
-	Sha256 *string  `json:"sha256,omitempty"`
-	Type   *Kind    `json:"type,omitempty"`
-	Dest   *string  `json:"dest,omitempty"`
-	Strip  uint32   `json:"strip,omitempty"`
-	Skip   []string `json:"skip,omitempty"`
+	Context *ContextSource `json:"context,omitempty"`
+	URL     *string        `json:"url,omitempty"`
+	Path    *string        `json:"path,omitempty"`
+	Image   *string        `json:"image,omitempty"`
+	Sha256  *string        `json:"sha256,omitempty"`
+	Type    *Kind          `json:"type,omitempty"`
+	Dest    *string        `json:"dest,omitempty"`
+	Strip   uint32         `json:"strip,omitempty"`
+	Skip    []string       `json:"skip,omitempty"`
+}
+
+// ContextSource selects files using Docker COPY and .dockerignore semantics.
+// Root is relative to the recipe; Dockerfile and Paths are relative to Root.
+type ContextSource struct {
+	Root       string   `json:"root"`
+	Dockerfile string   `json:"dockerfile"`
+	Paths      []string `json:"paths"`
 }
 
 func (s Source) Location() string {
@@ -150,6 +159,7 @@ func (l LayerKind) Format() format.Format {
 }
 
 type Recipe struct {
+	Workdir       string            `json:"workdir,omitempty"`
 	ID            string            `json:"id"`
 	Version       string            `json:"version"`
 	Name          *string           `json:"name,omitempty"`
@@ -193,6 +203,7 @@ func (r Recipe) AppConfig(from map[string]oci.Runtime, build *oci.Build) (*oci.A
 	}
 
 	return &oci.AppConfig{
+		Workdir:     r.Workdir,
 		ID:          r.ID,
 		Version:     r.Version,
 		Name:        r.Name,
@@ -378,8 +389,25 @@ func validateSource(fileName, stage string, n int, s Source) error {
 	if s.Image != nil {
 		given++
 	}
+	if s.Context != nil {
+		given++
+	}
 	if given != 1 {
-		return fmt.Errorf("%s: stage %s source %d needs exactly one of \"url\", \"path\" or \"image\"", fileName, stage, n)
+		return fmt.Errorf("%s: stage %s source %d needs exactly one of \"url\", \"path\", \"image\" or \"context\"", fileName, stage, n)
+	}
+	if c := s.Context; c != nil {
+		if c.Root == "" || !oci.IsSafeRelPath(c.Dockerfile) || len(c.Paths) == 0 {
+			return fmt.Errorf("%s: stage %s: context needs root, a relative dockerfile and paths", fileName, stage)
+		}
+		for _, p := range c.Paths {
+			if !oci.IsSafeRelPath(p) || strings.Contains(p, "\\") {
+				return fmt.Errorf("%s: unsafe context path %q", fileName, p)
+			}
+		}
+		if s.Dest == nil || !oci.IsSafeRelPath(*s.Dest) || s.Sha256 != nil || s.Type != nil || s.Strip != 0 || len(s.Skip) != 0 {
+			return fmt.Errorf("%s: context source needs a relative dest; sha256, type, strip and skip do not apply", fileName)
+		}
+		return nil
 	}
 	if s.Image != nil {
 		if s.Sha256 != nil || s.Type != nil || s.Strip != 0 || len(s.Skip) > 0 {

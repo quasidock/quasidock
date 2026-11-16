@@ -603,6 +603,16 @@ func launchContainer(
 	if cwdGranted {
 		cwd = hostCwd
 	}
+	if cfg.Workdir != "" {
+		cwd = filepath.Join(img.DeployDir, filepath.FromSlash(cfg.Workdir))
+		info, err := os.Stat(cwd)
+		if err != nil {
+			return 1, false, fmt.Errorf("image workdir: %w", err)
+		}
+		if !info.IsDir() {
+			return 1, false, fmt.Errorf("image workdir %s is not a directory", cwd)
+		}
+	}
 
 	cacheDir := filepath.Join(dataDir, "cache")
 	if usesCache(cfg) {
@@ -1720,7 +1730,15 @@ func resolveCommand(placeholders oci.Placeholders, config oci.AppConfig, request
 	if oci.IsPlaceholderPath(name) {
 		name = placeholders.Expand(name)
 	}
-	resolved, ok := findCommand(placeholders.App, name, appPath, systemRoot)
+	var resolved string
+	var ok bool
+	if config.Workdir != "" {
+		searchPath := append([]string{placeholders.App}, appPath...)
+		resolved, ok = findCommand(filepath.Join(placeholders.App, filepath.FromSlash(config.Workdir)), name, searchPath, systemRoot)
+	}
+	if !ok {
+		resolved, ok = findCommand(placeholders.App, name, appPath, systemRoot)
+	}
 	if !ok {
 		if strings.ContainsAny(name, `/\`) && !filepath.IsAbs(name) {
 			return Command{}, fmt.Errorf("command %q is not a file in the app; for a program of yours, give its absolute path (e.g. --entrypoint=%%CD%%\\%s)", name, filepath.Base(name))

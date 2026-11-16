@@ -6,6 +6,7 @@ mingit.json
 node.json
 prettier.json
 python.json
+python-sdk.json
 zig.json
 sqlite.json
 rust.json

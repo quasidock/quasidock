@@ -67,6 +67,8 @@ Persistent storage:
   volume prune [--dry-run]            collect unreferenced named volumes
 
 Quasidock extensions:
+  convert [CONTEXT] [-f DOCKERFILE] [-o RECIPE] [--base IMAGE]
+                                       convert a supported Linux Dockerfile to a recipe
   build [--rebuild] [--clean] [--keep-build-dir] [<recipe.json> | <dir>]
                                        build a recipe and cache its image
   image info IMAGE                    describe an image in a registry
@@ -728,7 +730,7 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 		return 0, nil
 	}
 	switch cmd {
-	case "build", "volume", "container", "ps", "start", "restart", "kill", "stop", "rm", "logs", "image", "images", "inspect", "tag", "pull", "push", "rmi", "run", "search", "trust", "signature", "prune", "repair", "grants":
+	case "convert", "build", "volume", "container", "ps", "start", "restart", "kill", "stop", "rm", "logs", "image", "images", "inspect", "tag", "pull", "push", "rmi", "run", "search", "trust", "signature", "prune", "repair", "grants":
 	default:
 		return usageError()
 	}
@@ -743,6 +745,8 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 	switch cmd {
 	case "volume":
 		return volumeCommand(ctx, rest)
+	case "convert":
+		return convertCommand(ctx, rest)
 	case "container":
 		return containerCommand(ctx, rest)
 	case "ps":

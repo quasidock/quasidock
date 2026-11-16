@@ -51,7 +51,7 @@ case $id in
 rnote) args=(--help) ;;
 busybox) args=(true) ;;
 node) args=(-e 0) ;;
-python) args=(-c pass) ;;
+python|python-sdk) args=(-c pass) ;;
 zig|go|pdfbox|oras|cosign) args=(version) ;;
 7zip) args=(i) ;;
 vlc) args=(-I dummy vlc://quit) ;;

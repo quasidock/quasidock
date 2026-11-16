@@ -147,6 +147,14 @@ func inputHash(ctx *context.Context, r *recipe.Recipe, bytesRead []byte, recipeP
 	}
 	for _, m := range r.Stages {
 		for i, src := range m.Sources {
+			if src.Context != nil {
+				snap := projects.Get(m.Name, i)
+				if snap == nil {
+					return "", fmt.Errorf("stage %s: missing context snapshot", m.Name)
+				}
+				h.Write([]byte(snap.Hash))
+				continue
+			}
 			if src.Path == nil {
 				continue
 			}
@@ -399,6 +407,15 @@ func buildImage(ctx *context.Context, r *recipe.Recipe, recipePath, source strin
 		buildInfo.Images = sources.images
 	}
 	appTree.Cleanup(r.Cleanup)
+	// Context snapshots also detect additions, deletions and ignore-rule changes
+	// after an earlier COPY, including while subsequent RUN steps execute.
+	for _, entry := range projects.entries {
+		if entry.snapshot.Context != nil {
+			if err := entry.snapshot.Context.Recheck(); err != nil {
+				return nil, err
+			}
+		}
+	}
 
 	config, err := r.AppConfig(from, buildInfo)
 	if err != nil {
@@ -406,6 +423,18 @@ func buildImage(ctx *context.Context, r *recipe.Recipe, recipePath, source strin
 	}
 	if err := oci.ValidateConfig(recipePath, config); err != nil {
 		return nil, err
+	}
+	if config.Workdir != "" && config.Workdir != "." {
+		found := false
+		for _, node := range appTree.Sorted() {
+			if node.Content.Kind == tree.ContentDir && strings.EqualFold(node.Path, config.Workdir) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return nil, fmt.Errorf("%s: workdir %q is not a directory in the app", recipePath, config.Workdir)
+		}
 	}
 
 	placeholders := oci.Placeholders{
@@ -462,7 +491,11 @@ func buildImage(ctx *context.Context, r *recipe.Recipe, recipePath, source strin
 	if err != nil {
 		return nil, err
 	}
-	cfgDesc, err := ctx.Store.PutBlob(configJSON, oci.MediaTypeConfig)
+	configType := oci.MediaTypeConfig
+	if config.Workdir != "" {
+		configType = oci.MediaTypeConfigV3
+	}
+	cfgDesc, err := ctx.Store.PutBlob(configJSON, configType)
 	if err != nil {
 		return nil, err
 	}
@@ -707,6 +740,7 @@ func (b *BuildRoot) keepCache(ctx *context.Context, id string) {
 
 func (b *BuildRoot) buildStages(ctx *context.Context, sources *Sources, r *recipe.Recipe, recipePath string) (*tree.Tree, error) {
 	prefix := filepath.Join(b.path, "prefix")
+	sources.prefix = prefix
 	for _, m := range r.Stages {
 		t := tree.New()
 		if err := sources.Add(t, m, recipePath); err != nil {
@@ -908,7 +942,7 @@ func (b *BuildRoot) runCommands(ctx *context.Context, m recipe.Stage, step strin
 		environment.Set(&vars, "NO_PROXY", "")
 	}
 
-	environment.Expand(&vars, oci.Placeholders{App: "", Data: ""}, m.Env)
+	environment.Expand(&vars, oci.Placeholders{App: DriveLetter + `\prefix`, Data: ""}, m.Env)
 	envBuilt, err := environment.Build(ctx.Env, environment.Spec{
 		ID:         b.id,
 		Profile:    b.profile,

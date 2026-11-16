@@ -14,6 +14,7 @@ import (
 const (
 	MediaTypeManifest            = "application/vnd.oci.image.manifest.v1+json"
 	MediaTypeConfig              = "application/vnd.quasidock.app.config.v2+json"
+	MediaTypeConfigV3            = "application/vnd.quasidock.app.config.v3+json"
 	MediaTypeConfigV1            = "application/vnd.quasidock.app.config.v1+json"
 	LegacyMediaTypeConfig        = "application/vnd.zigsaw.app.config.v2+json"
 	LegacyMediaTypeConfigV1      = "application/vnd.zigsaw.app.config.v1+json"
@@ -134,6 +135,7 @@ type Build struct {
 }
 
 type AppConfig struct {
+	Workdir     string             `json:"workdir,omitempty"`
 	ID          string             `json:"id"`
 	Version     string             `json:"version"`
 	Name        *string            `json:"name,omitempty"`
@@ -163,7 +165,7 @@ func ToJSON(v any) ([]byte, error) {
 }
 
 func IsConfigType(t string) bool {
-	return t == MediaTypeConfig || t == MediaTypeConfigV1 ||
+	return t == MediaTypeConfigV3 || t == MediaTypeConfig || t == MediaTypeConfigV1 ||
 		t == LegacyMediaTypeConfig || t == LegacyMediaTypeConfigV1
 }
 
@@ -174,6 +176,9 @@ func ParseConfig(what, configType string, data []byte) (*AppConfig, error) {
 	var cfg AppConfig
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("%s: its app config can't be read: %w", what, err)
+	}
+	if cfg.Workdir != "" && configType != MediaTypeConfigV3 {
+		return nil, fmt.Errorf("%s: workdir requires a v3 app config", what)
 	}
 	if (configType == MediaTypeConfigV1 || configType == LegacyMediaTypeConfigV1) && len(cfg.From) > 0 {
 		return nil, fmt.Errorf("%s: a v1 config can't have base images", what)
@@ -593,6 +598,9 @@ func ValidateConfig(what string, c *AppConfig) error {
 }
 
 func ValidateEntryPoints(what string, c *AppConfig, aliases []string) error {
+	if c.Workdir != "" && (!IsSafeRelPath(c.Workdir) || strings.ContainsAny(c.Workdir, "$\\\x00")) {
+		return fmt.Errorf("%s: workdir must be a '/'-separated relative directory inside the app", what)
+	}
 	if !IsValidID(c.ID) {
 		return fmt.Errorf("%s: id %q must be 1-57 characters of letters, digits, '.', '-', '_'", what, c.ID)
 	}

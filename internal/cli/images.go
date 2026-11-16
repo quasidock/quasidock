@@ -31,6 +31,7 @@ type inspectedImage struct {
 	Architecture string
 	Size         int64
 	Config       struct {
+		WorkingDir string
 		Entrypoint []string
 		Cmd        []string
 		Env        []string
@@ -52,6 +53,7 @@ func inspectImage(ctx *context.Context, idx *store.ImageIndex, ref store.Ref) (i
 	out.Default = idx.Defaults[strings.ToLower(ref.ID)] == ref.Manifest
 	out.Config.Entrypoint = append([]string(nil), img.Config.Entrypoint...)
 	out.Config.Cmd = append([]string(nil), img.Config.Cmd...)
+	out.Config.WorkingDir = img.Config.Workdir
 	out.Config.Env = []string{}
 	for k, v := range img.Config.Env {
 		out.Config.Env = append(out.Config.Env, k+"="+v)
