@@ -2,13 +2,6 @@
 name: Publish images
 on:
   workflow_dispatch:
-    inputs:
-      mode:
-        description: Bootstrap produces a pin patch; publish promotes committed recipes
-        required: true
-        default: bootstrap
-        type: choice
-        options: [bootstrap, publish]
 permissions:
   contents: read
 concurrency:
@@ -73,7 +66,6 @@ jobs:
       packages: write
     with:
       recipe: busybox.json
-      mode: ${{ inputs.mode }}
     secrets: inherit
   image_mingit:
     needs: [prepare]
@@ -84,7 +76,6 @@ jobs:
       packages: write
     with:
       recipe: mingit.json
-      mode: ${{ inputs.mode }}
     secrets: inherit
   image_node:
     needs: [prepare]
@@ -95,7 +86,6 @@ jobs:
       packages: write
     with:
       recipe: node.json
-      mode: ${{ inputs.mode }}
     secrets: inherit
   image_prettier:
     needs: [prepare, image_node]
@@ -106,7 +96,6 @@ jobs:
       packages: write
     with:
       recipe: prettier.json
-      mode: ${{ inputs.mode }}
     secrets: inherit
   image_python:
     needs: [prepare]
@@ -117,8 +106,20 @@ jobs:
       packages: write
     with:
       recipe: python.json
-      mode: ${{ inputs.mode }}
     secrets: inherit
+<<<<<<< HEAD
+=======
+  image_python_sdk:
+    needs: [prepare]
+    uses: ./.github/workflows/publish-image.yml
+    permissions:
+      actions: read
+      contents: read
+      packages: write
+    with:
+      recipe: python-sdk.json
+    secrets: inherit
+>>>>>>> 1dbc25b (Update publish workflow)
   image_zig:
     needs: [prepare, image_busybox]
     uses: ./.github/workflows/publish-image.yml
@@ -128,7 +129,6 @@ jobs:
       packages: write
     with:
       recipe: zig.json
-      mode: ${{ inputs.mode }}
     secrets: inherit
   image_sqlite:
     needs: [prepare, image_busybox, image_zig]
@@ -139,7 +139,6 @@ jobs:
       packages: write
     with:
       recipe: sqlite.json
-      mode: ${{ inputs.mode }}
     secrets: inherit
   image_rust:
     needs: [prepare, image_busybox, image_zig]
@@ -150,7 +149,6 @@ jobs:
       packages: write
     with:
       recipe: rust.json
-      mode: ${{ inputs.mode }}
     secrets: inherit
   image_ripgrep:
     needs: [prepare, image_busybox, image_rust, image_zig]
@@ -161,7 +159,6 @@ jobs:
       packages: write
     with:
       recipe: ripgrep.json
-      mode: ${{ inputs.mode }}
     secrets: inherit
   image_bat:
     needs: [prepare, image_busybox, image_rust, image_zig]
@@ -172,7 +169,6 @@ jobs:
       packages: write
     with:
       recipe: bat.json
-      mode: ${{ inputs.mode }}
     secrets: inherit
   image_go:
     needs: [prepare]
@@ -183,7 +179,6 @@ jobs:
       packages: write
     with:
       recipe: go.json
-      mode: ${{ inputs.mode }}
     secrets: inherit
   image_fzf:
     needs: [prepare, image_busybox, image_go]
@@ -194,7 +189,6 @@ jobs:
       packages: write
     with:
       recipe: fzf.json
-      mode: ${{ inputs.mode }}
     secrets: inherit
   image_zot:
     needs: [prepare, image_busybox, image_go]
@@ -205,7 +199,6 @@ jobs:
       packages: write
     with:
       recipe: zot.json
-      mode: ${{ inputs.mode }}
     secrets: inherit
   image_oras:
     needs: [prepare, image_busybox, image_go]
@@ -216,7 +209,6 @@ jobs:
       packages: write
     with:
       recipe: oras.json
-      mode: ${{ inputs.mode }}
     secrets: inherit
   image_skopeo:
     needs: [prepare, image_busybox, image_go]
@@ -227,7 +219,6 @@ jobs:
       packages: write
     with:
       recipe: skopeo.json
-      mode: ${{ inputs.mode }}
     secrets: inherit
   image_cosign:
     needs: [prepare, image_busybox, image_go]
@@ -238,7 +229,6 @@ jobs:
       packages: write
     with:
       recipe: cosign.json
-      mode: ${{ inputs.mode }}
     secrets: inherit
   image_cmake:
     needs: [prepare]
@@ -249,7 +239,6 @@ jobs:
       packages: write
     with:
       recipe: cmake.json
-      mode: ${{ inputs.mode }}
     secrets: inherit
   image_zstd:
     needs: [prepare, image_busybox, image_cmake, image_zig]
@@ -260,7 +249,6 @@ jobs:
       packages: write
     with:
       recipe: zstd.json
-      mode: ${{ inputs.mode }}
     secrets: inherit
   image_meson:
     needs: [prepare, image_busybox, image_zig]
@@ -271,7 +259,6 @@ jobs:
       packages: write
     with:
       recipe: meson.json
-      mode: ${{ inputs.mode }}
     secrets: inherit
   image_zls:
     needs: [prepare, image_busybox, image_zig]
@@ -282,7 +269,6 @@ jobs:
       packages: write
     with:
       recipe: zls.json
-      mode: ${{ inputs.mode }}
     secrets: inherit
   image_perl:
     needs: [prepare, image_busybox]
@@ -293,7 +279,6 @@ jobs:
       packages: write
     with:
       recipe: perl.json
-      mode: ${{ inputs.mode }}
     secrets: inherit
   image_cargo_c:
     needs: [prepare, image_busybox, image_rust, image_zig]
@@ -304,7 +289,6 @@ jobs:
       packages: write
     with:
       recipe: cargo-c.json
-      mode: ${{ inputs.mode }}
     secrets: inherit
   image_llvm_mingw:
     needs: [prepare, image_busybox]
@@ -315,7 +299,6 @@ jobs:
       packages: write
     with:
       recipe: llvm-mingw.json
-      mode: ${{ inputs.mode }}
     secrets: inherit
   image_gettext:
     needs: [prepare, image_busybox, image_llvm_mingw]
@@ -326,7 +309,6 @@ jobs:
       packages: write
     with:
       recipe: gettext.json
-      mode: ${{ inputs.mode }}
     secrets: inherit
   image_gtk4_sdk_base:
     needs: [prepare, image_busybox, image_cargo_c, image_cmake, image_gettext, image_llvm_mingw, image_meson, image_perl, image_rust]
@@ -337,7 +319,6 @@ jobs:
       packages: write
     with:
       recipe: gtk4-sdk-base.json
-      mode: ${{ inputs.mode }}
     secrets: inherit
   image_gtk4_sdk:
     needs: [prepare, image_busybox, image_cargo_c, image_cmake, image_gtk4_sdk_base, image_llvm_mingw, image_meson, image_perl, image_rust]
@@ -348,7 +329,6 @@ jobs:
       packages: write
     with:
       recipe: gtk4-sdk.json
-      mode: ${{ inputs.mode }}
     secrets: inherit
   image_gtk4:
     needs: [prepare, image_gtk4_sdk]
@@ -359,7 +339,6 @@ jobs:
       packages: write
     with:
       recipe: gtk4.json
-      mode: ${{ inputs.mode }}
     secrets: inherit
   image_gnome_text_editor:
     needs: [prepare, image_cmake, image_gtk4, image_gtk4_sdk]
@@ -370,7 +349,6 @@ jobs:
       packages: write
     with:
       recipe: gnome-text-editor.json
-      mode: ${{ inputs.mode }}
     secrets: inherit
   image_rnote:
     needs: [prepare, image_gtk4, image_gtk4_sdk, image_rust]
@@ -381,7 +359,6 @@ jobs:
       packages: write
     with:
       recipe: rnote.json
-      mode: ${{ inputs.mode }}
     secrets: inherit
   image_gtk3_sdk:
     needs: [prepare, image_gtk4_sdk]
@@ -392,7 +369,6 @@ jobs:
       packages: write
     with:
       recipe: gtk3-sdk.json
-      mode: ${{ inputs.mode }}
     secrets: inherit
   image_gtk3:
     needs: [prepare, image_gtk3_sdk]
@@ -403,7 +379,6 @@ jobs:
       packages: write
     with:
       recipe: gtk3.json
-      mode: ${{ inputs.mode }}
     secrets: inherit
   image_gtk3demo:
     needs: [prepare, image_gtk3, image_gtk4, image_gtk4_sdk]
@@ -414,7 +389,6 @@ jobs:
       packages: write
     with:
       recipe: gtk3demo.json
-      mode: ${{ inputs.mode }}
     secrets: inherit
   image_gnumeric:
     needs: [prepare, image_cmake, image_gtk3, image_gtk3_sdk, image_gtk4, image_gtk4_sdk, image_perl]
@@ -425,7 +399,6 @@ jobs:
       packages: write
     with:
       recipe: gnumeric.json
-      mode: ${{ inputs.mode }}
     secrets: inherit
   image_pygobject_sdk:
     needs: [prepare, image_gtk4_sdk]
@@ -436,7 +409,6 @@ jobs:
       packages: write
     with:
       recipe: pygobject-sdk.json
-      mode: ${{ inputs.mode }}
     secrets: inherit
   image_pygobject:
     needs: [prepare, image_pygobject_sdk]
@@ -447,7 +419,6 @@ jobs:
       packages: write
     with:
       recipe: pygobject.json
-      mode: ${{ inputs.mode }}
     secrets: inherit
   image_meld:
     needs: [prepare, image_gtk3, image_gtk3_sdk, image_gtk4, image_gtk4_sdk, image_mingit, image_pygobject, image_pygobject_sdk]
@@ -458,7 +429,6 @@ jobs:
       packages: write
     with:
       recipe: meld.json
-      mode: ${{ inputs.mode }}
     secrets: inherit
   image_gaphor:
     needs: [prepare, image_cmake, image_gtk4, image_gtk4_sdk, image_pygobject, image_pygobject_sdk]
@@ -469,7 +439,6 @@ jobs:
       packages: write
     with:
       recipe: gaphor.json
-      mode: ${{ inputs.mode }}
     secrets: inherit
   image_7zip:
     needs: [prepare, image_busybox]
@@ -480,7 +449,6 @@ jobs:
       packages: write
     with:
       recipe: 7zip.json
-      mode: ${{ inputs.mode }}
     secrets: inherit
   image_notepad_plus_plus:
     needs: [prepare]
@@ -491,7 +459,6 @@ jobs:
       packages: write
     with:
       recipe: notepad-plus-plus.json
-      mode: ${{ inputs.mode }}
     secrets: inherit
   image_sumatrapdf:
     needs: [prepare]
@@ -502,7 +469,6 @@ jobs:
       packages: write
     with:
       recipe: sumatrapdf.json
-      mode: ${{ inputs.mode }}
     secrets: inherit
   image_vlc:
     needs: [prepare]
@@ -513,7 +479,6 @@ jobs:
       packages: write
     with:
       recipe: vlc.json
-      mode: ${{ inputs.mode }}
     secrets: inherit
   image_php_sdk:
     needs: [prepare, image_busybox, image_node, image_zig]
@@ -524,7 +489,6 @@ jobs:
       packages: write
     with:
       recipe: php-sdk.json
-      mode: ${{ inputs.mode }}
     secrets: inherit
   image_php:
     needs: [prepare, image_php_sdk]
@@ -535,7 +499,6 @@ jobs:
       packages: write
     with:
       recipe: php.json
-      mode: ${{ inputs.mode }}
     secrets: inherit
   image_composer:
     needs: [prepare, image_busybox, image_php, image_zig]
@@ -546,7 +509,6 @@ jobs:
       packages: write
     with:
       recipe: composer.json
-      mode: ${{ inputs.mode }}
     secrets: inherit
   image_kanboard:
     needs: [prepare, image_busybox, image_composer, image_php]
@@ -557,7 +519,6 @@ jobs:
       packages: write
     with:
       recipe: kanboard.json
-      mode: ${{ inputs.mode }}
     secrets: inherit
   image_java_sdk:
     needs: [prepare]
@@ -568,7 +529,6 @@ jobs:
       packages: write
     with:
       recipe: java-sdk.json
-      mode: ${{ inputs.mode }}
     secrets: inherit
   image_java:
     needs: [prepare]
@@ -579,7 +539,6 @@ jobs:
       packages: write
     with:
       recipe: java.json
-      mode: ${{ inputs.mode }}
     secrets: inherit
   image_maven:
     needs: [prepare, image_busybox, image_java_sdk, image_zig]
@@ -590,7 +549,6 @@ jobs:
       packages: write
     with:
       recipe: maven.json
-      mode: ${{ inputs.mode }}
     secrets: inherit
   image_gradle:
     needs: [prepare, image_busybox, image_java_sdk, image_zig]
@@ -601,7 +559,6 @@ jobs:
       packages: write
     with:
       recipe: gradle.json
-      mode: ${{ inputs.mode }}
     secrets: inherit
   image_pdfbox:
     needs: [prepare, image_busybox, image_java, image_maven]
@@ -612,7 +569,6 @@ jobs:
       packages: write
     with:
       recipe: pdfbox.json
-      mode: ${{ inputs.mode }}
     secrets: inherit
   image_plantuml:
     needs: [prepare, image_busybox, image_gradle, image_java]
@@ -623,7 +579,6 @@ jobs:
       packages: write
     with:
       recipe: plantuml.json
-      mode: ${{ inputs.mode }}
     secrets: inherit
   image_logisim_evolution:
     needs: [prepare, image_busybox, image_gradle, image_java]
@@ -634,7 +589,6 @@ jobs:
       packages: write
     with:
       recipe: logisim-evolution.json
-      mode: ${{ inputs.mode }}
     secrets: inherit
   image_scenebuilder:
     needs: [prepare, image_busybox, image_java_sdk, image_maven]
@@ -645,7 +599,6 @@ jobs:
       packages: write
     with:
       recipe: scenebuilder.json
-      mode: ${{ inputs.mode }}
     secrets: inherit
   image_qt6_sdk_base:
     needs: [prepare, image_busybox, image_cmake, image_llvm_mingw]
@@ -656,7 +609,6 @@ jobs:
       packages: write
     with:
       recipe: qt6-sdk-base.json
-      mode: ${{ inputs.mode }}
     secrets: inherit
   image_qt6_sdk:
     needs: [prepare, image_busybox, image_cmake, image_llvm_mingw, image_qt6_sdk_base]
@@ -667,7 +619,6 @@ jobs:
       packages: write
     with:
       recipe: qt6-sdk.json
-      mode: ${{ inputs.mode }}
     secrets: inherit
   image_qt6:
     needs: [prepare, image_qt6_sdk]
@@ -678,7 +629,6 @@ jobs:
       packages: write
     with:
       recipe: qt6.json
-      mode: ${{ inputs.mode }}
     secrets: inherit
   image_flameshot:
     needs: [prepare, image_qt6, image_qt6_sdk]
@@ -689,7 +639,6 @@ jobs:
       packages: write
     with:
       recipe: flameshot.json
-      mode: ${{ inputs.mode }}
     secrets: inherit
   image_notes:
     needs: [prepare, image_qt6, image_qt6_sdk]
@@ -700,7 +649,6 @@ jobs:
       packages: write
     with:
       recipe: notes.json
-      mode: ${{ inputs.mode }}
     secrets: inherit
   image_ghostscript:
     needs: [prepare, image_busybox, image_zig]
@@ -711,7 +659,6 @@ jobs:
       packages: write
     with:
       recipe: ghostscript.json
-      mode: ${{ inputs.mode }}
     secrets: inherit
   image_texlive:
     needs: [prepare, image_busybox, image_ghostscript, image_perl]
@@ -722,7 +669,6 @@ jobs:
       packages: write
     with:
       recipe: texlive.json
-      mode: ${{ inputs.mode }}
     secrets: inherit
   image_gdal_sdk:
     needs: [prepare, image_busybox, image_cmake, image_llvm_mingw, image_meson]
@@ -733,7 +679,6 @@ jobs:
       packages: write
     with:
       recipe: gdal-sdk.json
-      mode: ${{ inputs.mode }}
     secrets: inherit
   image_gdal:
     needs: [prepare, image_gdal_sdk]
@@ -744,7 +689,6 @@ jobs:
       packages: write
     with:
       recipe: gdal.json
-      mode: ${{ inputs.mode }}
     secrets: inherit
   image_make:
     needs: [prepare, image_busybox, image_zig]
@@ -755,7 +699,6 @@ jobs:
       packages: write
     with:
       recipe: make.json
-      mode: ${{ inputs.mode }}
     secrets: inherit
   image_postgresql_sdk:
     needs: [prepare, image_busybox, image_cmake, image_llvm_mingw, image_meson, image_perl, image_python]
@@ -766,7 +709,6 @@ jobs:
       packages: write
     with:
       recipe: postgresql-sdk.json
-      mode: ${{ inputs.mode }}
     secrets: inherit
   image_postgresql:
     needs: [prepare, image_perl, image_postgresql_sdk, image_python]
@@ -777,7 +719,6 @@ jobs:
       packages: write
     with:
       recipe: postgresql.json
-      mode: ${{ inputs.mode }}
     secrets: inherit
   image_osm2pgsql:
     needs: [prepare, image_busybox, image_cmake, image_gdal_sdk, image_llvm_mingw, image_postgresql_sdk]
@@ -788,7 +729,6 @@ jobs:
       packages: write
     with:
       recipe: osm2pgsql.json
-      mode: ${{ inputs.mode }}
     secrets: inherit
   image_vscodium:
     needs: [prepare, image_busybox, image_mingit]
@@ -799,7 +739,6 @@ jobs:
       packages: write
     with:
       recipe: vscodium.json
-      mode: ${{ inputs.mode }}
     secrets: inherit
   finish:
     needs: [prepare, image_busybox, image_mingit, image_node, image_prettier, image_python, image_zig, image_sqlite, image_rust, image_ripgrep, image_bat, image_go, image_fzf, image_zot, image_oras, image_skopeo, image_cosign, image_cmake, image_zstd, image_meson, image_zls, image_perl, image_cargo_c, image_llvm_mingw, image_gettext, image_gtk4_sdk_base, image_gtk4_sdk, image_gtk4, image_gnome_text_editor, image_rnote, image_gtk3_sdk, image_gtk3, image_gtk3demo, image_gnumeric, image_pygobject_sdk, image_pygobject, image_meld, image_gaphor, image_7zip, image_notepad_plus_plus, image_sumatrapdf, image_vlc, image_php_sdk, image_php, image_composer, image_kanboard, image_java_sdk, image_java, image_maven, image_gradle, image_pdfbox, image_plantuml, image_logisim_evolution, image_scenebuilder, image_qt6_sdk_base, image_qt6_sdk, image_qt6, image_flameshot, image_notes, image_ghostscript, image_texlive, image_gdal_sdk, image_gdal, image_make, image_postgresql_sdk, image_postgresql, image_osm2pgsql, image_vscodium]
@@ -825,35 +764,29 @@ jobs:
           pattern: publish-report-*
           path: out/reports
           merge-multiple: true
-      - name: Collect verified results and bootstrap patch
+      - name: Collect verified results and pin patch
         shell: bash
-        env:
-          PUBLISH_MODE: ${{ inputs.mode }}
-        run: out/bin/quasidock-publish.exe collect "$PUBLISH_MODE" out/reports out/publishing
+        run: out/bin/quasidock-publish.exe collect out/reports out/publishing
       - name: Publish candidate catalog
-        if: inputs.mode == 'bootstrap'
         shell: bash
         env:
           QUASIDOCK_REGISTRY_USERNAME: ${{ github.actor }}
           QUASIDOCK_REGISTRY_PASSWORD: ${{ github.token }}
         run: out/bin/quasidock-publish.exe catalog out/reports "ci-$GITHUB_RUN_ID"
       - name: Verify anonymous access before promotion
-        if: inputs.mode == 'publish'
         shell: bash
         run: out/bin/quasidock-publish.exe verify out/reports
       - name: Promote exact verified digests; catalog last
-        if: inputs.mode == 'publish'
         shell: bash
         env:
           QUASIDOCK_REGISTRY_USERNAME: ${{ github.actor }}
           QUASIDOCK_REGISTRY_PASSWORD: ${{ github.token }}
         run: out/bin/quasidock-publish.exe promote out/reports
       - name: Verify final tags, pins, and searchable catalog anonymously
-        if: inputs.mode == 'publish'
         shell: bash
         run: |
           out/bin/quasidock-publish.exe verify-release out/reports
-          bash scripts/check-pins.sh
+          bash scripts/check-pins.sh out/publishing/recipes/*.json
           out/bin/quasidock.exe search
       - name: Keep result report even if promotion fails
         if: always()

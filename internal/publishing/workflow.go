@@ -12,13 +12,6 @@ func Workflow(recipes []Recipe) string {
 name: Publish images
 on:
   workflow_dispatch:
-    inputs:
-      mode:
-        description: Bootstrap produces a pin patch; publish promotes committed recipes
-        required: true
-        default: bootstrap
-        type: choice
-        options: [bootstrap, publish]
 permissions:
   contents: read
 concurrency:
@@ -84,7 +77,7 @@ jobs:
 		for _, p := range r.Pins {
 			fmt.Fprintf(&b, ", %s", byID[p.ID].Job())
 		}
-		fmt.Fprintf(&b, "]\n    uses: ./.github/workflows/publish-image.yml\n    permissions:\n      actions: read\n      contents: read\n      packages: write\n    with:\n      recipe: %s\n      mode: ${{ inputs.mode }}\n    secrets: inherit\n", r.File)
+		fmt.Fprintf(&b, "]\n    uses: ./.github/workflows/publish-image.yml\n    permissions:\n      actions: read\n      contents: read\n      packages: write\n    with:\n      recipe: %s\n    secrets: inherit\n", r.File)
 	}
 	b.WriteString("  finish:\n    needs: [prepare")
 	for _, r := range recipes {
@@ -113,35 +106,29 @@ jobs:
           pattern: publish-report-*
           path: out/reports
           merge-multiple: true
-      - name: Collect verified results and bootstrap patch
+      - name: Collect verified results and pin patch
         shell: bash
-        env:
-          PUBLISH_MODE: ${{ inputs.mode }}
-        run: out/bin/quasidock-publish.exe collect "$PUBLISH_MODE" out/reports out/publishing
+        run: out/bin/quasidock-publish.exe collect out/reports out/publishing
       - name: Publish candidate catalog
-        if: inputs.mode == 'bootstrap'
         shell: bash
         env:
           QUASIDOCK_REGISTRY_USERNAME: ${{ github.actor }}
           QUASIDOCK_REGISTRY_PASSWORD: ${{ github.token }}
         run: out/bin/quasidock-publish.exe catalog out/reports "ci-$GITHUB_RUN_ID"
       - name: Verify anonymous access before promotion
-        if: inputs.mode == 'publish'
         shell: bash
         run: out/bin/quasidock-publish.exe verify out/reports
       - name: Promote exact verified digests; catalog last
-        if: inputs.mode == 'publish'
         shell: bash
         env:
           QUASIDOCK_REGISTRY_USERNAME: ${{ github.actor }}
           QUASIDOCK_REGISTRY_PASSWORD: ${{ github.token }}
         run: out/bin/quasidock-publish.exe promote out/reports
       - name: Verify final tags, pins, and searchable catalog anonymously
-        if: inputs.mode == 'publish'
         shell: bash
         run: |
           out/bin/quasidock-publish.exe verify-release out/reports
-          bash scripts/check-pins.sh
+          bash scripts/check-pins.sh out/publishing/recipes/*.json
           out/bin/quasidock.exe search
       - name: Keep result report even if promotion fails
         if: always()

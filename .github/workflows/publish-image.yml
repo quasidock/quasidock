@@ -5,9 +5,6 @@ on:
       recipe:
         required: true
         type: string
-      mode:
-        required: true
-        type: string
     secrets:
       COSIGN_PRIVATE_KEY:
         required: true
@@ -25,7 +22,6 @@ jobs:
       QUASIDOCK_REGISTRY: ghcr.io/quasidock/quasidock
       QUASIDOCK: ${{ github.workspace }}\out\bin\quasidock.exe
       PUBLISH_RECIPE: ${{ inputs.recipe }}
-      PUBLISH_MODE: ${{ inputs.mode }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -61,7 +57,7 @@ jobs:
           QUASIDOCK_REGISTRY_PASSWORD: ${{ github.token }}
         run: |
           work=$(cygpath -w "$RUNNER_TEMP/prepared")
-          out/bin/quasidock-publish.exe prepare "$PUBLISH_RECIPE" "$PUBLISH_MODE" out/dependencies "$work" out/prepared.txt
+          out/bin/quasidock-publish.exe prepare "$PUBLISH_RECIPE" out/dependencies "$work" out/prepared.txt
           cat out/prepared.txt >>"$GITHUB_OUTPUT"
           recipe=$(sed -n 's/^recipe=//p' out/prepared.txt | tr -d '\r')
           # Native Windows children can deadlock on Git Bash's tee pipe.
@@ -99,9 +95,10 @@ jobs:
           IMAGE_ID: ${{ steps.build.outputs.id }}
           IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
           QUASIDOCK_HOME: ${{ runner.temp }}\verify-store
-          # Bootstrap packages may still be private. Publish mode must use anonymous pulls.
-          QUASIDOCK_REGISTRY_USERNAME: ${{ inputs.mode == 'bootstrap' && github.actor || '' }}
-          QUASIDOCK_REGISTRY_PASSWORD: ${{ inputs.mode == 'bootstrap' && github.token || '' }}
+          # Workers can inspect newly created packages; the finish job still
+          # requires anonymous verification of every image before promotion.
+          QUASIDOCK_REGISTRY_USERNAME: ${{ github.actor }}
+          QUASIDOCK_REGISTRY_PASSWORD: ${{ github.token }}
         run: |
           out/bin/quasidock-publish.exe verify-image "out/reports/$IMAGE_ID.report.json"
           bash scripts/smoke-image.sh "$IMAGE_ID" "ghcr.io/quasidock/quasidock/$IMAGE_ID@$IMAGE_DIGEST" 2>&1 | tee out/logs/verify.log

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -100,7 +101,7 @@ func Load(root string) ([]Recipe, error) {
 				return nil, fmt.Errorf("%s depends on %s outside the publish allowlist", r.File, p.ID)
 			}
 			if p.ID == r.ID {
-				return nil, fmt.Errorf("%s pins itself; bootstrap requires an explicit seed", r.File)
+				return nil, fmt.Errorf("%s pins itself; publication requires an explicit seed", r.File)
 			}
 		}
 	}
@@ -139,24 +140,18 @@ func Order(recipes []Recipe) ([]Recipe, error) {
 }
 
 // Prepare updates only dependency references; source URLs and hashes stay exact.
-func Prepare(r Recipe, reports map[string]Report, mode, commit, tag string) ([]byte, error) {
-	if mode != "bootstrap" && mode != "publish" {
-		return nil, fmt.Errorf("mode must be bootstrap or publish")
-	}
+func Prepare(r Recipe, reports map[string]Report, commit, tag string) ([]byte, error) {
 	data := string(r.Bytes)
 	for _, p := range r.Pins {
 		dep, ok := reports[p.ID]
 		if !ok {
 			return nil, fmt.Errorf("%s: missing result for dependency %s", r.File, p.ID)
 		}
-		if dep.Commit != commit || dep.Tag != tag || dep.Registry != Registry {
+		if dep.ID != p.ID || dep.Commit != commit || dep.Tag != tag || dep.Registry != Registry {
 			return nil, fmt.Errorf("%s: dependency result belongs to another publishing run", p.ID)
 		}
 		if !digestPattern.MatchString(dep.Digest) {
 			return nil, fmt.Errorf("%s: invalid dependency digest", p.ID)
-		}
-		if mode == "publish" && (p.Version != dep.Version || p.Digest != dep.Digest) {
-			return nil, fmt.Errorf("%s: committed pin for %s differs from the build; run bootstrap and commit its pin patch", r.File, p.ID)
 		}
 		old := fmt.Sprintf("\"%s:%s@%s\"", p.ID, p.Version, p.Digest)
 		updated := fmt.Sprintf("\"%s:%s@%s\"", p.ID, dep.Version, dep.Digest)
@@ -191,24 +186,31 @@ func ReadReports(dir string) (map[string]Report, error) {
 	return reports, err
 }
 
-func Validate(recipes []Recipe, reports map[string]Report, mode, commit, tag string) error {
+func Validate(recipes []Recipe, reports map[string]Report, commit, tag string) error {
 	if len(recipes) != len(reports) {
 		return fmt.Errorf("expected %d recipe reports, got %d", len(recipes), len(reports))
 	}
 	for _, r := range recipes {
 		report, ok := reports[r.ID]
-		if !ok || report.Recipe != r.File || report.Version != r.Version || report.Commit != commit || report.Tag != tag || report.Registry != Registry {
+		if !ok || report.ID != r.ID || report.Recipe != r.File || report.Version != r.Version || report.Commit != commit || report.Tag != tag || report.Registry != Registry {
 			return fmt.Errorf("invalid or missing report for %s", r.File)
 		}
 		if !digestPattern.MatchString(report.Digest) {
 			return fmt.Errorf("invalid image digest for %s", r.ID)
 		}
-		prepared, err := Prepare(r, reports, mode, commit, tag)
+		prepared, err := Prepare(r, reports, commit, tag)
 		if err != nil {
 			return err
 		}
 		if string(prepared) != string(report.RecipeJSON) {
 			return fmt.Errorf("%s report does not match prepared recipe", r.File)
+		}
+		preparedRecipe, err := Parse(r.File, prepared)
+		if err != nil {
+			return err
+		}
+		if !slices.Equal(report.Pins, preparedRecipe.Pins) {
+			return fmt.Errorf("%s report pins do not match prepared recipe", r.File)
 		}
 	}
 	return nil
