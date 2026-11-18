@@ -49,10 +49,13 @@ recipe requires `--force`; conversion errors leave it unchanged.
 | `RUN npm ci/install/run/prune` | Local project commands; global installs and custom prefixes are unsupported |
 | `RUN go mod download` / `go build -o NAME ...` | Native Windows build; carry `.exe` substitutions through stage copies and startup paths |
 | `RUN pip install ...` / `python -m pip install ...` | Install Windows wheels into the app's `.python` directory; expose it through `PYTHONPATH` |
-| `RUN node ...` | Run Node on the native toolchain |
-| `RUN cd/mkdir/cp/rm` | Literal app-local paths and simple flags |
-| Command syntax | JSON exec form or simple POSIX shell commands with assignments and `&&` |
-| `ENTRYPOINT` / `CMD` | Native language executables or explicit app executable paths; JSON argument composition |
+| `RUN node ...` / `python ...` | Native interpreter execution, including scripts, `-c`/`-e`, and Python modules |
+| `RUN cd/mkdir/cp/mv/rm/touch` | App-local filesystem operations; preserve known native executable names through copies, moves, and removal |
+| Portable utilities | BusyBox `echo`, `printf`, `pwd`, `cat`, `head`, `tail`, `grep`, `sort`, `uniq`, `wc`, `tr`, `tee`, `true`, and `false` |
+| Native app commands | Explicit `.exe`, `.cmd`, or `.bat` paths, or known generated executable names |
+| Python console commands | Resolve installed `console_scripts` metadata in the app's `.python` tree |
+| RUN syntax | Literal JSON arguments, or POSIX shell words with assignments, globs, `;`, `&&`, `||`, pipelines, and file/descriptor redirection |
+| `ENTRYPOINT` / `CMD` | Native language executables, Python console commands, or explicit app executable paths; JSON argument composition |
 | Shell-form startup | Native language commands through a pinned BusyBox runtime; shell variables remain runtime variables |
 | OCI title, description, URL, license labels | Corresponding recipe metadata |
 | Other labels / `EXPOSE` | Advisory diagnostics; ports do not automatically create Quasidock services |
@@ -199,6 +202,27 @@ arguments, target, or native base selections.
 
 Paths map into the app tree: `/app/server.js` becomes `${app}/app/server.js` at
 runtime. Each RUN receives that instruction's environment and working directory.
+`cd` changes only the current RUN. Use `cd /directory && command` when subsequent
+commands require that directory. Conversion rejects relative paths after branches
+that can leave different working directories, and executable or directory mapping
+changes inside `||` and pipelines. Separate those operations into RUN instructions.
+
+The converter translates known file operands and file-bearing options, preserving
+patterns, URLs, package specifications, and inline code. Arguments to custom app
+executables and Python console commands are opaque; use relative paths for their
+application files. Utilities with filesystem operands accept a bounded set of
+BusyBox short options; conversion rejects unknown options instead of guessing
+their path semantics.
+Redirects support `<`, `>`, `>>`, `<&`, and `>&`; `/dev/null` maps to Windows' null
+device. Pipelines return the last command's status, and sequences return the last
+statement's status. Conversion does not implicitly enable `errexit` or `pipefail`.
+
+Shell globs expand during build; an unmatched pattern remains literal, allowing
+`RUN pip install flask==3.0.*`. Quotes suppress globbing. JSON RUN arguments never
+undergo shell expansion: `RUN ["echo", "$VALUE", "a*b"]` prints those literal
+arguments. Globs that cannot preserve a known executable's logical/native name
+are rejected; use its explicit logical path instead.
+
 Global ARG values must be redeclared after FROM before use inside a stage.
 Unrelated stages do not share stage-local ARG/ENV values; child stages inherit
 those declared in their parent. ARG values appear in build-stage metadata but
@@ -208,8 +232,21 @@ for secrets.
 Generated recipes enable build/runtime networking and use the native base's
 sandbox default; scratch uses the normal native default. Python's `python-sdk`
 is separate from the existing embeddable
-`python` image. Python startup uses the interpreter or `python -m`; generated
-pip console-script launchers are not rewritten for deployment.
+`python` image. Python console commands run through that image's interpreter using
+installed entry-point metadata, so temporary paths in pip-generated launchers are
+not used. RUN resolves console commands when executed; the selected target's
+startup console commands receive a final build-time metadata check. Missing or
+duplicate entry points fail the build. Arguments and exit codes are preserved.
+
+For example, supply `hello.py` defining a Flask application and convert:
+
+```dockerfile
+FROM python:3.14
+RUN pip install flask==3.0.*
+COPY hello.py /
+ENV FLASK_APP=hello
+CMD ["flask", "run", "--host", "0.0.0.0", "--port", "8501"]
+```
 
 Images carrying `workdir` use app config v3. Older clients reject that media type.
 Existing recipes without a workdir retain v2 image configs and their previous
@@ -235,7 +272,8 @@ forward stage references, external-image/named-context stage copies, COPY flags
 other than `--from`, ADD, apt/apk and other
 system package managers, USER, VOLUME, custom SHELL, health checks, stop signals,
 ONBUILD, custom Dockerfile frontends, platform overrides, BuildKit mounts/secrets, ownership/mode changes,
-here-documents, loops, pipes, redirection, command substitution, and unknown build
+here-documents, loops, functions, background commands, negation, command substitution,
+arithmetic, and unknown build
 commands fail conversion. Shell-form CMD combined with ENTRYPOINT requires a JSON
 argument array instead.
 
@@ -245,7 +283,8 @@ editable installs, custom installation destinations, and Linux-only wheels need
 manual packaging. Context links/junctions, escaping paths, Windows-invalid names,
 and case collisions are rejected. Literal values colliding with Quasidock's
 `${app}`, `${data}`, or other native placeholders need application configuration
-files instead; unquoted shell globs and home expansion need a native recipe.
+files instead; home expansion needs a native recipe. Shell-form startup retains
+the simple-command/`&&` subset; the broader shell operators apply to RUN.
 Copies from Linux Python virtual environments or site-packages paths need manual
 packaging; dependency copies from the native `.python` tree are supported.
 
@@ -258,5 +297,7 @@ builds, and runs a three-stage native executable example, rebuilds live edits,
 and selects and runs an earlier target. Target/override tests cover inherited
 bases, conflicts, unused branches, native family checks, and digest pinning.
 `tests/dockerfile.ps1` currently builds and runs single-stage Node.js, Go, and Python
-examples, including npm installation and a local Python wheel import. It uses an
+examples, including native shell pipelines, executable renames, a local Python
+wheel console command, argument/exit-code checks, missing/duplicate metadata,
+and a Flask wildcard install with an HTTP response check. It uses an
 isolated store and can seed source downloads from a pre-existing cache.

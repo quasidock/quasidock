@@ -15,7 +15,8 @@ Known limitations, platform constraints, and incomplete features in Quasidock
   A command or launcher that embeds an image's deployment path (such as pip
   entry-point executables pointing at `python.exe`) stops working once that
   deployment is replaced; `npm` and `cargo` shims do not hardcode deployment
-  paths.
+  paths. Converted Python Dockerfiles avoid pip's launchers for RUN and startup
+  console commands by dispatching through installed entry-point metadata.
 - **Batch delayed expansion.** A `.bat` or `.cmd` file that turns on delayed
   expansion itself (`setlocal EnableDelayedExpansion`) expands `!var!` in its
   own arguments.

@@ -36,11 +36,12 @@ type state struct {
 	graph                             *stageGraph
 	input                             *dockerStage
 	previous                          map[int]*state
+	consoleStartup                    map[string]bool
 }
 
 func newState(opts Options, escape rune, globals map[string]string) *state {
 	return &state{
-		stageConfig: stageConfig{args: map[string]string{}, env: map[string]string{}, outputs: map[string]string{}, directories: map[string]bool{".": true}},
+		stageConfig: stageConfig{args: map[string]string{}, env: map[string]string{}, outputs: map[string]string{}, directories: map[string]bool{".": true}, workdir: "."},
 		opts:        opts,
 		result:      Result{SourceLines: map[string]int{}},
 		r: recipe.Recipe{
