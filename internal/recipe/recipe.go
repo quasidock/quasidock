@@ -26,6 +26,7 @@ func (k Kind) IsArchive() bool {
 
 type Source struct {
 	Context *ContextSource `json:"context,omitempty"`
+	Build   *BuildSource   `json:"build,omitempty"`
 	URL     *string        `json:"url,omitempty"`
 	Path    *string        `json:"path,omitempty"`
 	Image   *string        `json:"image,omitempty"`
@@ -42,6 +43,13 @@ type ContextSource struct {
 	Root       string   `json:"root"`
 	Dockerfile string   `json:"dockerfile"`
 	Paths      []string `json:"paths"`
+}
+
+// BuildSource selects files from the completed output of a named build unit.
+// Paths are relative to the producing unit's output root, not a build context.
+type BuildSource struct {
+	Name  string   `json:"name"`
+	Paths []string `json:"paths"`
 }
 
 func (s Source) Location() string {
@@ -142,6 +150,16 @@ type Stage struct {
 	Vendor  *Vendor           `json:"vendor,omitempty"`
 }
 
+// BuildUnit is an isolated build filesystem and tool scope. Its stages produce
+// files for build sources; it does not define a runnable application.
+type BuildUnit struct {
+	Name        string            `json:"name"`
+	Executables []string          `json:"executables,omitempty"`
+	SDK         map[string]string `json:"sdk,omitempty"`
+	From        map[string]string `json:"from,omitempty"`
+	Stages      []Stage           `json:"stages"`
+}
+
 type LayerKind string
 
 const (
@@ -179,6 +197,8 @@ type Recipe struct {
 	Cleanup       []string          `json:"cleanup,omitempty"`
 	Host          []string          `json:"host,omitempty"`
 	SourceMirrors []string          `json:"source_mirrors,omitempty"`
+	Builds        []BuildUnit       `json:"builds,omitempty"`
+	Executables   []string          `json:"executables,omitempty"`
 	Stages        []Stage           `json:"stages"`
 }
 
@@ -236,7 +256,7 @@ func Parse(fileName string, bytes []byte) (*Recipe, error) {
 		r.Layer = LayerGzip
 	}
 
-	if err := validateDependencies(fileName, r); err != nil {
+	if err := validateDependencies(fileName, r.SDK, r.From); err != nil {
 		return nil, err
 	}
 	for _, mirror := range r.SourceMirrors {
@@ -258,6 +278,12 @@ func Parse(fileName string, bytes []byte) (*Recipe, error) {
 		return nil, err
 	}
 	if err := validateStages(fileName, r.Stages); err != nil {
+		return nil, err
+	}
+	if err := validateExecutables(fileName, r.Executables); err != nil {
+		return nil, err
+	}
+	if err := validateBuildUnits(fileName, r); err != nil {
 		return nil, err
 	}
 	for _, pattern := range r.Cleanup {
@@ -306,13 +332,13 @@ func validatePrefetch(fileName string, r Recipe) error {
 	return nil
 }
 
-func validateDependencies(fileName string, r Recipe) error {
+func validateDependencies(fileName string, sdk, from map[string]string) error {
 	groups := []struct {
 		what string
 		deps map[string]string
 	}{
-		{"sdk", r.SDK},
-		{"from", r.From},
+		{"sdk", sdk},
+		{"from", from},
 	}
 	for _, group := range groups {
 		for alias := range group.deps {
@@ -321,8 +347,8 @@ func validateDependencies(fileName string, r Recipe) error {
 			}
 		}
 	}
-	for alias := range r.SDK {
-		if _, ok := r.From[alias]; ok {
+	for alias := range sdk {
+		if _, ok := from[alias]; ok {
 			return fmt.Errorf("%s: %q is both an sdk and a base image alias", fileName, alias)
 		}
 	}
@@ -392,8 +418,14 @@ func validateSource(fileName, stage string, n int, s Source) error {
 	if s.Context != nil {
 		given++
 	}
+	if s.Build != nil {
+		given++
+	}
 	if given != 1 {
-		return fmt.Errorf("%s: stage %s source %d needs exactly one of \"url\", \"path\", \"image\" or \"context\"", fileName, stage, n)
+		return fmt.Errorf("%s: stage %s source %d needs exactly one of \"url\", \"path\", \"image\", \"context\" or \"build\"", fileName, stage, n)
+	}
+	if s.Build != nil {
+		return validateBuildSource(fileName, stage, n, s)
 	}
 	if c := s.Context; c != nil {
 		if c.Root == "" || !oci.IsSafeRelPath(c.Dockerfile) || len(c.Paths) == 0 {

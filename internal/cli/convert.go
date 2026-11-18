@@ -12,12 +12,13 @@ import (
 	"github.com/quasidock/quasidock/internal/buildcontext"
 	"github.com/quasidock/quasidock/internal/context"
 	"github.com/quasidock/quasidock/internal/dockerfile"
+	"github.com/quasidock/quasidock/internal/recipe"
 )
 
-const convertUsage = "usage: quasidock convert [CONTEXT] [-f DOCKERFILE] [-o RECIPE|-] [--id ID] [--version VERSION] [--build-arg NAME=VALUE] [--base IMAGE] [--force]"
+const convertUsage = "usage: quasidock convert [CONTEXT] [-f DOCKERFILE] [-o RECIPE|-] [--id ID] [--version VERSION] [--build-arg NAME=VALUE] [--target NAME] [--base IMAGE] [--stage-base NAME_OR_INDEX=IMAGE]... [--force]"
 
 func convertCommand(ctx *context.Context, args []string) (uint32, error) {
-	opts := dockerfile.Options{BuildArgs: map[string]string{}}
+	opts := dockerfile.Options{BuildArgs: map[string]string{}, StageBases: map[string]string{}}
 	force, stdout := false, false
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
@@ -55,6 +56,24 @@ func convertCommand(ctx *context.Context, args []string) (uint32, error) {
 			opts.Version = value
 		case "--base":
 			opts.Base = value
+		case "--target":
+			if value == "" || strings.HasPrefix(value, "-") {
+				return 1, errors.New("--target needs a stage name")
+			}
+			if opts.Target != "" {
+				return 1, errors.New("--target may only be supplied once")
+			}
+			opts.Target = value
+		case "--stage-base":
+			selector, image, ok := strings.Cut(value, "=")
+			if !ok || selector == "" || strings.TrimSpace(image) == "" {
+				return 1, errors.New("--stage-base needs NAME_OR_INDEX=IMAGE")
+			}
+			selector = strings.ToLower(selector)
+			if _, exists := opts.StageBases[selector]; exists {
+				return 1, fmt.Errorf("duplicate --stage-base override for %q", selector)
+			}
+			opts.StageBases[selector] = image
 		case "--build-arg":
 			k, v, ok := strings.Cut(value, "=")
 			if !ok || k == "" {
@@ -133,14 +152,35 @@ func convertCommand(ctx *context.Context, args []string) (uint32, error) {
 	if err != nil {
 		return 1, fmt.Errorf("%s:1: context: %w", opts.Dockerfile, err)
 	}
-	for _, stage := range result.Recipe.Stages {
-		for _, src := range stage.Sources {
-			if src.Context != nil {
-				if _, err := captured.Copy(src.Context.Paths, *src.Dest, false); err != nil {
-					return 1, fmt.Errorf("%s:%d: COPY: %w", opts.Dockerfile, result.SourceLines[stage.Name], err)
+	validateContext := func(stages []recipe.Stage, prefix string, executables []string) error {
+		for _, stage := range stages {
+			for _, src := range stage.Sources {
+				if src.Context == nil {
+					continue
+				}
+				copied, err := captured.Copy(src.Context.Paths, *src.Dest, false)
+				if err == nil {
+					err = copied.CheckExecutableCollisions(executables, nil)
+				}
+				if err != nil {
+					key := prefix + stage.Name
+					where := ""
+					if name := result.SourceStages[key]; name != "" {
+						where = "stage " + name + ": "
+					}
+					return fmt.Errorf("%s:%d: COPY: %s%w", opts.Dockerfile, result.SourceLines[key], where, err)
 				}
 			}
 		}
+		return nil
+	}
+	for _, unit := range result.Recipe.Builds {
+		if err := validateContext(unit.Stages, unit.Name+"/", unit.Executables); err != nil {
+			return 1, err
+		}
+	}
+	if err := validateContext(result.Recipe.Stages, "", result.Recipe.Executables); err != nil {
+		return 1, err
 	}
 	encoded, err := json.MarshalIndent(result.Recipe, "", "  ")
 	if err != nil {

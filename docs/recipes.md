@@ -47,6 +47,8 @@ For container run examples and CLI usage, see [README.md](../README.md) or run
 | `entrypoint` | Yes | Non-empty JSON string or string array defining the default executable and any fixed leading arguments (supports placeholders). |
 | `cmd` | No | String array of default arguments appended after `entrypoint` when running without a command. |
 | `stages` | Yes | Non-empty array of build stages (`Stage` objects). |
+| `builds` | No | Array of named build units with independent `from`, `sdk`, and `stages`. Only units needed by the final output execute. See [Build units](#build-units). |
+| `executables` | No | Build-time metadata listing logical executable paths whose native outputs carry an `.exe` suffix. Used for stage-copy selection, renaming, and collision checks. |
 | `name` | No | Display name shown in metadata (`1`–`64` bytes on one line). |
 | `summary` | No | Short one-line summary (`1`–`160` bytes on one line). |
 | `homepage` | No | `https://` URL (at most 256 bytes, without spaces). |
@@ -428,6 +430,132 @@ unpacking again, Quasidock streams entries from the deployed image directory
 into the new app tree and records the source image digest under `build.images`,
 allowing downstream stages/apps to reproduce without rebuilding the SDK.
 
+## Build units
+
+`quasidock build` executes named build units and copies selected files from their
+completed outputs. Units run once each in deterministic dependency order, using
+separate native tool scopes and output directories. Dockerfile conversion
+emits these units for supported multi-stage input. See
+[Dockerfile conversion](dockerfile-conversion.md#multi-stage-conversion) for
+target selection, native base overrides, and stage-copy behavior.
+
+`builds` is an optional array. Each unit contains:
+
+- `name`: required, 1-57 characters matching `[A-Za-z0-9._-]`, not starting with
+  `.`. Unit names are case-insensitively unique across the recipe.
+- `from` and `sdk`: optional maps of native tool dependencies. Alias rules are
+  the same as the top-level maps, including no overlap within one unit. Every
+  reference must contain a valid `@sha256:...` digest pin; short app references
+  and fully qualified registry references are accepted. Parsing does not resolve
+  or download images.
+- `stages`: a required, non-empty array using the ordinary stage/source schema.
+  Stage names are unique within their unit, so different units can reuse names.
+  Instruction environment snapshots belong in each stage's `env`.
+- `executables`: an optional array of normalized logical file paths. A declared
+  `server` is stored as `server.exe`; an existing `.exe` suffix is preserved.
+  Duplicate mappings, overlapping file/directory names, and conflicting native
+  storage names are rejected. The converter fills this metadata for Go outputs
+  and carries it through copies and inherited stages.
+
+A unit does not require an application ID, version, or entrypoint. Its tools and
+files belong to its build scope; declaring units does not add their tools to the
+final application's runtime configuration. The top-level recipe retains its
+normal required fields and represents the final output.
+
+For example, this recipe builds an executable in a unit and renames it in the
+final output. Replace the illustrative digest with a real pinned native image:
+
+```json
+{
+  "id": "example",
+  "version": "dev",
+  "entrypoint": ["app/server.exe"],
+  "builds": [
+    {
+      "name": "builder",
+      "sdk": {
+        "go": "go:1.26@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "stages": [
+        {
+          "name": "compile",
+          "sources": [{"path": "."}],
+          "build": ["go build -o \"%PREFIX%\\server.exe\" ."],
+          "shell": "cmd",
+          "network": true
+        }
+      ]
+    }
+  ],
+  "stages": [
+    {
+      "name": "package",
+      "sources": [
+        {
+          "build": {"name": "builder", "paths": ["server.exe"]},
+          "dest": "app/server.exe"
+        }
+      ]
+    }
+  ]
+}
+```
+
+A `build` source must be the source's only location kind. Its `name` references a
+declared unit, case-insensitively, and `paths` contains at least one selector.
+Selectors are normalized relative paths using `/`; `.` selects the whole output.
+Ordinary `*`, `?`, and character-class globs are accepted. Absolute paths, `..`,
+backslashes, redundant separators, `./` prefixes, and malformed globs are rejected.
+Selectors read the producing unit's completed output rather than the live build
+context, so `.dockerignore` does not apply to them.
+
+`dest` is required and relative to the receiving output root. It may rename a
+single file or end in `/` for a directory. Multiple selectors require a trailing
+`/`; `.` or `./` addresses the receiving root. `sha256`, `type`, `strip`, and
+`skip` do not apply. Archives selected from a build remain ordinary files.
+Selector existence and glob match counts are checked against completed outputs.
+
+When `executables` metadata is present, build-source selectors use logical names.
+For example, a declared `out/server` matches `out/serv*` and is copied as
+`server.exe` under a directory destination. Renaming it to `app/worker` produces
+`app/worker.exe`. A substituted executable's native storage name is exposed as a
+selector only when it is also the declared logical name. Receiving units can declare the resulting
+logical paths for subsequent copies; generated recipes do this automatically.
+Literal inputs occupying a substituted executable's logical or storage name
+are rejected during source selection.
+
+Units can reference other units through build sources, including declarations
+later in the array. The parser checks every unit for unknown references,
+self-references, and dependency cycles, including unused definitions. Native
+recipe declaration order is separate from the converter's initial restriction
+to earlier Dockerfile stages.
+
+Only units reachable from the final recipe execute or resolve dependencies;
+unused units do not read their inputs. Each completed output is validated and
+copied into an independent temporary snapshot before its build directory and
+dependency handles are released. Child writes and deletions affect their own
+copies. Output snapshots preserve empty directories, ignore `.dockerignore` and
+`.gitignore`, and reject links/junctions, invalid Windows filenames, and case
+collisions.
+
+Only top-level `from` dependencies become runtime layers. Dependencies used by
+units appear in build metadata under `<unit>/sdk/<alias>` or
+`<unit>/from/<alias>`; unit vendor entries use `<unit>/<stage>`. URL inputs,
+source images, and network use are collected across executed units. Source
+publication includes reachable units' URL inputs, allowing source artifacts to
+reproduce the graph when original downloads disappear.
+
+Context snapshots are shared across units that use the same root and Dockerfile.
+Whole-build caching includes reachable units' live sources and ignore-file
+hashes. Incremental work directories are scoped by unit and stage, and
+`--rebuild`, `--clean`, and `--keep-build-dir` apply across the graph. Unit result
+caches and parallel execution are not implemented.
+
+Older clients ignore unknown JSON fields, then reject a top-level `build` source
+because it contains none of the source kinds they recognize. Generated recipes
+that depend on build units must contain such a source in the final recipe.
+Recipes without units omit `builds` and retain their existing formats.
+
 ## `stages`, `sources`, and building from source
 
 Published recipes with a new upstream URL also need a matching entry in
@@ -453,7 +581,7 @@ Each entry in `stages` supports:
 - `vendor`: `{ "commands": [...], "dir": "...", "sha256": "..." }` (requires
   `build`; see [Vendor steps](#vendor-steps)).
 
-Each entry in `sources` must set **exactly one** of `url`, `path`, `image`, or `context`:
+Each entry in `sources` must set **exactly one** of `url`, `path`, `image`, `context`, or `build`:
 
 - `url`: HTTP/HTTPS download. Requires `sha256` (64 lowercase hex characters;
   omit once only when discovering an archive hash). Optional `type` (`file`,
@@ -473,6 +601,9 @@ Each entry in `sources` must set **exactly one** of `url`, `path`, `image`, or `
   multiple sources require a trailing `/`. Archives are copied without extraction.
   `sha256`, `type`, `strip`, and `skip` do not apply. See
   [Dockerfile conversion](dockerfile-conversion.md).
+- `build`: `{ "name": "builder", "paths": ["out/server.exe"] }` selects files
+  from a named unit. Requires a relative `dest`; `sha256`, `type`, `strip`, and
+  `skip` do not apply. See [Build units](#build-units).
 
 For example, [sqlite.json](../recipes/sqlite.json) builds `zlib` and then
 `sqlite3.exe` with `zig`:

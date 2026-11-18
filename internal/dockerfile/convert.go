@@ -14,15 +14,14 @@ import (
 
 	"github.com/moby/buildkit/frontend/dockerfile/instructions"
 	"github.com/moby/buildkit/frontend/dockerfile/parser"
-	"github.com/moby/buildkit/frontend/dockerfile/shell"
 	"github.com/quasidock/quasidock/internal/buildcontext"
 	"github.com/quasidock/quasidock/internal/oci"
 	"github.com/quasidock/quasidock/internal/recipe"
 )
 
 type Options struct {
-	Context, Dockerfile, Output, ID, Version, Base string
-	BuildArgs                                      map[string]string
+	Context, Dockerfile, Output, ID, Version, Base, Target string
+	BuildArgs, StageBases                                  map[string]string
 }
 
 type Dependency struct {
@@ -41,30 +40,21 @@ type Diagnostic struct {
 	Line                 int
 	Instruction, Message string
 	Warning              bool
+	Stage                string
 }
 
 func (d Diagnostic) String() string {
+	if d.Stage != "" {
+		return fmt.Sprintf("%s:%d: %s: stage %s: %s", d.File, d.Line, d.Instruction, d.Stage, d.Message)
+	}
 	return fmt.Sprintf("%s:%d: %s: %s", d.File, d.Line, d.Instruction, d.Message)
 }
 
 type Result struct {
-	Recipe      *recipe.Recipe
-	Diagnostics []Diagnostic
-	SourceLines map[string]int
-}
-
-type state struct {
-	opts                                  Options
-	result                                Result
-	r                                     recipe.Recipe
-	args, globals, env                    map[string]string
-	lex                                   *shell.Lex
-	workdir, family, requested, baseImage string
-	fromLine                              int
-	entryLine, cmdLine, startupLine       int
-	seenFrom, needShell, runtimeShell     bool
-	entry, cmd                            *instructions.ShellDependantCmdLine
-	outputs                               map[string]string
+	Recipe       *recipe.Recipe
+	Diagnostics  []Diagnostic
+	SourceLines  map[string]int
+	SourceStages map[string]string
 }
 
 func Convert(data []byte, opts Options, resolver Resolver) (Result, error) {
@@ -91,24 +81,36 @@ func Convert(data []byte, opts Options, resolver Resolver) (Result, error) {
 	if opts.ID == "" {
 		opts.ID = filepath.Base(opts.Context)
 	}
-	s := &state{opts: opts, r: recipe.Recipe{ID: opts.ID, Version: opts.Version, From: map[string]string{}, SDK: map[string]string{}, Env: map[string]string{}, Workdir: ".", Path: []string{"."}, Permissions: oci.Permissions{Network: true}}, args: map[string]string{}, globals: map[string]string{}, env: map[string]string{}, outputs: map[string]string{}, lex: shell.NewLex(parsed.EscapeToken)}
-	s.result.SourceLines = map[string]int{}
-	for _, node := range parsed.AST.Children {
-		cmd, err := instructions.ParseInstruction(node)
-		if err == nil {
-			err = s.instruction(cmd, node)
-		}
-		if err != nil {
-			s.diagnostic(node.StartLine, strings.ToUpper(node.Value), err.Error(), false)
+	graph, diagnostics := parseStageGraph(parsed, opts)
+	if len(diagnostics) > 0 {
+		return Result{Diagnostics: diagnostics}, conversionError()
+	}
+	selection, err := graph.selectTarget(opts.Target)
+	if err != nil {
+		return Result{Diagnostics: []Diagnostic{{File: opts.Dockerfile, Line: 1, Instruction: "--target", Message: err.Error()}}}, conversionError()
+	}
+	overrides, diagnostics := graph.baseOverrides(opts, selection)
+	if len(diagnostics) > 0 {
+		return Result{Diagnostics: diagnostics}, conversionError()
+	}
+	if len(graph.stages) > 1 {
+		return graph.convertStages(opts, resolver, selection, overrides)
+	}
+	opts.Base = overrides[selection.target.index]
+	s := graph.translateStage(selection.target, nil, opts, nil)
+	if s.stage != "" {
+		s.result.SourceStages = map[string]string{}
+		for name := range s.result.SourceLines {
+			s.result.SourceStages[name] = s.stage
 		}
 	}
-	if !s.seenFrom {
-		s.diagnostic(1, "FROM", "a supported base image is required", false)
+	if opts.Target != "" {
+		s.result.Diagnostics = append(s.result.Diagnostics, graph.targetDiagnostic(opts, selection))
 	}
 	if len(s.r.Stages) == 0 {
 		s.mkdir(".")
 	}
-	if !s.failed() && resolver != nil {
+	if !s.failed() && s.family != "scratch" {
 		dep, err := resolver.Resolve(s.baseImage, s.requested, opts.Base)
 		if err != nil {
 			s.diagnostic(s.fromLine, "FROM", err.Error(), false)
@@ -154,13 +156,17 @@ func Convert(data []byte, opts Options, resolver Resolver) (Result, error) {
 	s.result.Recipe = &s.r
 	if s.failed() {
 		s.result.Recipe = nil
-		return s.result, errors.New("Dockerfile conversion failed; correct the reported instructions and retry")
+		return s.result, conversionError()
 	}
 	return s.result, nil
 }
 
 func (s *state) diagnostic(line int, instruction, message string, warning bool) {
-	s.result.Diagnostics = append(s.result.Diagnostics, Diagnostic{s.opts.Dockerfile, line, instruction, message, warning})
+	s.result.Diagnostics = append(s.result.Diagnostics, Diagnostic{File: s.opts.Dockerfile, Line: line, Instruction: instruction, Message: message, Warning: warning, Stage: s.stage})
+}
+
+func conversionError() error {
+	return errors.New("Dockerfile conversion failed; correct the reported instructions and retry")
 }
 func (s *state) failed() bool {
 	for _, d := range s.result.Diagnostics {
@@ -212,7 +218,7 @@ func (s *state) instruction(command any, node *parser.Node) error {
 	switch c := command.(type) {
 	case *instructions.Stage:
 		if s.seenFrom {
-			return errors.New("multiple build stages are unsupported; convert a single stage")
+			return errors.New("FROM must begin a new stage")
 		}
 		s.seenFrom = true
 		s.fromLine = node.StartLine
@@ -223,8 +229,9 @@ func (s *state) instruction(command any, node *parser.Node) error {
 		if err != nil {
 			return err
 		}
+		expandedBase := base
 		if strings.Contains(base, "@") && s.opts.Base == "" {
-			return errors.New("Linux image digests cannot be reused; select a native image with --base")
+			return errors.New("Linux image digests cannot be reused; select a native image with --base or --stage-base")
 		}
 		base = strings.SplitN(base, "@", 2)[0]
 		base = strings.TrimPrefix(strings.TrimPrefix(base, "docker.io/"), "library/")
@@ -236,13 +243,18 @@ func (s *state) instruction(command any, node *parser.Node) error {
 			s.family, s.baseImage = "go", "go"
 		case "python":
 			s.family, s.baseImage = "python", "python-sdk"
+		case "scratch":
+			if expandedBase != "scratch" {
+				return errors.New("scratch must be an untagged, unqualified base")
+			}
+			s.family = "scratch"
 		default:
-			return fmt.Errorf("base %q is unsupported; use an official node, golang or python base", c.BaseName)
+			return fmt.Errorf("base %q is unsupported; use an official node, golang or python base, or scratch", c.BaseName)
 		}
 		if len(parts) == 2 && parts[1] != "latest" {
 			m := numericTag.FindStringSubmatch(parts[1])
 			if m == nil && s.opts.Base == "" {
-				return errors.New("base tag is not a supported numeric version; select a native image with --base")
+				return errors.New("base tag is not a supported numeric version; select a native image with --base or --stage-base")
 			}
 			if m != nil {
 				s.requested = m[1]
@@ -306,47 +318,19 @@ func (s *state) instruction(command any, node *parser.Node) error {
 		s.workdir = wd
 		s.mkdir(wd)
 	case *instructions.CopyCommand:
-		if len(node.Flags) != 0 {
-			return errors.New("COPY flags, including --from/chown/chmod, are unsupported")
-		}
-		paths := make([]string, len(c.SourcePaths))
-		for i, p := range c.SourcePaths {
-			v, err := s.expand(p, s.variables())
-			if err != nil {
-				return err
-			}
-			if strings.HasPrefix(v, "/") || !oci.IsSafeRelPath(v) || strings.Contains(v, "\\") {
-				return fmt.Errorf("COPY source %q must stay inside the context", v)
-			}
-			paths[i] = v
-		}
-		dest, err := s.expand(c.DestPath, s.variables())
-		if err != nil {
-			return err
-		}
-		normal, err := appPath(s.workdir, dest)
-		if err != nil {
-			return err
-		}
-		if strings.HasSuffix(dest, "/") || normal == s.workdir || dest == "." {
-			normal += "/"
-		}
-		root, err := filepath.Rel(filepath.Dir(s.opts.Output), s.opts.Context)
-		if err != nil {
-			return err
-		}
-		df, err := filepath.Rel(s.opts.Context, s.opts.Dockerfile)
-		if err != nil {
-			return err
-		}
-		s.addStage(recipe.Stage{Sources: []recipe.Source{{Context: &recipe.ContextSource{Root: filepath.ToSlash(root), Dockerfile: filepath.ToSlash(df), Paths: paths}, Dest: &normal}}})
-		s.result.SourceLines[s.r.Stages[len(s.r.Stages)-1].Name] = node.StartLine
+		return s.copy(c, node)
 	case *instructions.RunCommand:
 		if len(node.Flags) != 0 {
 			return errors.New("RUN flags and BuildKit mounts/secrets are unsupported")
 		}
+		previous := maps.Clone(s.outputs)
 		if err := s.run(c.ShellDependantCmdLine, false); err != nil {
 			return err
+		}
+		for _, logical := range s.executablePaths() {
+			if native := s.outputs[logical]; native != logical && previous[logical] != native {
+				s.diagnostic(node.StartLine, "RUN", fmt.Sprintf("mapped Go output %s to %s", logical, native), true)
+			}
 		}
 	case *instructions.EntrypointCommand:
 		v := c.ShellDependantCmdLine
@@ -433,6 +417,7 @@ func (s *state) addStage(stage recipe.Stage) {
 	s.r.Stages = append(s.r.Stages, stage)
 }
 func (s *state) mkdir(wd string) {
+	s.rememberDirectory(wd)
 	s.needShell = true
 	s.addStage(recipe.Stage{Build: []string{"mkdir -p " + buildPath(wd)}, Shell: recipe.ShellSh})
 }
@@ -455,6 +440,8 @@ func (s *state) startup() error {
 				cmd = &instructions.ShellDependantCmdLine{CmdLine: []string{"node"}}
 			case "python":
 				cmd = &instructions.ShellDependantCmdLine{CmdLine: []string{"python"}}
+			case "scratch":
+				return errors.New("scratch stages require CMD or ENTRYPOINT naming a native executable")
 			default:
 				return errors.New("provide CMD or ENTRYPOINT for the Go application")
 			}

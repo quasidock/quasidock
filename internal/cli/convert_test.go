@@ -75,6 +75,16 @@ func TestConvertCommandOutputAndFailures(t *testing.T) {
 	if !strings.Contains(diagnostics.String(), "Dockerfile:2: RUN") {
 		t.Fatal(diagnostics.String())
 	}
+	write("FROM node:24 AS build\nCOPY missing.js /app/app.js\nFROM node:24 AS runtime\nCOPY --from=build /app /app\nCMD [\"node\"]")
+	if _, err := convertCommand(ctx, []string{root, "--force"}); err == nil {
+		t.Fatal("missing context source in a build unit was not checked")
+	} else if !strings.Contains(err.Error(), "Dockerfile:2: COPY: stage build (0)") {
+		t.Fatal(err)
+	}
+	now, _ = os.ReadFile(target)
+	if !bytes.Equal(now, original) {
+		t.Fatal("multi-stage rejection changed existing recipe")
+	}
 	write("FROM node:24\nWORKDIR /app\nCOPY app.js .\nCMD [\"node\",\"app.js\"]")
 	if _, err := convertCommand(ctx, []string{root, "-o", "-", "--id", "stdout-app"}); err != nil {
 		t.Fatal(err)
@@ -88,6 +98,179 @@ func TestConvertCommandOutputAndFailures(t *testing.T) {
 	now, _ = os.ReadFile(target)
 	if bytes.Equal(now, original) {
 		t.Fatal("--force did not replace recipe")
+	}
+}
+
+func TestConvertMultiStageCopyBuildAndRun(t *testing.T) {
+	ctx, out := fixtureCLI(t)
+	binary, payload, _ := buildContainerTestBinaries(t)
+	root := t.TempDir()
+	for name, data := range map[string][]byte{
+		"fixture.exe": payload,
+		"message.txt": []byte("copy-ok"),
+		"Dockerfile":  []byte("FROM scratch AS source\nCOPY fixture.exe /out/app.exe\nCOPY message.txt /out/message.txt\nFROM scratch AS middle\nCOPY --from=source /out/ /package/\nCMD [\"/package/app.exe\",\"read-path\",\"package/message.txt\"]\nFROM scratch\nCOPY --from=1 /package/ /\nCMD [\"/app.exe\",\"read-path\",\"message.txt\"]"),
+	} {
+		if err := os.WriteFile(filepath.Join(root, name), data, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if code, err := convertCommand(ctx, []string{root, "--id", "copy-graph"}); err != nil || code != 0 {
+		t.Fatalf("conversion: %d %v", code, err)
+	}
+	file := filepath.Join(root, "quasidock.json")
+	image, err := builder.Build(ctx, file, builder.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(image.Manifest.Layers) != 1 || len(image.Config.From) != 0 {
+		t.Fatal("builder dependencies leaked into runtime")
+	}
+	if err := lifecycle.Install(ctx, image); err != nil {
+		t.Fatal(err)
+	}
+	run := func(want string) {
+		t.Helper()
+		command := exec.Command(binary, "run", "--rm", "--sandbox=soft", "copy-graph")
+		command.Env = append(os.Environ(), "QUASIDOCK_HOME="+ctx.Store.Root)
+		data, err := command.CombinedOutput()
+		if err != nil || string(data) != want {
+			t.Fatalf("converted graph run: %q %v", data, err)
+		}
+	}
+	run("copy-ok")
+	if err := os.WriteFile(filepath.Join(root, "message.txt"), []byte("updated"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	rebuilt, err := builder.Build(ctx, file, builder.Options{})
+	if err != nil || rebuilt.ManifestDigest == image.ManifestDigest {
+		t.Fatalf("live source did not invalidate a converted graph: %v", err)
+	}
+	if err := lifecycle.Install(ctx, rebuilt); err != nil {
+		t.Fatal(err)
+	}
+	run("updated")
+	out.Reset()
+	if _, err := convertCommand(ctx, []string{root, "-o", "-", "--id", "copy-stdout"}); err != nil || !json.Valid(out.Bytes()) {
+		t.Fatalf("multi-stage stdout is not JSON: %s %v", out, err)
+	}
+	if _, err := convertCommand(ctx, []string{root, "--target=MIDDLE", "--id", "copy-graph", "--force"}); err != nil {
+		t.Fatal(err)
+	}
+	selected, err := builder.Build(ctx, file, builder.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if selected.Config.Entrypoint[0] != "${app}/package/app.exe" {
+		t.Fatal("selected target startup was not used:", selected.Config.Entrypoint)
+	}
+	if err := lifecycle.Install(ctx, selected); err != nil {
+		t.Fatal(err)
+	}
+	run("updated")
+}
+
+func TestConvertTargetAndStageBaseFlags(t *testing.T) {
+	ctx, out := fixtureCLI(t)
+	var diagnostics bytes.Buffer
+	ctx.Stderr = &diagnostics
+	reg := testregistry.New()
+	defer reg.Close()
+	conversionBase(t, reg, "node")
+	ctx.Env[remote.RegistryVar] = reg.Host() + "/images"
+	root := t.TempDir()
+	for name, value := range map[string]string{
+		"Dockerfile": "FROM node:custom AS build\nCOPY app.js /app.js\nFROM build AS preview\nENV MODE=preview\nCMD [\"node\",\"app.js\"]\nFROM alpine AS production\nRUN apt-get update\nCOPY missing.txt /missing.txt",
+		"app.js":     "console.log('preview')",
+	} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(value), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, flags := range [][]string{
+		{"--target", "PREVIEW", "--stage-base", "BUILD=node:24.1.0"},
+		{"--target=preview", "--stage-base=0=node:24.1.0", "--stage-base=production=unavailable:1"},
+		{"--target=build", "--base=node:24.1.0"},
+	} {
+		out.Reset()
+		diagnostics.Reset()
+		args := append([]string{root, "-o", "-", "--id", "selected"}, flags...)
+		if code, err := convertCommand(ctx, args); err != nil || code != 0 {
+			t.Fatalf("%v: %d %v %s", flags, code, err, &diagnostics)
+		}
+		var r recipe.Recipe
+		if err := json.Unmarshal(out.Bytes(), &r); err != nil || r.From["node"] == "" || len(r.Builds) > 1 {
+			t.Fatalf("invalid selected recipe: %s %v", out, err)
+		}
+		if !strings.Contains(diagnostics.String(), "selected conversion target") || !strings.Contains(diagnostics.String(), "stage production (2): unused stage") {
+			t.Fatal(diagnostics.String())
+		}
+	}
+	if reg.Count("unavailable") != 0 || reg.Count("/blobs/") != 1 {
+		t.Fatal("unused overrides or native layers were downloaded")
+	}
+	out.Reset()
+	if _, err := convertCommand(ctx, []string{"--help"}); err != nil || !strings.Contains(out.String(), "--target NAME") || !strings.Contains(out.String(), "--stage-base NAME_OR_INDEX=IMAGE") {
+		t.Fatalf("help omits target flags: %s %v", out, err)
+	}
+}
+
+func TestConvertInvalidTargetFlagsPreserveOutput(t *testing.T) {
+	ctx, out := fixtureCLI(t)
+	var diagnostics bytes.Buffer
+	ctx.Stderr = &diagnostics
+	root := t.TempDir()
+	df := filepath.Join(root, "Dockerfile")
+	file := filepath.Join(root, "quasidock.json")
+	if err := os.WriteFile(df, []byte("FROM node AS app\nFROM app AS inherited\nFROM scratch AS empty\nCMD [\"/app.exe\"]"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(file, []byte("keep existing recipe"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, flags := range [][]string{
+		{"--target"}, {"--target="}, {"--target", "--force"},
+		{"--target", "app", "--target=app"}, {"--target=missing"}, {"--target=0"},
+		{"--stage-base"}, {"--stage-base=app"}, {"--stage-base=app="}, {"--stage-base==node"},
+		{"--stage-base=APP=node", "--stage-base=app=node"},
+		{"--stage-base=0=node", "--stage-base=app=node"},
+		{"--target=app", "--base=node", "--stage-base=app=node"},
+		{"--stage-base=unknown=node"}, {"--stage-base=inherited=node"}, {"--stage-base=empty=node"},
+	} {
+		t.Run(strings.Join(flags, " "), func(t *testing.T) {
+			out.Reset()
+			diagnostics.Reset()
+			args := append([]string{root, "--force", "--id", "invalid"}, flags...)
+			if code, err := convertCommand(ctx, args); err == nil || code == 0 {
+				t.Fatal("invalid flags succeeded")
+			}
+			current, err := os.ReadFile(file)
+			if err != nil || string(current) != "keep existing recipe" || out.Len() != 0 {
+				t.Fatalf("failure changed output: %s %s %v", current, out, err)
+			}
+		})
+	}
+}
+
+func TestConvertRejectsLiteralExecutableCollisionsBeforeWrite(t *testing.T) {
+	ctx, _ := fixtureCLI(t)
+	reg := testregistry.New()
+	defer reg.Close()
+	conversionBase(t, reg, "go")
+	conversionBase(t, reg, "busybox")
+	ctx.Env[remote.RegistryVar] = reg.Host() + "/images"
+	root := t.TempDir()
+	data := "FROM golang AS build\nCOPY . /out/\nRUN go build -o /out/server .\nFROM scratch\nCOPY --from=build /out/server /server\nCMD [\"/server\"]"
+	for name, value := range map[string]string{"Dockerfile": data, "server.exe": "literal collision", "quasidock.json": "unchanged"} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(value), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := convertCommand(ctx, []string{root, "--id", "collision", "--force"}); err == nil || !strings.Contains(err.Error(), "Dockerfile:2: COPY: stage build (0)") || !strings.Contains(err.Error(), "collides with mapped executable") {
+		t.Fatalf("missing collision diagnostic: %v", err)
+	}
+	current, err := os.ReadFile(filepath.Join(root, "quasidock.json"))
+	if err != nil || string(current) != "unchanged" {
+		t.Fatal("failed collision check changed output")
 	}
 }
 

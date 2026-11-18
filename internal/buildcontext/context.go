@@ -4,10 +4,10 @@ package buildcontext
 import (
 	"bytes"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 
@@ -53,59 +53,7 @@ func Read(root, dockerfile, exclude string) (*Snapshot, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", ignoreName, err)
 	}
-	t := tree.New()
-	seen := map[string]string{}
-	err = filepath.WalkDir(root, func(full string, entry fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if full == root {
-			return nil
-		}
-		if strings.EqualFold(full, exclude) {
-			if entry.IsDir() {
-				return fs.SkipDir
-			}
-			return nil
-		}
-		rel, _ := filepath.Rel(root, full)
-		rel = filepath.ToSlash(rel)
-		ignored, err := matcher.MatchesOrParentMatches(rel)
-		if err != nil {
-			return err
-		}
-		// Do not prune excluded directories: a later ! rule can include a child.
-		if ignored {
-			if entry.IsDir() && noLink(full) != nil {
-				return fs.SkipDir
-			}
-			return nil
-		}
-		if err := noLink(full); err != nil {
-			return err
-		}
-		for _, part := range strings.Split(rel, "/") {
-			if !ValidName(part) {
-				return fmt.Errorf("context path %q is not a valid Windows filename", rel)
-			}
-		}
-		key := strings.ToLower(rel)
-		if old, ok := seen[key]; ok && old != rel {
-			return fmt.Errorf("context paths %q and %q collide on Windows", old, rel)
-		}
-		seen[key] = rel
-		if entry.IsDir() {
-			return t.AddDir(rel)
-		}
-		info, err := entry.Info()
-		if err != nil {
-			return err
-		}
-		if !info.Mode().IsRegular() {
-			return fmt.Errorf("context path %s is not a regular file", full)
-		}
-		return t.AddFile(rel, tree.Content{Kind: tree.ContentFile, FilePath: full, FileSize: info.Size()})
-	})
+	t, err := readTree(root, exclude, matcher, "context")
 	if err != nil {
 		return nil, err
 	}
@@ -125,7 +73,7 @@ func noLink(full string) error {
 	}
 	if info.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0 {
 		if _, err := os.Readlink(full); err == nil || info.Mode()&os.ModeSymlink != 0 {
-			return fmt.Errorf("context path %s is a link or junction; exclude it with .dockerignore", full)
+			return fmt.Errorf("path %s is a link or junction", full)
 		}
 	}
 	return nil
@@ -161,67 +109,75 @@ func (s *Snapshot) Recheck() error {
 
 // Copy evaluates selectors against the original context, not previous COPY output.
 func (s *Snapshot) Copy(paths []string, dest string, directory bool) (*tree.Tree, error) {
+	copied, err := s.Tree.Copy(paths, dest, directory)
+	var missing *tree.MissingCopySource
+	if errors.As(err, &missing) {
+		return nil, fmt.Errorf("COPY source %q is missing or excluded by .dockerignore", missing.Path)
+	}
+	return copied, err
+}
+
+func readTree(root, exclude string, matcher *patternmatcher.PatternMatcher, scope string) (*tree.Tree, error) {
 	t := tree.New()
-	nodes := s.Tree.Sorted()
-	var roots []tree.Node
-	for _, pattern := range paths {
-		pattern = path.Clean(pattern)
-		if pattern == "." {
-			roots = append(roots, tree.Node{Path: ".", Content: tree.Content{Kind: tree.ContentDir}})
-			continue
+	seen := map[string]string{}
+	err := filepath.WalkDir(root, func(full string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
 		}
-		found := false
-		for _, node := range nodes {
-			matched, err := path.Match(pattern, node.Path)
-			if err != nil {
-				return nil, err
-			}
-			if matched {
-				roots = append(roots, node)
-				found = true
-			}
+		if full == root {
+			return nil
 		}
-		if !found {
-			return nil, fmt.Errorf("COPY source %q is missing or excluded by .dockerignore", pattern)
-		}
-	}
-	if len(roots) > 1 && !strings.HasSuffix(dest, "/") {
-		return nil, fmt.Errorf("COPY with multiple sources requires a destination ending in '/'")
-	}
-	directory = directory || strings.HasSuffix(dest, "/")
-	for _, root := range roots {
-		if root.Content.Kind != tree.ContentDir {
-			target := dest
-			if directory {
-				target = path.Join(dest, path.Base(root.Path))
+		if strings.EqualFold(full, exclude) {
+			if entry.IsDir() {
+				return fs.SkipDir
 			}
-			if err := t.AddFile(target, root.Content); err != nil {
-				return nil, err
-			}
-			continue
+			return nil
 		}
-		if err := t.AddDir(dest); err != nil {
-			return nil, err
-		}
-		for _, node := range nodes {
-			name := node.Path
-			if root.Path != "." {
-				if !strings.HasPrefix(name, root.Path+"/") {
-					continue
-				}
-				name = strings.TrimPrefix(name, root.Path+"/")
-			}
-			target := path.Join(dest, name)
+		rel, _ := filepath.Rel(root, full)
+		rel = filepath.ToSlash(rel)
+		ignored := false
+		if matcher != nil {
 			var err error
-			if node.Content.Kind == tree.ContentDir {
-				err = t.AddDir(target)
-			} else {
-				err = t.AddFile(target, node.Content)
-			}
+			ignored, err = matcher.MatchesOrParentMatches(rel)
 			if err != nil {
-				return nil, err
+				return err
 			}
 		}
+		// Do not prune excluded directories: a later ! rule can include a child.
+		if ignored {
+			if entry.IsDir() && noLink(full) != nil {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if err := noLink(full); err != nil {
+			return err
+		}
+		for _, part := range strings.Split(rel, "/") {
+			if !ValidName(part) {
+				return fmt.Errorf("%s path %q is not a valid Windows filename", scope, rel)
+			}
+		}
+		key := strings.ToLower(rel)
+		if old, ok := seen[key]; ok && old != rel {
+			return fmt.Errorf("%s paths %q and %q collide on Windows", scope, old, rel)
+		}
+		seen[key] = rel
+		if entry.IsDir() {
+			return t.AddDir(rel)
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("%s path %s is not a regular file", scope, full)
+		}
+		return t.AddFile(rel, tree.Content{Kind: tree.ContentFile, FilePath: full, FileSize: info.Size()})
+	})
+	if err != nil {
+		return nil, err
 	}
+
 	return t, nil
 }

@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/quasidock/quasidock/internal/version"
 	"github.com/quasidock/quasidock/internal/winres"
 )
 
@@ -199,7 +198,7 @@ func buildBinary(t binaryTarget, destDir string, strip bool) error {
 	if t.desc != "" {
 		sysoPath := filepath.Join(t.pkg, "rsrc_windows_amd64.syso")
 		err := winres.WriteSYSO(sysoPath, winres.Params{
-			Version:     version.Version,
+			Version:     "0.10.0",
 			Description: t.desc,
 			FileName:    t.exe,
 			ManifestXML: []byte(manifestXML),

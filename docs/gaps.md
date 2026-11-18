@@ -1,7 +1,7 @@
 # Known gaps
 
 Known limitations, platform constraints, and incomplete features in Quasidock
-0.8.0.
+0.10.0.
 
 ## Runs, sandboxes, and grants
 

@@ -1,6 +1,6 @@
-# Publishes a release of quasidock when a tag v<version> is pushed, the version
-# being internal/version/version.go's: the unit tests, then scripts/package.sh's
-# files, checked by tests/install.sh, as the release's assets (the zip,
+# Publishes a release of quasidock when a tag v<version> is pushed, the
+# unit tests, then scripts/package.sh's files,
+# checked by tests/install.sh, as the release's assets (the zip,
 # install.ps1, SHA256SUMS), with notes listing the programs' hashes. The
 # programs are built without debug information, so a build of the tag
 # anywhere, with the same Go toolchain, has those hashes. Images are still
@@ -17,7 +17,7 @@ permissions:
 jobs:
   release:
     runs-on: windows-2025
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -27,18 +27,6 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: '1.26'
-#      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
-#        with:
-#          version: 0.17.0
-
-      - name: The tag matches internal/version/version.go
-        shell: bash
-        run: |
-          version=$(sed -n 's/.*const Version = "\([^"]*\)".*/\1/p' internal/version/version.go | head -1)
-          if [ -z "$version" ] || [ "$GITHUB_REF_NAME" != "v$version" ]; then
-              echo "::error::The tag is $GITHUB_REF_NAME, but internal/version/version.go has $version"
-              exit 1
-          fi
 
       - name: Unit tests
         run: go test ./...

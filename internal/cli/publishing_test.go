@@ -8,15 +8,82 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 
 	"github.com/quasidock/quasidock/internal/builder"
 	"github.com/quasidock/quasidock/internal/catalog"
 	"github.com/quasidock/quasidock/internal/lifecycle"
+	"github.com/quasidock/quasidock/internal/recipe"
 	"github.com/quasidock/quasidock/internal/remote"
 	"github.com/quasidock/quasidock/internal/testregistry"
 )
+
+func TestBuildUnitSourcePublicationRoundTrip(t *testing.T) {
+	ctx, _ := fixtureCLI(t)
+	reg := testregistry.New()
+	defer reg.Close()
+	ctx.Env[remote.RegistryVar] = reg.Host() + "/published"
+	var offline atomic.Bool
+	var unusedRequests atomic.Int32
+	payload := []byte("native graph executable fixture")
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if req.URL.Path == "/unused.exe" {
+			unusedRequests.Add(1)
+			http.Error(w, "unused", 404)
+			return
+		}
+		if offline.Load() {
+			http.Error(w, "gone", 404)
+			return
+		}
+		_, _ = w.Write(payload)
+	}))
+	defer upstream.Close()
+	url, unusedURL := upstream.URL+"/app.exe", upstream.URL+"/unused.exe"
+	hash, unusedHash := testregistry.Digest(payload)[7:], strings.Repeat("b", 64)
+	app, dot := "app.exe", "."
+	r := recipe.Recipe{ID: "unit-source-fixture", Version: "1", Entrypoint: recipe.Entrypoint{app}, Builds: []recipe.BuildUnit{
+		{Name: "download", Stages: []recipe.Stage{{Name: "copy", Sources: []recipe.Source{{URL: &url, Sha256: &hash, Dest: &app}}}}},
+		{Name: "copy", Stages: []recipe.Stage{{Name: "copy", Sources: []recipe.Source{{Build: &recipe.BuildSource{Name: "download", Paths: []string{app}}, Dest: &app}}}}},
+		{Name: "unused", Stages: []recipe.Stage{{Name: "copy", Sources: []recipe.Source{{URL: &unusedURL, Sha256: &unusedHash, Dest: &app}}}}},
+	}, Stages: []recipe.Stage{{Name: "package", Sources: []recipe.Source{{Build: &recipe.BuildSource{Name: "copy", Paths: []string{dot}}, Dest: &dot}}}}}
+	file := filepath.Join(t.TempDir(), "quasidock.json")
+	data, err := json.Marshal(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(file, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	image, err := builder.Build(ctx, file, builder.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := lifecycle.Install(ctx, image); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := imageCommand(ctx, []string{"push", "--sources", r.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if unusedRequests.Load() != 0 {
+		t.Fatal("unused build inputs were downloaded")
+	}
+	if err := os.Remove(ctx.Store.Path("cache", "downloads", hash)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := imageCommand(ctx, []string{"push", "--sources", r.ID}); err == nil {
+		t.Fatal("publication silently omitted a required unit URL source")
+	}
+	offline.Store(true)
+	fresh, _ := fixtureCLI(t)
+	fresh.Env[remote.RegistryVar] = ctx.Env[remote.RegistryVar]
+	reproduced, err := builder.Build(fresh, file, builder.Options{})
+	if err != nil || reproduced.ManifestDigest != image.ManifestDigest {
+		t.Fatalf("graph source artifact did not reproduce: %v", err)
+	}
+}
 
 func TestVendorSourceFallbackRestoresStageInputs(t *testing.T) {
 	ctx, _ := fixtureCLI(t)

@@ -704,8 +704,11 @@ check "a build whose output nobody reads any more still finishes, and cleans up"
 printf '{ "id": "test.build.link", "version": "1", "entrypoint": "x", "stages": [{ "name": "m", "shell": "cmd", "build": ["mkdir %%PREFIX%%\\\\d && mklink /J %%PREFIX%%\\\\link %%PREFIX%%\\\\d"] }] }\n' >"$work\\link.json"
 refused_link() {
     local out
-    out=$(z build "$work\\link.json" 2>&1)
-    grep -q 'can only be files and directories' <<<"$out" || { echo "$out"; return 1; }
+    if out=$(z build "$work\\link.json" 2>&1); then
+        echo "a build with a junction in its prefix succeeded: $out"
+        return 1
+    fi
+    grep -q 'link or junction' <<<"$out" || { echo "$out"; return 1; }
     drive_free || { echo "B: is still mapped: $(subst)"; return 1; }
     no_build_root || { echo "left in tmp: $(ls "$QUASIDOCK_HOME\\tmp" | tr '\n' ' ')"; return 1; }
 }

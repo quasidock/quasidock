@@ -219,7 +219,9 @@ func (s *state) compileStmt(stmt *syntax.Stmt, wd *string, env map[string]string
 				if !strings.HasSuffix(strings.ToLower(mapped), ".exe") {
 					mapped += ".exe"
 				}
-				s.outputs[p] = mapped
+				if err := s.registerOutput(p, mapped); err != nil {
+					return "", err
+				}
 				if strings.HasPrefix(args[i], "-o=") {
 					args[i] = "-o=/" + mapped
 				} else {
@@ -267,6 +269,9 @@ func (s *state) compileStmt(stmt *syntax.Stmt, wd *string, env map[string]string
 				if err != nil {
 					return "", err
 				}
+				if name == "mkdir" && !runtime {
+					s.rememberDirectory(p)
+				}
 				if runtime {
 					value = quote("${app}/" + p)
 				} else {
@@ -279,6 +284,9 @@ func (s *state) compileStmt(stmt *syntax.Stmt, wd *string, env map[string]string
 					p, err := appPath(*wd, arg)
 					if err != nil {
 						return "", err
+					}
+					if name == "mkdir" {
+						s.rememberDirectory(p)
 					}
 					value = buildPath(p)
 				}
