@@ -25,7 +25,6 @@ import (
 	"github.com/quasidock/quasidock/internal/services"
 	"github.com/quasidock/quasidock/internal/store"
 	"github.com/quasidock/quasidock/internal/trust"
-	"github.com/quasidock/quasidock/internal/version"
 )
 
 const usage = `usage: quasidock [--verbose] <command> [options]
@@ -682,7 +681,7 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 		return 0, nil
 	}
 	if cmd == "version" || isFlag(cmd, "version") || cmd == "-V" {
-		fmt.Printf("quasidock %s\n", version.Version)
+		fmt.Printf("quasidock %s\n", "0.10.0")
 		return 0, nil
 	}
 	if replacement := map[string]string{"list": "images", "info": "image info", "ls": "image files", "cat": "image cat", "-v": "--verbose"}[cmd]; replacement != "" {

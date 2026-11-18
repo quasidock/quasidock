@@ -1,10 +1,9 @@
 # Quasidock
 
 Quasidock runs sandboxed Windows programs from OCI-distributed images using a
-Docker-style CLI. It is a Go fork of [Zigsaw](https://github.com/zigsaw-io/zigsaw),
-focused on image distribution and native Windows execution.
+Docker-style CLI.
 
-Version **0.9** supports Docker-style container lifecycle management (`run`, `ps`,
+Version **0.10** supports Docker-style container lifecycle management (`run`, `ps`,
 `logs`, `start`, `restart`, `kill`, `stop`, `rm`, `inspect`, `prune`), per-container isolated data, image
 management, named volumes, local directory bind mounts, and Quasidock images for
 `windows/amd64`. Supported Node.js, Go, and Python Dockerfiles, including
@@ -250,63 +249,6 @@ diagnostics without writing a partial recipe. For multi-stage input, select a
 named stage with `--target NAME` and replace individual native bases with
 `--stage-base NAME_OR_INDEX=IMAGE`. See the
 [conversion compatibility table](docs/dockerfile-conversion.md).
-
-## Upgrading
-
-### From 0.7 to 0.8
-
-The default registry is now `ghcr.io/quasidock/quasidock`. Explicit references, registry
-overrides, cached image selections, and existing containers remain intact; no
-store migration is required. To select another registry, set `QUASIDOCK_REGISTRY`.
-
-Maintainers publish all distributable recipe images with the manual **Publish
-images** workflow. One run refreshes dependency pins, builds and signs candidates,
-verifies them, and updates release tags and the catalog. A pin patch records any
-dependency changes for source control.
-See [publishing setup and rollout](docs/publishing.md), including the signing key
-and one-time public package settings. Complete that rollout before releasing 0.8.
-
-### From 0.6 to 0.7
-
-Existing containers and images need no migration. Runs without mounts retain
-isolated private data. Recipes and OCI image configurations are unchanged.
-Use 0.7 or later to manage containers with mounts; older binaries do not understand
-their mount metadata or shared permission ownership.
-
-### From 0.5 to 0.6
-
-- `--ephemeral` is removed; use `--rm` (passing `--ephemeral` now errors and points
-  to `--rm`).
-- Mutable app state moved from shared `data/<app-id>` to per-container
-  `containers/<id>/data`. Legacy `data/<app-id>` directories remain untouched on
-  disk until collected with `quasidock prune --data`.
-- Foreground and detached runs both persist exited container state, logs, and data
-  until removed with `--rm`, `rm`, `container prune`, or `prune`. Exited containers
-  pin their image against `rmi`.
-- `rm` now operates on containers (use `rmi` or `image rm` for images). Top-level
-  `inspect` resolves containers first and falls back to images; use `image inspect`
-  or `container inspect` to disambiguate.
-
-### From 0.4 to 0.5
-
-Finish existing runs before first opening the store with 0.5+. The one-time
-migration creates `images/index.json`, retaining legacy refs, blobs, deployments,
-and data. Retained refs are never imported again. Use 0.5+ for the migrated store;
-older binaries do not read catalog changes.
-
-| Previous syntax (0.4) | Replacement |
-|---|---|
-| `list` | `images`, or `image inspect -f TEMPLATE IMAGE` for scripts |
-| `rm [--delete-data] APP` | `rmi IMAGE`; collect orphan data with `prune --data` |
-| `info IMAGE` | `image info IMAGE` |
-| `ls IMAGE` | `image files IMAGE` |
-| `cat IMAGE PATH` | `image cat IMAGE PATH` |
-| `push SOURCE TARGET` | `tag SOURCE TARGET`, then `push TARGET` |
-| `run --command=NAME APP ARGS` | `run --entrypoint=NAME IMAGE ARGS` |
-| `run APP ARGS` | Specify `COMMAND` after IMAGE, or select an entrypoint |
-| `-v` for verbosity | `--verbose` |
-
-Data lives in `%QUASIDOCK_HOME%`, or `%LOCALAPPDATA%\quasidock` by default.
 
 ### Recipe and image schema (Docker-style)
 
