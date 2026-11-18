@@ -146,16 +146,20 @@ func needsBatchQuotes(arg string) bool {
 }
 
 type SpawnSpec struct {
-	Exe           string
-	CommandLine   string
-	EnvBlock      []uint16
-	Cwd           string
-	Security      *win32.SECURITY_CAPABILITIES
-	Token         win32.HANDLE
-	CreationFlags win32.DWORD
-	BreakawayOk   bool
-	Stdio         *[3]win32.HANDLE
-	Inherit       []win32.HANDLE
+	// ParentJobs lists enclosing jobs, from outermost to innermost.
+	ParentJobs []win32.HANDLE
+	// PreserveConsoleHandler keeps an already-supervised owner's handler intact.
+	PreserveConsoleHandler bool
+	Exe                    string
+	CommandLine            string
+	EnvBlock               []uint16
+	Cwd                    string
+	Security               *win32.SECURITY_CAPABILITIES
+	Token                  win32.HANDLE
+	CreationFlags          win32.DWORD
+	BreakawayOk            bool
+	Stdio                  *[3]win32.HANDLE
+	Inherit                []win32.HANDLE
 }
 
 // LowIntegrityToken creates a copy of the current process token with low integrity level.
@@ -506,8 +510,8 @@ func StartIn(job win32.HANDLE, spec SpawnSpec) (win32.HANDLE, error) {
 	}
 	defer win32.DeleteProcThreadAttributeList(attrs)
 
-	jobs := [1]win32.HANDLE{job}
-	if !win32.UpdateProcThreadAttribute(attrs, 0, win32.PROC_THREAD_ATTRIBUTE_JOB_LIST, unsafe.Pointer(&jobs[0]), unsafe.Sizeof(jobs[0]), nil, nil) {
+	jobs := append(append([]win32.HANDLE(nil), spec.ParentJobs...), job)
+	if !win32.UpdateProcThreadAttribute(attrs, 0, win32.PROC_THREAD_ATTRIBUTE_JOB_LIST, unsafe.Pointer(&jobs[0]), uintptr(len(jobs))*unsafe.Sizeof(jobs[0]), nil, nil) {
 		return 0, fmt.Errorf("UpdateProcThreadAttribute(JOB_LIST) failed")
 	}
 
@@ -534,7 +538,9 @@ func StartIn(job win32.HANDLE, spec SpawnSpec) (win32.HANDLE, error) {
 		startup.StartupInfo.HStdError = stdHandles[2]
 	}
 
-	win32.SetConsoleCtrlHandler(ignoreCtrlCHandler, true)
+	if !spec.PreserveConsoleHandler {
+		win32.SetConsoleCtrlHandler(ignoreCtrlCHandler, true)
+	}
 
 	var info win32.PROCESS_INFORMATION
 	inheritHandles := inheritCount > 0

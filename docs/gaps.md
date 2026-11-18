@@ -106,6 +106,15 @@ Known limitations, platform constraints, and incomplete features in Quasidock
   `0` without running a live interactive Ctrl+C test
   ([iteration 2](iteration-2.md)). The offline CLI lifecycle test separately checks
   that a foreground application receives native Ctrl+C through a pseudoconsole.
+- **Exec terminal and inspection support.** `exec` and `container exec` support
+  running containers only, with `-d`, `-i`, `-t`, `-e`, and `-w`. Exec `-t` is
+  pipe-backed like `run -t`: no ConPTY, resize handling, or detach keys. Exec
+  inherits startup environment/cwd, not changes the primary process makes later.
+  Foreground disconnect or Ctrl+C ends that exec tree; normal exec completion
+  also ends remaining descendants. Detached output is discarded, exec output
+  never enters container logs, and there are no persistent exec records or exec
+  inspection API. Older live owners must be stopped and started with a binary
+  that supports exec.
 - **Windows Server 2025 AppContainer restrictions.** Server 2025 blocks opening
   `NUL` inside AppContainers ([Zigsaw iteration 46](../legacy/iteration-46.md))
   and blocks path lookups on `zig env`, `kpathsea` (`GetLongPathNameW`), and

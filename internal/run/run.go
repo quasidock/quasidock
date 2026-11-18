@@ -1019,6 +1019,21 @@ func launchContainer(
 		pumpPipe(errRead, errDst)
 	}()
 
+	child.Process = hProcess
+	live := &execRuntime{
+		primary: hProcess, job: job, token: token, security: security,
+		env: envVars, cwd: cwd, systemRoot: systemRoot, placeholders: placeholders,
+	}
+	if err := live.start(created.ID, created.State.RunID); err != nil {
+		process.EndJob(job)
+		pipeWG.Wait()
+		if watcher != nil {
+			written.Finish(ctx.Store, cfg.ID, watcher)
+		}
+		return 1, false, fmt.Errorf("starting exec listener: %w", err)
+	}
+	defer live.Close()
+
 	pid := uint32(win32.GetProcessId(hProcess))
 	startedAt := time.Now().UTC().Format(time.RFC3339Nano)
 	_, stateErr := ctx.Store.UpdateContainer(created.ID, func(c *store.ContainerRecord) error {
@@ -1029,18 +1044,19 @@ func launchContainer(
 		c.Args = append([]string(nil), allArgs...)
 		c.Config.WorkingDir = cwd
 		c.State = store.ContainerState{
-			RunID:     created.State.RunID,
-			Status:    "running",
-			Running:   true,
-			Pid:       pid,
-			ExitCode:  0,
-			StartedAt: startedAt,
-			Launched:  true,
+			ExecProtocol: execProtocol,
+			RunID:        created.State.RunID,
+			Status:       "running",
+			Running:      true,
+			Pid:          pid,
+			ExitCode:     0,
+			StartedAt:    startedAt,
+			Launched:     true,
 		}
 		return nil
 	})
-	child.Process = hProcess
 	if stateErr != nil {
+		live.Close()
 		process.EndJob(job)
 		pipeWG.Wait()
 		if watcher != nil {
@@ -1055,7 +1071,7 @@ func launchContainer(
 		opts.operation.Release()
 	}
 
-	code, err := waitControlled(ctx, created, &child, detached, controlEvent)
+	code, err := waitControlled(ctx, created, &child, detached, controlEvent, live)
 	pipeWG.Wait()
 
 	if code != 0 {

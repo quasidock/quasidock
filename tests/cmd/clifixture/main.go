@@ -21,6 +21,22 @@ func main() {
 	args := os.Args[1:]
 	if len(args) > 0 {
 		switch args[0] {
+		case "wait-path":
+			if err := os.WriteFile(args[1], []byte(strconv.Itoa(os.Getpid())), 0o644); err != nil {
+				panic(err)
+			}
+			for {
+				if _, err := os.Stat(args[2]); err == nil {
+					code, _ := strconv.Atoi(args[3])
+					os.Exit(code)
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
+		case "duplex":
+			if _, err := io.Copy(io.MultiWriter(os.Stdout, os.Stderr), os.Stdin); err != nil {
+				os.Exit(5)
+			}
+			return
 		case "console-run":
 			// Test runners may inherit Ctrl+C-disabled state from their launcher.
 			// Establish the same state as an ordinary interactive shell, keeping
@@ -37,6 +53,9 @@ func main() {
 			cmd := exec.Command(args[1], args[2:]...)
 			cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 			if err := cmd.Run(); err != nil {
+				if exit, ok := err.(*exec.ExitError); ok {
+					win32.ExitProcess(uint32(exit.ExitCode()))
+				}
 				panic(err)
 			}
 			return

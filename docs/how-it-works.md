@@ -165,6 +165,18 @@ quasidock rm $cid
   `run.lock` was released (marking them `"exited"` with code `137` if none was
   recorded, or deleting them if `--rm`). `--rm` containers delete
   `containers\<id>\` and temporary registry state on exit.
+- **Exec**: foreground owners and detached supervisors serve a local named pipe
+  scoped to container ID and RunID ([`exec.go`](../internal/run/exec.go)). Its ACL permits only
+  the current user, and remote clients are rejected. Exec commands reuse the
+  owner's startup environment, working directory, sandbox token/capabilities,
+  mounts, registry, relays, and write watcher. Each command has a child Job Object
+  nested below the container job, allowing cancellation of one exec tree without
+  ending the main process. Framed streams carry stdout/stderr, exit status, and
+  acknowledged stdin chunks so blocked input does not prevent cancellation.
+  Detached exec discards streams; foreground exec output goes only to its caller.
+  Shutdown closes launch admission and joins exec workers before restoring
+  registry, mount, and grant state. Exec does not allocate another container or
+  change its saved command; `State.ExecProtocol` identifies capable live owners.
 - **Environment and registry**: [`internal/environment`](../internal/environment/environment.go)
   orders `PATH` as app `path` dirs, `from` runtime dirs,
   `SystemRoot\System32;SystemRoot;SystemRoot\System32\Wbem`, and `pathAfter`

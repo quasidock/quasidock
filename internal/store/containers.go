@@ -24,15 +24,16 @@ var (
 )
 
 type ContainerState struct {
-	RunID      string `json:"RunID,omitempty"`
-	Status     string `json:"Status"`
-	Running    bool   `json:"Running"`
-	Pid        uint32 `json:"Pid"`
-	ExitCode   int    `json:"ExitCode"`
-	Error      string `json:"Error,omitempty"`
-	StartedAt  string `json:"StartedAt,omitempty"`
-	FinishedAt string `json:"FinishedAt,omitempty"`
-	Launched   bool   `json:"Launched,omitempty"`
+	ExecProtocol int    `json:"ExecProtocol,omitempty"`
+	RunID        string `json:"RunID,omitempty"`
+	Status       string `json:"Status"`
+	Running      bool   `json:"Running"`
+	Pid          uint32 `json:"Pid"`
+	ExitCode     int    `json:"ExitCode"`
+	Error        string `json:"Error,omitempty"`
+	StartedAt    string `json:"StartedAt,omitempty"`
+	FinishedAt   string `json:"FinishedAt,omitempty"`
+	Launched     bool   `json:"Launched,omitempty"`
 }
 
 type ContainerConfig struct {
