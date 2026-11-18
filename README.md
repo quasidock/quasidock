@@ -4,7 +4,7 @@ Quasidock runs sandboxed Windows programs from OCI-distributed images using a
 Docker-style CLI.
 
 Version **0.10** supports Docker-style container lifecycle management (`run`, `ps`,
-`logs`, `start`, `restart`, `kill`, `stop`, `rm`, `inspect`, `prune`), per-container isolated data, image
+`logs`, `exec`, `start`, `restart`, `kill`, `stop`, `rm`, `inspect`, `prune`), per-container isolated data, image
 management, named volumes, local directory bind mounts, and Quasidock images for
 `windows/amd64`. Supported Node.js, Go, and Python Dockerfiles, including
 multi-stage builds with `COPY --from`, can be
@@ -83,6 +83,7 @@ removes leftover legacy app data once unused.
 | `container ls` | `ps` | List running containers (`-a` includes exited; `-q` prints IDs) |
 | `container inspect` | `inspect` | Container JSON metadata or `-f TEMPLATE` (`inspect` falls back to images) |
 | `container logs` | `logs` | Fetch captured output (`-f`/`--follow`, `-n`/`--tail LINES`) |
+| `container exec` | `exec` | Run another command in a running container (`-d`, `-i`, `-t`, `-e`, `-w`) |
 | `container start` | `start` | Start existing containers in the background |
 | `container restart` | `restart` | Stop and start containers (`-t`/`--time SECONDS`, default 10s) |
 | `container kill` | `kill` | Immediately terminate process trees; `-s`/`--signal TERM` requests graceful shutdown |
@@ -107,6 +108,8 @@ clears default `cmd`, and passes the remaining arguments after `IMAGE`.
 quasidock run --rm node node.exe -e 'console.log(process.version)'
 quasidock run -d --name node-demo node node.exe -e 'setInterval(() => {}, 1000)'
 quasidock logs node-demo
+quasidock exec node-demo node.exe --version
+quasidock exec -i -e EXAMPLE=value -w '${data}' node-demo node.exe -e 'console.log(process.env.EXAMPLE)'
 quasidock stop node-demo
 quasidock start node-demo
 quasidock restart -t 5 node-demo
@@ -159,6 +162,30 @@ case-insensitively. Foreground TERM is unsupported so native terminal Ctrl+C kee
 its existing behavior; KILL works for foreground containers. `stop` and `restart`
 wait their requested grace period before forcing termination; `-t 0` forces it
 immediately. Killing a stopped container is an error.
+
+`exec [OPTIONS] CONTAINER COMMAND [ARG...]` (also `container exec`) runs an
+explicit command in a running container's existing sandbox, data, mounts, and
+registry session. Options stop at CONTAINER; later flags belong to COMMAND.
+Commands use the effective working directory, image deployment, and exec `PATH`
+for executable lookup, without substituting the image's entrypoint or default
+command. Shell expressions require an explicit shell such as `cmd.exe /c`.
+
+Exec inherits the environment and working directory from container startup,
+including saved `run -e` values. Repeatable `-e` / `--env NAME[=VALUE]` overrides
+only this command; a bare name inherits the exec caller's value or removes the
+variable if absent. `-w` / `--workdir DIR` selects an existing directory, supports
+placeholders such as `${data}`, and resolves relative directories against the
+container's initial working directory. It does not add filesystem permissions.
+
+Foreground exec returns the command's exit code and sends stdout/stderr to its
+caller; `-i` forwards stdin and EOF (otherwise stdin is NUL). `-t` accepts a
+pipe-backed TTY preference without allocating ConPTY. `-d` returns silently after
+successful launch, discards output, and uses NUL stdin even with `-i`. Exec output
+does not appear in `logs`. Ctrl+C returns 130 and cancels that exec process tree;
+disconnecting the foreground caller also cancels it. Finishing an exec command
+ends its remaining descendants. All exec processes end when the main command
+exits or the container stops, restarts, or is removed. Older running supervisors
+must be stopped and started with the new binary before they support exec.
 
 Values inherited with `run -e NAME`, including absent variables, are saved when
 the container is created and reused across starts. Existing stopped records from

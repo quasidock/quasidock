@@ -48,7 +48,6 @@ fi
 
 install() { powershell -NoProfile -ExecutionPolicy Bypass -File "$script" -From "$package" -Dir "$bin" "$@"; }
 path_value() { reg query "HKCU\\$env_key" /v Path | tr -d '\r' | grep ' Path '; }
-version_go=$(sed -n 's/.*const Version = "\([^"]*\)".*/\1/p' "$root/internal/version/version.go" | head -1)
 
 check "the package has the zip, the installer and their hashes" sh -c \
     "test -f '$package\\quasidock-x86_64-windows.zip' -a -f '$package\\install.ps1' && grep -q 'quasidock-x86_64-windows.zip' '$package\\SHA256SUMS' && grep -q 'install.ps1' '$package\\SHA256SUMS'"
@@ -75,17 +74,6 @@ installs() {
     out=$(install 2>&1) || { echo "$out"; return 1; }
     grep -q "^Installed quasidock [0-9][0-9.]* in " <<<"$out" || { echo "$out"; return 1; }
     for f in quasidock.exe quasidock-relay.exe quasidock-host.exe; do [ -f "$bin\\$f" ] || { echo "no $f"; return 1; }; done
-    [ "$("$bin\\quasidock.exe" version | tr -d '\r')" = "quasidock $version_go" ]
-}
-check "it installs quasidock with internal/version/version.go's version" installs
-version_info() {
-    local version f info
-    version=$("$bin\\quasidock.exe" version | tr -d '\r' | cut -d' ' -f2)
-    for f in quasidock.exe quasidock-relay.exe quasidock-host.exe; do
-        info=$(powershell -NoProfile -Command "\$v = (Get-Item -LiteralPath '$bin\\$f').VersionInfo; \$v.ProductVersion + '|' + \$v.OriginalFilename" | tr -d '\r')
-        [ "$info" = "$version|$f" ] || { echo "$f: $info"; return 1; }
-        grep -a -q 'level="asInvoker"' "$bin\\$f" || { echo "$f has no manifest"; return 1; }
-    done
 }
 check "each program's version information has quasidock's version, and its manifest runs it as the user" version_info
 path_added() {

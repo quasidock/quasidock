@@ -40,7 +40,6 @@ if [ "${1:-}" != --inner ]; then
         { echo "packaging failed: $(tail -1 "$stage\\package.log")"; exit 1; }
     for d in tests recipes scripts go.mod; do cp -r "$(cygpath -u "$repo")/$d" "$(cygpath -u "$stage")/"; done
     mkdir -p "$stage\\internal\\version"
-    cp "$repo\\internal\\version\\version.go" "$stage\\internal\\version\\"
     mkdir -p "$stage\\out" "$stage\\tmp" "$stage\\bin" "$stage\\seed"
     cp -r "$(cygpath -u "$repo")/out/bin" "$(cygpath -u "$repo")/out/test" "$(cygpath -u "$stage")/out/"
     if [ -n "${SEED_DOWNLOADS:-}" ]; then

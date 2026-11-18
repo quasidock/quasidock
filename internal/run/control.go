@@ -129,11 +129,13 @@ func sendControl(ctx *context.Context, rec *store.ContainerRecord, signal KillSi
 	}
 }
 
-func waitControlled(ctx *context.Context, rec *store.ContainerRecord, child *process.Child, detached bool, event win32.HANDLE) (uint32, error) {
+func waitControlled(ctx *context.Context, rec *store.ContainerRecord, child *process.Child, detached bool, event win32.HANDLE, live *execRuntime) (uint32, error) {
 	defer child.Close()
+	defer live.Close()
 	for {
 		switch win32.WaitForMultipleObjects([]win32.HANDLE{child.Process, event}, false, win32.INFINITE) {
 		case win32.WAIT_OBJECT_0:
+			live.Close()
 			return child.Wait()
 		case win32.WAIT_OBJECT_0 + 1:
 			data, err := os.ReadFile(controlPath(ctx.Store, rec.ID, rec.State.RunID))
@@ -153,6 +155,7 @@ func waitControlled(ctx *context.Context, rec *store.ContainerRecord, child *pro
 					signalErr = win32.SendConsoleBreak(win32.GetProcessId(child.Process))
 				}
 			case SignalKILL:
+				live.stop()
 				if !win32.TerminateJobObject(child.Job, 1) {
 					signalErr = errors.New("TerminateJobObject failed")
 				}

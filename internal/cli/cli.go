@@ -36,6 +36,8 @@ Docker-style container commands:
                                        inspect containers or images (JSON by default)
   container logs | logs [-f|--follow] [-n|--tail LINES] CONTAINER
                                        fetch the logs of a container
+  container exec | exec [options] CONTAINER COMMAND [ARG...]
+                                       run another command in a running container
   container start | start CONTAINER [CONTAINER...]
                                        start existing containers in background
   container restart | restart [-t|--time SECONDS] CONTAINER [CONTAINER...]
@@ -87,6 +89,14 @@ Quasidock extensions:
                                        and unused files (--data removes orphan data)
   repair                              settle obsolete host grants
   version                             print quasidock's version
+
+exec options (before CONTAINER):
+  -d, --detach                        return after launch; discard command output
+  -i, --interactive                   forward STDIN and EOF
+  -t, --tty                           pipe-backed TTY preference (no ConPTY)
+  -e, --env NAME[=VALUE]               override, inherit, or unset an environment variable
+  -w, --workdir DIR                   existing directory (default: container's initial cwd)
+  --verbose                           print runtime diagnostics
 
 run options (before IMAGE):
   --name NAME                         assign a name to the container
@@ -729,7 +739,7 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 		return 0, nil
 	}
 	switch cmd {
-	case "convert", "build", "volume", "container", "ps", "start", "restart", "kill", "stop", "rm", "logs", "image", "images", "inspect", "tag", "pull", "push", "rmi", "run", "search", "trust", "signature", "prune", "repair", "grants":
+	case "convert", "build", "volume", "container", "ps", "exec", "start", "restart", "kill", "stop", "rm", "logs", "image", "images", "inspect", "tag", "pull", "push", "rmi", "run", "search", "trust", "signature", "prune", "repair", "grants":
 	default:
 		return usageError()
 	}
@@ -748,6 +758,8 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 		return convertCommand(ctx, rest)
 	case "container":
 		return containerCommand(ctx, rest)
+	case "exec":
+		return execCommand(ctx, rest)
 	case "ps":
 		return containerCommand(ctx, append([]string{"ls"}, rest...))
 	case "start", "restart", "kill", "stop", "rm", "logs":
