@@ -5,7 +5,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"unsafe"
 
 	"github.com/quasidock/quasidock/internal/win32"
 )
@@ -40,22 +39,10 @@ func descends(all []Process, pid, root uint32) bool {
 }
 
 func integrity(token win32.HANDLE) string {
-	var buf [128]byte
-	var retLen win32.DWORD
-	if err := win32.GetTokenInformation(token, win32.TokenIntegrityLevel, unsafe.Pointer(&buf[0]), uint32(len(buf)), &retLen); err != nil {
+	rid, err := win32.GetTokenIntegrityRid(token)
+	if err != nil {
 		return "?"
 	}
-	mandatoryLabel := (*win32.TOKEN_MANDATORY_LABEL)(unsafe.Pointer(&buf[0]))
-	sid := mandatoryLabel.Label.Sid
-	subCount := win32.GetSidSubAuthorityCount(sid)
-	if subCount == nil || *subCount == 0 {
-		return "?"
-	}
-	ridPtr := win32.GetSidSubAuthority(sid, uint32(*subCount)-1)
-	if ridPtr == nil {
-		return "?"
-	}
-	rid := *ridPtr
 
 	if rid < 0x1000 {
 		return "untrusted"
@@ -149,17 +136,7 @@ func main() {
 		line := ""
 		knownLine := false
 		if err == nil {
-			infoBuf := make([]byte, 65536)
-			var retLen uint32
-			status := win32.NtQueryInformationProcess(pHandle, win32.ProcessCommandLineInformation, unsafe.Pointer(&infoBuf[0]), uint32(len(infoBuf)), &retLen)
-			if status >= 0 {
-				uStr := (*win32.UNICODE_STRING)(unsafe.Pointer(&infoBuf[0]))
-				if uStr.Buffer != nil && uStr.Length > 0 {
-					wSlice := unsafe.Slice(uStr.Buffer, uStr.Length/2)
-					line = win32.UTF16ToUTF8(wSlice)
-					knownLine = true
-				}
-			}
+			line, knownLine = win32.QueryProcessCommandLine(pHandle)
 		}
 
 		typeVal, ok := switchValue(line, "type")
@@ -182,13 +159,11 @@ func main() {
 			token, tErr = win32.OpenProcessToken(pHandle, win32.TOKEN_QUERY)
 		}
 		if pHandle != 0 && tErr == nil {
-			var isAC win32.DWORD
-			var rLen win32.DWORD
-			acKnown := win32.GetTokenInformation(token, win32.TokenIsAppContainer, unsafe.Pointer(&isAC), uint32(unsafe.Sizeof(isAC)), &rLen) == nil
+			isAC, acErr := win32.GetTokenIsAppContainer(token)
 
 			acStr := "?"
-			if acKnown {
-				if isAC != 0 {
+			if acErr == nil {
+				if isAC {
 					acStr = "yes"
 				} else {
 					acStr = "no"

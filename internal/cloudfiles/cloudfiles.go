@@ -129,7 +129,7 @@ type CallbackInfo struct {
 	_                 uint32
 	FileID            int64
 	FileSize          int64
-	FileIdentity      uintptr
+	FileIdentity      *uint32
 	FileIdentityLen   uint32
 	_                 uint32
 	NormalizedPath    *uint16
@@ -404,8 +404,8 @@ func Connect(root string, fetch func(*CallbackInfo, *FetchDataParams)) (Connecti
 	if api == nil {
 		return Connection{}, ErrUnsupported
 	}
-	callback := syscall.NewCallback(func(info, params uintptr) uintptr {
-		fetch((*CallbackInfo)(unsafe.Pointer(info)), (*FetchDataParams)(unsafe.Pointer(params)))
+	callback := syscall.NewCallback(func(info *CallbackInfo, params *FetchDataParams) uintptr {
+		fetch(info, params)
 		return 0
 	})
 	table := []CallbackRegistration{
@@ -505,10 +505,10 @@ func CreatePlaceholders(dir string, children []Placeholder) (int, error) {
 }
 
 func IdentityOf(info *CallbackInfo) *uint32 {
-	if info.FileIdentityLen != uint32(unsafe.Sizeof(uint32(0))) || info.FileIdentity == 0 {
+	if info.FileIdentityLen != uint32(unsafe.Sizeof(uint32(0))) || info.FileIdentity == nil {
 		return nil
 	}
-	return (*uint32)(unsafe.Pointer(info.FileIdentity))
+	return info.FileIdentity
 }
 
 func Transfer(info *CallbackInfo, status int32, data []byte, offset, length uint64) int32 {

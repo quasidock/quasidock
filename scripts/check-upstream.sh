@@ -224,7 +224,7 @@ done <"$table"
 # The recipes' sources and pins, read relative to their directory.
 shopt -s nullglob
 cd "$recipes_dir" || exit 2
-recipe_files=(*.json no-publish/*.json)
+recipe_files=(*.json)
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
@@ -387,7 +387,7 @@ rebuild_cell() {
     for recipe in $REPLY; do
         count=$((count + 1))
         if [ "$count" -le 6 ]; then
-            local shown=${recipe#no-publish/}
+            local shown=${recipe/}
             [ -n "${is_published[$recipe]:-}" ] || shown+=" (local)"
             out+="${out:+, }$shown"
         fi

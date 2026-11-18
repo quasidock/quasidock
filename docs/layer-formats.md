@@ -81,25 +81,7 @@ rejects anything other than `MediaTypeLayerTar` and `MediaTypeLayerTarGzip`.
 `quasidock image info` prints the `layer` field (such as `eStargz` or `tar`)
 whenever a layer's format is not `FormatGzip`.
 
-> **Historical note on gzip streaming.** Zigsaw originally tested whether it
-> needed a custom deflate writer, only to hit a bug where its single-stream
-> inflator dropped everything after the first member of a multi-member eStargz
-> blob ([Zigsaw iteration 64](../legacy/iteration-64.md)). Quasidock avoids that
-> pitfall in [`internal/format/layer.go`](../internal/format/layer.go):
-> `format.GzipWriter` writes deterministic single-member streams (level
-> `GzipLevel = 6`, Unix zero `ModTime`, `OS = 255`), while `format.Gunzip` sets
-> `zr.Multistream(false)` in a loop (`checkAnotherGzipMember`) so concatenated
-> gzip members extract completely, trailing `0x00` padding is ignored, and
-> non-zero trailing garbage fails with `ErrGzipTrailingGarbage`. Plain tar and
-> eStargz extraction both parallelize across up to `MaxExtractWorkers = 4`
-> workers.
-
-For size context, Zigsaw measured its `mingw` fixture (~1.2 GiB uncompressed,
-17,679 files) at 196 MiB as plain gzip (level 6), 218 MiB (+11%) as eStargz with
-4 MiB chunks, and 434 MiB with 64 KiB chunks
-([Zigsaw iteration 64](../legacy/iteration-64.md),
-[iteration 65](../legacy/iteration-65.md)). Quasidock keeps
-`estargz.DefaultChunkSize = 4 * 1024 * 1024` (4 MiB) so large trees stay near
+Quasidock keeps `estargz.DefaultChunkSize = 4 * 1024 * 1024` (4 MiB) so large trees stay near
 plain gzip sizes while large files remain split into manageable chunks.
 
 ### The writer

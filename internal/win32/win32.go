@@ -3,6 +3,7 @@ package win32
 import (
 	"errors"
 	"fmt"
+	"runtime"
 	"syscall"
 	"unsafe"
 )
@@ -408,8 +409,14 @@ type WSADATA struct {
 }
 
 type WSAPROTOCOL_INFOW struct {
-	Data [157]uint32
+	_    [0]uint32
+	Data [628]byte
 }
+
+const (
+	SizeofSockaddrIn  int32 = 16
+	SizeofSockaddrIn6 int32 = 28
+)
 
 type SockaddrIn struct {
 	Family uint16
@@ -646,9 +653,11 @@ var (
 	procCertCloseStore               = modCrypt32.NewProc("CertCloseStore")
 	procCertEnumCertificatesInStore  = modCrypt32.NewProc("CertEnumCertificatesInStore")
 	procCertGetEnhancedKeyUsage      = modCrypt32.NewProc("CertGetEnhancedKeyUsage")
+	procCertSetEnhancedKeyUsage      = modCrypt32.NewProc("CertSetEnhancedKeyUsage")
 
 	// ntdll
 	procNtQueryInformationFile = modNtdll.NewProc("NtQueryInformationFile")
+	procRtlMoveMemory          = modNtdll.NewProc("RtlMoveMemory")
 )
 
 // WTF-8 / UTF-16 conversions preserving unpaired surrogates
@@ -717,7 +726,7 @@ func UTF16PtrToString(p *uint16) string {
 	var s []uint16
 	for *p != 0 {
 		s = append(s, *p)
-		p = (*uint16)(unsafe.Pointer(uintptr(unsafe.Pointer(p)) + 2))
+		p = (*uint16)(unsafe.Add(unsafe.Pointer(p), 2))
 	}
 	return UTF16ToUTF8(s)
 }
@@ -743,17 +752,26 @@ func SetStdHandle(which DWORD, h HANDLE) bool {
 	return r != 0
 }
 
-func DeviceIoControl(h HANDLE, ioctlCode DWORD, inBuf unsafe.Pointer, inSize DWORD, outBuf unsafe.Pointer, outSize DWORD, bytesReturned *DWORD, overlapped *OVERLAPPED) error {
+func DeviceIoControl(h HANDLE, ioctlCode DWORD, inBuf []byte, outBuf []byte, bytesReturned *DWORD, overlapped *OVERLAPPED) error {
+	var inPtr, outPtr uintptr
+	if len(inBuf) > 0 {
+		inPtr = uintptr(unsafe.Pointer(&inBuf[0]))
+	}
+	if len(outBuf) > 0 {
+		outPtr = uintptr(unsafe.Pointer(&outBuf[0]))
+	}
 	r, _, err := procDeviceIoControl.Call(
 		h,
 		uintptr(ioctlCode),
-		uintptr(inBuf),
-		uintptr(inSize),
-		uintptr(outBuf),
-		uintptr(outSize),
+		inPtr,
+		uintptr(len(inBuf)),
+		outPtr,
+		uintptr(len(outBuf)),
 		uintptr(unsafe.Pointer(bytesReturned)),
 		uintptr(unsafe.Pointer(overlapped)),
 	)
+	runtime.KeepAlive(inBuf)
+	runtime.KeepAlive(outBuf)
 	if r == 0 {
 		return err
 	}
@@ -771,6 +789,14 @@ func GetSystemTimeAsFileTime(ft *int64) {
 
 func CreateFile(name string, access, share DWORD, sec *SECURITY_ATTRIBUTES, disposition, flags DWORD, template HANDLE) (HANDLE, error) {
 	namePtr := UTF16Ptr(name)
+	var secCopy SECURITY_ATTRIBUTES
+	if sec != nil {
+		secCopy = *sec
+		if secCopy.NLength == 0 {
+			secCopy.NLength = DWORD(unsafe.Sizeof(secCopy))
+		}
+		sec = &secCopy
+	}
 	r, _, err := procCreateFileW.Call(
 		uintptr(unsafe.Pointer(namePtr)),
 		uintptr(access),
@@ -981,6 +1007,16 @@ func QueryInformationJobObject(job HANDLE, class int32, info unsafe.Pointer, len
 		return err
 	}
 	return nil
+}
+
+func SetJobExtendedLimits(job HANDLE, limits *JOBOBJECT_EXTENDED_LIMIT_INFORMATION) error {
+	return SetInformationJobObject(job, JobObjectExtendedLimitInformation, unsafe.Pointer(limits), DWORD(unsafe.Sizeof(*limits)))
+}
+
+func QueryJobBasicAccounting(job HANDLE) (JOBOBJECT_BASIC_ACCOUNTING_INFORMATION, error) {
+	var info JOBOBJECT_BASIC_ACCOUNTING_INFORMATION
+	err := QueryInformationJobObject(job, JobObjectBasicAccountingInformation, unsafe.Pointer(&info), DWORD(unsafe.Sizeof(info)))
+	return info, err
 }
 
 func TerminateJobObject(job HANDLE, code uint32) bool {
@@ -1231,6 +1267,38 @@ func WSADuplicateSocket(s SOCKET, processId DWORD, protocolInfo *WSAPROTOCOL_INF
 	return int32(r), err
 }
 
+func BindIn4(s SOCKET, addr *SockaddrIn) (int32, error) {
+	return Bind(s, unsafe.Pointer(addr), int32(unsafe.Sizeof(*addr)))
+}
+
+func BindIn6(s SOCKET, addr *SockaddrIn6) (int32, error) {
+	return Bind(s, unsafe.Pointer(addr), int32(unsafe.Sizeof(*addr)))
+}
+
+func ConnectIn4(s SOCKET, addr *SockaddrIn) (int32, error) {
+	return Connect(s, unsafe.Pointer(addr), int32(unsafe.Sizeof(*addr)))
+}
+
+func ConnectIn6(s SOCKET, addr *SockaddrIn6) (int32, error) {
+	return Connect(s, unsafe.Pointer(addr), int32(unsafe.Sizeof(*addr)))
+}
+
+func SetsockoptInt(s SOCKET, level, optname, val int32) (int32, error) {
+	return Setsockopt(s, level, optname, unsafe.Pointer(&val), int32(unsafe.Sizeof(val)))
+}
+
+func GetsockoptInt(s SOCKET, level, optname int32) (int32, int32, error) {
+	var val int32
+	valLen := int32(unsafe.Sizeof(val))
+	ret, err := Getsockopt(s, level, optname, unsafe.Pointer(&val), &valLen)
+	return ret, val, err
+}
+
+func GetsocknameIn6(s SOCKET, addr *SockaddrIn6) (int32, error) {
+	addrLen := int32(unsafe.Sizeof(*addr))
+	return Getsockname(s, unsafe.Pointer(addr), &addrLen)
+}
+
 func RegCreateKeyEx(key HKEY, subKey string, access DWORD) (HKEY, int32) {
 	var subPtr *uint16
 	if subKey != "" {
@@ -1426,7 +1494,7 @@ type CertContext struct {
 
 type CertEnhKeyUsage struct {
 	Count       DWORD
-	Identifiers *uintptr // pointer to array of LPSTR
+	Identifiers **byte // pointer to array of LPSTR
 }
 
 func CertOpenStore(storeProvider uintptr, msgAndCertEncodingType DWORD, cryptProv uintptr, flags DWORD, pvPara uintptr) (uintptr, error) {
@@ -1443,6 +1511,13 @@ func CertOpenStore(storeProvider uintptr, msgAndCertEncodingType DWORD, cryptPro
 	return r1, nil
 }
 
+func CertOpenSystemStore(name string, flags DWORD) (uintptr, error) {
+	namePtr := UTF16Ptr(name)
+	store, err := CertOpenStore(CERT_STORE_PROV_SYSTEM_W, 0, 0, flags, uintptr(unsafe.Pointer(namePtr)))
+	runtime.KeepAlive(namePtr)
+	return store, err
+}
+
 func CertCloseStore(certStore uintptr, flags DWORD) error {
 	r1, _, err := procCertCloseStore.Call(certStore, uintptr(flags))
 	if r1 == 0 {
@@ -1454,6 +1529,19 @@ func CertCloseStore(certStore uintptr, flags DWORD) error {
 func CertEnumCertificatesInStore(certStore uintptr, prevCertContext uintptr) uintptr {
 	r1, _, _ := procCertEnumCertificatesInStore.Call(certStore, prevCertContext)
 	return r1
+}
+
+func CertEnumCertificates(store uintptr, prev *syscall.CertContext) (*syscall.CertContext, error) {
+	return syscall.CertEnumCertificatesInStore(syscall.Handle(store), prev)
+}
+
+func CertEncodedBytes(ctx *syscall.CertContext) []byte {
+	if ctx == nil || ctx.EncodedCert == nil || ctx.Length == 0 {
+		return nil
+	}
+	der := make([]byte, ctx.Length)
+	copy(der, unsafe.Slice(ctx.EncodedCert, ctx.Length))
+	return der
 }
 
 // CertGetEnhancedKeyUsage preserves lastError even on success: an empty usage
@@ -1469,6 +1557,93 @@ func CertGetEnhancedKeyUsage(certContext uintptr, flags DWORD, usage uintptr, si
 	return r1 != 0, lastError
 }
 
+func CertEnhancedKeyUsageOIDs(ctx *syscall.CertContext, flags DWORD) (oids []string, unrestricted bool, err error) {
+	var size DWORD
+	r1, _, callErr := procCertGetEnhancedKeyUsage.Call(
+		uintptr(unsafe.Pointer(ctx)),
+		uintptr(flags),
+		0,
+		uintptr(unsafe.Pointer(&size)),
+	)
+	lastError, _ := callErr.(syscall.Errno)
+	if r1 == 0 {
+		if lastError == syscall.Errno(CRYPT_E_NOT_FOUND) {
+			return nil, true, nil
+		}
+		return nil, false, fmt.Errorf("query certificate usages: %w", lastError)
+	}
+	if size < DWORD(unsafe.Sizeof(CertEnhKeyUsage{})) {
+		size = DWORD(unsafe.Sizeof(CertEnhKeyUsage{}))
+	}
+	buf := make([]byte, size)
+	r1, _, callErr = procCertGetEnhancedKeyUsage.Call(
+		uintptr(unsafe.Pointer(ctx)),
+		uintptr(flags),
+		uintptr(unsafe.Pointer(&buf[0])),
+		uintptr(unsafe.Pointer(&size)),
+	)
+	lastError, _ = callErr.(syscall.Errno)
+	if r1 == 0 {
+		if lastError == syscall.Errno(CRYPT_E_NOT_FOUND) {
+			return nil, true, nil
+		}
+		return nil, false, fmt.Errorf("read certificate usages: %w", lastError)
+	}
+	u := (*CertEnhKeyUsage)(unsafe.Pointer(&buf[0]))
+	if u.Count == 0 {
+		if lastError == syscall.Errno(CRYPT_E_NOT_FOUND) {
+			return nil, true, nil
+		}
+		return nil, false, nil
+	}
+	ptrs := unsafe.Slice(u.Identifiers, u.Count)
+	oids = make([]string, 0, len(ptrs))
+	for _, p := range ptrs {
+		var b []byte
+		for *p != 0 {
+			b = append(b, *p)
+			p = (*byte)(unsafe.Add(unsafe.Pointer(p), 1))
+		}
+		oids = append(oids, string(b))
+	}
+	runtime.KeepAlive(buf)
+	return oids, false, nil
+}
+
+func CertCreateContext(der []byte) (*syscall.CertContext, error) {
+	if len(der) == 0 {
+		return nil, errors.New("empty certificate")
+	}
+	return syscall.CertCreateCertificateContext(X509_ASN_ENCODING, &der[0], uint32(len(der)))
+}
+
+func CertFreeContext(ctx *syscall.CertContext) {
+	if ctx != nil {
+		_ = syscall.CertFreeCertificateContext(ctx)
+	}
+}
+
+func CertSetEnhancedKeyUsageOIDs(ctx *syscall.CertContext, oids []string) error {
+	var encoded [][]byte
+	var pointers []*byte
+	for _, oid := range oids {
+		b := append([]byte(oid), 0)
+		encoded = append(encoded, b)
+		pointers = append(pointers, &b[0])
+	}
+	usage := CertEnhKeyUsage{Count: DWORD(len(pointers))}
+	if len(pointers) != 0 {
+		usage.Identifiers = &pointers[0]
+	}
+	ok, _, err := procCertSetEnhancedKeyUsage.Call(uintptr(unsafe.Pointer(ctx)), uintptr(unsafe.Pointer(&usage)))
+	runtime.KeepAlive(encoded)
+	runtime.KeepAlive(pointers)
+	if ok == 0 {
+		return err
+	}
+	return nil
+}
+
 // Credentials
 const (
 	CRED_MAX_CREDENTIAL_BLOB_SIZE = 512
@@ -1476,7 +1651,7 @@ const (
 
 func CredRead(targetName string, credType DWORD) (*CREDENTIALW, error) {
 	targetPtr := UTF16Ptr(targetName)
-	var pCred uintptr
+	var pCred *CREDENTIALW
 	r, _, err := procCredReadW.Call(
 		uintptr(unsafe.Pointer(targetPtr)),
 		uintptr(credType),
@@ -1486,11 +1661,26 @@ func CredRead(targetName string, credType DWORD) (*CREDENTIALW, error) {
 	if r == 0 {
 		return nil, err
 	}
-	return (*CREDENTIALW)(unsafe.Pointer(pCred)), nil
+	return pCred, nil
 }
 
 func CredFree(p uintptr) {
 	_, _, _ = procCredFree.Call(p)
+}
+
+func CredFreeCredential(cred *CREDENTIALW) {
+	if cred != nil {
+		CredFree(uintptr(unsafe.Pointer(cred)))
+	}
+}
+
+func (c *CREDENTIALW) BlobBytes() []byte {
+	if c == nil || c.CredentialBlob == nil || c.CredentialBlobSize == 0 {
+		return nil
+	}
+	b := make([]byte, c.CredentialBlobSize)
+	copy(b, unsafe.Slice(c.CredentialBlob, c.CredentialBlobSize))
+	return b
 }
 
 func CredWrite(cred *CREDENTIALW, flags DWORD) error {
@@ -1499,6 +1689,35 @@ func CredWrite(cred *CREDENTIALW, flags DWORD) error {
 		return err
 	}
 	return nil
+}
+
+func CredWriteGeneric(target, user, comment, secret string) error {
+	tgtU16 := UTF16Ptr(target)
+	usrU16 := UTF16Ptr(user)
+	cmtU16 := UTF16Ptr(comment)
+
+	var secretPtr *byte
+	var secretBytes []byte
+	if len(secret) > 0 {
+		secretBytes = []byte(secret)
+		secretPtr = &secretBytes[0]
+	}
+
+	c := &CREDENTIALW{
+		Type:               CRED_TYPE_GENERIC,
+		TargetName:         tgtU16,
+		Comment:            cmtU16,
+		CredentialBlobSize: DWORD(len(secret)),
+		CredentialBlob:     secretPtr,
+		Persist:            CRED_PERSIST_LOCAL_MACHINE,
+		UserName:           usrU16,
+	}
+	err := CredWrite(c, 0)
+	runtime.KeepAlive(tgtU16)
+	runtime.KeepAlive(usrU16)
+	runtime.KeepAlive(cmtU16)
+	runtime.KeepAlive(secretBytes)
+	return err
 }
 
 func CredDelete(targetName string, credType DWORD, flags DWORD) error {

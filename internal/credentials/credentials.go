@@ -12,7 +12,6 @@ import (
 	"strings"
 	"syscall"
 	"time"
-	"unsafe"
 
 	"github.com/quasidock/quasidock/internal/win32"
 )
@@ -161,7 +160,7 @@ func Read(host string) (*Credential, error) {
 		}
 		return nil, err
 	}
-	defer win32.CredFree(uintptr(unsafe.Pointer(cred)))
+	defer win32.CredFreeCredential(cred)
 
 	var user string
 	if cred.UserName != nil {
@@ -169,9 +168,7 @@ func Read(host string) (*Credential, error) {
 	}
 
 	var secret string
-	if cred.CredentialBlob != nil && cred.CredentialBlobSize > 0 {
-		b := make([]byte, cred.CredentialBlobSize)
-		copy(b, unsafe.Slice(cred.CredentialBlob, cred.CredentialBlobSize))
+	if b := cred.BlobBytes(); len(b) > 0 {
 		secret = string(b)
 	}
 
@@ -188,27 +185,7 @@ func Save(host, user, secret string) error {
 		return fmt.Errorf("the password is %d bytes; Windows Credential Manager holds at most %d", len(secret), win32.CRED_MAX_CREDENTIAL_BLOB_SIZE)
 	}
 
-	tgtU16 := win32.UTF16Ptr(targetName(host))
-	usrU16 := win32.UTF16Ptr(user)
-	cmtU16 := win32.UTF16Ptr("Registry login saved by quasidock login")
-
-	var secretPtr *byte
-	if len(secret) > 0 {
-		secretBytes := []byte(secret)
-		secretPtr = &secretBytes[0]
-	}
-
-	c := &win32.CREDENTIALW{
-		Type:               win32.CRED_TYPE_GENERIC,
-		TargetName:         tgtU16,
-		Comment:            cmtU16,
-		CredentialBlobSize: win32.DWORD(len(secret)),
-		CredentialBlob:     secretPtr,
-		Persist:            win32.CRED_PERSIST_LOCAL_MACHINE,
-		UserName:           usrU16,
-	}
-
-	return win32.CredWrite(c, 0)
+	return win32.CredWriteGeneric(targetName(host), user, "Registry login saved by quasidock login", secret)
 }
 
 // Remove deletes credentials for host from Windows Credential Manager.

@@ -1,6 +1,7 @@
 package written
 
 import (
+	"encoding/binary"
 	"fmt"
 	"io/fs"
 	"os"
@@ -9,7 +10,6 @@ import (
 	"sync"
 	"syscall"
 	"time"
-	"unsafe"
 
 	"github.com/quasidock/quasidock/internal/acl"
 	"github.com/quasidock/quasidock/internal/store"
@@ -78,7 +78,7 @@ func startWatcher(dirs []string) (*Watcher, error) {
 			continue
 		}
 		w := &Watch{Path: dir, Handle: h}
-		_, err = win32.CreateIoCompletionPort(h, port, uintptr(unsafe.Pointer(w)), 0)
+		_, err = win32.CreateIoCompletionPort(h, port, uintptr(len(watches)+1), 0)
 		if err != nil || !issue(w) {
 			win32.CloseHandle(h)
 			continue
@@ -101,8 +101,7 @@ func issue(w *Watch) bool {
 	filter := win32.FILE_NOTIFY_CHANGE_FILE_NAME | win32.FILE_NOTIFY_CHANGE_LAST_WRITE
 	err := win32.ReadDirectoryChanges(
 		w.Handle,
-		unsafe.Pointer(&w.Buffer[0]),
-		win32.DWORD(len(w.Buffer)),
+		w.Buffer[:],
 		true,
 		filter,
 		nil,
@@ -121,7 +120,10 @@ func (self *Watcher) collect() {
 		if key == 0 {
 			return
 		}
-		w := (*Watch)(unsafe.Pointer(key))
+		if int(key) > len(self.Watches) {
+			continue
+		}
+		w := self.Watches[key-1]
 		if !ok {
 			continue
 		}
@@ -141,23 +143,31 @@ func (self *Watcher) gather(w *Watch, bytes win32.DWORD) {
 	defer self.mu.Unlock()
 
 	var offset win32.DWORD = 0
-	for offset+win32.DWORD(unsafe.Sizeof(win32.FILE_NOTIFY_INFORMATION{})) <= bytes {
-		info := (*win32.FILE_NOTIFY_INFORMATION)(unsafe.Pointer(&w.Buffer[offset]))
-		nameLen := info.FileNameLength / 2
-		namePtr := (*[1 << 16]uint16)(unsafe.Pointer(&info.FileName[0]))[:nameLen:nameLen]
-		name := syscall.UTF16ToString(namePtr)
+	for offset+12 <= bytes {
+		nextOffset := binary.LittleEndian.Uint32(w.Buffer[offset : offset+4])
+		action := binary.LittleEndian.Uint32(w.Buffer[offset+4 : offset+8])
+		nameBytes := binary.LittleEndian.Uint32(w.Buffer[offset+8 : offset+12])
+		if nameBytes > bytes-offset-12 {
+			break
+		}
+		nameLen := nameBytes / 2
+		nameU16 := make([]uint16, nameLen)
+		for i := range nameU16 {
+			nameU16[i] = binary.LittleEndian.Uint16(w.Buffer[int(offset)+12+i*2:])
+		}
+		name := syscall.UTF16ToString(nameU16)
 
-		switch info.Action {
+		switch action {
 		case win32.FILE_ACTION_ADDED, win32.FILE_ACTION_MODIFIED, win32.FILE_ACTION_RENAMED_NEW_NAME:
 			if IsProgram(name) {
 				self.Found = append(self.Found, filepath.Join(w.Path, name))
 			}
 		}
 
-		if info.NextEntryOffset == 0 {
+		if nextOffset == 0 {
 			break
 		}
-		offset += info.NextEntryOffset
+		offset += nextOffset
 	}
 }
 

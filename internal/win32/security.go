@@ -1,9 +1,15 @@
 package win32
 
 import (
+	"encoding/binary"
+	"errors"
+	"fmt"
+	"runtime"
 	"syscall"
 	"unsafe"
 )
+
+var procCopySid = modAdvapi32.NewProc("CopySid")
 
 func OpenProcessToken(process HANDLE, access DWORD) (HANDLE, error) {
 	var token HANDLE
@@ -70,13 +76,50 @@ func DeleteAce(acl *ACL, index DWORD) error {
 	return nil
 }
 
-func GetAce(acl *ACL, index DWORD) (uintptr, error) {
-	var ace uintptr
-	r, _, err := procGetAce.Call(uintptr(unsafe.Pointer(acl)), uintptr(index), uintptr(unsafe.Pointer(&ace)))
-	if r == 0 {
-		return 0, err
+type ACE struct {
+	Header ACE_HEADER
+	Mask   DWORD
+	Sid    PSID
+}
+
+func FreeAcl(acl *ACL) {
+	if acl != nil {
+		LocalFree(uintptr(unsafe.Pointer(acl)))
 	}
-	return ace, nil
+}
+
+func GetAce(acl *ACL, index DWORD) (ACE, error) {
+	var raw *ACCESS_ALLOWED_ACE
+	r, _, err := procGetAce.Call(uintptr(unsafe.Pointer(acl)), uintptr(index), uintptr(unsafe.Pointer(&raw)))
+	if r == 0 || raw == nil {
+		return ACE{}, err
+	}
+	return ACE{
+		Header: raw.Header,
+		Mask:   raw.Mask,
+		Sid:    uintptr(unsafe.Pointer(&raw.SidStart)),
+	}, nil
+}
+
+func NewMandatoryAcl(sid PSID, inheritFlags DWORD) ([]byte, *ACL, error) {
+	size := DWORD(unsafe.Sizeof(ACL{}) + unsafe.Sizeof(ACCESS_ALLOWED_ACE{}) + uintptr(GetLengthSid(sid)))
+	buf := make([]byte, size+8)
+	sacl := (*ACL)(unsafe.Pointer(&buf[0]))
+	if err := InitializeAcl(sacl, size, ACL_REVISION); err != nil {
+		return nil, nil, fmt.Errorf("InitializeAcl: %w", err)
+	}
+	if err := AddMandatoryAce(sacl, ACL_REVISION, inheritFlags, SYSTEM_MANDATORY_LABEL_NO_WRITE_UP, sid); err != nil {
+		return nil, nil, fmt.Errorf("AddMandatoryAce: %w", err)
+	}
+	return buf, sacl, nil
+}
+
+func NewEmptyAcl() (ACL, error) {
+	var empty ACL
+	if err := InitializeAcl(&empty, DWORD(unsafe.Sizeof(empty)), ACL_REVISION); err != nil {
+		return ACL{}, fmt.Errorf("InitializeAcl: %w", err)
+	}
+	return empty, nil
 }
 
 func FreeSid(sid PSID) {
@@ -93,19 +136,109 @@ func GetLengthSid(sid PSID) DWORD {
 	return DWORD(r)
 }
 
+func copySidBytes(sid PSID) ([68]byte, bool) {
+	var buf [68]byte
+	if sid == 0 {
+		return buf, false
+	}
+	r, _, _ := procCopySid.Call(uintptr(len(buf)), uintptr(unsafe.Pointer(&buf[0])), sid)
+	if r == 0 {
+		return buf, false
+	}
+	return buf, true
+}
+
 func GetSidIdentifierAuthority(sid PSID) *SID_IDENTIFIER_AUTHORITY {
-	r, _, _ := procGetSidIdentifierAuthority.Call(sid)
-	return (*SID_IDENTIFIER_AUTHORITY)(unsafe.Pointer(r))
+	buf, ok := copySidBytes(sid)
+	if !ok {
+		return nil
+	}
+	var auth SID_IDENTIFIER_AUTHORITY
+	copy(auth.Value[:], buf[2:8])
+	return &auth
 }
 
 func GetSidSubAuthorityCount(sid PSID) *uint8 {
-	r, _, _ := procGetSidSubAuthorityCount.Call(sid)
-	return (*uint8)(unsafe.Pointer(r))
+	buf, ok := copySidBytes(sid)
+	if !ok {
+		return nil
+	}
+	count := buf[1]
+	return &count
 }
 
 func GetSidSubAuthority(sid PSID, index DWORD) *DWORD {
-	r, _, _ := procGetSidSubAuthority.Call(sid, uintptr(index))
-	return (*DWORD)(unsafe.Pointer(r))
+	buf, ok := copySidBytes(sid)
+	if !ok {
+		return nil
+	}
+	if index >= DWORD(buf[1]) || 8+4*(index+1) > DWORD(len(buf)) {
+		return nil
+	}
+	val := binary.LittleEndian.Uint32(buf[8+4*index:])
+	return &val
+}
+
+func GetTokenUserSid(token HANDLE) ([]byte, PSID, error) {
+	var lenBuf DWORD
+	_ = GetTokenInformation(token, TokenUser, nil, 0, &lenBuf)
+	if lenBuf == 0 {
+		return nil, 0, errors.New("process token has no user information")
+	}
+	buf := make([]byte, lenBuf)
+	if err := GetTokenInformation(token, TokenUser, unsafe.Pointer(&buf[0]), lenBuf, &lenBuf); err != nil {
+		return nil, 0, fmt.Errorf("GetTokenInformation: %w", err)
+	}
+	info := (*TOKEN_USER)(unsafe.Pointer(&buf[0]))
+	sidLen := GetLengthSid(info.User.Sid)
+	sidData := make([]byte, sidLen)
+	r, _, err := procCopySid.Call(uintptr(sidLen), uintptr(unsafe.Pointer(&sidData[0])), info.User.Sid)
+	runtime.KeepAlive(buf)
+	if r == 0 {
+		return nil, 0, err
+	}
+	return sidData, uintptr(unsafe.Pointer(&sidData[0])), nil
+}
+
+func GetTokenIntegrityRid(token HANDLE) (DWORD, error) {
+	var buf [128]byte
+	var lenBuf DWORD
+	if err := GetTokenInformation(token, TokenIntegrityLevel, unsafe.Pointer(&buf[0]), DWORD(len(buf)), &lenBuf); err != nil {
+		return 0, fmt.Errorf("GetTokenInformation: %w", err)
+	}
+	label := (*TOKEN_MANDATORY_LABEL)(unsafe.Pointer(&buf[0]))
+	sid := label.Label.Sid
+	count := GetSidSubAuthorityCount(sid)
+	if count == nil || *count == 0 {
+		runtime.KeepAlive(buf)
+		return 0, errors.New("token integrity SID has no subauthorities")
+	}
+	lastSub := GetSidSubAuthority(sid, DWORD(*count-1))
+	runtime.KeepAlive(buf)
+	if lastSub == nil {
+		return 0, errors.New("token integrity RID missing")
+	}
+	return *lastSub, nil
+}
+
+func SetTokenIntegrityLevel(token HANDLE, sid PSID) error {
+	label := TOKEN_MANDATORY_LABEL{
+		Label: SID_AND_ATTRIBUTES{
+			Sid:        sid,
+			Attributes: SE_GROUP_INTEGRITY,
+		},
+	}
+	labelSize := DWORD(unsafe.Sizeof(label)) + GetLengthSid(sid)
+	return SetTokenInformation(token, TokenIntegrityLevel, unsafe.Pointer(&label), labelSize)
+}
+
+func GetTokenIsAppContainer(token HANDLE) (bool, error) {
+	var isAC DWORD
+	var retLen DWORD
+	if err := GetTokenInformation(token, TokenIsAppContainer, unsafe.Pointer(&isAC), DWORD(unsafe.Sizeof(isAC)), &retLen); err != nil {
+		return false, err
+	}
+	return isAC != 0, nil
 }
 
 func ConvertStringSidToSid(s string) (PSID, error) {
@@ -133,7 +266,7 @@ func utf16Slice(p *uint16) []uint16 {
 		return nil
 	}
 	var res []uint16
-	for cur := p; *cur != 0; cur = (*uint16)(unsafe.Pointer(uintptr(unsafe.Pointer(cur)) + 2)) {
+	for cur := p; *cur != 0; cur = (*uint16)(unsafe.Add(unsafe.Pointer(cur), 2)) {
 		res = append(res, *cur)
 	}
 	return res
@@ -250,17 +383,26 @@ func DeleteAppContainerProfile(name string) HRESULT {
 	return HRESULT(hr)
 }
 
-func CreateEnvironmentBlock(token HANDLE, inherit bool) (uintptr, error) {
-	var block uintptr
+func CreateEnvironmentBlock(token HANDLE, inherit bool) ([]uint16, error) {
+	var block *uint16
 	var inh uintptr
 	if inherit {
 		inh = 1
 	}
 	r, _, err := procCreateEnvironmentBlock.Call(uintptr(unsafe.Pointer(&block)), token, inh)
 	if r == 0 {
-		return 0, err
+		return nil, err
 	}
-	return block, nil
+	defer DestroyEnvironmentBlock(uintptr(unsafe.Pointer(block)))
+
+	p := unsafe.Slice(block, 1<<20)
+	length := 0
+	for length+1 < len(p) && (p[length] != 0 || p[length+1] != 0) {
+		length++
+	}
+	out := make([]uint16, length+2)
+	copy(out, p[:length+2])
+	return out, nil
 }
 
 func DestroyEnvironmentBlock(block uintptr) bool {

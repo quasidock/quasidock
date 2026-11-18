@@ -29,7 +29,7 @@
     "/install-tl", "/install-tl-windows.bat", "/tl-tray-menu.exe", "*.log"
   ],
   "source_mirrors": [
-    "ghcr.io/zigsaw-io/org.tug.texlive@sha256:7d55caed461ff9a28b4bf818bf45f762e76159b0af1db05dee5226467d18a065"
+    "ghcr.io/quasidock/org.tug.texlive@sha256:7d55caed461ff9a28b4bf818bf45f762e76159b0af1db05dee5226467d18a065"
   ],
   "stages": [
     {

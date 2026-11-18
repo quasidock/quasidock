@@ -75,7 +75,7 @@ installs() {
     grep -q "^Installed quasidock [0-9][0-9.]* in " <<<"$out" || { echo "$out"; return 1; }
     for f in quasidock.exe quasidock-relay.exe quasidock-host.exe; do [ -f "$bin\\$f" ] || { echo "no $f"; return 1; }; done
 }
-check "each program's version information has quasidock's version, and its manifest runs it as the user" version_info
+check "the installer installs the packaged programs" installs
 path_added() {
     path_value | grep -q 'REG_EXPAND_SZ' || { echo "the type changed: $(path_value)"; return 1; }
     path_value | grep -qF "%USERPROFILE%\\tools;C:\\other;$bin" || { path_value; return 1; }

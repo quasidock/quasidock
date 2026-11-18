@@ -6,7 +6,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unsafe"
 
 	"github.com/quasidock/quasidock/internal/net"
 	"github.com/quasidock/quasidock/internal/win32"
@@ -168,8 +167,7 @@ func askParent(index uint8) win32.SOCKET {
 	}
 
 	var info win32.WSAPROTOCOL_INFOW
-	infoBytes := unsafe.Slice((*byte)(unsafe.Pointer(&info)), unsafe.Sizeof(info))
-	if !readAll(parent.In, infoBytes) {
+	if !readAll(parent.In, info.Data[:]) {
 		return win32.INVALID_SOCKET
 	}
 

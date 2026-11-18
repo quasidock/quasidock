@@ -17,10 +17,7 @@
 # command-line program and starts up in each sandbox. The apps' shortcuts have
 # icons made from their SVGs; Text Editor and Rnote are registered for their
 # kinds of file (in a scratch registry key) and open one given with --file in
-# each sandbox. Pinta (recipes/no-publish/pinta.json), a C# app, runs on the
-# runtime and .NET's, and opens an image given with --file in each sandbox.
-# GTK built with MSVC (recipes/gtk4-msvc.json) runs its demos, if the store
-# has it.
+# each sandbox.
 #
 # In CI (the Reproduce workflow's gtk-suites job), it runs in a store of the
 # published images (tests/seed-store.sh), which it installs again rather
@@ -422,32 +419,6 @@ cp "$work\\notes.rnote" "$docs\\notes.rnote"
 check "it opens a document it's given" stays_up 20 --filesystem="$docs" --entrypoint=rnote $RNOTE "$docs\\notes.rnote"
 check "with --sandbox=soft" stays_up 20 --sandbox=soft --filesystem="$docs" --entrypoint=rnote $RNOTE "$docs\\notes.rnote"
 check "with --sandbox=appcontainer" stays_up 20 --sandbox=appcontainer --filesystem="$docs" --entrypoint=rnote $RNOTE "$docs\\notes.rnote"
-
-# Pinta (recipes/no-publish/pinta.json), a C# app, on the runtime and .NET's,
-# built with .NET's SDK image. Microsoft's licence doesn't let the .NET images
-# be published, so they're built here from Microsoft's download unless the
-# store has them (300 MB, about a minute), and Pinta too (about a minute).
-PINTA=pinta
-installed_dotnet=false installed_pinta=false
-qd_cached "$zigsaw" "dotnet-sdk" || installed_dotnet=true
-qd_cached "$zigsaw" "$PINTA" || installed_pinta=true
-for r in dotnet-sdk dotnet pinta; do
-    z build "$root\\recipes\\no-publish\\$r.json" >"$work\\$r.log" 2>&1 || echo "building $r.json failed: $(tail -1 "$work\\$r.log")"
-done
-pinta_dir="$QUASIDOCK_HOME\\deploy\\$(grep -o 'sha256:[0-9a-f]*' "$QUASIDOCK_HOME\\blobs\\sha256\\$(manifest_of $PINTA | cut -d: -f2)" | tail -1 | cut -d: -f2)"
-check "Pinta 3.1.2 is installed" sh -c "timeout 60 bash '$QD_IMAGES_HELPER' run \"\$0\" $PINTA --version | tr -d '\r' | grep -qx '3\\.1\\.2'" "$zigsaw"
-# Pinta looks for its icons and translations in the share directory next to
-# its bin, as its own Windows build lays them out.
-check "it has its icons and translations in share" test -f "$pinta_dir\\share\\locale\\de\\LC_MESSAGES\\pinta.mo" -a -f "$pinta_dir\\share\\icons\\hicolor\\scalable\\actions\\tool-paintbrush-symbolic.svg"
-check "Pinta runs" stays_up 15 $PINTA
-check "with --sandbox=soft" stays_up 15 --sandbox=soft $PINTA
-check "with --sandbox=appcontainer" stays_up 15 --sandbox=appcontainer $PINTA
-# A 4x4 PNG.
-printf '%s' 'iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAIAAAAmkwkpAAAAEElEQVR42mM4EaABRwzEcQASUhQB/GAXigAAAABJRU5ErkJggg==' | base64 -d >"$docs\\picture.png"
-check "it opens an image it's given" stays_up 20 --filesystem="$docs" --entrypoint=pinta $PINTA "$docs\\picture.png"
-check "with --sandbox=soft" stays_up 20 --sandbox=soft --filesystem="$docs" --entrypoint=pinta $PINTA "$docs\\picture.png"
-check "with --sandbox=appcontainer" stays_up 20 --sandbox=appcontainer --filesystem="$docs" --entrypoint=pinta $PINTA "$docs\\picture.png"
-check "the documents' directory grant was revoked after the runs" sh -c "! icacls '$docs' | grep -q -e 'Mandatory Label' -e 'S-1-15-'"
 
 # GTK built with the machine's MSVC (recipes/gtk4-msvc.json), if the store
 # has it: it isn't published, and needs Visual Studio to build.

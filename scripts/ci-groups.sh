@@ -45,7 +45,7 @@ common_paths=(
 # and their directories, are added below.
 gtk_paths=(
     tests/gtk.sh tests/gtk3.sh tests/gtk/ tests/acprobe.sh tests/cmd/acprobe/main.go
-    recipes/gtk4-msvc.json recipes/no-publish/pinta.json recipes/no-publish/dotnet
+    recipes/gtk4-msvc.json
     # What gtk-suites seeds its store with besides GTK's family.
     recipes/busybox.json recipes/llvm-mingw.json recipes/meson.json recipes/mingit.json
     "${common_paths[@]}"

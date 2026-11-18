@@ -152,20 +152,20 @@ func TestContentRangeStart(t *testing.T) {
 }
 
 func TestTokenURL(t *testing.T) {
-	got := TokenURL("https://ghcr.io/token", "ghcr.io", []string{"repository:zigsaw-io/app:pull,push", "repository:zigsaw-io/org.nodejs.node:pull"})
-	want := "https://ghcr.io/token?service=ghcr.io&scope=repository%3Azigsaw-io%2Fapp%3Apull%2Cpush&scope=repository%3Azigsaw-io%2Forg.nodejs.node%3Apull"
+	got := TokenURL("https://ghcr.io/token", "ghcr.io", []string{"repository:quasidock/app:pull,push", "repository:quasidock/org.nodejs.node:pull"})
+	want := "https://ghcr.io/token?service=ghcr.io&scope=repository%3Aquasidock%2Fapp%3Apull%2Cpush&scope=repository%3Aquasidock%2Forg.nodejs.node%3Apull"
 	if got != want {
 		t.Errorf("TokenURL = %q, want %q", got, want)
 	}
 }
 
 func TestUploadsPath(t *testing.T) {
-	got1 := uploadsPath("zigsaw-io/app", "", "")
-	if got1 != "/v2/zigsaw-io/app/blobs/uploads/" {
+	got1 := uploadsPath("quasidock/app", "", "")
+	if got1 != "/v2/quasidock/app/blobs/uploads/" {
 		t.Errorf("uploadsPath = %s", got1)
 	}
-	got2 := uploadsPath("zigsaw-io/app", "sha256:ab", "zigsaw-io/org.nodejs.node")
-	if got2 != "/v2/zigsaw-io/app/blobs/uploads/?mount=sha256%3Aab&from=zigsaw-io%2Forg.nodejs.node" {
+	got2 := uploadsPath("quasidock/app", "sha256:ab", "quasidock/org.nodejs.node")
+	if got2 != "/v2/quasidock/app/blobs/uploads/?mount=sha256%3Aab&from=quasidock%2Forg.nodejs.node" {
 		t.Errorf("uploadsPath = %s", got2)
 	}
 }

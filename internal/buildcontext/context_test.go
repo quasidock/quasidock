@@ -3,8 +3,11 @@ package buildcontext
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/quasidock/quasidock/internal/win32"
 )
 
 func put(t *testing.T, root, name, value string) {
@@ -122,5 +125,80 @@ func TestContextHashIsIndependentOfLocation(t *testing.T) {
 	}
 	if x.Hash != y.Hash {
 		t.Fatal("absolute context path changed content identity")
+	}
+}
+
+func TestInspectCopySelectors(t *testing.T) {
+	root := t.TempDir()
+	for name, value := range map[string]string{
+		"src/main.go": "main", "src/nested/data.txt": "data", "src/nested/other.go": "other",
+		"src2/other.txt": "unrelated", "package.json": "{}", "package-lock.json": "{}",
+		"ignored/drop.txt": "drop", "ignored/keep.txt": "keep", "quasidock.json": "recipe",
+		".dockerignore": "src\n", "docker/Dockerfile.dockerignore": "ignored/**\n!ignored/keep.txt\n",
+	} {
+		put(t, root, name, value)
+	}
+	exclude := filepath.Join(root, "quasidock.json")
+	full, err := Read(root, "docker/Dockerfile", exclude)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, paths := range [][]string{
+		{"src/main.go"}, {"src"}, {"src/*/*.txt"}, {"s[c-z]?"},
+		{"package*.json", "ignored"}, {"."}, {"quasidock.json"}, {"missing"}, nil,
+	} {
+		t.Run(strings.Join(paths, ","), func(t *testing.T) {
+			inspection, err := Inspect(root, "docker/Dockerfile", exclude, paths)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if inspection.Hash != "" {
+				t.Fatal("inspection hashed file contents")
+			}
+			if len(paths) == 0 {
+				if len(inspection.Tree.Sorted()) != 0 {
+					t.Fatal("inspection without selectors included files")
+				}
+				return
+			}
+			want, wantErr := full.Copy(paths, "app/", false)
+			got, gotErr := inspection.Copy(paths, "app/", false)
+			if wantErr != nil || gotErr != nil {
+				if wantErr == nil || gotErr == nil || wantErr.Error() != gotErr.Error() {
+					t.Fatalf("COPY errors differ: %v / %v", wantErr, gotErr)
+				}
+				return
+			}
+			if !reflect.DeepEqual(got.Sorted(), want.Sorted()) {
+				t.Fatalf("COPY differs: %v / %v", got.Sorted(), want.Sorted())
+			}
+			if paths[0] != "." && inspection.Tree.IsFile("src2/other.txt") {
+				t.Fatal("inspection included an unrelated subtree")
+			}
+		})
+	}
+}
+
+func TestInspectDoesNotReadFileContents(t *testing.T) {
+	root := t.TempDir()
+	put(t, root, "src/data.txt", "contents need not be readable during conversion")
+	h, err := win32.CreateFile(filepath.Join(root, "src/data.txt"), win32.GENERIC_READ,
+		win32.FILE_SHARE_WRITE|win32.FILE_SHARE_DELETE, nil, win32.OPEN_EXISTING, win32.FILE_ATTRIBUTE_NORMAL, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer win32.CloseHandle(h)
+	if _, err := os.ReadFile(filepath.Join(root, "src/data.txt")); err == nil {
+		t.Fatal("fixture permits reading file contents")
+	}
+	inspection, err := Inspect(root, "Dockerfile", "", []string{"src"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := inspection.Copy([]string{"src"}, "app/", false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Read(root, "Dockerfile", ""); err == nil {
+		t.Fatal("build snapshot did not read file contents")
 	}
 }

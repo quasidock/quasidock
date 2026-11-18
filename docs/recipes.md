@@ -396,10 +396,6 @@ How `from` behaves:
 - **Permissions do not carry over**: `sandbox`, `network`, `filesystem`,
   `services`, and `host` come only from the app's own `permissions`.
 
-Note: Flatpak-style `extensions`/`extends` points were removed in Quasidock
-0.3.0; optional add-ons are wired explicitly via `from` (see
-[Legacy Zigsaw differences](#legacy-zigsaw-differences)).
-
 [`scripts/check-pins.sh`](../scripts/check-pins.sh) checks published recipes'
 pins against the registry (see [Pins and rebuilding](#pins-and-rebuilding)).
 
@@ -784,8 +780,7 @@ QUASIDOCK_HOME=path\to\store2 QUASIDOCK=path\to\quasidock.exe scripts/rebuild.sh
 
 `QUASIDOCK_HOME` is required so rebuilds do not mutate your default store.
 Using a frozen `quasidock.exe` binary keeps cache keys valid across the run.
-`rebuild.sh` updates pins in `recipes/` (excluding `recipes/no-publish/`, which
-it skips and lists at the end), stops on the first failure leaving the log
+`rebuild.sh` updates pins in `recipes/`, stops on the first failure leaving the log
 tail, and prints the [scripts/publish.sh](../scripts/publish.sh) command to run.
 Running `--no-pin` in a second store lets you verify identical output digests
 before publishing.
@@ -1223,32 +1218,6 @@ Go recipes (`vendor` stage running `go mod vendor` / `go mod download`, offline
 - **[recipes/cosign.json](../recipes/cosign.json)** (3.1.4), used directly by
   [scripts/sign-images.sh](../scripts/sign-images.sh) and verified offline in
   [tests/oci.sh](../tests/oci.sh).
-
-### .NET
-
-Because Microsoft's license for Windows .NET binaries does not permit
-redistribution, .NET recipes live under `recipes/no-publish/` and are built
-locally from Microsoft's zip archives:
-
-- **[recipes/no-publish/dotnet-sdk.json](../recipes/no-publish/dotnet-sdk.json)**
-  (10.0.402) and **[recipes/no-publish/dotnet.json](../recipes/no-publish/dotnet.json)**
-  (10.0.13) create the SDK (`dotnet-sdk`) and shared runtime (`dotnet`,
-  extracted from the SDK with `DOTNET_ROOT="${app}"` so framework-dependent apps
-  never consult a machine-wide .NET install; includes `Microsoft.NETCore.App`,
-  `Microsoft.AspNetCore.App`, and `Microsoft.WindowsDesktop.App` for WinForms
-  and WPF). See [tests/build.sh](../tests/build.sh).
-- **[recipes/no-publish/pinta.json](../recipes/no-publish/pinta.json)** (3.1.2)
-  runs on `"from": { "dotnet": "...", "gtk": "gtk4:..." }`, builds `net10.0`,
-  and grants `"filesystem": ["cwd"]`.
-- **[recipes/no-publish/files.json](../recipes/no-publish/files.json)** (Files
-  4.3, named `"Files - Zigsaw build"` via [name.patch](../recipes/no-publish/files/name.patch))
-  patches Files with [unpackaged.patch](../recipes/no-publish/files/unpackaged.patch)
-  to publish framework-dependent (`WindowsPackageType=None`,
-  `WindowsAppSDKSelfContained=true`), copies `Package.appxmanifest` and `Assets`,
-  keeps settings in `"registry": ["Software\\Files Community"]`, and requests
-  `"sandbox": "soft"` because Windows storage APIs reject unpackaged WinUI 3
-  enumeration under `low` or `appcontainer` (see [findings.md](findings.md) and
-  [tests/files.sh](../tests/files.sh)).
 
 ### Java
 

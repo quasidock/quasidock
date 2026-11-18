@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"strings"
 	"syscall"
-	"unsafe"
 
 	"github.com/quasidock/quasidock/internal/win32"
 )
@@ -184,14 +183,7 @@ func LowIntegrityToken() (win32.HANDLE, error) {
 	}
 	defer win32.LocalFree(uintptr(sid))
 
-	label := win32.TOKEN_MANDATORY_LABEL{
-		Label: win32.SID_AND_ATTRIBUTES{
-			Sid:        sid,
-			Attributes: win32.SE_GROUP_INTEGRITY,
-		},
-	}
-	labelSize := win32.DWORD(unsafe.Sizeof(label)) + win32.GetLengthSid(sid)
-	if err := win32.SetTokenInformation(low, win32.TokenIntegrityLevel, unsafe.Pointer(&label), labelSize); err != nil {
+	if err := win32.SetTokenIntegrityLevel(low, sid); err != nil {
 		win32.CloseHandle(low)
 		return 0, fmt.Errorf("SetTokenInformation: %w", err)
 	}
@@ -206,19 +198,10 @@ func UserEnvironmentBlock() ([]uint16, error) {
 	}
 	defer win32.CloseHandle(token)
 
-	blockPtr, err := win32.CreateEnvironmentBlock(token, false)
+	out, err := win32.CreateEnvironmentBlock(token, false)
 	if err != nil {
 		return nil, fmt.Errorf("CreateEnvironmentBlock: %w", err)
 	}
-	defer win32.DestroyEnvironmentBlock(blockPtr)
-
-	p := (*[1 << 28]uint16)(unsafe.Pointer(blockPtr))
-	length := 0
-	for p[length] != 0 || p[length+1] != 0 {
-		length++
-	}
-	out := make([]uint16, length+2)
-	copy(out, p[:length+2])
 	return out, nil
 }
 
@@ -415,7 +398,7 @@ func NewJobAllowing(breakaway bool) (win32.HANDLE, error) {
 	if breakaway {
 		limits.BasicLimitInformation.LimitFlags |= win32.JOB_OBJECT_LIMIT_BREAKAWAY_OK
 	}
-	if err := win32.SetInformationJobObject(job, win32.JobObjectExtendedLimitInformation, unsafe.Pointer(&limits), win32.DWORD(unsafe.Sizeof(limits))); err != nil {
+	if err := win32.SetJobExtendedLimits(job, &limits); err != nil {
 		win32.CloseHandle(job)
 		return 0, err
 	}
@@ -431,7 +414,6 @@ type Detached struct {
 func StartDetached(exe, commandLine, cwd string) (Detached, error) {
 	for _, breakaway := range []bool{true, false} {
 		var startup win32.STARTUPINFOW
-		startup.Cb = win32.DWORD(unsafe.Sizeof(startup))
 		// Keep a console for targeted CTRL_BREAK delivery, without opening a
 		// visible terminal window. Children continue to use explicit pipes.
 		startup.DwFlags = win32.STARTF_USESHOWWINDOW
@@ -441,7 +423,7 @@ func StartDetached(exe, commandLine, cwd string) (Detached, error) {
 		if breakaway {
 			flags |= win32.CREATE_BREAKAWAY_FROM_JOB
 		}
-		err := win32.CreateProcess(exe, commandLine, nil, nil, false, flags, nil, cwd, unsafe.Pointer(&startup), &info)
+		err := win32.CreateProcess(exe, commandLine, nil, nil, false, flags, nil, cwd, &startup, &info)
 		if err != nil {
 			if breakaway && errors.Is(err, syscall.ERROR_ACCESS_DENIED) {
 				continue
@@ -501,35 +483,30 @@ func StartIn(job win32.HANDLE, spec SpawnSpec) (win32.HANDLE, error) {
 		attrCount++
 	}
 
-	var attrSize uintptr
-	win32.InitializeProcThreadAttributeList(nil, attrCount, 0, &attrSize)
-	attrsBuf := make([]byte, attrSize)
-	attrs := unsafe.Pointer(&attrsBuf[0])
-	if !win32.InitializeProcThreadAttributeList(attrs, attrCount, 0, &attrSize) {
-		return 0, fmt.Errorf("InitializeProcThreadAttributeList failed")
+	attrs, err := win32.NewProcThreadAttributeList(attrCount)
+	if err != nil {
+		return 0, err
 	}
-	defer win32.DeleteProcThreadAttributeList(attrs)
+	defer attrs.Delete()
 
 	jobs := append(append([]win32.HANDLE(nil), spec.ParentJobs...), job)
-	if !win32.UpdateProcThreadAttribute(attrs, 0, win32.PROC_THREAD_ATTRIBUTE_JOB_LIST, unsafe.Pointer(&jobs[0]), uintptr(len(jobs))*unsafe.Sizeof(jobs[0]), nil, nil) {
+	if !attrs.SetJobs(jobs) {
 		return 0, fmt.Errorf("UpdateProcThreadAttribute(JOB_LIST) failed")
 	}
 
 	if inheritCount > 0 {
-		if !win32.UpdateProcThreadAttribute(attrs, 0, win32.PROC_THREAD_ATTRIBUTE_HANDLE_LIST, unsafe.Pointer(&inherit[0]), uintptr(inheritCount)*unsafe.Sizeof(inherit[0]), nil, nil) {
+		if !attrs.SetHandles(inherit) {
 			return 0, fmt.Errorf("UpdateProcThreadAttribute(HANDLE_LIST) failed")
 		}
 	}
 
 	if spec.Security != nil {
-		if !win32.UpdateProcThreadAttribute(attrs, 0, win32.PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES, unsafe.Pointer(spec.Security), unsafe.Sizeof(*spec.Security), nil, nil) {
+		if !attrs.SetSecurityCapabilities(spec.Security) {
 			return 0, fmt.Errorf("UpdateProcThreadAttribute(SECURITY_CAPABILITIES) failed")
 		}
 	}
 
 	var startup win32.STARTUPINFOEXW
-	startup.StartupInfo.Cb = win32.DWORD(unsafe.Sizeof(startup))
-	startup.LpAttributeList = uintptr(attrs)
 
 	if stdHandles[0] != 0 || stdHandles[1] != 0 || stdHandles[2] != 0 {
 		startup.StartupInfo.DwFlags |= win32.STARTF_USESTDHANDLES
@@ -546,16 +523,10 @@ func StartIn(job win32.HANDLE, spec SpawnSpec) (win32.HANDLE, error) {
 	inheritHandles := inheritCount > 0
 	flags := win32.EXTENDED_STARTUPINFO_PRESENT | win32.CREATE_UNICODE_ENVIRONMENT | spec.CreationFlags
 
-	var envPtr unsafe.Pointer
-	if len(spec.EnvBlock) > 0 {
-		envPtr = unsafe.Pointer(&spec.EnvBlock[0])
-	}
-
-	var err error
 	if spec.Token != 0 {
-		err = win32.CreateProcessAsUser(spec.Token, spec.Exe, spec.CommandLine, nil, nil, inheritHandles, flags, envPtr, spec.Cwd, unsafe.Pointer(&startup.StartupInfo), &info)
+		err = win32.CreateProcessAsUserEx(spec.Token, spec.Exe, spec.CommandLine, nil, nil, inheritHandles, flags, spec.EnvBlock, spec.Cwd, &startup, attrs, &info)
 	} else {
-		err = win32.CreateProcess(spec.Exe, spec.CommandLine, nil, nil, inheritHandles, flags, envPtr, spec.Cwd, unsafe.Pointer(&startup.StartupInfo), &info)
+		err = win32.CreateProcessEx(spec.Exe, spec.CommandLine, nil, nil, inheritHandles, flags, spec.EnvBlock, spec.Cwd, &startup, attrs, &info)
 	}
 	if err != nil {
 		return 0, err
@@ -566,9 +537,9 @@ func StartIn(job win32.HANDLE, spec SpawnSpec) (win32.HANDLE, error) {
 
 func EndJob(job win32.HANDLE) {
 	win32.TerminateJobObject(job, 1)
-	var info win32.JOBOBJECT_BASIC_ACCOUNTING_INFORMATION
 	for waited := 0; waited < 5000; waited += 10 {
-		if err := win32.QueryInformationJobObject(job, win32.JobObjectBasicAccountingInformation, unsafe.Pointer(&info), win32.DWORD(unsafe.Sizeof(info))); err != nil {
+		info, err := win32.QueryJobBasicAccounting(job)
+		if err != nil {
 			return
 		}
 		if info.ActiveProcesses == 0 {

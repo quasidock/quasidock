@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -22,6 +23,24 @@ type Snapshot struct {
 }
 
 func Read(root, dockerfile, exclude string) (*Snapshot, error) {
+	return read(root, dockerfile, exclude, nil, true)
+}
+
+// Inspect reads only metadata for COPY selectors and their directory contents.
+// It prunes unrelated directories and leaves Hash empty; builds must use Read.
+func Inspect(root, dockerfile, exclude string, paths []string) (*Snapshot, error) {
+	selectors := make([][]string, len(paths))
+	for i, pattern := range paths {
+		pattern = path.Clean(pattern)
+		if _, err := path.Match(pattern, ""); err != nil {
+			return nil, err
+		}
+		selectors[i] = strings.Split(pattern, "/")
+	}
+	return read(root, dockerfile, exclude, selectors, false)
+}
+
+func read(root, dockerfile, exclude string, selectors [][]string, hash bool) (*Snapshot, error) {
 	root, err := filepath.Abs(root)
 	if err != nil {
 		return nil, err
@@ -53,9 +72,13 @@ func Read(root, dockerfile, exclude string) (*Snapshot, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", ignoreName, err)
 	}
-	t, err := readTree(root, exclude, matcher, "context")
+	t, err := readSelectedTree(root, exclude, matcher, "context", selectors)
 	if err != nil {
 		return nil, err
+	}
+	s := &Snapshot{Root: root, Dockerfile: dockerfile, Exclude: exclude, Tree: t}
+	if !hash {
+		return s, nil
 	}
 	_, content, err := t.ContentHash()
 	if err != nil {
@@ -63,7 +86,8 @@ func Read(root, dockerfile, exclude string) (*Snapshot, error) {
 	}
 	ignoreRel, _ := filepath.Rel(root, ignoreName)
 	h := sha256.Sum256(append([]byte(content+"\n"+filepath.ToSlash(ignoreRel)+"\n"), data...))
-	return &Snapshot{Root: root, Dockerfile: dockerfile, Exclude: exclude, Tree: t, Hash: fmt.Sprintf("%x", h)}, nil
+	s.Hash = fmt.Sprintf("%x", h)
+	return s, nil
 }
 
 func noLink(full string) error {
@@ -118,6 +142,10 @@ func (s *Snapshot) Copy(paths []string, dest string, directory bool) (*tree.Tree
 }
 
 func readTree(root, exclude string, matcher *patternmatcher.PatternMatcher, scope string) (*tree.Tree, error) {
+	return readSelectedTree(root, exclude, matcher, scope, nil)
+}
+
+func readSelectedTree(root, exclude string, matcher *patternmatcher.PatternMatcher, scope string, selectors [][]string) (*tree.Tree, error) {
 	t := tree.New()
 	seen := map[string]string{}
 	err := filepath.WalkDir(root, func(full string, entry fs.DirEntry, walkErr error) error {
@@ -135,6 +163,12 @@ func readTree(root, exclude string, matcher *patternmatcher.PatternMatcher, scop
 		}
 		rel, _ := filepath.Rel(root, full)
 		rel = filepath.ToSlash(rel)
+		if !selectedPath(rel, entry.IsDir(), selectors) {
+			if entry.IsDir() {
+				return fs.SkipDir
+			}
+			return nil
+		}
 		ignored := false
 		if matcher != nil {
 			var err error
@@ -180,4 +214,32 @@ func readTree(root, exclude string, matcher *patternmatcher.PatternMatcher, scop
 	}
 
 	return t, nil
+}
+
+// A directory is relevant when it can contain a match or is inside a matched
+// directory. A file must match a selector or belong to a matched directory.
+func selectedPath(name string, directory bool, selectors [][]string) bool {
+	if selectors == nil {
+		return true
+	}
+	parts := strings.Split(name, "/")
+	for _, selector := range selectors {
+		if len(selector) == 1 && selector[0] == "." {
+			return true
+		}
+		if !directory && len(parts) < len(selector) {
+			continue
+		}
+		matched := true
+		for i := 0; i < len(parts) && i < len(selector); i++ {
+			if ok, _ := path.Match(selector[i], parts[i]); !ok {
+				matched = false
+				break
+			}
+		}
+		if matched {
+			return true
+		}
+	}
+	return false
 }

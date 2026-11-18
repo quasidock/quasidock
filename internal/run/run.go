@@ -9,7 +9,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unsafe"
 
 	"github.com/quasidock/quasidock/internal/acl"
 	"github.com/quasidock/quasidock/internal/appcontainer"
@@ -1394,7 +1393,7 @@ func setUpAppContainer(ctx *context.Context, id string, setup appContainerSetup)
 
 	sec := &win32.SECURITY_CAPABILITIES{
 		AppContainerSid: profile.Sid,
-		Capabilities:    (*win32.SID_AND_ATTRIBUTES)(unsafe.Pointer(&caps[0])),
+		Capabilities:    &caps[0],
 		CapabilityCount: win32.DWORD(len(caps)),
 	}
 	return sec, nil

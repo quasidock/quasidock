@@ -30,7 +30,7 @@ check() {
 }
 
 recipes=$work/recipes
-mkdir -p "$recipes/no-publish" "$work/pages"
+mkdir -p "$recipes" "$work/pages"
 export UPSTREAM_RECIPES=$recipes
 export UPSTREAM_PUBLISHED=$work/published.txt
 export UPSTREAM_TABLE=$work/table.txt
@@ -100,7 +100,7 @@ recipe() {
 recipe lib lib https://example.org/lib-1.2.3.tar.gz
 recipe sdk sdk https://example.org/sdk-5.0.tar.gz lib
 recipe app app https://example.org/app-2.0.tar.gz sdk
-recipe no-publish/local local https://example.org/local-7.tar.gz sdk
+recipe local local https://example.org/local-7.tar.gz sdk
 recipe held held https://example.org/held-1.0.tar.gz
 recipe dev dev https://example.org/dev-1.2.0.tar.gz
 recipe rc rc https://example.org/rc-2.0.0RC1.tgz

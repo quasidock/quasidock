@@ -53,7 +53,6 @@ catalog are published, and [recipes.md](recipes.md) for the recipe format.
 | [`7zip`](../recipes/7zip.json) | `26.05` | `7z.exe` | 7-Zip file archiver |
 | [`notepad-plus-plus`](../recipes/notepad-plus-plus.json) | `8.9.8.1` | `notepad++.exe` | Notepad++ source code editor |
 | [`sumatrapdf`](../recipes/sumatrapdf.json) | `3.6.1` | `SumatraPDF-3.6.1-64.exe` | Reader for PDF, EPUB, XPS, DjVu, and CHM |
-| [`vlc`](../recipes/vlc.json) | `3.0.24` | `vlc.exe` (`cmd`: `--no-qt-privacy-ask`, `--no-qt-updates-notif`) | VLC media player |
 | [`php-sdk`](../recipes/php-sdk.json) | `8.5.12-1` | `php.exe` | PHP 8.5 NTS SDK with `dev\zigsaw\php-ext.php` (`from: zig`, `busybox`, `node`; `soft` sandbox) |
 | [`php`](../recipes/php.json) | `8.5.12-1` | `php.exe` | PHP 8.5 NTS runtime stripped from `php-sdk` |
 | [`composer`](../recipes/composer.json) | `2.10.3` | `${php}\php.exe ${app}\composer.phar` | Composer PHP dependency manager (`from: php`) |
@@ -80,11 +79,6 @@ catalog are published, and [recipes.md](recipes.md) for the recipe format.
 | [`postgresql`](../recipes/postgresql.json) | `18.6` | `bin/pg-server.exe` (`psql`, `pg_ctl`, `initdb`, `pg_dump`, `pg_restore`, `pg_isready` in `bin/`) | PostgreSQL 18 server and clients with PL/Perl and PL/Python (`from: perl`, `python`, port `5432`) |
 | [`osm2pgsql`](../recipes/osm2pgsql.json) | `2.3.1` | `bin/osm2pgsql.exe` (`osm2pgsql-expire` in `bin/`) | OpenStreetMap-to-PostGIS importer (`uses: postgresql` on `5432`) |
 | [`vscodium`](../recipes/vscodium.json) | `1.143.17232` | `VSCodium.exe` (`codium` in `bin/`, `git` from `mingit`, `host: true`) | VSCodium editor (`from: mingit`, `estargz`, `soft` sandbox; `low`/`appcontainer` unsupported) |
-
-One additional recipe, [recipes/gtk4-msvc.json](../recipes/gtk4-msvc.json)
-(`4.24.1`), is neither in `published-recipes.txt` nor in `recipes/no-publish/`:
-it declares `"host": ["msvc"]` so maintainers can build GTK 4 with Visual Studio
-locally when running [tests/gtk.sh](../tests/gtk.sh).
 
 ### Running images, `from` base images, and commands
 
@@ -176,35 +170,6 @@ omitted with a note; `--unshare=host` disables it). Inside the container
 terminal, `quasidock-host <program> [args...]` searches the user's real host
 `PATH` and `PATHEXT` (running `.cmd`/`.bat` files through `cmd.exe`) and launches
 host tools under the active container sandbox and rights.
-
-## Apps you build yourself
-
-Recipes under [recipes/no-publish/](../recipes/no-publish) are excluded from
-publishing (`scripts/publish.sh` rejects them and `scripts/rebuild.sh` leaves
-them alone) because their upstream licenses do not permit redistributing built
-images. Build them locally with `quasidock build`:
-
-| Image | Version | Entrypoint | Notes |
-|---|---|---|---|
-| [`dotnet-sdk`](../recipes/no-publish/dotnet-sdk.json) | `10.0.402` | `dotnet.exe` | .NET SDK, C#, F#, MSBuild, NuGet; `${data}\dotnet\.dotnet\tools` in `path`; `DOTNET_CLI_HOME=${data}\dotnet` (`soft` sandbox) |
-| [`dotnet`](../recipes/no-publish/dotnet.json) | `10.0.13` | `dotnet.exe` | .NET, ASP.NET Core, and Windows Desktop runtime stripped from `dotnet-sdk` |
-| [`pinta`](../recipes/no-publish/pinta.json) | `3.1.2` | `bin/Pinta.exe` | Pinta image editor (`from: dotnet`, `gtk4`; `sdk: dotnet-sdk`, `gettext`, `busybox`) |
-| [`files`](../recipes/no-publish/files.json) | `4.3` | `bin/Files.exe` | Files manager (`from: dotnet`, `sdk: dotnet-sdk`, `busybox`; keeps `"Files - Zigsaw build"` recipe `name`; `soft` sandbox — Windows storage APIs hide drives from unpackaged apps under `low` and `appcontainer`) |
-| [`ungoogled-chromium`](../recipes/no-publish/ungoogled-chromium.json) | `156.0.8078.73-1.1` | `chrome.exe` | ungoogled-chromium (`soft` sandbox; `HKCU\Software\Chromium` goes to per-container registry hive; Chromium's sandbox fails at `low` and in `appcontainer` with exit `3` unless `--no-sandbox` disables it) |
-
-```powershell
-quasidock build recipes\no-publish\dotnet-sdk.json
-quasidock build recipes\no-publish\dotnet.json
-quasidock build recipes\no-publish\pinta.json
-quasidock build recipes\no-publish\files.json
-quasidock build recipes\no-publish\ungoogled-chromium.json
-```
-
-`quasidock build` resolves `from` and `sdk` pins from the local store first and
-pulls published dependencies (`gtk4`, `gettext`, `busybox`) from the configured
-registry if not yet cached. Mount a named volume at `${data}`
-(`-v 'dotnet-cache:${data}'`) when running `dotnet-sdk` with `--rm` if you want
-to keep NuGet packages and installed tools across runs.
 
 ## Reproducibility
 

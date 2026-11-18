@@ -3,8 +3,8 @@ package acl
 import (
 	"bytes"
 	"fmt"
+	"runtime"
 	"sync"
-	"unsafe"
 
 	"github.com/quasidock/quasidock/internal/win32"
 )
@@ -93,7 +93,7 @@ func (d *Dacl) addEntries(entries []win32.EXPLICIT_ACCESS_W) error {
 	if err != nil {
 		return fmt.Errorf("building the ACL of %s: %w", d.path, err)
 	}
-	defer win32.LocalFree(uintptr(unsafe.Pointer(newAcl)))
+	defer win32.FreeAcl(newAcl)
 	return d.write(newAcl)
 }
 
@@ -103,11 +103,10 @@ func (d *Dacl) find(aceType uint8, sid win32.PSID, mask win32.DWORD, origin Orig
 	}
 	count := uint32(d.acl.AceCount)
 	for i := uint32(0); i < count; i++ {
-		raw, err := win32.GetAce(d.acl, win32.DWORD(i))
-		if err != nil || raw == 0 {
+		ace, err := win32.GetAce(d.acl, win32.DWORD(i))
+		if err != nil {
 			continue
 		}
-		ace := (*win32.ACCESS_ALLOWED_ACE)(unsafe.Pointer(raw))
 		if ace.Header.AceType != aceType {
 			continue
 		}
@@ -117,8 +116,7 @@ func (d *Dacl) find(aceType uint8, sid win32.PSID, mask win32.DWORD, origin Orig
 		if (ace.Mask & mask) != mask {
 			continue
 		}
-		sidPtr := uintptr(unsafe.Pointer(&ace.SidStart))
-		if win32.EqualSid(sidPtr, sid) {
+		if win32.EqualSid(ace.Sid, sid) {
 			idx := win32.DWORD(i)
 			return &idx
 		}
@@ -133,15 +131,14 @@ func (d *Dacl) revocations(which Revoke, keep win32.PSID) []win32.EXPLICIT_ACCES
 	}
 	count := uint32(d.acl.AceCount)
 	for i := uint32(0); i < count; i++ {
-		raw, err := win32.GetAce(d.acl, win32.DWORD(i))
-		if err != nil || raw == 0 {
+		ace, err := win32.GetAce(d.acl, win32.DWORD(i))
+		if err != nil {
 			continue
 		}
-		ace := (*win32.ACCESS_ALLOWED_ACE)(unsafe.Pointer(raw))
 		if ace.Header.AceType != uint8(win32.ACCESS_ALLOWED_ACE_TYPE) || (ace.Header.AceFlags&uint8(win32.INHERITED_ACE) != 0) {
 			continue
 		}
-		sid := uintptr(unsafe.Pointer(&ace.SidStart))
+		sid := ace.Sid
 		if keep != 0 && win32.EqualSid(sid, keep) {
 			continue
 		}
@@ -257,12 +254,11 @@ func ExplicitGrant(path string, sid win32.PSID) (win32.DWORD, error) {
 		return mask, nil
 	}
 	for i := uint32(0); i < uint32(d.acl.AceCount); i++ {
-		p, err := win32.GetAce(d.acl, i)
+		a, err := win32.GetAce(d.acl, i)
 		if err != nil {
 			return 0, err
 		}
-		a := (*win32.ACCESS_ALLOWED_ACE)(unsafe.Pointer(p))
-		if a.Header.AceType == uint8(win32.ACCESS_ALLOWED_ACE_TYPE) && a.Header.AceFlags&uint8(win32.INHERITED_ACE) == 0 && win32.EqualSid(uintptr(unsafe.Pointer(&a.SidStart)), sid) {
+		if a.Header.AceType == uint8(win32.ACCESS_ALLOWED_ACE_TYPE) && a.Header.AceFlags&uint8(win32.INHERITED_ACE) == 0 && win32.EqualSid(a.Sid, sid) {
 			mask |= a.Mask
 		}
 	}
@@ -308,14 +304,11 @@ func RestoreLabel(path string, level *uint32) error {
 		return err
 	}
 	defer win32.LocalFree(sid)
-	buf := make([]byte, int(unsafe.Sizeof(win32.ACL{})+unsafe.Sizeof(win32.ACCESS_ALLOWED_ACE{}))+int(win32.GetLengthSid(sid))+8)
-	sacl := (*win32.ACL)(unsafe.Pointer(&buf[0]))
-	if err := win32.InitializeAcl(sacl, win32.DWORD(len(buf)), win32.ACL_REVISION); err != nil {
+	buf, sacl, err := win32.NewMandatoryAcl(sid, win32.DWORD(win32.OBJECT_INHERIT_ACE|win32.CONTAINER_INHERIT_ACE))
+	if err != nil {
 		return err
 	}
-	if err := win32.AddMandatoryAce(sacl, win32.ACL_REVISION, win32.DWORD(win32.OBJECT_INHERIT_ACE|win32.CONTAINER_INHERIT_ACE), win32.SYSTEM_MANDATORY_LABEL_NO_WRITE_UP, sid); err != nil {
-		return err
-	}
+	defer runtime.KeepAlive(buf)
 	return writeLabel(path, sacl)
 }
 
@@ -399,18 +392,7 @@ func CurrentUserSid() (win32.PSID, error) {
 		}
 		defer win32.CloseHandle(token)
 
-		var lenBuf win32.DWORD
-		_ = win32.GetTokenInformation(token, win32.TokenUser, nil, 0, &lenBuf)
-		buf := make([]byte, lenBuf)
-		if err := win32.GetTokenInformation(token, win32.TokenUser, unsafe.Pointer(&buf[0]), lenBuf, &lenBuf); err != nil {
-			cachedUserSidErr = fmt.Errorf("GetTokenInformation: %w", err)
-			return
-		}
-		info := (*win32.TOKEN_USER)(unsafe.Pointer(&buf[0]))
-		sidLen := win32.GetLengthSid(info.User.Sid)
-		userSidData = make([]byte, sidLen)
-		copy(userSidData, unsafe.Slice((*byte)(unsafe.Pointer(info.User.Sid)), sidLen))
-		cachedUserSid = uintptr(unsafe.Pointer(&userSidData[0]))
+		userSidData, cachedUserSid, cachedUserSidErr = win32.GetTokenUserSid(token)
 	})
 	return cachedUserSid, cachedUserSidErr
 }
@@ -423,22 +405,11 @@ func BelowMedium() (bool, error) {
 	}
 	defer win32.CloseHandle(token)
 
-	var buf [64]byte
-	var lenBuf win32.DWORD
-	if err := win32.GetTokenInformation(token, win32.TokenIntegrityLevel, unsafe.Pointer(&buf[0]), win32.DWORD(len(buf)), &lenBuf); err != nil {
-		return false, fmt.Errorf("GetTokenInformation: %w", err)
+	rid, err := win32.GetTokenIntegrityRid(token)
+	if err != nil {
+		return false, err
 	}
-	label := (*win32.TOKEN_MANDATORY_LABEL)(unsafe.Pointer(&buf[0]))
-	sid := label.Label.Sid
-	count := win32.GetSidSubAuthorityCount(sid)
-	if count == nil || *count == 0 {
-		return false, nil
-	}
-	lastSub := win32.GetSidSubAuthority(sid, win32.DWORD(*count-1))
-	if lastSub == nil {
-		return false, nil
-	}
-	return *lastSub < win32.SECURITY_MANDATORY_MEDIUM_RID, nil
+	return rid < win32.SECURITY_MANDATORY_MEDIUM_RID, nil
 }
 
 // OwnLabel returns the RID of the path's own integrity label, or nil if none.
@@ -464,18 +435,17 @@ func labelOf(path string, inheritedToo bool) (*uint32, error) {
 	}
 	count := uint32(sacl.AceCount)
 	for i := uint32(0); i < count; i++ {
-		raw, err := win32.GetAce(sacl, win32.DWORD(i))
-		if err != nil || raw == 0 {
+		ace, err := win32.GetAce(sacl, win32.DWORD(i))
+		if err != nil {
 			continue
 		}
-		ace := (*win32.ACCESS_ALLOWED_ACE)(unsafe.Pointer(raw))
 		if ace.Header.AceType != uint8(win32.SYSTEM_MANDATORY_LABEL_ACE_TYPE) {
 			continue
 		}
 		if !inheritedToo && (ace.Header.AceFlags&uint8(win32.INHERITED_ACE) != 0) {
 			continue
 		}
-		sid := uintptr(unsafe.Pointer(&ace.SidStart))
+		sid := ace.Sid
 		count := win32.GetSidSubAuthorityCount(sid)
 		if count == nil || *count == 0 {
 			continue
@@ -544,16 +514,12 @@ func LabelLow(path string) (bool, error) {
 	}
 	defer win32.LocalFree(low)
 
-	size := win32.DWORD(unsafe.Sizeof(win32.ACL{}) + unsafe.Sizeof(win32.ACCESS_ALLOWED_ACE{}) + uintptr(win32.GetLengthSid(low)))
-	buf := make([]byte, size+8)
-	sacl := (*win32.ACL)(unsafe.Pointer(&buf[0]))
-	if err := win32.InitializeAcl(sacl, size, win32.ACL_REVISION); err != nil {
-		return false, fmt.Errorf("InitializeAcl: %w", err)
-	}
 	inherit := win32.DWORD(win32.OBJECT_INHERIT_ACE | win32.CONTAINER_INHERIT_ACE)
-	if err := win32.AddMandatoryAce(sacl, win32.ACL_REVISION, inherit, win32.SYSTEM_MANDATORY_LABEL_NO_WRITE_UP, low); err != nil {
-		return false, fmt.Errorf("AddMandatoryAce: %w", err)
+	buf, sacl, err := win32.NewMandatoryAcl(low, inherit)
+	if err != nil {
+		return false, err
 	}
+	defer runtime.KeepAlive(buf)
 	if err := writeLabel(path, sacl); err != nil {
 		return false, err
 	}
@@ -569,9 +535,9 @@ func Unlabel(path string) error {
 	if bm {
 		return fmt.Errorf("quasidock runs at low integrity here, and can't take back the label of %s", path)
 	}
-	var empty win32.ACL
-	if err := win32.InitializeAcl(&empty, win32.DWORD(unsafe.Sizeof(empty)), win32.ACL_REVISION); err != nil {
-		return fmt.Errorf("InitializeAcl: %w", err)
+	empty, err := win32.NewEmptyAcl()
+	if err != nil {
+		return err
 	}
 	return writeLabel(path, &empty)
 }
@@ -597,15 +563,11 @@ func LabelProgram(path string, level IntegrityLevel) error {
 	}
 	defer win32.LocalFree(sid)
 
-	size := win32.DWORD(unsafe.Sizeof(win32.ACL{}) + unsafe.Sizeof(win32.ACCESS_ALLOWED_ACE{}) + uintptr(win32.GetLengthSid(sid)))
-	buf := make([]byte, size+8)
-	sacl := (*win32.ACL)(unsafe.Pointer(&buf[0]))
-	if err := win32.InitializeAcl(sacl, size, win32.ACL_REVISION); err != nil {
-		return fmt.Errorf("InitializeAcl: %w", err)
+	buf, sacl, err := win32.NewMandatoryAcl(sid, 0)
+	if err != nil {
+		return err
 	}
-	if err := win32.AddMandatoryAce(sacl, win32.ACL_REVISION, 0, win32.SYSTEM_MANDATORY_LABEL_NO_WRITE_UP, sid); err != nil {
-		return fmt.Errorf("AddMandatoryAce: %w", err)
-	}
+	defer runtime.KeepAlive(buf)
 	return writeLabel(path, sacl)
 }
 
@@ -618,15 +580,11 @@ func LetChildrenQueryUs() error {
 	}
 	defer win32.LocalFree(medium)
 
-	size := win32.DWORD(unsafe.Sizeof(win32.ACL{}) + unsafe.Sizeof(win32.ACCESS_ALLOWED_ACE{}) + uintptr(win32.GetLengthSid(medium)))
-	buf := make([]byte, size+8)
-	sacl := (*win32.ACL)(unsafe.Pointer(&buf[0]))
-	if err := win32.InitializeAcl(sacl, size, win32.ACL_REVISION); err != nil {
-		return fmt.Errorf("InitializeAcl: %w", err)
+	buf, sacl, err := win32.NewMandatoryAcl(medium, 0)
+	if err != nil {
+		return err
 	}
-	if err := win32.AddMandatoryAce(sacl, win32.ACL_REVISION, 0, win32.SYSTEM_MANDATORY_LABEL_NO_WRITE_UP, medium); err != nil {
-		return fmt.Errorf("AddMandatoryAce: %w", err)
-	}
+	defer runtime.KeepAlive(buf)
 	if err := win32.SetSecurityInfo(self, win32.SE_KERNEL_OBJECT, win32.LABEL_SECURITY_INFORMATION, 0, 0, nil, sacl); err != nil {
 		return fmt.Errorf("changing quasidock's own integrity label: %w", err)
 	}
@@ -641,15 +599,11 @@ func LabelKeyLow(sub string) error {
 	}
 	defer win32.LocalFree(low)
 
-	size := win32.DWORD(unsafe.Sizeof(win32.ACL{}) + unsafe.Sizeof(win32.ACCESS_ALLOWED_ACE{}) + uintptr(win32.GetLengthSid(low)))
-	buf := make([]byte, size+8)
-	sacl := (*win32.ACL)(unsafe.Pointer(&buf[0]))
-	if err := win32.InitializeAcl(sacl, size, win32.ACL_REVISION); err != nil {
-		return fmt.Errorf("InitializeAcl: %w", err)
+	buf, sacl, err := win32.NewMandatoryAcl(low, win32.DWORD(win32.CONTAINER_INHERIT_ACE))
+	if err != nil {
+		return err
 	}
-	if err := win32.AddMandatoryAce(sacl, win32.ACL_REVISION, win32.DWORD(win32.CONTAINER_INHERIT_ACE), win32.SYSTEM_MANDATORY_LABEL_NO_WRITE_UP, low); err != nil {
-		return fmt.Errorf("AddMandatoryAce: %w", err)
-	}
+	defer runtime.KeepAlive(buf)
 	name := "CURRENT_USER\\" + sub
 	if err := win32.SetNamedSecurityInfo(name, win32.SE_REGISTRY_KEY, win32.LABEL_SECURITY_INFORMATION, 0, 0, nil, sacl); err != nil {
 		return fmt.Errorf("changing the integrity label of %s: %w", name, err)

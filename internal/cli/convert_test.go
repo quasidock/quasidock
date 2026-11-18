@@ -16,7 +16,57 @@ import (
 	"github.com/quasidock/quasidock/internal/recipe"
 	"github.com/quasidock/quasidock/internal/remote"
 	"github.com/quasidock/quasidock/internal/testregistry"
+	"github.com/quasidock/quasidock/internal/win32"
 )
+
+func TestConvertInspectsOnlyCopyMetadata(t *testing.T) {
+	ctx, out := fixtureCLI(t)
+	root, unrelated := t.TempDir(), t.TempDir()
+	payload := filepath.Join(root, "payload.exe")
+	if err := os.WriteFile(payload, []byte("conversion does not execute or read this"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	h, err := win32.CreateFile(payload, win32.GENERIC_READ,
+		win32.FILE_SHARE_WRITE|win32.FILE_SHARE_DELETE, nil, win32.OPEN_EXISTING, win32.FILE_ATTRIBUTE_NORMAL, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer win32.CloseHandle(h)
+	// An unrelated output subtree must never be traversed for these COPYs.
+	if err := os.Mkdir(filepath.Join(root, "out"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	junction := filepath.Join(root, "out", "link")
+	if data, err := exec.Command("cmd", "/c", "mklink", "/J", junction, unrelated).CombinedOutput(); err != nil {
+		t.Fatalf("creating junction: %v: %s", err, data)
+	}
+	t.Cleanup(func() { _ = os.Remove(junction) })
+	for _, tc := range []struct {
+		name, dockerfile, wantError string
+	}{
+		{"no-copy", "FROM scratch\nCMD [\"/payload.exe\"]", ""},
+		{"literal", "FROM scratch\nCOPY payload.exe /\nCMD [\"/payload.exe\"]", ""},
+		{"glob", "FROM scratch\nCOPY *.exe /\nCMD [\"/payload.exe\"]", ""},
+		{"build-unit", "FROM scratch AS build\nCOPY payload.exe /app.exe\nFROM scratch\nCOPY --from=build /app.exe /app.exe\nCMD [\"/app.exe\"]", ""},
+		{"missing", "FROM scratch\nCOPY missing.exe /\nCMD [\"/missing.exe\"]", "Dockerfile:2: COPY:"},
+		{"whole-context", "FROM scratch\nCOPY . /\nCMD [\"/payload.exe\"]", "link or junction"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			out.Reset()
+			if err := os.WriteFile(filepath.Join(root, "Dockerfile"), []byte(tc.dockerfile), 0600); err != nil {
+				t.Fatal(err)
+			}
+			code, err := convertCommand(ctx, []string{root, "--id", "metadata-only", "-o", "-"})
+			if tc.wantError != "" {
+				if err == nil || code == 0 || !strings.Contains(err.Error(), tc.wantError) || out.Len() != 0 {
+					t.Fatalf("expected %q without output: code %d, error %v, output %s", tc.wantError, code, err, out)
+				}
+			} else if err != nil || code != 0 || !json.Valid(out.Bytes()) {
+				t.Fatalf("conversion: code %d, error %v, output %s", code, err, out)
+			}
+		})
+	}
+}
 
 func conversionBase(t *testing.T, reg *testregistry.Registry, id string) {
 	t.Helper()

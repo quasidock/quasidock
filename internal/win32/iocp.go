@@ -1,6 +1,7 @@
 package win32
 
 import (
+	"runtime"
 	"unsafe"
 )
 
@@ -48,21 +49,26 @@ func PostQueuedCompletionStatus(port HANDLE, bytesTransferred DWORD, completionK
 	return r != 0
 }
 
-func ReadDirectoryChanges(h HANDLE, buf unsafe.Pointer, bufLen DWORD, watchSubtree bool, notifyFilter DWORD, bytesReturned *DWORD, overlapped *OVERLAPPED) error {
+func ReadDirectoryChanges(h HANDLE, buf []byte, watchSubtree bool, notifyFilter DWORD, bytesReturned *DWORD, overlapped *OVERLAPPED) error {
 	var watch uintptr
 	if watchSubtree {
 		watch = 1
 	}
+	var bufPtr uintptr
+	if len(buf) > 0 {
+		bufPtr = uintptr(unsafe.Pointer(&buf[0]))
+	}
 	r, _, err := procReadDirectoryChangesW.Call(
 		h,
-		uintptr(buf),
-		uintptr(bufLen),
+		bufPtr,
+		uintptr(len(buf)),
 		watch,
 		uintptr(notifyFilter),
 		uintptr(unsafe.Pointer(bytesReturned)),
 		uintptr(unsafe.Pointer(overlapped)),
 		0,
 	)
+	runtime.KeepAlive(buf)
 	if r == 0 {
 		return err
 	}

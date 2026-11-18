@@ -37,10 +37,10 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/images.sh"
 # sections took on a runner in iteration 33, without the setup every group
 # has (BusyBox's image), and with zig's image where a group builds with it.
 groups=(
-    "base: runtimes images aliases projects prettier msvc sevenzip" # 2
-    "zig: commands sqlite"                                          # 7
-    "cmake-meson: cmake llvm meson make"                            # 7
-    "langs: rust go dotnet java php"                                # 9
+    "base: runtimes images aliases projects prettier msvc sevenzip"
+    "zig: commands sqlite"
+    "cmake-meson: cmake llvm meson make"
+    "langs: rust go java php"
 )
 if [ "${1:-}" = --groups ]; then
     printf '%s\n' "${groups[@]%%:*}"
@@ -1016,88 +1016,6 @@ C sees this process: true" ] || { echo "got: $out"; return 1; }
 check "it runs, calling its C, which calls Windows" cgo_runs
 cgo_again() { [ "$(rebuilt_manifest "$work\\cgo\\hello.json")" = "$cgo_app_digest" ]; }
 check "built again, it's the same image" cgo_again
-fi
-
-# --- .NET from source ---------------------------------------------------------------
-
-if section dotnet; then
-# Microsoft's licence for its Windows binaries doesn't let them be published,
-# so .NET's recipes are in recipes/no-publish: the images are built here from
-# Microsoft's download, and the runtime from the SDK image's own files.
-check "dotnet-sdk.json builds the .NET SDK image" z build "$root\\recipes\\no-publish\\dotnet-sdk.json"
-dotnet_sdk_digest=$(manifest_of dotnet-sdk)
-sed -E "s/dotnet-sdk:[^\"@]*@sha256:[0-9a-f]{64}/dotnet-sdk@$dotnet_sdk_digest/" \
-    "$root\\recipes\\no-publish\\dotnet.json" >"$work\\dotnet-runtime.json"
-check "dotnet.json builds the .NET runtime image from the local SDK" z build "$work\\dotnet-runtime.json"
-dotnet_version=$(grep -o '"version": *"[^"]*"' "$root\\recipes\\no-publish\\dotnet.json" | cut -d'"' -f4)
-runtime_files() {
-    local d="$QUASIDOCK_HOME\\deploy\\$(own_layer dotnet)"
-    for f in dotnet.exe shared/Microsoft.NETCore.App/$dotnet_version shared/Microsoft.AspNetCore.App shared/Microsoft.WindowsDesktop.App; do
-        [ -e "$d\\$f" ] || { echo "no $f"; return 1; }
-    done
-    for f in sdk packs templates; do [ ! -e "$d\\$f" ] || { echo "has $f"; return 1; }; done
-}
-check "the runtime has dotnet.exe and the three shared frameworks, not the SDK's tools and packs" runtime_files
-# The SDK's image keeps the CLI's and NuGet's files in its data directory: on
-# .NET, NuGet finds the profile with SHGetKnownFolderPath, which a run's
-# USERPROFILE doesn't move, unless DOTNET_CLI_HOME says where it is.
-mkdir -p "$work\\dotnettiny"
-sdk_builds_cwd() {
-    local out
-    out=$(cd "$work\\dotnettiny" && qd_run z dotnet-sdk new console -n tiny -o . 2>&1 &&
-        qd_run z dotnet-sdk run 2>&1) || { echo "$out" | tail -3; return 1; }
-    grep -q '^Hello, World!' <<<"$out" || { echo "$out" | tail -3; return 1; }
-}
-check "the SDK run as an app makes, builds and runs a project in the working directory" sdk_builds_cwd
-nuget_in_data() {
-    local out data
-    out=$(qd_run z --name nuget-data dotnet-sdk nuget locals global-packages --list | tr -d '\r') || return
-    data=$(qd_container_data "$zigsaw" nuget-data) || return
-    grep -qF "global-packages: $data\\dotnet\\.nuget\\packages" <<<"$out"
-}
-check "NuGet keeps its packages in the container's data directory" nuget_in_data
-# A program built with the SDK image, its NuGet package from nuget.org through
-# a vendor step, that runs on the runtime image: its apphost finds .NET through
-# the DOTNET_ROOT the runtime's variables set, not a .NET installed on the
-# machine.
-DOTNETAPP=test.build.dotnet
-mkdir -p "$work\\dotnet" && cp "$(cygpath -u "$root")"/tests/build/dotnet/{hello.csproj,Program.cs} "$(cygpath -u "$work")/dotnet/" &&
-    sed -e "s/@DOTNETSDK@/$(manifest_of dotnet-sdk)/" -e "s/@DOTNET@/$(manifest_of dotnet)/" -e "s/@BUSYBOX@/$bb_digest/" \
-        "$root\\tests\\build\\dotnet\\hello.json.in" >"$work\\dotnet\\hello.json"
-check "a .NET program builds with the SDK image, its NuGet package vendored" z build "$work\\dotnet\\hello.json"
-dotnet_app_digest=$(manifest_of $DOTNETAPP)
-dotnet_runs() {
-    local sb out
-    for sb in soft low appcontainer; do
-        out=$(qd_run z --sandbox=$sb $DOTNETAPP zigsaw | tr -d '\r')
-        [ "$out" = "hello, zigsaw, from .NET $dotnet_version
-Built with a vendored package
-runs on $QUASIDOCK_HOME\\deploy\\$(own_layer dotnet)\\shared\\Microsoft.NETCore.App\\$dotnet_version\\" ] ||
-            { echo "$sb, got: $out"; return 1; }
-    done
-}
-check "it runs on the runtime image, under soft, low and appcontainer" dotnet_runs
-dotnet_again() { [ "$(rebuilt_manifest "$work\\dotnet\\hello.json")" = "$dotnet_app_digest" ]; }
-check "built again, from the vendored packages in the cache, it's the same image" dotnet_again
-# Windows Forms and WPF, which the runtime's Windows Desktop framework has: a
-# form and a window that close themselves once they're up.
-DESKTOP=test.build.dotnetdesktop
-mkdir -p "$work\\dotnetdesktop" && cp "$(cygpath -u "$root")"/tests/build/dotnetdesktop/{desktop.csproj,Program.cs} "$(cygpath -u "$work")/dotnetdesktop/" &&
-    sed -e "s/@DOTNETSDK@/$(manifest_of dotnet-sdk)/" -e "s/@DOTNET@/$(manifest_of dotnet)/" -e "s/@BUSYBOX@/$bb_digest/" \
-        "$root\\tests\\build\\dotnetdesktop\\desktop.json.in" >"$work\\dotnetdesktop\\desktop.json"
-check "a Windows Forms and WPF program builds" z build "$work\\dotnetdesktop\\desktop.json"
-desktop_digest=$(manifest_of $DESKTOP)
-desktop_runs() {
-    local sb out
-    for sb in soft low appcontainer; do
-        out=$(qd_run z --sandbox=$sb $DESKTOP | tr -d '\r')
-        [ "$out" = "Windows Forms: a form came up
-WPF: a window came up and drew its content" ] || { echo "$sb, got: $out"; return 1; }
-    done
-}
-check "its form and its window come up, under soft, low and appcontainer" desktop_runs
-desktop_again() { [ "$(rebuilt_manifest "$work\\dotnetdesktop\\desktop.json")" = "$desktop_digest" ]; }
-check "built again, it's the same image" desktop_again
 fi
 
 # --- Java from source ---------------------------------------------------------------

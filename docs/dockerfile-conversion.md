@@ -9,9 +9,10 @@ quasidock build .
 quasidock run --rm my-app
 ```
 
-Conversion parses commands and resolves native image metadata. Application
-commands execute during `build`. Application code, npm scripts, and dependencies
-must themselves work on Windows; conversion success does not verify them.
+Conversion parses commands, resolves native image metadata, and checks the paths
+selected by context COPY instructions without reading or hashing their contents.
+Application commands execute during `build`. Application code, npm scripts, and
+dependencies must themselves work on Windows; conversion success does not verify them.
 
 ## Command
 

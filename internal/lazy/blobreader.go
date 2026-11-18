@@ -9,7 +9,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-	"unsafe"
 
 	"github.com/quasidock/quasidock/internal/oci"
 	"github.com/quasidock/quasidock/internal/registry"
@@ -229,16 +228,13 @@ func (b *BlobReader) Close() {
 }
 
 func setSparse(f *os.File) error {
-	var in uint32 = 1
 	var returned uint32
 	return win32.DeviceIoControl(
 		win32.HANDLE(f.Fd()),
 		win32.FSCTL_SET_SPARSE,
-		unsafe.Pointer(&in),
-		uint32(unsafe.Sizeof(in)),
+		[]byte{1, 0, 0, 0},
 		nil,
-		0,
-		(*win32.DWORD)(&returned),
+		&returned,
 		nil,
 	)
 }

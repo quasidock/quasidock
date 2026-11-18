@@ -23,10 +23,6 @@
 # It stops at the first failure, with the end of that build's log. To go on, fix it and
 # run the same command: what's done is a cache hit.
 #
-# A recipe that isn't published (recipes/no-publish) isn't built, or re-pinned: those
-# that pin something rebuilt are listed at the end. An image pinned elsewhere, such
-# as by a test's fixture, isn't looked for.
-#
 # Each step prints the recipe, the digest's start, and how long it took. A run that
 # re-pins ends with what to publish, as a command.
 #

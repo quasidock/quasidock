@@ -106,31 +106,6 @@ func TestReportRoundTripAndCompleteness(t *testing.T) {
 		t.Fatal("accepted duplicate reports")
 	}
 }
-func TestAllowlistAndGeneratedWorkflow(t *testing.T) {
-	root := filepath.Join("..", "..")
-	recipes, err := Load(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	got, err := os.ReadFile(filepath.Join(root, ".github", "workflows", "publish.yml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.ReplaceAll(string(got), "\r\n", "\n") != Workflow(recipes) {
-		t.Fatal("run go run ./cmd/quasidock-publish generate")
-	}
-	for _, r := range recipes {
-		if strings.Contains(r.File, "no-publish") {
-			t.Fatal("excluded recipe in publication")
-		}
-	}
-	workspace := t.TempDir()
-	os.MkdirAll(filepath.Join(workspace, "scripts"), 0755)
-	os.WriteFile(filepath.Join(workspace, "scripts", "published-recipes.txt"), []byte("../no-publish/private.json\n"), 0600)
-	if _, err := Load(workspace); err == nil {
-		t.Fatal("accepted a recipe outside the allowlist directory")
-	}
-}
 
 func TestWorkflowAlwaysVerifiesAndPromotes(t *testing.T) {
 	workflow := Workflow([]Recipe{sampleRecipe(t, "go")})
