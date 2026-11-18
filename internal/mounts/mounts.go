@@ -3,6 +3,7 @@
 package mounts
 
 import (
+	"encoding/binary"
 	"encoding/csv"
 	"errors"
 	"fmt"
@@ -10,7 +11,6 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
-	"unsafe"
 
 	"github.com/quasidock/quasidock/internal/win32"
 )
@@ -278,19 +278,24 @@ func Attach(data string, m Mount) error {
 	defer win32.CloseHandle(h)
 	sub := syscall.StringToUTF16(`\??\` + m.Source)
 	print := syscall.StringToUTF16(m.Source)
-	size := int(unsafe.Sizeof(win32.MOUNT_POINT_REPARSE_HEADER{})) + 2*(len(sub)+len(print))
+	size := 16 + 2*(len(sub)+len(print))
 	buf := make([]byte, size)
-	header := (*win32.MOUNT_POINT_REPARSE_HEADER)(unsafe.Pointer(&buf[0]))
-	header.ReparseTag = win32.IO_REPARSE_TAG_MOUNT_POINT
-	header.ReparseDataLength = uint16(size - 8)
-	header.SubstituteNameLength = uint16((len(sub) - 1) * 2)
-	header.PrintNameOffset = uint16(len(sub) * 2)
-	header.PrintNameLength = uint16((len(print) - 1) * 2)
-	paths := unsafe.Slice((*uint16)(unsafe.Pointer(&buf[16])), len(sub)+len(print))
-	copy(paths, sub)
-	copy(paths[len(sub):], print)
+	binary.LittleEndian.PutUint32(buf[0:4], win32.IO_REPARSE_TAG_MOUNT_POINT)
+	binary.LittleEndian.PutUint16(buf[4:6], uint16(size-8))
+	binary.LittleEndian.PutUint16(buf[10:12], uint16((len(sub)-1)*2))
+	binary.LittleEndian.PutUint16(buf[12:14], uint16(len(sub)*2))
+	binary.LittleEndian.PutUint16(buf[14:16], uint16((len(print)-1)*2))
+	off := 16
+	for _, v := range sub {
+		binary.LittleEndian.PutUint16(buf[off:], v)
+		off += 2
+	}
+	for _, v := range print {
+		binary.LittleEndian.PutUint16(buf[off:], v)
+		off += 2
+	}
 	var n win32.DWORD
-	if err := win32.DeviceIoControl(h, win32.FSCTL_SET_REPARSE_POINT, unsafe.Pointer(&buf[0]), win32.DWORD(size), nil, 0, &n, nil); err != nil {
+	if err := win32.DeviceIoControl(h, win32.FSCTL_SET_REPARSE_POINT, buf, nil, &n, nil); err != nil {
 		return fmt.Errorf("creating directory junction: %w", err)
 	}
 	return nil

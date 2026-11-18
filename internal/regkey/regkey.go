@@ -1,8 +1,8 @@
 package regkey
 
 import (
+	"encoding/binary"
 	"fmt"
-	"unsafe"
 
 	"github.com/quasidock/quasidock/internal/win32"
 )
@@ -75,7 +75,10 @@ func (k Key) SetString(name *string, value string) error {
 	}
 	u16 := win32.UTF8ToUTF16(value)
 	u16 = append(u16, 0)
-	bytes := unsafe.Slice((*byte)(unsafe.Pointer(&u16[0])), len(u16)*2)
+	bytes := make([]byte, len(u16)*2)
+	for i, v := range u16 {
+		binary.LittleEndian.PutUint16(bytes[i*2:], v)
+	}
 	status := win32.RegSetValueEx(k.Handle, namePtr, win32.REG_SZ, bytes)
 	return check("setting", nameDesc, status)
 }
@@ -102,7 +105,10 @@ func (k Key) GetString(name string) (*string, error) {
 		return nil, err
 	}
 
-	u16Slice := unsafe.Slice((*uint16)(unsafe.Pointer(&buf[0])), int(size/2))
+	u16Slice := make([]uint16, int(size/2))
+	for i := range u16Slice {
+		u16Slice[i] = binary.LittleEndian.Uint16(buf[i*2:])
+	}
 	s := win32.UTF16ToUTF8(u16Slice)
 	return &s, nil
 }

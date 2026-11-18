@@ -12,7 +12,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-	"unsafe"
 
 	"github.com/quasidock/quasidock/internal/oci"
 	"github.com/quasidock/quasidock/internal/process"
@@ -368,7 +367,7 @@ func TestContainerStartRestartKill(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		entry := win32.PROCESSENTRY32W{DwSize: win32.DWORD(unsafe.Sizeof(win32.PROCESSENTRY32W{}))}
+		var entry win32.PROCESSENTRY32W
 		var parentID uint32
 		for more := win32.Process32First(snapshot, &entry); more; more = win32.Process32Next(snapshot, &entry) {
 			if entry.Th32ProcessID == before.State.Pid {
@@ -441,21 +440,17 @@ func startLifecycleConsole(t *testing.T, exe string, args []string) (win32.HANDL
 		t.Fatalf("CreatePseudoConsole: 0x%x", hr)
 	}
 	t.Cleanup(func() { win32.ClosePseudoConsole(pc) })
-	var size uintptr
-	win32.InitializeProcThreadAttributeList(nil, 1, 0, &size)
-	attrs := make([]byte, size)
-	if !win32.InitializeProcThreadAttributeList(unsafe.Pointer(&attrs[0]), 1, 0, &size) {
-		t.Fatal("InitializeProcThreadAttributeList failed")
+	attrs, err := win32.NewProcThreadAttributeList(1)
+	if err != nil {
+		t.Fatal(err)
 	}
-	defer win32.DeleteProcThreadAttributeList(unsafe.Pointer(&attrs[0]))
-	if !win32.UpdateProcThreadAttribute(unsafe.Pointer(&attrs[0]), 0, win32.PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE, unsafe.Pointer(pc), unsafe.Sizeof(pc), nil, nil) {
+	defer attrs.Delete()
+	if !attrs.SetPseudoConsole(pc) {
 		t.Fatal("UpdateProcThreadAttribute(PSEUDOCONSOLE) failed")
 	}
 	var startup win32.STARTUPINFOEXW
-	startup.StartupInfo.Cb = win32.DWORD(unsafe.Sizeof(startup))
-	startup.LpAttributeList = uintptr(unsafe.Pointer(&attrs[0]))
 	var info win32.PROCESS_INFORMATION
-	if err := win32.CreateProcess(exe, process.BuildCommandLine(exe, args), nil, nil, false, win32.EXTENDED_STARTUPINFO_PRESENT, nil, "", unsafe.Pointer(&startup), &info); err != nil {
+	if err := win32.CreateProcessEx(exe, process.BuildCommandLine(exe, args), nil, nil, false, win32.EXTENDED_STARTUPINFO_PRESENT, nil, "", &startup, attrs, &info); err != nil {
 		t.Fatal(err)
 	}
 	win32.CloseHandle(info.HThread)

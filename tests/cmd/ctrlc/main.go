@@ -9,7 +9,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-	"unsafe"
 
 	"github.com/quasidock/quasidock/internal/oci"
 	"github.com/quasidock/quasidock/internal/store"
@@ -102,27 +101,23 @@ func startConsole(commandLine string) (*Console, error) {
 		return nil, fmt.Errorf("CreatePseudoConsole failed: 0x%x", hr)
 	}
 
-	var size uintptr
-	win32.InitializeProcThreadAttributeList(nil, 1, 0, &size)
-	attrs := make([]byte, size)
-	if !win32.InitializeProcThreadAttributeList(unsafe.Pointer(&attrs[0]), 1, 0, &size) {
+	attrs, err := win32.NewProcThreadAttributeList(1)
+	if err != nil {
 		win32.ClosePseudoConsole(pc)
-		return nil, fmt.Errorf("InitializeProcThreadAttributeList failed")
+		return nil, err
 	}
-	defer win32.DeleteProcThreadAttributeList(unsafe.Pointer(&attrs[0]))
+	defer attrs.Delete()
 
-	if !win32.UpdateProcThreadAttribute(unsafe.Pointer(&attrs[0]), 0, win32.PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE, unsafe.Pointer(pc), unsafe.Sizeof(pc), nil, nil) {
+	if !attrs.SetPseudoConsole(pc) {
 		win32.ClosePseudoConsole(pc)
 		return nil, fmt.Errorf("UpdateProcThreadAttribute failed")
 	}
 
 	var startup win32.STARTUPINFOEXW
-	startup.StartupInfo.Cb = win32.DWORD(unsafe.Sizeof(startup))
 	startup.StartupInfo.DwFlags = win32.STARTF_USESTDHANDLES
-	startup.LpAttributeList = uintptr(unsafe.Pointer(&attrs[0]))
 
 	var info win32.PROCESS_INFORMATION
-	err = win32.CreateProcess(
+	err = win32.CreateProcessEx(
 		"",
 		commandLine,
 		nil,
@@ -131,7 +126,8 @@ func startConsole(commandLine string) (*Console, error) {
 		win32.EXTENDED_STARTUPINFO_PRESENT,
 		nil,
 		"",
-		unsafe.Pointer(&startup.StartupInfo),
+		&startup,
+		attrs,
 		&info,
 	)
 	if err != nil {

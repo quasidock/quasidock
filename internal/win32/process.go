@@ -1,6 +1,8 @@
 package win32
 
 import (
+	"errors"
+	"runtime"
 	"syscall"
 	"unsafe"
 )
@@ -81,6 +83,54 @@ func NtQueryInformationProcess(process HANDLE, class int32, info unsafe.Pointer,
 	return int32(r)
 }
 
+func QueryProcessCommandLine(process HANDLE) (string, bool) {
+	infoBuf := make([]byte, 65536)
+	var retLen uint32
+	status := NtQueryInformationProcess(process, ProcessCommandLineInformation, unsafe.Pointer(&infoBuf[0]), uint32(len(infoBuf)), &retLen)
+	if status < 0 {
+		return "", false
+	}
+	uStr := (*UNICODE_STRING)(unsafe.Pointer(&infoBuf[0]))
+	if uStr.Buffer == nil || uStr.Length == 0 {
+		runtime.KeepAlive(infoBuf)
+		return "", false
+	}
+	wSlice := unsafe.Slice(uStr.Buffer, uStr.Length/2)
+	line := UTF16ToUTF8(wSlice)
+	runtime.KeepAlive(infoBuf)
+	return line, true
+}
+
+func UCRTArgs() ([]string, bool) {
+	ucrt := syscall.NewLazyDLL("ucrtbase.dll")
+	if err := ucrt.Load(); err != nil {
+		return nil, false
+	}
+	// _crt_argv_unexpanded_arguments = 1 parses with UCRT rules without loading shell32.dll.
+	r, _, _ := ucrt.NewProc("_configure_wide_argv").Call(1)
+	if r != 0 {
+		return nil, false
+	}
+	pArgc, _, _ := ucrt.NewProc("__p___argc").Call()
+	pArgv, _, _ := ucrt.NewProc("__p___wargv").Call()
+	if pArgc == 0 || pArgv == 0 {
+		return nil, false
+	}
+	var argc int32
+	_, _, _ = procRtlMoveMemory.Call(uintptr(unsafe.Pointer(&argc)), pArgc, unsafe.Sizeof(argc))
+	var argv **uint16
+	_, _, _ = procRtlMoveMemory.Call(uintptr(unsafe.Pointer(&argv)), pArgv, unsafe.Sizeof(argv))
+	if argc <= 0 || argv == nil {
+		return nil, false
+	}
+	arr := unsafe.Slice(argv, argc)
+	out := make([]string, argc)
+	for i, p := range arr {
+		out[i] = UTF16PtrToString(p)
+	}
+	return out, true
+}
+
 func IsProcessInJob(process HANDLE, job HANDLE, result *BOOL) bool {
 	r, _, _ := procIsProcessInJob.Call(process, job, uintptr(unsafe.Pointer(result)))
 	return r != 0
@@ -102,7 +152,7 @@ func ResumeThread(thread HANDLE) (DWORD, error) {
 	return DWORD(r), nil
 }
 
-func CreateProcessWithLogon(username, domain, password string, logonFlags DWORD, app, cmdLine string, creationFlags DWORD, env unsafe.Pointer, cwd string, startup *STARTUPINFOW, info *PROCESS_INFORMATION) error {
+func CreateProcessWithLogon(username, domain, password string, logonFlags DWORD, app, cmdLine string, creationFlags DWORD, env []uint16, cwd string, startup *STARTUPINFOW, info *PROCESS_INFORMATION) error {
 	userPtr := UTF16Ptr(username)
 	var domPtr *uint16
 	if domain != "" {
@@ -121,6 +171,15 @@ func CreateProcessWithLogon(username, domain, password string, logonFlags DWORD,
 	if cwd != "" {
 		cwdPtr = UTF16Ptr(cwd)
 	}
+	var envPtr unsafe.Pointer
+	if len(env) > 0 {
+		envPtr = unsafe.Pointer(&env[0])
+	}
+	var si STARTUPINFOW
+	if startup != nil {
+		si = *startup
+	}
+	si.Cb = DWORD(unsafe.Sizeof(si))
 	r, _, err := procCreateProcessWithLogonW.Call(
 		uintptr(unsafe.Pointer(userPtr)),
 		uintptr(unsafe.Pointer(domPtr)),
@@ -129,11 +188,12 @@ func CreateProcessWithLogon(username, domain, password string, logonFlags DWORD,
 		uintptr(unsafe.Pointer(appPtr)),
 		uintptr(unsafe.Pointer(cmdPtr)),
 		uintptr(creationFlags),
-		uintptr(env),
+		uintptr(envPtr),
 		uintptr(unsafe.Pointer(cwdPtr)),
-		uintptr(unsafe.Pointer(startup)),
+		uintptr(unsafe.Pointer(&si)),
 		uintptr(unsafe.Pointer(info)),
 	)
+	runtime.KeepAlive(env)
 	if r == 0 {
 		return err
 	}
@@ -172,7 +232,78 @@ func DeleteProcThreadAttributeList(attrs unsafe.Pointer) {
 	procDeleteProcThreadAttributeList.Call(uintptr(attrs))
 }
 
-func CreateProcess(app, cmd string, procSec, threadSec *SECURITY_ATTRIBUTES, inherit bool, flags DWORD, env unsafe.Pointer, cwd string, startup unsafe.Pointer, info *PROCESS_INFORMATION) error {
+type ProcThreadAttributeList struct {
+	buf       []byte
+	keepAlive []any
+}
+
+func NewProcThreadAttributeList(count DWORD) (*ProcThreadAttributeList, error) {
+	var size uintptr
+	InitializeProcThreadAttributeList(nil, count, 0, &size)
+	if size == 0 {
+		return nil, errors.New("InitializeProcThreadAttributeList returned zero size")
+	}
+	buf := make([]byte, size)
+	if !InitializeProcThreadAttributeList(unsafe.Pointer(&buf[0]), count, 0, &size) {
+		return nil, errors.New("InitializeProcThreadAttributeList failed")
+	}
+	return &ProcThreadAttributeList{buf: buf}, nil
+}
+
+func (l *ProcThreadAttributeList) Delete() {
+	if l != nil && len(l.buf) > 0 {
+		DeleteProcThreadAttributeList(unsafe.Pointer(&l.buf[0]))
+		runtime.KeepAlive(l)
+		l.buf = nil
+		l.keepAlive = nil
+	}
+}
+
+func (l *ProcThreadAttributeList) Ptr() uintptr {
+	if l == nil || len(l.buf) == 0 {
+		return 0
+	}
+	return uintptr(unsafe.Pointer(&l.buf[0]))
+}
+
+func (l *ProcThreadAttributeList) SetJobs(jobs []HANDLE) bool {
+	if len(jobs) == 0 {
+		return true
+	}
+	l.keepAlive = append(l.keepAlive, jobs)
+	return UpdateProcThreadAttribute(unsafe.Pointer(&l.buf[0]), 0, PROC_THREAD_ATTRIBUTE_JOB_LIST, unsafe.Pointer(&jobs[0]), uintptr(len(jobs))*unsafe.Sizeof(jobs[0]), nil, nil)
+}
+
+func (l *ProcThreadAttributeList) SetHandles(handles []HANDLE) bool {
+	if len(handles) == 0 {
+		return true
+	}
+	l.keepAlive = append(l.keepAlive, handles)
+	return UpdateProcThreadAttribute(unsafe.Pointer(&l.buf[0]), 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST, unsafe.Pointer(&handles[0]), uintptr(len(handles))*unsafe.Sizeof(handles[0]), nil, nil)
+}
+
+func (l *ProcThreadAttributeList) SetSecurityCapabilities(sec *SECURITY_CAPABILITIES) bool {
+	if sec == nil {
+		return true
+	}
+	l.keepAlive = append(l.keepAlive, sec)
+	return UpdateProcThreadAttribute(unsafe.Pointer(&l.buf[0]), 0, PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES, unsafe.Pointer(sec), unsafe.Sizeof(*sec), nil, nil)
+}
+
+func (l *ProcThreadAttributeList) SetPseudoConsole(pc uintptr) bool {
+	r, _, _ := procUpdateProcThreadAttribute.Call(
+		uintptr(unsafe.Pointer(&l.buf[0])),
+		0,
+		PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE,
+		pc,
+		unsafe.Sizeof(pc),
+		0,
+		0,
+	)
+	return r != 0
+}
+
+func createProcessRaw(token HANDLE, hasToken bool, app, cmd string, procSec, threadSec *SECURITY_ATTRIBUTES, inherit bool, flags DWORD, env []uint16, cwd string, startup unsafe.Pointer, info *PROCESS_INFORMATION) error {
 	var appPtr, cmdPtr, cwdPtr *uint16
 	if app != "" {
 		appPtr = UTF16Ptr(app)
@@ -188,55 +319,92 @@ func CreateProcess(app, cmd string, procSec, threadSec *SECURITY_ATTRIBUTES, inh
 	if inherit {
 		inh = 1
 	}
-	r, _, err := procCreateProcessW.Call(
-		uintptr(unsafe.Pointer(appPtr)),
-		uintptr(unsafe.Pointer(cmdPtr)),
-		uintptr(unsafe.Pointer(procSec)),
-		uintptr(unsafe.Pointer(threadSec)),
-		inh,
-		uintptr(flags),
-		uintptr(env),
-		uintptr(unsafe.Pointer(cwdPtr)),
-		uintptr(startup),
-		uintptr(unsafe.Pointer(info)),
-	)
+	var envPtr unsafe.Pointer
+	if len(env) > 0 {
+		envPtr = unsafe.Pointer(&env[0])
+	}
+	var r uintptr
+	var err error
+	if hasToken {
+		r, _, err = procCreateProcessAsUserW.Call(
+			token,
+			uintptr(unsafe.Pointer(appPtr)),
+			uintptr(unsafe.Pointer(cmdPtr)),
+			uintptr(unsafe.Pointer(procSec)),
+			uintptr(unsafe.Pointer(threadSec)),
+			inh,
+			uintptr(flags),
+			uintptr(envPtr),
+			uintptr(unsafe.Pointer(cwdPtr)),
+			uintptr(startup),
+			uintptr(unsafe.Pointer(info)),
+		)
+	} else {
+		r, _, err = procCreateProcessW.Call(
+			uintptr(unsafe.Pointer(appPtr)),
+			uintptr(unsafe.Pointer(cmdPtr)),
+			uintptr(unsafe.Pointer(procSec)),
+			uintptr(unsafe.Pointer(threadSec)),
+			inh,
+			uintptr(flags),
+			uintptr(envPtr),
+			uintptr(unsafe.Pointer(cwdPtr)),
+			uintptr(startup),
+			uintptr(unsafe.Pointer(info)),
+		)
+	}
+	runtime.KeepAlive(env)
+	runtime.KeepAlive(appPtr)
+	runtime.KeepAlive(cmdPtr)
+	runtime.KeepAlive(cwdPtr)
 	if r == 0 {
 		return err
 	}
 	return nil
 }
 
-func CreateProcessAsUser(token HANDLE, app, cmd string, procSec, threadSec *SECURITY_ATTRIBUTES, inherit bool, flags DWORD, env unsafe.Pointer, cwd string, startup unsafe.Pointer, info *PROCESS_INFORMATION) error {
-	var appPtr, cmdPtr, cwdPtr *uint16
-	if app != "" {
-		appPtr = UTF16Ptr(app)
+func CreateProcess(app, cmd string, procSec, threadSec *SECURITY_ATTRIBUTES, inherit bool, flags DWORD, env []uint16, cwd string, startup *STARTUPINFOW, info *PROCESS_INFORMATION) error {
+	var si STARTUPINFOW
+	if startup != nil {
+		si = *startup
 	}
-	if cmd != "" {
-		u := syscall.StringToUTF16(cmd)
-		cmdPtr = &u[0]
+	si.Cb = DWORD(unsafe.Sizeof(si))
+	return createProcessRaw(0, false, app, cmd, procSec, threadSec, inherit, flags, env, cwd, unsafe.Pointer(&si), info)
+}
+
+func CreateProcessEx(app, cmd string, procSec, threadSec *SECURITY_ATTRIBUTES, inherit bool, flags DWORD, env []uint16, cwd string, startup *STARTUPINFOEXW, attrs *ProcThreadAttributeList, info *PROCESS_INFORMATION) error {
+	var si STARTUPINFOEXW
+	if startup != nil {
+		si = *startup
 	}
-	if cwd != "" {
-		cwdPtr = UTF16Ptr(cwd)
+	si.StartupInfo.Cb = DWORD(unsafe.Sizeof(si))
+	if attrs != nil {
+		si.LpAttributeList = attrs.Ptr()
 	}
-	var inh uintptr
-	if inherit {
-		inh = 1
+	err := createProcessRaw(0, false, app, cmd, procSec, threadSec, inherit, flags|EXTENDED_STARTUPINFO_PRESENT, env, cwd, unsafe.Pointer(&si), info)
+	runtime.KeepAlive(attrs)
+	return err
+}
+
+func CreateProcessAsUser(token HANDLE, app, cmd string, procSec, threadSec *SECURITY_ATTRIBUTES, inherit bool, flags DWORD, env []uint16, cwd string, startup *STARTUPINFOW, info *PROCESS_INFORMATION) error {
+	var si STARTUPINFOW
+	if startup != nil {
+		si = *startup
 	}
-	r, _, err := procCreateProcessAsUserW.Call(
-		token,
-		uintptr(unsafe.Pointer(appPtr)),
-		uintptr(unsafe.Pointer(cmdPtr)),
-		uintptr(unsafe.Pointer(procSec)),
-		uintptr(unsafe.Pointer(threadSec)),
-		inh,
-		uintptr(flags),
-		uintptr(env),
-		uintptr(unsafe.Pointer(cwdPtr)),
-		uintptr(startup),
-		uintptr(unsafe.Pointer(info)),
-	)
-	if r == 0 {
-		return err
+	si.Cb = DWORD(unsafe.Sizeof(si))
+	return createProcessRaw(token, true, app, cmd, procSec, threadSec, inherit, flags, env, cwd, unsafe.Pointer(&si), info)
+}
+
+func CreateProcessAsUserEx(token HANDLE, app, cmd string, procSec, threadSec *SECURITY_ATTRIBUTES, inherit bool, flags DWORD, env []uint16, cwd string, startup *STARTUPINFOEXW, attrs *ProcThreadAttributeList, info *PROCESS_INFORMATION) error {
+	var si STARTUPINFOEXW
+	if startup != nil {
+		si = *startup
 	}
-	return nil
+	si.StartupInfo.Cb = DWORD(unsafe.Sizeof(si))
+	if attrs != nil {
+		si.LpAttributeList = attrs.Ptr()
+	}
+	err := createProcessRaw(token, true, app, cmd, procSec, threadSec, inherit, flags|EXTENDED_STARTUPINFO_PRESENT, env, cwd, unsafe.Pointer(&si), info)
+	runtime.KeepAlive(attrs)
+	return err
 }

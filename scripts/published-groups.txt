@@ -27,7 +27,7 @@ c: busybox.json zig.json sqlite.json cmake.json zstd.json meson.json zls.json
 rust-go: rust.json ripgrep.json bat.json go.json fzf.json zot.json oras.json skopeo.json cosign.json
 # prebuilt apps and runtimes 1.5, PHP's images 2.3, Kanboard 0.2
 apps: mingit.json node.json prettier.json python.json python-sdk.json
-apps: 7zip.json notepad-plus-plus.json sumatrapdf.json vlc.json
+apps: 7zip.json notepad-plus-plus.json sumatrapdf.json
 apps: php-sdk.json php.json composer.json kanboard.json
 # the JDK, JRE, Maven and Gradle 1, PDFBox 1.6, PlantUML 3.8, Logisim 3.1,
 # Scene Builder (about 3)

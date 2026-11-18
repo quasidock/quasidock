@@ -2,6 +2,7 @@ package win32
 
 import (
 	"fmt"
+	"syscall"
 	"unsafe"
 )
 
@@ -270,8 +271,7 @@ type MSG struct {
 }
 
 func GetCommandLineW() *uint16 {
-	r, _, _ := procGetCommandLineW.Call()
-	return (*uint16)(unsafe.Pointer(r))
+	return syscall.GetCommandLine()
 }
 
 func GetStartupInfoW(startup *STARTUPINFOW) {
@@ -306,7 +306,9 @@ func CommandLineToArgvW(cmdLine string) ([]string, error) {
 	}
 	defer LocalFree(r)
 	var args []string
-	pArray := (*[1 << 20]*uint16)(unsafe.Pointer(r))[:numArgs:numArgs]
+	var pPtr **uint16
+	_, _, _ = procRtlMoveMemory.Call(uintptr(unsafe.Pointer(&pPtr)), uintptr(unsafe.Pointer(&r)), unsafe.Sizeof(pPtr))
+	pArray := unsafe.Slice(pPtr, numArgs)
 	for _, p := range pArray {
 		args = append(args, UTF16PtrToString(p))
 	}

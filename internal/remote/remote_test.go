@@ -199,18 +199,18 @@ func TestMountSources(t *testing.T) {
 		},
 	}
 
-	target, _ := registry.ParseReference("ghcr.io/zigsaw-io/prettier:3")
+	target, _ := registry.ParseReference("ghcr.io/quasidock/prettier:3")
 
 	// Built locally
 	built := MountSources(target, "D:\\recipes\\prettier.json", manifest, config)
-	if built.ByDigest[nodeLayer] != "zigsaw-io/node" {
+	if built.ByDigest[nodeLayer] != "quasidock/node" {
 		t.Errorf("built mount for node = %q", built.ByDigest[nodeLayer])
 	}
 	if _, ok := built.ByDigest[ownLayer]; ok {
 		t.Errorf("expected no mount for own layer")
 	}
 	repos := built.Repositories()
-	if len(repos) != 1 || repos[0] != "zigsaw-io/node" {
+	if len(repos) != 1 || repos[0] != "quasidock/node" {
 		t.Errorf("unexpected repos: %v", repos)
 	}
 
@@ -224,7 +224,7 @@ func TestMountSources(t *testing.T) {
 
 	// Pulled from different registry
 	other := MountSources(target, "docker.io/me/prettier:3", manifest, config)
-	if len(other.ByDigest) != 1 || other.ByDigest[nodeLayer] != "zigsaw-io/node" {
+	if len(other.ByDigest) != 1 || other.ByDigest[nodeLayer] != "quasidock/node" {
 		t.Errorf("unexpected other mounts: %+v", other.ByDigest)
 	}
 }

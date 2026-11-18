@@ -35,8 +35,10 @@ func CoCreateInstance(clsid *GUID, outer uintptr, context DWORD, iid *GUID, obje
 }
 
 func callComMethod(obj uintptr, index int, args ...uintptr) HRESULT {
-	vtable := *(*uintptr)(unsafe.Pointer(obj))
-	method := *(*uintptr)(unsafe.Pointer(vtable + uintptr(index)*unsafe.Sizeof(uintptr(0))))
+	var vtable uintptr
+	_, _, _ = procRtlMoveMemory.Call(uintptr(unsafe.Pointer(&vtable)), obj, unsafe.Sizeof(vtable))
+	var method uintptr
+	_, _, _ = procRtlMoveMemory.Call(uintptr(unsafe.Pointer(&method)), vtable+uintptr(index)*unsafe.Sizeof(method), unsafe.Sizeof(method))
 	allArgs := make([]uintptr, 0, len(args)+1)
 	allArgs = append(allArgs, obj)
 	allArgs = append(allArgs, args...)

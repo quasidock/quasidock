@@ -61,7 +61,7 @@ func TestBuiltInKeys(t *testing.T) {
 	if err != nil || len(keys) != want {
 		t.Fatalf("Quasidock image: got %d keys, want %d: %v", len(keys), want, err)
 	}
-	for _, repository := range []string{"ghcr.io/zigsaw-io/busybox", "ghcr.io/quasidock/busybox", "ghcr.io/quasidock/other/busybox", "ghcr.io/quasidock/quasidock-other/busybox", "ghcr.io/other/busybox"} {
+	for _, repository := range []string{"ghcr.io/quasidock/busybox", "ghcr.io/quasidock/busybox", "ghcr.io/quasidock/other/busybox", "ghcr.io/quasidock/quasidock-other/busybox", "ghcr.io/other/busybox"} {
 		keys, err := ForImage(nil, repository)
 		if err != nil || len(keys) != 0 {
 			t.Errorf("%s: expected no built-in trust, got %d keys: %v", repository, len(keys), err)

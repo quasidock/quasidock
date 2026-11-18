@@ -120,7 +120,9 @@ func main() {
 					panic(err)
 				}
 				child := exec.Command(exe, "signal-hold", ready+".child", "ignore")
-				child.Stdout, child.Stderr = os.Stdout, os.Stderr
+				// Server AppContainers cannot open NUL; reuse the stdin handle
+				// supplied by the supervisor instead of os/exec's nil default.
+				child.Stdin, child.Stdout, child.Stderr = os.Stdin, os.Stdout, os.Stderr
 				if err := child.Start(); err != nil {
 					panic(err)
 				}

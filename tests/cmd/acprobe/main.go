@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"unsafe"
 
 	"github.com/quasidock/quasidock/internal/win32"
 )
@@ -17,26 +16,12 @@ func printSelf() {
 	}
 	defer win32.CloseHandle(token)
 
-	var isAC win32.DWORD
-	var retLen win32.DWORD
-	_ = win32.GetTokenInformation(token, win32.TokenIsAppContainer, unsafe.Pointer(&isAC), uint32(unsafe.Sizeof(isAC)), &retLen)
-
-	var label [256]byte
-	if err := win32.GetTokenInformation(token, win32.TokenIntegrityLevel, unsafe.Pointer(&label[0]), uint32(len(label)), &retLen); err != nil {
+	isAC, _ := win32.GetTokenIsAppContainer(token)
+	rid, err := win32.GetTokenIntegrityRid(token)
+	if err != nil {
 		fmt.Println("# integrity unreadable")
 		return
 	}
-	mandatoryLabel := (*win32.TOKEN_MANDATORY_LABEL)(unsafe.Pointer(&label[0]))
-	sid := mandatoryLabel.Label.Sid
-	subCount := win32.GetSidSubAuthorityCount(sid)
-	if subCount == nil || *subCount == 0 {
-		return
-	}
-	ridPtr := win32.GetSidSubAuthority(sid, uint32(*subCount)-1)
-	if ridPtr == nil {
-		return
-	}
-	rid := *ridPtr
 
 	level := "untrusted"
 	if rid >= 0x4000 {
@@ -50,7 +35,7 @@ func printSelf() {
 	}
 
 	acStr := ""
-	if isAC != 0 {
+	if isAC {
 		acStr = ", in an AppContainer"
 	}
 	fmt.Printf("# integrity %s%s\n", level, acStr)
@@ -131,16 +116,9 @@ func runLow() {
 	}
 	defer win32.LocalFree(uintptr(sid))
 
-	label := win32.TOKEN_MANDATORY_LABEL{
-		Label: win32.SID_AND_ATTRIBUTES{
-			Sid:        sid,
-			Attributes: win32.SE_GROUP_INTEGRITY,
-		},
-	}
-	_ = win32.SetTokenInformation(low, win32.TokenIntegrityLevel, unsafe.Pointer(&label), uint32(unsafe.Sizeof(label))+uint32(win32.GetLengthSid(sid)))
+	_ = win32.SetTokenIntegrityLevel(low, sid)
 
 	var si win32.STARTUPINFOW
-	si.Cb = win32.DWORD(unsafe.Sizeof(si))
 	si.DwFlags = win32.STARTF_USESTDHANDLES
 	si.HStdInput = win32.GetStdHandle(win32.STD_INPUT_HANDLE)
 	si.HStdOutput = win32.GetStdHandle(win32.STD_OUTPUT_HANDLE)
@@ -157,7 +135,7 @@ func runLow() {
 		0,
 		nil,
 		"",
-		unsafe.Pointer(&si),
+		&si,
 		&pi,
 	)
 	if err != nil {

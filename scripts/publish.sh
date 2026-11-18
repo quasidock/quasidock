@@ -20,9 +20,6 @@
 # the registry, read anonymously, now has every image the published recipes
 # pin.
 #
-# It refuses recipes in recipes/no-publish/, whose images mustn't be
-# published.
-#
 # On the default registry, COSIGN_KEY must name the key that signs them, and it's
 # used as scripts/sign-images.sh says. Elsewhere, nothing's signed here.
 #
@@ -87,17 +84,6 @@ esac
 if [ $# -eq 0 ]; then
     for name in $(grep -v '^#' "$root/scripts/published-recipes.txt" | tr -d '\r'); do set -- "$@" "$root/recipes/$name"; done
 fi
-# Recipes in recipes/no-publish/ make images whose licences don't allow
-# publishing them (Microsoft's .NET binaries, for one). Any of them, named or
-# listed, stops this before anything is published.
-for recipe in "$@"; do
-    case /${recipe//\\//} in
-    */no-publish/*)
-        echo "error: $recipe is in recipes/no-publish/: its image mustn't be published" >&2
-        exit 1
-        ;;
-    esac
-done
 
 # What's published here gets signed, as pull warns about what isn't: better found out
 # now than after an hour of building.

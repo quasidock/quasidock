@@ -2,7 +2,6 @@ package forward
 
 import (
 	"fmt"
-	"unsafe"
 
 	"github.com/quasidock/quasidock/internal/net"
 	"github.com/quasidock/quasidock/internal/win32"
@@ -112,8 +111,7 @@ func (f *Forwards) answer(relayPid win32.DWORD) {
 			continue
 		}
 
-		infoBytes := unsafe.Slice((*byte)(unsafe.Pointer(&info)), unsafe.Sizeof(info))
-		if !writeAll(f.Out, []byte{0}) || !writeAll(f.Out, infoBytes) {
+		if !writeAll(f.Out, []byte{0}) || !writeAll(f.Out, info.Data[:]) {
 			_, _ = win32.Closesocket(s)
 			return
 		}

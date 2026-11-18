@@ -3,7 +3,6 @@ package net
 import (
 	"errors"
 	"math/bits"
-	"unsafe"
 
 	"github.com/quasidock/quasidock/internal/win32"
 )
@@ -49,18 +48,11 @@ func Loopback(family Family, port uint16) Address {
 	}
 }
 
-func (a *Address) Ptr() unsafe.Pointer {
-	if a.Family == FamilyIPv4 {
-		return unsafe.Pointer(&a.IPv4)
-	}
-	return unsafe.Pointer(&a.IPv6)
-}
-
 func (a *Address) Len() int32 {
 	if a.Family == FamilyIPv4 {
-		return int32(unsafe.Sizeof(a.IPv4))
+		return win32.SizeofSockaddrIn
 	}
-	return int32(unsafe.Sizeof(a.IPv6))
+	return win32.SizeofSockaddrIn6
 }
 
 func (a *Address) AF() int32 {
@@ -104,12 +96,18 @@ func Listen(address Address) Result {
 	}
 	s := res.Socket
 
-	on := int32(1)
-	if ret, err := win32.Setsockopt(s, win32.SOL_SOCKET, win32.SO_EXCLUSIVEADDRUSE, unsafe.Pointer(&on), int32(unsafe.Sizeof(on))); ret != 0 {
+	if ret, err := win32.SetsockoptInt(s, win32.SOL_SOCKET, win32.SO_EXCLUSIVEADDRUSE, 1); ret != 0 {
 		return failWith(s, err)
 	}
-	if ret, err := win32.Bind(s, address.Ptr(), address.Len()); ret != 0 {
-		return failWith(s, err)
+	var bindRet int32
+	var bindErr error
+	if address.Family == FamilyIPv4 {
+		bindRet, bindErr = win32.BindIn4(s, &address.IPv4)
+	} else {
+		bindRet, bindErr = win32.BindIn6(s, &address.IPv6)
+	}
+	if bindRet != 0 {
+		return failWith(s, bindErr)
 	}
 	if ret, err := win32.Listen(s, 64); ret != 0 {
 		return failWith(s, err)
@@ -130,9 +128,16 @@ func Connect(address Address, timeoutMs uint32) Result {
 		return failWith(s, err)
 	}
 
-	if ret, err := win32.Connect(s, address.Ptr(), address.Len()); ret != 0 {
-		if win32.Errno(err) != win32.WSAEWOULDBLOCK {
-			return failWith(s, err)
+	var connRet int32
+	var connErr error
+	if address.Family == FamilyIPv4 {
+		connRet, connErr = win32.ConnectIn4(s, &address.IPv4)
+	} else {
+		connRet, connErr = win32.ConnectIn6(s, &address.IPv6)
+	}
+	if connRet != 0 {
+		if win32.Errno(connErr) != win32.WSAEWOULDBLOCK {
+			return failWith(s, connErr)
 		}
 		var writable win32.FdSet
 		writable.Count = 1
@@ -151,9 +156,7 @@ func Connect(address Address, timeoutMs uint32) Result {
 		} else if selRes == win32.SOCKET_ERROR {
 			return failWith(s, selErr)
 		} else if failed.Count > 0 {
-			var code int32
-			codeLen := int32(unsafe.Sizeof(code))
-			_, _ = win32.Getsockopt(s, win32.SOL_SOCKET, win32.SO_ERROR, unsafe.Pointer(&code), &codeLen)
+			_, code, _ := win32.GetsockoptInt(s, win32.SOL_SOCKET, win32.SO_ERROR)
 			_, _ = win32.Closesocket(s)
 			if code != 0 {
 				return Result{Failed: code}
@@ -172,8 +175,7 @@ func Connect(address Address, timeoutMs uint32) Result {
 // LocalPort returns the port a socket is bound to.
 func LocalPort(s win32.SOCKET) (uint16, bool) {
 	var addr win32.SockaddrIn6
-	addrLen := int32(unsafe.Sizeof(addr))
-	if ret, _ := win32.Getsockname(s, unsafe.Pointer(&addr), &addrLen); ret != 0 {
+	if ret, _ := win32.GetsocknameIn6(s, &addr); ret != 0 {
 		return 0, false
 	}
 	return bits.ReverseBytes16(addr.Port), true

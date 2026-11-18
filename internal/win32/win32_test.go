@@ -4,7 +4,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"unsafe"
 
 	"github.com/quasidock/quasidock/internal/win32"
 )
@@ -49,7 +48,7 @@ func TestJobObject(t *testing.T) {
 
 	var limit win32.JOBOBJECT_EXTENDED_LIMIT_INFORMATION
 	limit.BasicLimitInformation.LimitFlags = win32.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
-	err = win32.SetInformationJobObject(job, win32.JobObjectExtendedLimitInformation, unsafe.Pointer(&limit), win32.DWORD(unsafe.Sizeof(limit)))
+	err = win32.SetJobExtendedLimits(job, &limit)
 	if err != nil {
 		t.Fatalf("SetInformationJobObject failed: %v", err)
 	}

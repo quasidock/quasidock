@@ -38,13 +38,13 @@ r() {
 # isn't named; a local one; and a recipe that pins an older build of itself.
 fresh() {
     rm -rf "$recipes"
-    mkdir -p "$recipes/no-publish"
+    mkdir -p "$recipes"
     r go go 1.2.3
     r tool tool 2.0 go:1.2.1
     r app app 3.0 go:1.2.1
     r top top 4.0 tool:2.0 go:1.2.1
     r other other 1
-    r no-publish/local local 9 go:1.2.1
+    r local local 9 go:1.2.1
 }
 fresh
 # Listed so that going by this list alone would be wrong: top before what it pins.
@@ -110,7 +110,7 @@ check "  in every recipe that pins it" has top "\"go:1.2.3@sha256:$go_hex\""
 check "a pin of something rebuilt on the way gets its digest too" has top "\"tool:2.0@sha256:$tool_hex\""
 check "  built after that, so its own digest is of the new pins" sh -c "grep -q 'go:1.2.3' '$recipes/tool.json'"
 check "a pin of what wasn't rebuilt stays" has app "\"other:1@sha256:$old\""
-check "what's not published stays on the old pin" has no-publish/local "go:1.2.1@sha256:$old"
+check "what's not published stays on the old pin" has local "go:1.2.1@sha256:$old"
 check "each step says its recipe and digest" sh -c "printf '%s\n' \"\$1\" | grep -q '^go ${go_hex:0:12} '" _ "$output"
 check "it ends with what to publish, in order" sh -c "printf '%s\n' \"\$1\" | grep -q 'scripts/publish.sh go.json app.json tool.json top.json\$'" _ "$output"
 

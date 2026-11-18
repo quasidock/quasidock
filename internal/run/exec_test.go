@@ -56,6 +56,53 @@ func TestExecEnvironmentAndCommand(t *testing.T) {
 	}
 }
 
+func TestExecFrameAcknowledgement(t *testing.T) {
+	runID, err := newRunID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	name := execPipeName(strings.Repeat("b", 64), runID)
+	l, err := win32.ListenPipe(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+	// A detached client disconnects as soon as it has the complete frame.
+	// Repeat to exercise disconnects racing the sender's write completion.
+	const attempts = 4096
+	sent := make(chan error, attempts)
+	go func() {
+		for range attempts {
+			f, err := l.Accept()
+			if err != nil {
+				sent <- err
+				return
+			}
+			c := &execStream{File: f}
+			_ = c.SetDeadline(time.Now().Add(5 * time.Second))
+			err = c.send(execStarted, nil)
+			c.Close()
+			sent <- err
+		}
+	}()
+	for i := range attempts {
+		f, err := win32.DialPipe(name, time.Now().Add(5*time.Second))
+		if err != nil {
+			t.Fatal(err)
+		}
+		c := &execStream{File: f}
+		_ = c.SetDeadline(time.Now().Add(5 * time.Second))
+		kind, data, err := c.receive()
+		c.Close()
+		if err != nil || kind != execStarted || len(data) != 0 {
+			t.Fatalf("receive %d: %d %q %v", i, kind, data, err)
+		}
+		if err := <-sent; err != nil {
+			t.Fatalf("acknowledgement %d failed after delivery: %v", i, err)
+		}
+	}
+}
+
 func TestExecChildHelper(t *testing.T) {
 	mode := os.Getenv("QUASIDOCK_EXEC_TEST_CHILD")
 	if mode == "" {

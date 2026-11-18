@@ -63,7 +63,7 @@ func TestCatalogJSONRoundTrip(t *testing.T) {
 		Entrypoint: []string{"zig.exe"},
 	}
 	cat := Catalog{
-		Registry: "ghcr.io/zigsaw-io",
+		Registry: "ghcr.io/quasidock",
 		Apps:     []Entry{entry},
 	}
 
@@ -76,7 +76,7 @@ func TestCatalogJSONRoundTrip(t *testing.T) {
 	if strings.Contains(jsonStr, `"name"`) {
 		t.Errorf("expected name to be omitted, got %s", jsonStr)
 	}
-	if !strings.Contains(jsonStr, `"registry":"ghcr.io/zigsaw-io"`) {
+	if !strings.Contains(jsonStr, `"registry":"ghcr.io/quasidock"`) {
 		t.Errorf("expected registry to be present, got %s", jsonStr)
 	}
 

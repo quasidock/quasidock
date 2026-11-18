@@ -9,12 +9,9 @@ import (
 	"encoding/pem"
 	"math/big"
 	"os"
-	"runtime"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
-	"unsafe"
 
 	"github.com/quasidock/quasidock/internal/store"
 	"github.com/quasidock/quasidock/internal/win32"
@@ -40,10 +37,6 @@ func TestCertificatePurposes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	crypt := syscall.NewLazyDLL("crypt32.dll")
-	create := crypt.NewProc("CertCreateCertificateContext")
-	free := crypt.NewProc("CertFreeCertificateContext")
-	setUsage := crypt.NewProc("CertSetEnhancedKeyUsage")
 	for _, tc := range []struct {
 		name     string
 		ext      []x509.ExtKeyUsage
@@ -64,26 +57,13 @@ func TestCertificatePurposes(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			ctx, _, err := create.Call(win32.X509_ASN_ENCODING, uintptr(unsafe.Pointer(&der[0])), uintptr(len(der)))
-			if ctx == 0 {
+			ctx, err := win32.CertCreateContext(der)
+			if err != nil {
 				t.Fatal(err)
 			}
-			defer free.Call(ctx)
+			defer win32.CertFreeContext(ctx)
 			if tc.property != nil {
-				var encoded [][]byte
-				var pointers []uintptr
-				for _, oid := range *tc.property {
-					b := append([]byte(oid), 0)
-					encoded = append(encoded, b)
-					pointers = append(pointers, uintptr(unsafe.Pointer(&b[0])))
-				}
-				usage := win32.CertEnhKeyUsage{Count: uint32(len(pointers))}
-				if len(pointers) != 0 {
-					usage.Identifiers = &pointers[0]
-				}
-				ok, _, err := setUsage.Call(ctx, uintptr(unsafe.Pointer(&usage)))
-				runtime.KeepAlive(encoded)
-				if ok == 0 {
+				if err := win32.CertSetEnhancedKeyUsageOIDs(ctx, *tc.property); err != nil {
 					t.Fatal(err)
 				}
 			}

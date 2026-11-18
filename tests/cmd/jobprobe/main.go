@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"unsafe"
 
 	"github.com/quasidock/quasidock/internal/win32"
 )
@@ -36,7 +35,6 @@ func rest(cmdLine string, skip int) string {
 
 func start(line string, flags win32.DWORD) (*win32.PROCESS_INFORMATION, error) {
 	var startup win32.STARTUPINFOW
-	startup.Cb = win32.DWORD(unsafe.Sizeof(startup))
 	var info win32.PROCESS_INFORMATION
 	err := win32.CreateProcess(
 		"",
@@ -47,7 +45,7 @@ func start(line string, flags win32.DWORD) (*win32.PROCESS_INFORMATION, error) {
 		flags,
 		nil,
 		"",
-		unsafe.Pointer(&startup),
+		&startup,
 		&info,
 	)
 	if err != nil {
@@ -99,7 +97,7 @@ func main() {
 
 		var limit win32.JOBOBJECT_EXTENDED_LIMIT_INFORMATION
 		limit.BasicLimitInformation.LimitFlags = win32.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
-		if err := win32.SetInformationJobObject(job, win32.JobObjectExtendedLimitInformation, unsafe.Pointer(&limit), win32.DWORD(unsafe.Sizeof(limit))); err != nil {
+		if err := win32.SetJobExtendedLimits(job, &limit); err != nil {
 			win32.ExitProcess(125)
 		}
 

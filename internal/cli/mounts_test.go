@@ -12,7 +12,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-	"unsafe"
 
 	"github.com/quasidock/quasidock/internal/appcontainer"
 	"github.com/quasidock/quasidock/internal/mounts"
@@ -234,7 +233,7 @@ func TestDetachedMountSharingAndRecovery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	entry := win32.PROCESSENTRY32W{DwSize: win32.DWORD(unsafe.Sizeof(win32.PROCESSENTRY32W{}))}
+	var entry win32.PROCESSENTRY32W
 	parent := uint32(0)
 	for more := win32.Process32First(snapshot, &entry); more; more = win32.Process32Next(snapshot, &entry) {
 		if entry.Th32ProcessID == c.State.Pid {

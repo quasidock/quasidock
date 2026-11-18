@@ -15,7 +15,7 @@ func TestNormalizeHost(t *testing.T) {
 		{"ghcr.io", "ghcr.io"},
 		{"GHCR.io", "ghcr.io"},
 		{"https://ghcr.io/v2/", "ghcr.io"},
-		{"ghcr.io/zigsaw-io", "ghcr.io"},
+		{"ghcr.io/quasidock", "ghcr.io"},
 		{"localhost:5000/test/", "localhost:5000"},
 		{"http://127.0.0.1:5001", "127.0.0.1:5001"},
 		{"docker.io", "docker.io"},

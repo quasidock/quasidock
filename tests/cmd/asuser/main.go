@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"unsafe"
 
 	"github.com/quasidock/quasidock/internal/win32"
 )
@@ -39,7 +38,6 @@ func main() {
 	}
 
 	sa := win32.SECURITY_ATTRIBUTES{
-		NLength:        win32.DWORD(unsafe.Sizeof(win32.SECURITY_ATTRIBUTES{})),
 		BInheritHandle: win32.TRUE,
 	}
 
@@ -58,7 +56,6 @@ func main() {
 	defer win32.CloseHandle(output)
 
 	var startup win32.STARTUPINFOW
-	startup.Cb = win32.DWORD(unsafe.Sizeof(startup))
 	startup.DwFlags = win32.STARTF_USESTDHANDLES
 	startup.HStdOutput = output
 	startup.HStdError = output

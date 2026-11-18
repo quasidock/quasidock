@@ -147,10 +147,27 @@ func convertCommand(ctx *context.Context, args []string) (uint32, error) {
 	if err != nil {
 		return 1, err
 	}
-	// Check selectors and Windows compatibility now; builds take fresh snapshots.
-	captured, err := buildcontext.Read(opts.Context, filepath.ToSlash(rel), opts.Output)
-	if err != nil {
-		return 1, fmt.Errorf("%s:1: context: %w", opts.Dockerfile, err)
+	// Check COPY metadata now; only builds need content hashes and full snapshots.
+	var paths []string
+	collectPaths := func(stages []recipe.Stage) {
+		for _, stage := range stages {
+			for _, src := range stage.Sources {
+				if src.Context != nil {
+					paths = append(paths, src.Context.Paths...)
+				}
+			}
+		}
+	}
+	for _, unit := range result.Recipe.Builds {
+		collectPaths(unit.Stages)
+	}
+	collectPaths(result.Recipe.Stages)
+	var captured *buildcontext.Snapshot
+	if len(paths) > 0 {
+		captured, err = buildcontext.Inspect(opts.Context, filepath.ToSlash(rel), opts.Output, paths)
+		if err != nil {
+			return 1, fmt.Errorf("%s:1: context: %w", opts.Dockerfile, err)
+		}
 	}
 	validateContext := func(stages []recipe.Stage, prefix string, executables []string) error {
 		for _, stage := range stages {

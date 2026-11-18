@@ -42,17 +42,12 @@ func ListenPipe(name string) (*PipeListener, error) {
 		return nil, err
 	}
 	defer CloseHandle(token)
-	var size DWORD
-	_ = GetTokenInformation(token, TokenUser, nil, 0, &size)
-	if size == 0 {
-		return nil, errors.New("process token has no user information")
-	}
-	buf := make([]byte, size)
-	if err := GetTokenInformation(token, TokenUser, unsafe.Pointer(&buf[0]), size, &size); err != nil {
+	sidBytes, userSid, err := GetTokenUserSid(token)
+	if err != nil {
 		return nil, err
 	}
-	sid, err := ConvertSidToStringSid((*TOKEN_USER)(unsafe.Pointer(&buf[0])).User.Sid)
-	runtime.KeepAlive(buf)
+	sid, err := ConvertSidToStringSid(userSid)
+	runtime.KeepAlive(sidBytes)
 	if err != nil {
 		return nil, err
 	}

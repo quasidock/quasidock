@@ -10,7 +10,6 @@ import (
 	"sort"
 	"strings"
 	"syscall"
-	"unsafe"
 
 	"github.com/quasidock/quasidock/internal/store"
 	"github.com/quasidock/quasidock/internal/win32"
@@ -111,28 +110,20 @@ func ExportPEM() ([]byte, error) {
 	var certs []certItem
 
 	for _, name := range storeNames {
-		nameU16 := win32.UTF16Ptr(name)
 		for _, location := range locations {
 			flags := win32.CERT_STORE_READONLY_FLAG | win32.CertSystemStore(location)
-			hStore, err := win32.CertOpenStore(
-				win32.CERT_STORE_PROV_SYSTEM_W,
-				0,
-				0,
-				flags,
-				uintptr(unsafe.Pointer(nameU16)),
-			)
+			hStore, err := win32.CertOpenSystemStore(name, flags)
 			if err != nil || hStore == 0 {
 				continue
 			}
 
-			var next uintptr
+			var next *syscall.CertContext
 			for {
-				next = win32.CertEnumCertificatesInStore(hStore, next)
-				if next == 0 {
+				next, _ = win32.CertEnumCertificates(hStore, next)
+				if next == nil {
 					break
 				}
-				ctx := (*win32.CertContext)(unsafe.Pointer(next))
-				if ctx.CertEncodingType&win32.X509_ASN_ENCODING == 0 {
+				if next.EncodingType&win32.X509_ASN_ENCODING == 0 {
 					continue
 				}
 
@@ -141,8 +132,7 @@ func ExportPEM() ([]byte, error) {
 					continue
 				}
 
-				der := make([]byte, ctx.LengthEncoded)
-				copy(der, unsafe.Slice(ctx.EncodedCert, ctx.LengthEncoded))
+				der := win32.CertEncodedBytes(next)
 
 				h := sha256.Sum256(der)
 				certs = append(certs, certItem{hash: h, der: der})
@@ -168,45 +158,18 @@ func ExportPEM() ([]byte, error) {
 	return out.Bytes(), nil
 }
 
-func getPurposes(certCtx uintptr) (Purposes, error) {
+func getPurposes(certCtx *syscall.CertContext) (Purposes, error) {
 	// Windows intersects the extension and store property when flags are zero.
 	return getUsage(certCtx, 0)
 }
 
-func getUsage(certCtx uintptr, flags win32.DWORD) (Purposes, error) {
-	var size win32.DWORD
-	if ok, lastError := win32.CertGetEnhancedKeyUsage(certCtx, flags, 0, &size); !ok {
-		if lastError == syscall.Errno(win32.CRYPT_E_NOT_FOUND) {
-			return Purposes{Any: true}, nil
-		}
-		return Purposes{}, fmt.Errorf("query certificate usages: %w", lastError)
+func getUsage(certCtx *syscall.CertContext, flags win32.DWORD) (Purposes, error) {
+	oids, unrestricted, err := win32.CertEnhancedKeyUsageOIDs(certCtx, flags)
+	if err != nil {
+		return Purposes{}, err
 	}
-	buf := make([]byte, size)
-	ok, lastError := win32.CertGetEnhancedKeyUsage(certCtx, flags, uintptr(unsafe.Pointer(&buf[0])), &size)
-	if !ok {
-		if lastError == syscall.Errno(win32.CRYPT_E_NOT_FOUND) {
-			return Purposes{Any: true}, nil
-		}
-		return Purposes{}, fmt.Errorf("read certificate usages: %w", lastError)
-	}
-	u := (*win32.CertEnhKeyUsage)(unsafe.Pointer(&buf[0]))
-	if u.Count == 0 {
-		if lastError == syscall.Errno(win32.CRYPT_E_NOT_FOUND) {
-			return Purposes{Any: true}, nil
-		}
-		return Purposes{Any: false}, nil
-	}
-
-	ptrs := unsafe.Slice(u.Identifiers, u.Count)
-	var oids []string
-	for _, ptr := range ptrs {
-		p := (*byte)(unsafe.Pointer(ptr))
-		var b []byte
-		for *p != 0 {
-			b = append(b, *p)
-			p = (*byte)(unsafe.Pointer(uintptr(unsafe.Pointer(p)) + 1))
-		}
-		oids = append(oids, string(b))
+	if unrestricted {
+		return Purposes{Any: true}, nil
 	}
 	return Purposes{Any: false, OIDs: oids}, nil
 }

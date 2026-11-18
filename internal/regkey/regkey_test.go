@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"testing"
-	"unsafe"
 
 	"github.com/quasidock/quasidock/internal/regkey"
 	"github.com/quasidock/quasidock/internal/win32"
@@ -77,9 +76,10 @@ func TestCopyFrom(t *testing.T) {
 		t.Fatalf("expected 'välue', got %v, err=%v", strVal, err)
 	}
 
-	var gotDword uint32
+	var gotBytes [4]byte
 	size := win32.DWORD(4)
-	status = win32.RegQueryValueEx(dest.Handle, dwordName, nil, unsafe.Slice((*byte)(unsafe.Pointer(&gotDword)), 4), &size)
+	status = win32.RegQueryValueEx(dest.Handle, dwordName, nil, gotBytes[:], &size)
+	gotDword := binary.LittleEndian.Uint32(gotBytes[:])
 	if status != 0 || gotDword != 7 {
 		t.Fatalf("expected dword 7, got %d, status=%d", gotDword, status)
 	}

@@ -282,6 +282,4 @@ named stage with `--target NAME` and replace individual native bases with
 Quasidock uses Docker-style short image IDs (`node`, `busybox`, `gtk4`, etc.),
 required `entrypoint` and optional default `cmd` fields (instead of `command`,
 `args`, and `exports`), and `from` base-image aliases (instead of `runtimes`).
-Legacy Zigsaw recipes and published Zigsaw image configs without `entrypoint`
-are no longer compatible and fail config validation. See
-[docs/recipes.md](docs/recipes.md) for the current schema.
+See [docs/recipes.md](docs/recipes.md) for the current schema.

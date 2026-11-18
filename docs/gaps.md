@@ -117,9 +117,9 @@ Known limitations, platform constraints, and incomplete features in Quasidock
   inspection API. Older live owners must be stopped and started with a binary
   that supports exec.
 - **Windows Server 2025 AppContainer restrictions.** Server 2025 blocks opening
-  `NUL` inside AppContainers ([Zigsaw iteration 46](../legacy/iteration-46.md))
-  and blocks path lookups on `zig env`, `kpathsea` (`GetLongPathNameW`), and
-  CPython `getpath`. BusyBox `sh -c` under `appcontainer` can exit before the
+  `NUL` inside AppContainers and blocks path lookups on `zig env`,
+  `kpathsea` (`GetLongPathNameW`), CPython `getpath`. BusyBox `sh -c`
+  under `appcontainer` can exit before the
   last command unless a trailing statement follows (`sh -c "cc x.c; true"`).
   DirectWrite in AppContainers also cannot load per-user fonts, and Windows
   refuses taskbar progress/button updates under `low` and `appcontainer`.
@@ -235,17 +235,6 @@ Known limitations, platform constraints, and incomplete features in Quasidock
 
 ## Language runtimes and GUI stacks
 
-- **`.NET` (`recipes/no-publish/`).** Microsoft's license forbids publishing
-  `.NET` runtime binaries, so `dotnet-sdk`, `dotnet`, `pinta`, and `files`
-  live in `recipes/no-publish/`, require local builds, and have no CI coverage.
-  No NativeAOT (requires MSVC linker), .NET 10 only, and the shared runtime
-  carries all three shared frameworks (~200 MB). `dotnet --info` and `workload
-  list` fail querying VS workloads in AppContainers. `pinta` lacks a WebP
-  GdkPixbuf loader and translates only GTK strings via `LANGUAGE`. `files`
-  requires `soft` (unpackaged WinUI 3 storage APIs fail under `low` and
-  `appcontainer`), omits Explorer-replacement C++ launchers/dialogs, update
-  tasks, and `files-dev:` protocol registration, and its vendor step caches
-  ~3.3 GB of NuGet packages.
 - **TeX Live.** Fails inside AppContainers on Windows builds affected by
   `self-long-name` (`kpathsea` `GetLongPathNameW` error); `tlmgr` cannot mutate
   the read-only deployment (updates rebuild pins with
@@ -301,18 +290,6 @@ Known limitations, platform constraints, and incomplete features in Quasidock
   `osm2pgsql` cannot read `postgresql`'s `pgpass.conf` (`-W` or `--env
   PGPASSWORD=...` needed), links Lua statically (no C Lua modules), and omits
   `osm2pgsql-replication` / `osm2pgsql-gen`.
-- **Chromium, Electron, and ZLS.** `vscodium` and `ungoogled-chromium` require
-  `"sandbox": "soft"` because Chromium's multi-process sandbox fails window
-  station setup under `low` or `appcontainer`
-  ([findings](findings.md#chromium-and-electron)); passing `--no-sandbox`
-  removes Chromium's internal sandbox instead. `vscodium` fails in
-  `appcontainer` even with `--no-sandbox` (Node `realpath` and stripped
-  `NODE_OPTIONS`), `codium-cli` exits early when no instance is open,
-  `codium-tunnel.exe` is excluded, host tools need `--share=host` with
-  `quasidock-host`, OAuth browser redirects back to VSCodium are untested, and
-  `ungoogled-chromium` is in `recipes/no-publish/`. `zls` cannot read outside
-  `cwd` without `--filesystem` and fails `zig env` standard-library lookup
-  under `appcontainer` on Windows Server 2025.
 - **OCI tools.** In `appcontainer`, `oras` directory pulls and `skopeo`
   `oci:`/`dir:` copies fail in Go's `filepath.EvalSymlinks` walking drive roots.
   `skopeo` lacks `containers-storage:` on Windows, `cosign` lacks PKCS#11/PIV

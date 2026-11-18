@@ -1,24 +1,6 @@
 # Networking
 
-This networking design originated on 2026-10-26 in the Zig-era predecessor,
-Zigsaw ([Zigsaw iteration 50](../legacy/iteration-50.md) for the profile race,
-proxies, and services; [Zigsaw iteration 51](../legacy/iteration-51.md) for
-reaching this machine from a container;
-[Zigsaw iteration 52](../legacy/iteration-52.md) for `AF_UNIX` findings and
-certificate trust; [Zigsaw iteration 53](../legacy/iteration-53.md) for
-`${roots}`; and [Zigsaw iteration 70](../legacy/iteration-70.md) for standard-user
-loopback exemption). Quasidock carries the design forward in Go across
-[`internal/net/net.go`](../internal/net/net.go),
-[`internal/services/services.go`](../internal/services/services.go),
-[`internal/forward/forward.go`](../internal/forward/forward.go),
-[`internal/roots/roots.go`](../internal/roots/roots.go),
-[`internal/appcontainer/appcontainer.go`](../internal/appcontainer/appcontainer.go),
-[`internal/run/run.go`](../internal/run/run.go), and
-[`cmd/quasidock-relay/main.go`](../cmd/quasidock-relay/main.go).
-
-The Windows behavioral measurements below were recorded unelevated on Windows
-11 26300 (and Server 2025 CI) during Zigsaw's probe runs. In Quasidock,
-[`tests/cmd/netprobe/main.go`](../tests/cmd/netprobe/main.go) builds
+In Quasidock, [`tests/cmd/netprobe/main.go`](../tests/cmd/netprobe/main.go) builds
 `quasidock-netprobe.exe` (`serve`, `ping`, `env`, `wait`, and a canned summary
 `report`), while [`tests/network.sh`](../tests/network.sh) executes the live
 integration checks for proxies, the AppContainer profile race, services,
@@ -28,8 +10,7 @@ loopback exemptions, and forwards.
 
 - Images declare `permissions.network` (default `false`); `quasidock run`
   overrides it per run with `--share=network` or `--unshare=network` (see
-  [`internal/cli/cli.go`](../internal/cli/cli.go); persistent overrides were
-  removed in Quasidock [iteration 3](iteration-3.md)).
+  [`internal/cli/cli.go`](../internal/cli/cli.go).
 - Under `--sandbox=appcontainer`, a run with `network` holds the
   `internetClient` (`S-1-15-3-1`) and `privateNetworkClientServer`
   (`S-1-15-3-3`) capabilities alongside its own package capability (`quasidock.<id>`).
@@ -355,7 +336,6 @@ read **`${roots}`**, a PEM file generated on demand by
 | `rust` (`cargo`), `cmake` | curl with Schannel | Windows' stores. Schannel/curl checks revocation strictly: a certificate without a reachable CRL or OCSP responder is rejected |
 | `qt6`, `flameshot`, `notes` | Schannel | Windows' stores |
 | `vlc` | GnuTLS | Windows' stores |
-| `dotnet`, `files`, `pinta` (`recipes/no-publish/`) | Schannel | Windows' stores |
 | `php` | OpenSSL | PHP streams read Windows' stores (`openssl.cafile` unset); PHP curl reads `${roots}` via `curl.cainfo = "${SSL_CERT_FILE}"` in [`php-sdk/php.ini`](../recipes/php-sdk/php.ini) (`SSL_CERT_FILE` set to `${roots}` in [`php.json`](../recipes/php.json)) |
 | `composer` | PHP (`from.php`) | `${roots}` via inherited `SSL_CERT_FILE` before Composer's own bundle |
 | `postgresql` (`psql`), `osm2pgsql` | OpenSSL (`libpq`) | `sslrootcert` (default `root.crt` in app data), or `${roots}` via `SSL_CERT_FILE=${roots}` when `sslrootcert=system` |

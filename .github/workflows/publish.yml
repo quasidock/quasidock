@@ -467,16 +467,6 @@ jobs:
     with:
       recipe: sumatrapdf.json
     secrets: inherit
-  image_vlc:
-    needs: [prepare]
-    uses: ./.github/workflows/publish-image.yml
-    permissions:
-      actions: read
-      contents: read
-      packages: write
-    with:
-      recipe: vlc.json
-    secrets: inherit
   image_php_sdk:
     needs: [prepare, image_busybox, image_node, image_zig]
     uses: ./.github/workflows/publish-image.yml
@@ -738,7 +728,7 @@ jobs:
       recipe: vscodium.json
     secrets: inherit
   finish:
-    needs: [prepare, image_busybox, image_mingit, image_node, image_prettier, image_python, image_python_sdk, image_zig, image_sqlite, image_rust, image_ripgrep, image_bat, image_go, image_fzf, image_zot, image_oras, image_skopeo, image_cosign, image_cmake, image_zstd, image_meson, image_zls, image_perl, image_cargo_c, image_llvm_mingw, image_gettext, image_gtk4_sdk_base, image_gtk4_sdk, image_gtk4, image_gnome_text_editor, image_rnote, image_gtk3_sdk, image_gtk3, image_gtk3demo, image_gnumeric, image_pygobject_sdk, image_pygobject, image_meld, image_gaphor, image_7zip, image_notepad_plus_plus, image_sumatrapdf, image_vlc, image_php_sdk, image_php, image_composer, image_kanboard, image_java_sdk, image_java, image_maven, image_gradle, image_pdfbox, image_plantuml, image_logisim_evolution, image_scenebuilder, image_qt6_sdk_base, image_qt6_sdk, image_qt6, image_flameshot, image_notes, image_ghostscript, image_texlive, image_gdal_sdk, image_gdal, image_make, image_postgresql_sdk, image_postgresql, image_osm2pgsql, image_vscodium]
+    needs: [prepare, image_busybox, image_mingit, image_node, image_prettier, image_python, image_python_sdk, image_zig, image_sqlite, image_rust, image_ripgrep, image_bat, image_go, image_fzf, image_zot, image_oras, image_skopeo, image_cosign, image_cmake, image_zstd, image_meson, image_zls, image_perl, image_cargo_c, image_llvm_mingw, image_gettext, image_gtk4_sdk_base, image_gtk4_sdk, image_gtk4, image_gnome_text_editor, image_rnote, image_gtk3_sdk, image_gtk3, image_gtk3demo, image_gnumeric, image_pygobject_sdk, image_pygobject, image_meld, image_gaphor, image_7zip, image_notepad_plus_plus, image_sumatrapdf, image_php_sdk, image_php, image_composer, image_kanboard, image_java_sdk, image_java, image_maven, image_gradle, image_pdfbox, image_plantuml, image_logisim_evolution, image_scenebuilder, image_qt6_sdk_base, image_qt6_sdk, image_qt6, image_flameshot, image_notes, image_ghostscript, image_texlive, image_gdal_sdk, image_gdal, image_make, image_postgresql_sdk, image_postgresql, image_osm2pgsql, image_vscodium]
     runs-on: windows-2025
     timeout-minutes: 45
     permissions:

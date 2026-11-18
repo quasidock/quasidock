@@ -73,6 +73,12 @@ func (s *execStream) send(kind byte, data []byte) error {
 	if _, err := s.Write(header[:]); err != nil {
 		return err
 	}
+	// Empty frames are complete after the header. A detached caller can close
+	// immediately after reading it; even a zero-byte write can then fail and
+	// cause the supervisor to kill a successfully acknowledged command.
+	if len(data) == 0 {
+		return nil
+	}
 	_, err := s.Write(data)
 	return err
 }
