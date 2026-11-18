@@ -2,11 +2,13 @@ package builder
 
 import (
 	"fmt"
-	"github.com/quasidock/quasidock/internal/buildcontext"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
+	"github.com/quasidock/quasidock/internal/buildcontext"
 	"github.com/quasidock/quasidock/internal/context"
 	"github.com/quasidock/quasidock/internal/recipe"
 	"github.com/quasidock/quasidock/internal/store"
@@ -30,11 +32,44 @@ type snapshotEntry struct {
 }
 
 type Snapshots struct {
-	entries []snapshotEntry
+	entries           []snapshotEntry
+	units             map[string]*Snapshots
+	outputs           map[string]*tree.Tree
+	executables       []string
+	outputExecutables map[string][]string
 }
 
 func TakeSnapshots(ctx *context.Context, r *recipe.Recipe, recipePath string) (*Snapshots, error) {
-	s := &Snapshots{}
+	order, err := r.ReachableBuilds()
+	if err != nil {
+		return nil, err
+	}
+	contexts := map[string]*buildcontext.Snapshot{}
+	outputs := map[string]*tree.Tree{}
+	units := map[string]*Snapshots{}
+	outputExecutables := map[string][]string{}
+	for _, unit := range order {
+		outputExecutables[strings.ToLower(unit.Name)] = unit.Executables
+		snapshots, err := takeScopeSnapshots(ctx, unitRecipe(r, unit), recipePath, contexts, outputs)
+		if err != nil {
+			return nil, fmt.Errorf("build %s: %w", unit.Name, err)
+		}
+		units[strings.ToLower(unit.Name)] = snapshots
+	}
+	s, err := takeScopeSnapshots(ctx, r, recipePath, contexts, outputs)
+	if err != nil {
+		return nil, err
+	}
+	s.units = units
+	s.outputExecutables = outputExecutables
+	for _, local := range units {
+		local.outputExecutables = outputExecutables
+	}
+	return s, nil
+}
+
+func takeScopeSnapshots(ctx *context.Context, r *recipe.Recipe, recipePath string, contexts map[string]*buildcontext.Snapshot, outputs map[string]*tree.Tree) (*Snapshots, error) {
+	s := &Snapshots{outputs: outputs, executables: r.Executables}
 	baseDir := filepath.Dir(recipePath)
 	if baseDir == "" {
 		baseDir = "."
@@ -49,19 +84,15 @@ func TakeSnapshots(ctx *context.Context, r *recipe.Recipe, recipePath string) (*
 				}
 				root, _ = filepath.Abs(root)
 				exclude, _ := filepath.Abs(recipePath)
-				var captured *buildcontext.Snapshot
-				for _, e := range s.entries {
-					if e.snapshot.Context != nil && e.snapshot.Context.Root == root && e.snapshot.Context.Dockerfile == c.Dockerfile {
-						captured = e.snapshot.Context
-						break
-					}
-				}
+				key := strings.ToLower(root + "\x00" + filepath.Clean(filepath.FromSlash(c.Dockerfile)))
+				captured := contexts[key]
 				if captured == nil {
 					var err error
 					captured, err = buildcontext.Read(root, c.Dockerfile, exclude)
 					if err != nil {
 						return nil, fmt.Errorf("stage %s: %w", m.Name, err)
 					}
+					contexts[key] = captured
 				}
 				s.entries = append(s.entries, snapshotEntry{module: m.Name, index: i, snapshot: Snapshot{Dir: captured.Root, Tree: captured.Tree, Hash: captured.Hash, Context: captured}})
 				continue
@@ -110,6 +141,18 @@ func TakeSnapshots(ctx *context.Context, r *recipe.Recipe, recipePath string) (*
 		}
 	}
 	return s, nil
+}
+
+func (s *Snapshots) recheckGraph(ctx *context.Context) error {
+	if err := s.Recheck(ctx, ""); err != nil {
+		return err
+	}
+	for _, name := range slices.Sorted(maps.Keys(s.units)) {
+		if err := s.units[name].Recheck(ctx, ""); err != nil {
+			return fmt.Errorf("build %s: %w", name, err)
+		}
+	}
+	return nil
 }
 
 func (s *Snapshots) Get(module string, index int) *Snapshot {

@@ -67,7 +67,7 @@ Persistent storage:
   volume prune [--dry-run]            collect unreferenced named volumes
 
 Quasidock extensions:
-  convert [CONTEXT] [-f DOCKERFILE] [-o RECIPE] [--base IMAGE]
+  convert [CONTEXT] [-f DOCKERFILE] [-o RECIPE] [--target NAME] [--base IMAGE] [--stage-base NAME_OR_INDEX=IMAGE]...
                                        convert a supported Linux Dockerfile to a recipe
   build [--rebuild] [--clean] [--keep-build-dir] [<recipe.json> | <dir>]
                                        build a recipe and cache its image

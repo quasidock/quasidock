@@ -42,7 +42,7 @@ func (r ImageResolver) Resolve(image, version, override string) (Dependency, err
 			return Dependency{}, fmt.Errorf("%s must be a standalone %s image", ref, image)
 		}
 		if override == "" && !versionMatches(config.Version, version) {
-			return Dependency{}, fmt.Errorf("%s provides %s, not requested %s; select a replacement with --base", ref, config.Version, version)
+			return Dependency{}, fmt.Errorf("%s provides %s, not requested %s; select a replacement with --base or --stage-base", ref, config.Version, version)
 		}
 		return Dependency{ref, config}, nil
 	}
@@ -85,7 +85,7 @@ func (r ImageResolver) Resolve(image, version, override string) (Dependency, err
 			}
 			tags, err := client.ListTags()
 			if err != nil {
-				return Dependency{}, fmt.Errorf("finding %s %s: %w; select a pinned image with --base", image, version, err)
+				return Dependency{}, fmt.Errorf("finding %s %s: %w; select a pinned image with --base or --stage-base", image, version, err)
 			}
 			var matches []string
 			for _, tag := range tags {
@@ -94,7 +94,7 @@ func (r ImageResolver) Resolve(image, version, override string) (Dependency, err
 				}
 			}
 			if len(matches) == 0 {
-				return Dependency{}, fmt.Errorf("no native %s version matching %s; select a replacement with --base", image, version)
+				return Dependency{}, fmt.Errorf("no native %s version matching %s; select a replacement with --base or --stage-base", image, version)
 			}
 			sort.Slice(matches, func(i, j int) bool { return newer(matches[i], matches[j]) })
 			text += ":" + matches[0]

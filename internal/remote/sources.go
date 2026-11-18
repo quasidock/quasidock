@@ -21,10 +21,20 @@ func pushSources(ctx *context.Context, reg *registry.Registry, cfg oci.AppConfig
 	if data, err := os.ReadFile(recipePath); err == nil {
 		if r, err := recipe.Parse(recipePath, data); err == nil && r.ID == cfg.ID && r.Version == cfg.Version {
 			localRecipe = true
-			for _, stage := range r.Stages {
-				for _, src := range stage.Sources {
-					if src.URL != nil && src.Sha256 != nil {
-						unique[*src.Sha256] = true
+			units, err := r.ReachableBuilds()
+			if err != nil {
+				return err
+			}
+			scopes := [][]recipe.Stage{r.Stages}
+			for _, unit := range units {
+				scopes = append(scopes, unit.Stages)
+			}
+			for _, stages := range scopes {
+				for _, stage := range stages {
+					for _, src := range stage.Sources {
+						if src.URL != nil && src.Sha256 != nil {
+							unique[*src.Sha256] = true
+						}
 					}
 				}
 			}

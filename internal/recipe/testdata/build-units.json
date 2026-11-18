@@ -1,0 +1,32 @@
+{
+  "id": "build-unit-fixture",
+  "version": "1",
+  "workdir": "app",
+  "entrypoint": ["app/server.exe"],
+  "builds": [
+    {
+      "name": "builder",
+      "sdk": {
+        "go": "go:1.26@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "stages": [
+        {
+          "name": "compile",
+          "build": ["go build -o \"%PREFIX%\\out\\server.exe\" ."],
+          "shell": "cmd"
+        }
+      ]
+    }
+  ],
+  "stages": [
+    {
+      "name": "package",
+      "sources": [
+        {
+          "build": {"name": "builder", "paths": ["out/server.exe"]},
+          "dest": "app/server.exe"
+        }
+      ]
+    }
+  ]
+}

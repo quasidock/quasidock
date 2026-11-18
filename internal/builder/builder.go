@@ -5,12 +5,11 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"maps"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 
+	"github.com/quasidock/quasidock/internal/buildcontext"
 	"github.com/quasidock/quasidock/internal/context"
 	"github.com/quasidock/quasidock/internal/environment"
 	"github.com/quasidock/quasidock/internal/format"
@@ -98,6 +97,9 @@ func Build(ctx *context.Context, recipePath string, opts Options) (*oci.Image, e
 	if inputs != nil && !opts.Rebuild && !opts.Clean && !opts.KeepBuildDir {
 		if digest, err := ctx.Store.ReadBuildCache(*inputs); err == nil && digest != "" {
 			if loaded, err := ctx.Store.ReadCompleteImage(digest); err == nil && loaded != nil {
+				if err := projects.recheckGraph(ctx); err != nil {
+					return nil, err
+				}
 				if ctx.Verbose {
 					ctx.Note("%s %s: built before from the same inputs (%s); --rebuild builds it again", r.ID, r.Version, oci.ShortDigest(digest))
 				}
@@ -141,39 +143,57 @@ func inputHash(ctx *context.Context, r *recipe.Recipe, bytesRead []byte, recipeP
 	}
 	h.Write(bytesRead)
 
-	baseDir := filepath.Dir(recipePath)
-	if baseDir == "" {
-		baseDir = "."
+	scopes := []struct {
+		r        *recipe.Recipe
+		projects *Snapshots
+	}{{r, projects}}
+	if len(r.Builds) > 0 {
+		order, err := r.ReachableBuilds()
+		if err != nil {
+			return "", err
+		}
+		for _, unit := range order {
+			scopes = append(scopes, struct {
+				r        *recipe.Recipe
+				projects *Snapshots
+			}{unitRecipe(r, unit), projects.units[strings.ToLower(unit.Name)]})
+		}
 	}
-	for _, m := range r.Stages {
-		for i, src := range m.Sources {
-			if src.Context != nil {
-				snap := projects.Get(m.Name, i)
-				if snap == nil {
-					return "", fmt.Errorf("stage %s: missing context snapshot", m.Name)
-				}
-				h.Write([]byte(snap.Hash))
-				continue
-			}
-			if src.Path == nil {
-				continue
-			}
-			p := *src.Path
-			if snap := projects.Get(m.Name, i); snap != nil {
-				if withProjects {
+	for _, scope := range scopes {
+		baseDir := filepath.Dir(recipePath)
+		if baseDir == "" {
+			baseDir = "."
+		}
+		for _, m := range scope.r.Stages {
+			for i, src := range m.Sources {
+				if src.Context != nil {
+					snap := scope.projects.Get(m.Name, i)
+					if snap == nil {
+						return "", fmt.Errorf("stage %s: missing context snapshot", m.Name)
+					}
 					h.Write([]byte(snap.Hash))
+					continue
 				}
-				continue
+				if src.Path == nil {
+					continue
+				}
+				p := *src.Path
+				if snap := scope.projects.Get(m.Name, i); snap != nil {
+					if withProjects {
+						h.Write([]byte(snap.Hash))
+					}
+					continue
+				}
+				full := p
+				if !filepath.IsAbs(p) {
+					full = filepath.Join(baseDir, p)
+				}
+				fh, err := store.Sha256File(full)
+				if err != nil {
+					return "", fmt.Errorf("stage %s: reading %s: %w", m.Name, full, err)
+				}
+				h.Write([]byte(fh.Hex))
 			}
-			full := p
-			if !filepath.IsAbs(p) {
-				full = filepath.Join(baseDir, p)
-			}
-			fh, err := store.Sha256File(full)
-			if err != nil {
-				return "", fmt.Errorf("stage %s: reading %s: %w", m.Name, full, err)
-			}
-			h.Write([]byte(fh.Hex))
 		}
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
@@ -227,195 +247,23 @@ func (ts *Tools) Add(t Tool) (*int, error) {
 }
 
 func buildImage(ctx *context.Context, r *recipe.Recipe, recipePath, source string, projects *Snapshots, work *Work, opts Options) (*oci.Image, error) {
-	building := r.HasBuildCommands()
-	tools := &Tools{recipePath: recipePath}
-	buildInfo := &oci.Build{
-		SDK:    make(map[string]string),
-		Vendor: make(map[string]string),
-		Host:   make(map[string]string),
-	}
-
-	for _, alias := range slices.Sorted(maps.Keys(r.SDK)) {
-		reference := r.SDK[alias]
-		dep, err := ResolveDependency(ctx, recipePath, DependencySDK, alias, reference)
-		if err != nil {
-			return nil, err
-		}
-		buildInfo.SDK[alias] = dep.ManifestDigest
-		if !building {
-			continue
-		}
-		dirs, locks, err := ctx.Store.UseLayers(dep.Manifest.Layers)
-		if err != nil {
-			return nil, err
-		}
-		defer func() {
-			for _, l := range locks {
-				l.Release()
-			}
-		}()
-		what := fmt.Sprintf("sdk %s", alias)
-		ownRuntimes := runtimeDirs(dep.Config, dirs[:len(dirs)-1])
-		sdkIdx, err := tools.Add(Tool{
-			Image:    dep.ManifestDigest,
-			ID:       dep.Config.ID,
-			Version:  dep.Config.Version,
-			What:     what,
-			Dir:      dirs[len(dirs)-1],
-			Path:     dep.Config.Path,
-			Env:      dep.Config.Env,
-			Runtimes: ownRuntimes,
-		})
-		if err != nil {
-			return nil, err
-		}
-		if sdkIdx == nil {
-			continue
-		}
-		for _, named := range ownRuntimes {
-			rtAlias, rt := named.Alias, dep.Config.From[named.Alias]
-			rtWhat := fmt.Sprintf("%s's base image %s", what, rtAlias)
-			added, err := tools.Add(Tool{
-				Image:   rt.Image,
-				ID:      rt.ID,
-				Version: rt.Version,
-				What:    rtWhat,
-				Dir:     named.Path,
-				Path:    rt.Path,
-				Env:     rt.Env,
-			})
-			if err != nil {
-				return nil, err
-			}
-			if added != nil {
-				tools.list[*sdkIdx].Brings++
-			}
-		}
-	}
-
-	from := make(map[string]oci.Runtime)
-	var layers []oci.Descriptor
-	var runtimeDirsList []oci.DirPlaceholder
-
-	for _, alias := range slices.Sorted(maps.Keys(r.From)) {
-		reference := r.From[alias]
-		dep, err := ResolveDependency(ctx, recipePath, DependencyRuntime, alias, reference)
-		if err != nil {
-			return nil, err
-		}
-		dirs, locks, err := ctx.Store.UseLayers([]oci.Descriptor{dep.Layer()})
-		if err != nil {
-			return nil, err
-		}
-		defer func() {
-			for _, l := range locks {
-				l.Release()
-			}
-		}()
-		from[alias] = dep.Runtime()
-		layers = append(layers, dep.Layer())
-		runtimeDirsList = append(runtimeDirsList, oci.DirPlaceholder{Alias: alias, Path: dirs[0]})
-		_, _ = tools.Add(Tool{
-			Image:   dep.ManifestDigest,
-			ID:      dep.Config.ID,
-			Version: dep.Config.Version,
-			What:    fmt.Sprintf("base image %s", alias),
-			Dir:     dirs[0],
-			Path:    dep.Config.Path,
-			Env:     dep.Config.Env,
-		})
-	}
-
-	for _, m := range r.Stages {
-		if m.Network {
-			buildInfo.Network = true
-		}
-	}
-
-	sources := NewSources(ctx, filepath.Dir(recipePath), r.ID+":"+r.Version, projects, r.SourceMirrors...)
-	defer sources.Close()
-
-	var appTree *tree.Tree
-	var root *BuildRoot
-	defer func() {
-		if root != nil {
-			root.Finish(ctx, opts.KeepBuildDir)
-		}
-	}()
-
-	var downloads []recipe.Source
-	for _, m := range r.Stages {
-		for i, src := range m.Sources {
-			if src.Image == nil && projects.Get(m.Name, i) == nil {
-				downloads = append(downloads, src)
-			}
-		}
-	}
-	if err := sources.fetcher.FetchAll(downloads); err != nil {
+	units, err := executeBuildUnits(ctx, r, recipePath, source, projects, opts)
+	if err != nil {
 		return nil, err
 	}
-
-	if building {
-		br, err := initBuildRoot(ctx, r, tools.list)
-		if err != nil {
-			return nil, err
-		}
-		root = br
-		root.work = work
-		if root.msvc != nil {
-			buildInfo.Host["msvc"] = root.msvc.ToolsVersion
-			buildInfo.Host["windows-sdk"] = root.msvc.SDKVersion
-		}
-
-		for _, m := range r.Stages {
-			if m.Vendor != nil {
-				sha, err := root.vendor(ctx, m, recipePath, projects, r.ID+":"+r.Version)
-				if err != nil {
-					return nil, err
-				}
-				buildInfo.Vendor[m.Name] = sha
-			}
-		}
-
-		t, err := root.buildStages(ctx, sources, r, recipePath)
-		if err != nil {
-			return nil, err
-		}
-		appTree = t
-	} else {
-		appTree = tree.New()
-		for _, m := range r.Stages {
-			if err := sources.Add(appTree, m, recipePath); err != nil {
-				return nil, err
-			}
-		}
+	defer units.close()
+	result, err := executeScope(ctx, r, recipePath, projects, work, opts)
+	if err != nil {
+		return nil, err
 	}
-
-	// Vendor stages unpack through their own Sources instance. Include their
-	// original downloads as well as the files seen by the final layer builder.
-	sourceHashes := map[string]bool{}
-	for _, hash := range sources.hashes {
-		sourceHashes[hash] = true
+	defer result.close(ctx, opts.KeepBuildDir)
+	if err := projects.recheckGraph(ctx); err != nil {
+		return nil, err
 	}
-	for _, src := range downloads {
-		if src.URL != nil && src.Sha256 != nil {
-			sourceHashes[*src.Sha256] = true
-		}
-	}
-	buildInfo.Sources = slices.Sorted(maps.Keys(sourceHashes))
-	if len(sources.images) > 0 {
-		buildInfo.Images = sources.images
-	}
-	appTree.Cleanup(r.Cleanup)
-	// Context snapshots also detect additions, deletions and ignore-rule changes
-	// after an earlier COPY, including while subsequent RUN steps execute.
-	for _, entry := range projects.entries {
-		if entry.snapshot.Context != nil {
-			if err := entry.snapshot.Context.Recheck(); err != nil {
-				return nil, err
-			}
-		}
-	}
+	appTree, from, layers := result.tree, result.from, result.layers
+	runtimeDirsList, buildInfo := result.runtimes, result.info
+	building := r.HasBuildCommands()
+	mergeUnitBuildInfo(buildInfo, units.info)
 
 	config, err := r.AppConfig(from, buildInfo)
 	if err != nil {
@@ -475,7 +323,7 @@ func buildImage(ctx *context.Context, r *recipe.Recipe, recipePath, source strin
 	ctx.Timed(start, "write layer (%d entries)", len(appTree.Sorted()))
 
 	if !building {
-		if err := projects.Recheck(ctx, ""); err != nil {
+		if err := projects.recheckGraph(ctx); err != nil {
 			return nil, err
 		}
 	}
@@ -740,8 +588,11 @@ func (b *BuildRoot) keepCache(ctx *context.Context, id string) {
 
 func (b *BuildRoot) buildStages(ctx *context.Context, sources *Sources, r *recipe.Recipe, recipePath string) (*tree.Tree, error) {
 	prefix := filepath.Join(b.path, "prefix")
-	sources.prefix = prefix
 	for _, m := range r.Stages {
+		sources.prefix = prefix
+		if len(m.Build) > 0 {
+			sources.prefix = filepath.Join(b.path, "src", m.Name)
+		}
 		t := tree.New()
 		if err := sources.Add(t, m, recipePath); err != nil {
 			return nil, err
@@ -770,7 +621,7 @@ func (b *BuildRoot) buildStages(ctx *context.Context, sources *Sources, r *recip
 			}
 		}
 	}
-	return tree.FromDir(prefix)
+	return buildcontext.ReadOutput(prefix)
 }
 
 func writeSourcesToDisk(t *tree.Tree, dest string) error {

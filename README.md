@@ -7,7 +7,8 @@ focused on image distribution and native Windows execution.
 Version **0.9** supports Docker-style container lifecycle management (`run`, `ps`,
 `logs`, `start`, `restart`, `kill`, `stop`, `rm`, `inspect`, `prune`), per-container isolated data, image
 management, named volumes, local directory bind mounts, and Quasidock images for
-`windows/amd64`. Single-stage Node.js, Go, and Python Dockerfiles can be
+`windows/amd64`. Supported Node.js, Go, and Python Dockerfiles, including
+multi-stage builds with `COPY --from`, can be
 [converted to native recipes](docs/dockerfile-conversion.md). The Docker Engine
 API and general Docker images are not supported.
 
@@ -245,7 +246,9 @@ quasidock run --rm my-app
 
 Conversion writes a reviewable `quasidock.json`, pins Windows tool images, and
 keeps project sources live. Unsupported instructions produce file-and-line
-diagnostics without writing a partial recipe. See the
+diagnostics without writing a partial recipe. For multi-stage input, select a
+named stage with `--target NAME` and replace individual native bases with
+`--stage-base NAME_OR_INDEX=IMAGE`. See the
 [conversion compatibility table](docs/dockerfile-conversion.md).
 
 ## Upgrading
