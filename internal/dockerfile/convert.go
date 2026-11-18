@@ -145,6 +145,7 @@ func Convert(data []byte, opts Options, resolver Resolver) (Result, error) {
 			s.r.Env["PYTHONPATH"] = "${app}/.python"
 			s.r.Env["PYTHONDONTWRITEBYTECODE"] = "1"
 		}
+		s.r.Executables = s.executablePaths()
 		encoded, err := json.Marshal(s.r)
 		if err == nil {
 			_, err = recipe.Parse(opts.Output, encoded)
@@ -329,7 +330,7 @@ func (s *state) instruction(command any, node *parser.Node) error {
 		}
 		for _, logical := range s.executablePaths() {
 			if native := s.outputs[logical]; native != logical && previous[logical] != native {
-				s.diagnostic(node.StartLine, "RUN", fmt.Sprintf("mapped Go output %s to %s", logical, native), true)
+				s.diagnostic(node.StartLine, "RUN", fmt.Sprintf("mapped executable output %s to %s", logical, native), true)
 			}
 		}
 	case *instructions.EntrypointCommand:
@@ -467,16 +468,20 @@ func (s *state) startup() error {
 				return errors.New("literal Quasidock placeholders cannot be preserved in an exec command; move the script into the context")
 			}
 		}
-		exe, err := s.executable(entry.CmdLine[0])
+		invocation, err := s.invocationAt(entry.CmdLine[0], s.workdir, true)
 		if err != nil {
 			return err
 		}
-		s.r.Entrypoint = recipe.Entrypoint{exe}
-		for _, arg := range entry.CmdLine[1:] {
+		s.r.Entrypoint = recipe.Entrypoint(invocation)
+		arguments, err := s.startupArgs(entry.CmdLine[0], entry.CmdLine[1:])
+		if err != nil {
+			return err
+		}
+		for _, arg := range arguments {
 			if cmdOnly {
-				s.r.Cmd = append(s.r.Cmd, s.runtimeArg(arg))
+				s.r.Cmd = append(s.r.Cmd, arg)
 			} else {
-				s.r.Entrypoint = append(s.r.Entrypoint, s.runtimeArg(arg))
+				s.r.Entrypoint = append(s.r.Entrypoint, arg)
 			}
 		}
 	}
@@ -491,10 +496,14 @@ func (s *state) startup() error {
 			s.r.Cmd = []string{"/bin/sh", "-c", cmd.CmdLine[0]}
 			return errors.New("shell-form CMD with ENTRYPOINT is unsupported; use a JSON argument array")
 		}
-		for _, arg := range cmd.CmdLine {
-			s.r.Cmd = append(s.r.Cmd, s.runtimeArg(arg))
+		all := append(append([]string(nil), entry.CmdLine[1:]...), cmd.CmdLine...)
+		arguments, err := s.startupArgs(entry.CmdLine[0], all)
+		if err != nil {
+			return err
 		}
+		s.r.Cmd = append(s.r.Cmd, arguments[len(entry.CmdLine)-1:]...)
 	}
+	s.validateConsoleStartup()
 	return nil
 }
 
@@ -511,7 +520,7 @@ func (s *state) translatedEnv(withArgs bool) map[string]string {
 	return env
 }
 
-func (s *state) executable(command string) (string, error) {
+func (s *state) executableAt(command, wd string) (string, error) {
 	switch command {
 	case "node", "node.exe", "/usr/local/bin/node":
 		if s.family == "node" {
@@ -521,7 +530,7 @@ func (s *state) executable(command string) (string, error) {
 		if s.family == "node" {
 			return "${node}/npm.cmd", nil
 		}
-	case "python", "python3", "python.exe", "/usr/local/bin/python", "/usr/local/bin/python3":
+	case "python", "python3", "python.exe", "python3.exe", "/usr/local/bin/python", "/usr/local/bin/python3":
 		if s.family == "python" {
 			return "${python}/python.exe", nil
 		}
@@ -530,7 +539,10 @@ func (s *state) executable(command string) (string, error) {
 			return "${go}/bin/go.exe", nil
 		}
 	}
-	p, err := appPath(s.workdir, command)
+	if wd == "" && !strings.HasPrefix(command, "/") {
+		return "", errors.New("app executable has an ambiguous working directory; use an absolute app path")
+	}
+	p, err := appPath(wd, command)
 	if err != nil {
 		return "", err
 	}
@@ -541,14 +553,39 @@ func (s *state) executable(command string) (string, error) {
 	}
 	return "${app}/" + p, nil
 }
-func (s *state) runtimeArg(arg string) string {
-	if strings.HasPrefix(arg, "/") {
-		if p, err := appPath(".", arg); err == nil {
-			if out, ok := s.outputs[p]; ok {
-				p = out
+func (s *state) startupArgs(command string, args []string) ([]string, error) {
+	words := make([]commandWord, len(args))
+	for i, arg := range args {
+		words[i] = literalWord(arg)
+	}
+	paths, err := argumentPaths(s.commandName(command), words)
+	if err != nil {
+		return nil, err
+	}
+	out := append([]string(nil), args...)
+	for i, flag := range paths {
+		word := words[i]
+		word.value = strings.TrimPrefix(word.value, flag)
+		if !strings.HasPrefix(word.value, "/") {
+			continue
+		}
+		p, err := logicalPath(s.workdir, word, false)
+		if err != nil {
+			return nil, err
+		}
+		if mapped, ok := s.outputs[p]; ok {
+			p = mapped
+		}
+		out[i] = flag + "${app}/" + p
+	}
+	for i, arg := range args {
+		if strings.HasPrefix(arg, "/") {
+			if p, err := appPath(".", arg); err == nil {
+				if mapped, ok := s.outputs[p]; ok {
+					out[i] = "${app}/" + mapped
+				}
 			}
-			return "${app}/" + p
 		}
 	}
-	return arg
+	return out, nil
 }

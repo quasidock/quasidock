@@ -39,7 +39,7 @@ func TestMultiStageGoCopyPaths(t *testing.T) {
 			if result.SourceLines["docker-stage-0/step-002"] != 3 || result.SourceLines["step-002"] != 7 {
 				t.Fatalf("COPY source locations lost: %v", result.SourceLines)
 			}
-			if !strings.Contains(fmt.Sprint(result.Diagnostics), "mapped Go output out/server to out/server.exe") || !strings.Contains(fmt.Sprint(result.Diagnostics), "mapped executable "+tc.logical) {
+			if !strings.Contains(fmt.Sprint(result.Diagnostics), "mapped executable output out/server to out/server.exe") || !strings.Contains(fmt.Sprint(result.Diagnostics), "mapped executable "+tc.logical) {
 				t.Fatal("native substitutions were not reported:", result.Diagnostics)
 			}
 			encoded, _ := json.Marshal(r)

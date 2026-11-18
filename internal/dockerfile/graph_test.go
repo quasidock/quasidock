@@ -208,7 +208,7 @@ ENV MODE=fresh`, opts)
 	if err := child.startup(); err != nil || child.r.Entrypoint[0] != "${app}/app/server.exe" || !reflect.DeepEqual(child.r.Cmd, []string{"--child"}) {
 		t.Fatalf("inherited executable mapping/startup: %v %+v", err, child.r)
 	}
-	if unrelated.args["SHARED"] != "global" || len(unrelated.args) != 1 || len(unrelated.env) != 1 || unrelated.workdir != "" || len(unrelated.outputs) != 0 || unrelated.r.Name != nil || unrelated.entry != nil || unrelated.cmd != nil {
+	if unrelated.args["SHARED"] != "global" || len(unrelated.args) != 1 || len(unrelated.env) != 1 || unrelated.workdir != "." || len(unrelated.outputs) != 0 || unrelated.r.Name != nil || unrelated.entry != nil || unrelated.cmd != nil {
 		t.Fatalf("state leaked into unrelated FROM: %+v", unrelated)
 	}
 	if _, exists := child.args["VERSION"]; exists {
