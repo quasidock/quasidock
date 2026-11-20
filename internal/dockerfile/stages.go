@@ -2,7 +2,6 @@ package dockerfile
 
 import (
 	"encoding/json"
-	"fmt"
 	"maps"
 
 	"github.com/quasidock/quasidock/internal/recipe"
@@ -53,16 +52,8 @@ func (g *stageGraph) convertStages(opts Options, resolver Resolver, selection st
 				// BusyBox used by a parent's startup is not inherited into a
 				// builder; startup is compiled only for the selected final stage.
 				s.r.Permissions.Sandbox = parent.r.Permissions.Sandbox
-			} else if s.family != "scratch" {
-				dep, err := resolve(s.baseImage, s.requested, s.opts.Base)
-				if err != nil {
-					s.diagnostic(s.fromLine, "FROM", err.Error(), false)
-				} else {
-					s.r.From[s.family] = dep.Reference
-					s.r.Permissions.Sandbox = dep.Config.Permissions.Sandbox
-					s.diagnostic(s.fromLine, "FROM", fmt.Sprintf("mapped to %s (%s)", dep.Reference, dep.Config.Version), true)
-				}
 			}
+			s.resolveTools(resolve)
 			if !s.failed() && s.needShell {
 				dep, err := resolve("busybox", "", "")
 				if err != nil {
@@ -95,9 +86,13 @@ func (g *stageGraph) convertStages(opts Options, resolver Resolver, selection st
 		if overrides[stage.index] != "" {
 			d.Message = "unused stage and its native base override skipped"
 		}
+		if len(g.toolOverrides[stage.index]) > 0 {
+			d.Message = "unused stage and its native tool overrides skipped"
+		}
 		d.Warning = true
 		result.Diagnostics = append(result.Diagnostics, d)
 	}
+	result.Diagnostics = append(result.Diagnostics, g.unusedToolDiagnostics(opts, translated)...)
 	if failed {
 		return result, conversionError()
 	}
@@ -106,7 +101,7 @@ func (g *stageGraph) convertStages(opts Options, resolver Resolver, selection st
 		final.r.Workdir = "."
 	}
 	final.r.Env = final.translatedEnv(false)
-	if final.family == "python" {
+	if final.hasTool("python") {
 		final.r.Env["PYTHONPATH"] = "${app}/.python"
 		final.r.Env["PYTHONDONTWRITEBYTECODE"] = "1"
 	}

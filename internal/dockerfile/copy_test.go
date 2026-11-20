@@ -194,7 +194,7 @@ func TestMultiStageCopyAndArtifactErrors(t *testing.T) {
 		{"multiple destinations", "FROM node AS build\nFROM node\nCOPY --from=build /a /b /app", "multiple sources"},
 		{"ambiguous output", "FROM golang AS build\nRUN go build -o /server . && go build -o /server.exe .\nFROM scratch\nCOPY --from=build /server /server\nCMD [\"/server\"]", "ambiguous executable"},
 		{"scratch startup", "FROM node AS build\nFROM scratch\nCOPY --from=build /app /app", "scratch stages require"},
-		{"unsupported reachable base", "FROM ubuntu AS build\nFROM scratch\nCOPY --from=build /app /app\nCMD [\"/app.exe\"]", "base \"ubuntu\" is unsupported"},
+		{"unsupported reachable base", "FROM fedora AS build\nFROM scratch\nCOPY --from=build /app /app\nCMD [\"/app.exe\"]", "base \"fedora\" is unsupported"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			resolver := &fakeResolver{}

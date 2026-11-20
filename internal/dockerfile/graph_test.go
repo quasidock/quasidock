@@ -139,7 +139,7 @@ func TestStageGraphCycleDetection(t *testing.T) {
 
 func TestStageSelectionSkipsNativeCompatibilityInUnusedBranches(t *testing.T) {
 	opts := options(t)
-	g := graphOK(t, "FROM ubuntu AS unused\nRUN apt-get update\nFROM node:24 AS runtime\nCMD [\"node\"]", opts)
+	g := graphOK(t, "FROM fedora AS unused\nRUN apt-get update\nFROM node:24 AS runtime\nCMD [\"node\"]", opts)
 	selection, err := g.selectTarget("")
 	if err != nil {
 		t.Fatal(err)

@@ -20,7 +20,9 @@ dependencies must themselves work on Windows; conversion success does not verify
 quasidock convert [CONTEXT] [-f DOCKERFILE] [-o RECIPE|-]
   [--id ID] [--version VERSION] [--build-arg NAME=VALUE]...
   [--target NAME] [--base QUASIDOCK_IMAGE]
-  [--stage-base NAME_OR_INDEX=QUASIDOCK_IMAGE]... [--force]
+  [--stage-base NAME_OR_INDEX=QUASIDOCK_IMAGE]...
+  [--tool TOOL=QUASIDOCK_IMAGE]...
+  [--stage-tool NAME_OR_INDEX:TOOL=QUASIDOCK_IMAGE]... [--force]
 ```
 
 The context defaults to the current directory, input to `CONTEXT/Dockerfile`,
@@ -39,6 +41,7 @@ recipe requires `--force`; conversion errors leave it unchanged.
 | `FROM node[:VERSION]` | Native `node` base |
 | `FROM golang[:VERSION]` | Native `go` base; present at runtime when used by the selected target |
 | `FROM python[:VERSION]` | Native `python-sdk` base with pip and normal Python import paths |
+| `FROM ubuntu[:TAG]` / `debian[:TAG]` | Distro metadata with native tools selected by supported apt installs |
 | Multiple `FROM` stages | Isolated native build units; `--target NAME` selects the final image stage, defaulting to the last stage |
 | `FROM <earlier-stage>` | Inherit files, scoped variables, labels, workdir, and startup configuration |
 | `FROM scratch` | Empty app filesystem with explicit native executable startup |
@@ -51,6 +54,9 @@ recipe requires `--force`; conversion errors leave it unchanged.
 | `RUN go mod download` / `go build -o NAME ...` | Native Windows build; carry `.exe` substitutions through stage copies and startup paths |
 | `RUN pip install ...` / `python -m pip install ...` | Install Windows wheels into the app's `.python` directory; expose it through `PYTHONPATH` |
 | `RUN node ...` / `python ...` | Native interpreter execution, including scripts, `-c`/`-e`, and Python modules |
+| `RUN apt/apt-get update/install/clean/autoclean` | Translate the package catalog below into pinned native dependencies |
+| `RUN git/make/cmake/ninja` | Native tools with common directory/file options mapped into the app tree |
+| `RUN gcc/g++/clang/clang++/cc/c++` | Native Clang; object compilation and explicit `-o` executable linking with `.exe` mappings |
 | `RUN cd/mkdir/cp/mv/rm/touch` | App-local filesystem operations; preserve known native executable names through copies, moves, and removal |
 | Portable utilities | BusyBox `echo`, `printf`, `pwd`, `cat`, `head`, `tail`, `grep`, `sort`, `uniq`, `wc`, `tr`, `tee`, `true`, and `false` |
 | Native app commands | Explicit `.exe`, `.cmd`, or `.bat` paths, or known generated executable names |
@@ -93,6 +99,99 @@ for one stage (including name/index aliases), and combining `--base` with a
 `--stage-base` override for the selected target are errors. Selectors and base
 eligibility are checked even for unused stages; their native image references
 are resolved only if the stages are needed.
+
+## Ubuntu/Debian and apt packages
+
+Official Ubuntu and Debian names, including `docker.io/library/...`, support
+numeric tags, release names, and slim tags. The tag describes the source distro;
+it does not select native runtime versions or provide a Linux filesystem. Distro
+image digests are rejected; use a distro tag and native tool digest pins instead.
+Conversion reports substitutions and resolves each tool's current native image
+independently. Generated references are pinned to manifest digests.
+
+| Apt package | Native image | Tool alias |
+| --- | --- | --- |
+| `python3`, `python3-pip`, `python3-dev` | `python-sdk` | `python` |
+| `nodejs`, `npm` | `node` | `node` |
+| `golang`, `golang-go` | `go` | `go` |
+| `git` | `mingit` | `git` |
+| `make` | `make` | `make` |
+| `cmake`, `ninja-build` | `cmake` (includes Ninja) | `cmake` |
+| `clang`, `gcc`, `g++` | `llvm-mingw` | `compiler` |
+| `build-essential` | `llvm-mingw` and `make` | `compiler`, `make` |
+
+For example, this converts to the native Python/Flask setup:
+
+```dockerfile
+FROM ubuntu:24.04
+EXPOSE 8501
+RUN apt-get update && apt-get install -y python3 python3-pip
+RUN pip install flask==3.0.*
+COPY hello.py /
+ENV FLASK_APP=hello
+CMD ["flask", "run", "--host", "0.0.0.0", "--port", "8501"]
+```
+
+Both apt commands accept `-y`, `--yes`, `--assume-yes`, `-q`, `-qq`, and
+`--no-install-recommends`. Package names may use declared ARG/ENV values resolving
+to individual names. JSON RUN forms are supported. Update, clean, autoclean, and
+the exact shell command `rm -rf /var/lib/apt/lists/*` become successful no-ops
+with diagnostics. No apt database is created.
+
+Apt also works in Debian-derived language bases, including default and slim
+tags. Alpine variants and scratch do not support apt. Installs may appear in
+separate statements or apt-only `&&` setup chains. Installs gated by other
+commands, installs in `||` or pipelines, and apt redirections are rejected;
+move the install into its own RUN.
+
+Tools become available to subsequent translated commands, and repeated installs
+coalesce. Each stage retains its installed tools; children inherit them and may
+add more. Copies transfer files without inheriting tools. Builder-only tools
+stay in their build units. Distro targets require an explicit supported CMD or
+ENTRYPOINT. Their sandbox defaults to `soft` when a resolved dependency selects
+it, otherwise to the normal native default.
+
+Select native versions by tool alias:
+
+```powershell
+quasidock convert . --tool python=python-sdk:3.14.10
+quasidock convert . --stage-tool build:compiler=llvm-mingw:20261020
+```
+
+Repeat `--tool TOOL=IMAGE` for global selections or
+`--stage-tool NAME_OR_INDEX:TOOL=IMAGE` for one stage. Names are case-insensitive;
+indexes start at zero. A stage selection overrides the global selection and must
+address the stage that first supplies the tool, including a language base.
+Inherited tools keep their ancestor's selection. Unknown aliases/selectors,
+duplicate name/index aliases, and conflicting base/tool selections fail
+conversion. Known unused selections are reported without resolving them. Native
+images must match the catalog's image ID and have no base images of their own.
+Distro bases use tool options rather than `--base` or `--stage-base`; existing
+language-base options remain available.
+
+Git maps app paths in `-C`, `--git-dir`, and `--work-tree`; Make in `-C`, `-f`,
+`-I`, `--directory`, `--file`, and `--include-dir`; CMake in `-S`, `-B`, `--build`,
+`--install`, and `--prefix`; Ninja in `-C` and `-f`. Other arguments remain opaque
+and need relative app paths. Unmapped absolute Linux path arguments are rejected;
+URLs remain ordinary arguments.
+
+Direct compilers map source/object paths, `-I`, `-L`, `-isystem`, `-iquote`,
+`-include`, and `-o` (including attached forms). Executable links require an
+explicit `-o`; `.exe` substitutions survive copies, moves, and startup. `-c`,
+`-S`, and `-E` outputs retain their filenames. Shared/relocatable linking,
+target/sysroot overrides, compiler escape options, and options with unknown
+operand semantics require a native recipe. Common optimization, debug, warning,
+language-standard, macro, and library flags are supported.
+GCC packages use Clang targeting Windows, with a substitution diagnostic.
+`build-essential` supplies the compiler and Make rather than Debian packaging
+tools or Linux headers. Scripts, Makefiles, and CMake projects must themselves
+support Windows tools. Conversion does not rewrite them or infer executable
+names generated by build systems; use explicit `.exe` paths for those outputs.
+
+Unknown packages, curl, package version constraints, `.deb` files, repository
+changes, upgrades, and removals are unsupported. Use native image overrides for
+tool versions. Mappings may supply bundled extras, such as pip with Python or
+Ninja with CMake.
 
 ## Multi-stage conversion
 
@@ -270,8 +369,8 @@ errors; use the reported build unit and recipe step to locate the failing copy.
 
 Duplicate stage names, unknown or out-of-range stage references, self-references,
 forward stage references, external-image/named-context stage copies, COPY flags
-other than `--from`, ADD, apt/apk and other
-system package managers, USER, VOLUME, custom SHELL, health checks, stop signals,
+other than `--from`, ADD, apk and system package managers outside the supported
+apt subset, USER, VOLUME, custom SHELL, health checks, stop signals,
 ONBUILD, custom Dockerfile frontends, platform overrides, BuildKit mounts/secrets, ownership/mode changes,
 here-documents, loops, functions, background commands, negation, command substitution,
 arithmetic, and unknown build
@@ -300,5 +399,8 @@ bases, conflicts, unused branches, native family checks, and digest pinning.
 `tests/dockerfile.ps1` currently builds and runs single-stage Node.js, Go, and Python
 examples, including native shell pipelines, executable renames, a local Python
 wheel console command, argument/exit-code checks, missing/duplicate metadata,
-and a Flask wildcard install with an HTTP response check. It uses an
+and an Ubuntu apt/Flask wildcard install with an HTTP response check. Add
+`-NativeTools` to pull existing Git, compiler, Make, and CMake images and test a
+Debian mixed-tool build plus a multi-stage C executable copied into scratch.
+It uses an
 isolated store and can seed source downloads from a pre-existing cache.

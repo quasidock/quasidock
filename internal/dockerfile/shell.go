@@ -163,6 +163,11 @@ func (s *state) compileStmt(stmt *syntax.Stmt, wd string, runtime bool) (string,
 		}
 		before := maps.Clone(s.outputs)
 		beforeDirectories := maps.Clone(s.directories)
+		previousRestriction := s.aptForbidden
+		if command.Op != syntax.AndStmt {
+			s.aptForbidden = "apt installs in || or pipelines are unsupported; use a separate RUN instruction"
+		}
+		defer func() { s.aptForbidden = previousRestriction }()
 		left, x, err := s.compileStmt(command.X, wd, runtime)
 		if err != nil {
 			return "", flow, err
@@ -172,6 +177,9 @@ func (s *state) compileStmt(stmt *syntax.Stmt, wd string, runtime bool) (string,
 			next = x.failure
 		} else if command.Op == syntax.Pipe {
 			next = wd
+		}
+		if command.Op == syntax.AndStmt && !s.aptSetupOnly(command.X) {
+			s.aptForbidden = "apt installs gated by other commands are ambiguous; use a separate RUN instruction"
 		}
 		right, y, err := s.compileStmt(command.Y, next, runtime)
 		if err != nil {
@@ -195,6 +203,9 @@ func (s *state) compileStmt(stmt *syntax.Stmt, wd string, runtime bool) (string,
 			if err != nil {
 				return "", flow, err
 			}
+		}
+		if len(words) > 0 && (words[0].value == "apt" || words[0].value == "apt-get" || words[0].value == "/usr/bin/apt" || words[0].value == "/usr/bin/apt-get") && len(stmt.Redirs) != 0 {
+			return "", flow, errors.New("apt redirection is unsupported")
 		}
 		var err error
 		out, flow.success, err = s.compileCall(words, command.Assigns, wd, runtime)
@@ -239,4 +250,23 @@ func (s *state) compileStmt(stmt *syntax.Stmt, wd string, runtime bool) (string,
 		out += " " + fd + redir.Op.String() + target
 	}
 	return out, flow, nil
+}
+
+// An install may follow metadata/setup commands, but never an arbitrary command
+// that could skip it and still allow a later semicolon-separated command to run.
+func (s *state) aptSetupOnly(stmt *syntax.Stmt) bool {
+	if len(stmt.Redirs) != 0 || stmt.Background || stmt.Negated {
+		return false
+	}
+	switch command := stmt.Cmd.(type) {
+	case *syntax.BinaryCmd:
+		return command.Op == syntax.AndStmt && s.aptSetupOnly(command.X) && s.aptSetupOnly(command.Y)
+	case *syntax.CallExpr:
+		if len(command.Args) == 0 {
+			return false
+		}
+		word, err := s.shellWord(command.Args[0], false)
+		return err == nil && word.resolved && (word.value == "apt" || word.value == "apt-get" || word.value == "/usr/bin/apt" || word.value == "/usr/bin/apt-get")
+	}
+	return false
 }

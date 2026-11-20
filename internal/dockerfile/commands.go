@@ -41,7 +41,7 @@ func (s *state) run(line instructions.ShellDependantCmdLine, runtime bool) error
 
 func (s *state) buildEnv() map[string]string {
 	env := s.translatedEnv(true)
-	if s.family == "python" {
+	if s.hasTool("python") {
 		env["PYTHONPATH"] = "${app}/.python"
 		env["PYTHONDONTWRITEBYTECODE"] = "1"
 	}
@@ -49,21 +49,11 @@ func (s *state) buildEnv() map[string]string {
 }
 
 func (s *state) commandName(name string) string {
-	canonical := name
-	switch name {
-	case "/usr/local/bin/node", "node.exe":
-		canonical = "node"
-	case "/usr/local/bin/python", "/usr/local/bin/python3", "python3", "python.exe", "python3.exe":
-		canonical = "python"
-	case "/usr/local/go/bin/go", "go.exe":
-		canonical = "go"
-	case "npm.cmd":
-		canonical = "npm"
+	canonical := canonicalCommand(name)
+	if command, ok := nativeCommands[canonical]; ok && !s.hasTool(command.tool) && (strings.HasSuffix(name, ".exe") || strings.HasSuffix(name, ".cmd")) {
+		return name // An explicit app executable can share a tool's filename.
 	}
-	if canonical == s.family || (canonical == "npm" && s.family == "node") {
-		return canonical
-	}
-	return name
+	return canonical
 }
 
 func busyboxCommand(name string) bool {
@@ -95,6 +85,13 @@ func (s *state) compileCall(words []commandWord, assigns []*syntax.Assign, wd st
 	if err != nil {
 		return "", wd, err
 	}
+	if name == "apt" || name == "apt-get" || name == "/usr/bin/apt" || name == "/usr/bin/apt-get" {
+		compiled, err := s.compileApt(args, runtime)
+		return prefix + compiled, wd, err
+	}
+	if s.aptCleanup(name, args, runtime) {
+		return prefix + "true", wd, nil
+	}
 	if name == "pip" || name == "pip3" {
 		name = "python"
 		args = append([]commandWord{literalWord("-m"), literalWord("pip")}, args...)
@@ -120,7 +117,7 @@ func (s *state) compileCall(words []commandWord, assigns []*syntax.Assign, wd st
 	allowed := false
 	switch name {
 	case "npm":
-		allowed = s.family == "node" && len(args) > 0 && (args[0].value == "ci" || args[0].value == "install" || args[0].value == "run" || args[0].value == "prune" || (runtime && args[0].value == "start"))
+		allowed = s.hasTool("node") && len(args) > 0 && (args[0].value == "ci" || args[0].value == "install" || args[0].value == "run" || args[0].value == "prune" || (runtime && args[0].value == "start"))
 		for _, arg := range args {
 			a := arg.value
 			if strings.HasPrefix(a, "-g") || a == "--global" || strings.HasPrefix(a, "--global=") || strings.HasPrefix(a, "--prefix") || a == "-C" || a == "--location=global" {
@@ -128,11 +125,13 @@ func (s *state) compileCall(words []commandWord, assigns []*syntax.Assign, wd st
 			}
 		}
 	case "node":
-		allowed = s.family == "node"
+		allowed = s.hasTool("node")
 	case "python":
-		allowed = s.family == "python"
+		allowed = s.hasTool("python")
 	case "go":
-		allowed = s.family == "go" && len(args) > 0 && (args[0].value == "build" || (len(args) > 1 && args[0].value == "mod" && args[1].value == "download") || (runtime && (args[0].value == "run" || args[0].value == "version")))
+		allowed = s.hasTool("go") && len(args) > 0 && (args[0].value == "build" || (len(args) > 1 && args[0].value == "mod" && args[1].value == "download") || (runtime && (args[0].value == "run" || args[0].value == "version")))
+	case "git", "make", "cmake", "ninja", "cc", "c++":
+		allowed = s.hasTool(nativeCommands[name].tool)
 	default:
 		allowed = !runtime && busyboxCommand(name)
 	}
@@ -140,12 +139,12 @@ func (s *state) compileCall(words []commandWord, assigns []*syntax.Assign, wd st
 		return "", wd, fmt.Errorf("command %q has no supported Windows translation; use a native recipe", name)
 	}
 	var invocation []string
-	if !allowed || runtime {
+	if _, native := nativeCommands[name]; !allowed || runtime || (native && name != "node" && name != "npm" && name != "python" && name != "go") {
 		invocation, err = s.invocationAt(name, wd, runtime)
 		if err != nil {
 			return "", wd, fmt.Errorf("command %q has no supported Windows translation: %w", name, err)
 		}
-		if !allowed && (name == "npm" || name == "go" || name == "node" || name == "python") {
+		if _, native := nativeCommands[name]; !allowed && native {
 			return "", wd, fmt.Errorf("command %q has no supported Windows translation; use a native recipe", name)
 		}
 	}
@@ -202,6 +201,12 @@ func (s *state) compileCall(words []commandWord, assigns []*syntax.Assign, wd st
 			return "", wd, err
 		}
 		return prefix + "cd " + buildPath(p), p, nil
+	}
+	if compilerCommand(name) && !runtime {
+		args, err = s.compilerOutput(args, wd)
+		if err != nil {
+			return "", wd, err
+		}
 	}
 	paths, err := argumentPaths(name, args)
 	if err != nil {

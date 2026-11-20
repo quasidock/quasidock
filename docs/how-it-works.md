@@ -239,13 +239,12 @@ granting or labeling any host directory, `LabelRefusal` rejects drive roots,
   `S-1-15-3-3` (`PrivateNetworkClientServer`) when networking is enabled, and a
   loopback exemption unless `QUASIDOCK_LOOPBACK_EXEMPTION=0`.
 
-AppContainer ACLs and Windows behavior carry tradeoffs documented in Zigsaw and
+AppContainer ACLs and Windows behavior carry tradeoffs documented in
 [`findings.md`](findings.md): labeling or granting 20,000 files takes roughly 2 s
-(2.2 s low / 2.4 s AppContainer in [Zigsaw iteration 9](../legacy/iteration-9.md));
+(2.2 s low / 2.4 s AppContainer);
 Windows 11 26300.9550 fixed path resolution for AppContainers so Python, Zig,
-`git`, and Node work ([Zigsaw iteration 8](../legacy/iteration-8.md)), while
-Windows Server 2025 still blocks opening `NUL` inside AppContainers
-([Zigsaw iteration 46](../legacy/iteration-46.md)).
+`git`, and Node work, while Windows Server 2025 still blocks opening
+`NUL` inside AppContainers.
 
 ## Lazy pulls
 

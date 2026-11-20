@@ -16,11 +16,13 @@ import (
 // stageConfig is instruction-time state, separate from emitted recipe steps.
 // Inheriting a Dockerfile stage copies this configuration, not its build steps.
 type stageConfig struct {
-	args, env, outputs                    map[string]string
-	directories                           map[string]bool
-	workdir, family, requested, baseImage string
-	entryLine, cmdLine, startupLine       int
-	entry, cmd                            *instructions.ShellDependantCmdLine
+	args, env, outputs              map[string]string
+	directories                     map[string]bool
+	tools                           map[string]toolRequest
+	apt                             bool
+	workdir, family, requested      string
+	entryLine, cmdLine, startupLine int
+	entry, cmd                      *instructions.ShellDependantCmdLine
 }
 
 type state struct {
@@ -37,11 +39,13 @@ type state struct {
 	input                             *dockerStage
 	previous                          map[int]*state
 	consoleStartup                    map[string]bool
+	currentLine                       int
+	aptForbidden                      string
 }
 
 func newState(opts Options, escape rune, globals map[string]string) *state {
 	return &state{
-		stageConfig: stageConfig{args: map[string]string{}, env: map[string]string{}, outputs: map[string]string{}, directories: map[string]bool{".": true}, workdir: "."},
+		stageConfig: stageConfig{args: map[string]string{}, env: map[string]string{}, outputs: map[string]string{}, directories: map[string]bool{".": true}, tools: map[string]toolRequest{}, workdir: "."},
 		opts:        opts,
 		result:      Result{SourceLines: map[string]int{}},
 		r: recipe.Recipe{
@@ -60,6 +64,7 @@ func (s *state) inherit(parent *state) {
 	s.env = maps.Clone(parent.env)
 	s.outputs = maps.Clone(parent.outputs)
 	s.directories = maps.Clone(parent.directories)
+	s.tools = maps.Clone(parent.tools)
 	s.entry = cloneCommand(parent.entry)
 	s.cmd = cloneCommand(parent.cmd)
 	s.r.Name = cloneString(parent.r.Name)

@@ -83,7 +83,7 @@ func TestArgAndEnvScope(t *testing.T) {
 	}
 }
 func TestUnsupportedInstructionsHaveLocations(t *testing.T) {
-	for _, line := range []string{"RUN apt-get update", "RUN apk add curl", "USER node", "VOLUME /data", "HEALTHCHECK CMD node -v", "SHELL [\"bash\",\"-c\"]", "COPY --from=build /app /app", "RUN --mount=type=cache,target=/root/.npm npm ci", "RUN node $(uname)", "RUN GOOS=linux go build -o app .", "ADD . /app"} {
+	for _, line := range []string{"RUN apt-get upgrade", "RUN apk add curl", "USER node", "VOLUME /data", "HEALTHCHECK CMD node -v", "SHELL [\"bash\",\"-c\"]", "COPY --from=build /app /app", "RUN --mount=type=cache,target=/root/.npm npm ci", "RUN node $(uname)", "RUN GOOS=linux go build -o app .", "ADD . /app"} {
 		t.Run(line, func(t *testing.T) {
 			r, err := Convert([]byte("FROM node:24\n"+line+"\nCMD [\"node\"]"), options(t), &fakeResolver{})
 			if err == nil || r.Recipe != nil {

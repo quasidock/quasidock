@@ -279,9 +279,8 @@ mapped `uses` port.
 
 Quasidock does not currently implement an `AF_UNIX` socket placeholder, because
 services, loopback exemption, and `uses` forwards cover existing apps. If added
-later (e.g. `unix_socket_directories` + `PGHOST` for PostgreSQL), the probe
-findings from [Zigsaw iteration 52](../legacy/iteration-52.md) still constrain
-the design:
+later (e.g. `unix_socket_directories` + `PGHOST` for PostgreSQL), the previous
+findings constrain the design:
 
 - **PostgreSQL names sockets by port**: `<dir>\.s.PGSQL.<port>` uses the same
   port number PostgreSQL listens on over TCP. Under `appcontainer`, a server

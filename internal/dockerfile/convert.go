@@ -22,6 +22,8 @@ import (
 type Options struct {
 	Context, Dockerfile, Output, ID, Version, Base, Target string
 	BuildArgs, StageBases                                  map[string]string
+	Tools                                                  map[string]string
+	StageTools                                             map[string]map[string]string
 }
 
 type Dependency struct {
@@ -90,6 +92,7 @@ func Convert(data []byte, opts Options, resolver Resolver) (Result, error) {
 		return Result{Diagnostics: []Diagnostic{{File: opts.Dockerfile, Line: 1, Instruction: "--target", Message: err.Error()}}}, conversionError()
 	}
 	overrides, diagnostics := graph.baseOverrides(opts, selection)
+	diagnostics = append(diagnostics, graph.validateToolOverrides(opts)...)
 	if len(diagnostics) > 0 {
 		return Result{Diagnostics: diagnostics}, conversionError()
 	}
@@ -110,20 +113,13 @@ func Convert(data []byte, opts Options, resolver Resolver) (Result, error) {
 	if len(s.r.Stages) == 0 {
 		s.mkdir(".")
 	}
-	if !s.failed() && s.family != "scratch" {
-		dep, err := resolver.Resolve(s.baseImage, s.requested, opts.Base)
-		if err != nil {
-			s.diagnostic(s.fromLine, "FROM", err.Error(), false)
-		} else {
-			s.r.From[s.family] = dep.Reference
-			s.r.Permissions.Sandbox = dep.Config.Permissions.Sandbox
-			s.diagnostic(s.fromLine, "FROM", fmt.Sprintf("mapped to %s (%s)", dep.Reference, dep.Config.Version), true)
-		}
-	}
 	if !s.failed() {
 		if err := s.startup(); err != nil {
 			s.diagnostic(s.startupLine, "CMD/ENTRYPOINT", err.Error(), false)
 		}
+	}
+	if !s.failed() {
+		s.resolveTools(resolver.Resolve)
 	}
 	if !s.failed() && s.needShell {
 		dep, err := resolver.Resolve("busybox", "", "")
@@ -141,7 +137,7 @@ func Convert(data []byte, opts Options, resolver Resolver) (Result, error) {
 			s.r.Workdir = "."
 		}
 		s.r.Env = s.translatedEnv(false)
-		if s.family == "python" {
+		if s.hasTool("python") {
 			s.r.Env["PYTHONPATH"] = "${app}/.python"
 			s.r.Env["PYTHONDONTWRITEBYTECODE"] = "1"
 		}
@@ -155,6 +151,7 @@ func Convert(data []byte, opts Options, resolver Resolver) (Result, error) {
 		}
 	}
 	s.result.Recipe = &s.r
+	s.result.Diagnostics = append(s.result.Diagnostics, graph.unusedToolDiagnostics(opts, map[int]*state{selection.target.index: s})...)
 	if s.failed() {
 		s.result.Recipe = nil
 		return s.result, conversionError()
@@ -206,8 +203,10 @@ func (s *state) expand(word string, env map[string]string) (string, error) {
 
 var numericTag = regexp.MustCompile(`^([0-9]+(?:\.[0-9]+){0,2})(?:-(?:alpine[0-9.]*|slim|(?:bookworm|bullseye|trixie)(?:-slim)?))?$`)
 var standardFrontend = regexp.MustCompile(`^docker/dockerfile:1(?:\.[0-9]+){0,2}$`)
+var distroTag = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$`)
 
 func (s *state) instruction(command any, node *parser.Node) error {
+	s.currentLine = node.StartLine
 	if _, ok := command.(*instructions.ArgCommand); !ok && !s.seenFrom {
 		if _, ok := command.(*instructions.Stage); !ok {
 			return errors.New("only ARG is supported before FROM")
@@ -231,34 +230,54 @@ func (s *state) instruction(command any, node *parser.Node) error {
 			return err
 		}
 		expandedBase := base
-		if strings.Contains(base, "@") && s.opts.Base == "" {
-			return errors.New("Linux image digests cannot be reused; select a native image with --base or --stage-base")
-		}
 		base = strings.SplitN(base, "@", 2)[0]
 		base = strings.TrimPrefix(strings.TrimPrefix(base, "docker.io/"), "library/")
 		parts := strings.SplitN(base, ":", 2)
 		switch parts[0] {
 		case "node":
-			s.family, s.baseImage = "node", "node"
+			s.family = "node"
 		case "golang":
-			s.family, s.baseImage = "go", "go"
+			s.family = "go"
 		case "python":
-			s.family, s.baseImage = "python", "python-sdk"
+			s.family = "python"
+		case "ubuntu", "debian":
+			if len(parts) == 2 && !distroTag.MatchString(parts[1]) {
+				return errors.New("distro base requires a valid nonempty image tag")
+			}
+			if strings.Contains(expandedBase, "@") {
+				return errors.New("Linux distro image digests cannot be reused; use a distro tag and pin native tools with --tool or --stage-tool")
+			}
+			if s.opts.Base != "" {
+				return errors.New("distro bases use --tool or --stage-tool to select native tools, rather than --base or --stage-base")
+			}
+			s.family, s.apt = parts[0], true
+			s.diagnostic(node.StartLine, "FROM", fmt.Sprintf("%s supplies source distro metadata only; apt packages select independent native Windows tool versions", expandedBase), true)
+			return nil
 		case "scratch":
 			if expandedBase != "scratch" {
 				return errors.New("scratch must be an untagged, unqualified base")
 			}
 			s.family = "scratch"
 		default:
-			return fmt.Errorf("base %q is unsupported; use an official node, golang or python base, or scratch", c.BaseName)
+			return fmt.Errorf("base %q is unsupported; use an official node, golang, python, ubuntu or debian base, or scratch", c.BaseName)
+		}
+		hasOverride := s.opts.Base != "" || s.toolOverride(s.family) != ""
+		if strings.Contains(expandedBase, "@") && !hasOverride {
+			return errors.New("Linux image digests cannot be reused; select a native image with --base, --stage-base, --tool or --stage-tool")
 		}
 		if len(parts) == 2 && parts[1] != "latest" {
 			m := numericTag.FindStringSubmatch(parts[1])
-			if m == nil && s.opts.Base == "" {
+			if m == nil && !hasOverride {
 				return errors.New("base tag is not a supported numeric version; select a native image with --base or --stage-base")
 			}
 			if m != nil {
 				s.requested = m[1]
+			}
+		}
+		if s.family != "scratch" {
+			s.apt = !strings.Contains(base, "alpine")
+			if err := s.addTool(s.family, s.requested, s.opts.Base, true); err != nil {
+				return err
 			}
 		}
 	case *instructions.ArgCommand:
@@ -400,7 +419,7 @@ func appPath(wd, value string) (string, error) {
 func quote(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'" }
 
 func nativePlaceholder(value string) bool {
-	for _, name := range []string{"app}", "data}", "cache}", "roots}", "node}", "go}", "python}", "busybox}", "listen:", "port:", "uses:"} {
+	for _, name := range []string{"app}", "data}", "cache}", "roots}", "node}", "go}", "python}", "busybox}", "git}", "compiler}", "make}", "cmake}", "listen:", "port:", "uses:"} {
 		if strings.Contains(value, "${"+name) {
 			return true
 		}
@@ -443,6 +462,8 @@ func (s *state) startup() error {
 				cmd = &instructions.ShellDependantCmdLine{CmdLine: []string{"python"}}
 			case "scratch":
 				return errors.New("scratch stages require CMD or ENTRYPOINT naming a native executable")
+			case "ubuntu", "debian":
+				return errors.New("distro stages require an explicit supported CMD or ENTRYPOINT")
 			default:
 				return errors.New("provide CMD or ENTRYPOINT for the Go application")
 			}
@@ -521,22 +542,12 @@ func (s *state) translatedEnv(withArgs bool) map[string]string {
 }
 
 func (s *state) executableAt(command, wd string) (string, error) {
-	switch command {
-	case "node", "node.exe", "/usr/local/bin/node":
-		if s.family == "node" {
-			return "${node}/node.exe", nil
+	if cmd, ok := nativeCommands[canonicalCommand(command)]; ok {
+		if s.hasTool(cmd.tool) {
+			return "${" + cmd.tool + "}/" + cmd.path, nil
 		}
-	case "npm", "npm.cmd":
-		if s.family == "node" {
-			return "${node}/npm.cmd", nil
-		}
-	case "python", "python3", "python.exe", "python3.exe", "/usr/local/bin/python", "/usr/local/bin/python3":
-		if s.family == "python" {
-			return "${python}/python.exe", nil
-		}
-	case "go", "go.exe", "/usr/local/go/bin/go":
-		if s.family == "go" {
-			return "${go}/bin/go.exe", nil
+		if ext := path.Ext(command); ext != ".exe" && ext != ".cmd" && ext != ".bat" {
+			return "", fmt.Errorf("native tool %s is not installed; install a supported apt package first", cmd.tool)
 		}
 	}
 	if wd == "" && !strings.HasPrefix(command, "/") {

@@ -114,7 +114,7 @@ func TestConvertCommandOutputAndFailures(t *testing.T) {
 	if _, err := convertCommand(ctx, []string{root}); err == nil {
 		t.Fatal("overwrote output without --force")
 	}
-	write("FROM node:24\nRUN apt-get update\nCMD [\"node\"]")
+	write("FROM node:24\nRUN apt-get upgrade\nCMD [\"node\"]")
 	if _, err := convertCommand(ctx, []string{root, "--force"}); err == nil {
 		t.Fatal("unsupported conversion succeeded")
 	}
@@ -148,6 +148,57 @@ func TestConvertCommandOutputAndFailures(t *testing.T) {
 	now, _ = os.ReadFile(target)
 	if bytes.Equal(now, original) {
 		t.Fatal("--force did not replace recipe")
+	}
+}
+
+func TestConvertDistroToolFlags(t *testing.T) {
+	ctx, out := fixtureCLI(t)
+	var diagnostics bytes.Buffer
+	ctx.Stderr = &diagnostics
+	reg := testregistry.New()
+	defer reg.Close()
+	for _, id := range []string{"python-sdk", "mingit", "busybox"} {
+		conversionBase(t, reg, id)
+	}
+	ctx.Env[remote.RegistryVar] = reg.Host() + "/images"
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "Dockerfile"), []byte("FROM ubuntu:24.04 AS base\nRUN apt-get update && apt-get install -y python3 git\nCMD [\"python3\"]\nFROM base AS app"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, flags := range [][]string{
+		{"--tool", "PYTHON=python-sdk:24.1.0", "--stage-tool", "BASE:git=mingit:24.1.0"},
+		{"--tool=python=python-sdk:24.1.0", "--stage-tool=0:git=mingit:24.1.0"},
+	} {
+		out.Reset()
+		args := append([]string{root, "--id", "distro", "-o", "-"}, flags...)
+		if code, err := convertCommand(ctx, args); err != nil || code != 0 {
+			t.Fatalf("%v %d %v %s", flags, code, err, &diagnostics)
+		}
+		var r recipe.Recipe
+		if err := json.Unmarshal(out.Bytes(), &r); err != nil || len(r.From) != 2 || !strings.Contains(r.From["python"], "@sha256:") || r.Entrypoint[0] != "${python}/python.exe" {
+			t.Fatalf("%v %+v", err, r)
+		}
+	}
+	target := filepath.Join(root, "quasidock.json")
+	if err := os.WriteFile(target, []byte("unchanged"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, flags := range [][]string{
+		{"--tool"}, {"--tool=python"}, {"--tool=python="}, {"--tool==python-sdk"},
+		{"--tool=curl=curl"}, {"--tool=python=python-sdk", "--tool=PYTHON=python-sdk"},
+		{"--stage-tool=base=python-sdk"}, {"--stage-tool=:python=python-sdk"},
+		{"--stage-tool=base:python="}, {"--stage-tool=base:python=python-sdk", "--stage-tool=0:python=python-sdk"},
+		{"--stage-tool=app:python=python-sdk"}, {"--stage-tool=missing:git=mingit"},
+		{"--stage-base=base=python-sdk"},
+	} {
+		out.Reset()
+		if code, err := convertCommand(ctx, append([]string{root, "--force"}, flags...)); err == nil || code == 0 {
+			t.Fatalf("invalid flags accepted: %v", flags)
+		}
+		contents, err := os.ReadFile(target)
+		if err != nil || string(contents) != "unchanged" || out.Len() != 0 {
+			t.Fatalf("failed flags changed output: %v %s", err, contents)
+		}
 	}
 }
 
