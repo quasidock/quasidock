@@ -5,8 +5,8 @@
  * zend_atomic.h uses (_InterlockedExchange8...) and makes
  * __declspec(thread) real thread-local storage, as TSRM_TLS needs in
  * thread-safe builds. */
-#ifndef ZIGSAW_ZIG_PHP_H
-#define ZIGSAW_ZIG_PHP_H
+#ifndef QUASIDOCK_ZIG_PHP_H
+#define QUASIDOCK_ZIG_PHP_H
 
 /* php.h declares pid_t as int, as MSVC has none; MinGW's sys/types.h
  * declares a 64-bit one first. */

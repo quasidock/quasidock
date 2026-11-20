@@ -41,6 +41,8 @@ recipe requires `--force`; conversion errors leave it unchanged.
 | `FROM node[:VERSION]` | Native `node` base |
 | `FROM golang[:VERSION]` | Native `go` base; present at runtime when used by the selected target |
 | `FROM python[:VERSION]` | Native `python-sdk` base with pip and normal Python import paths |
+| `FROM php[:VERSION[-cli][-DISTRO]]` | Native `php` CLI base; Apache, FPM, and ZTS variants are unsupported |
+| `FROM composer[:VERSION]` | Composer's PHAR with a separately selected native PHP interpreter |
 | `FROM ubuntu[:TAG]` / `debian[:TAG]` | Distro metadata with native tools selected by supported apt installs |
 | Multiple `FROM` stages | Isolated native build units; `--target NAME` selects the final image stage, defaulting to the last stage |
 | `FROM <earlier-stage>` | Inherit files, scoped variables, labels, workdir, and startup configuration |
@@ -54,6 +56,7 @@ recipe requires `--force`; conversion errors leave it unchanged.
 | `RUN go mod download` / `go build -o NAME ...` | Native Windows build; carry `.exe` substitutions through stage copies and startup paths |
 | `RUN pip install ...` / `python -m pip install ...` | Install Windows wheels into the app's `.python` directory; expose it through `PYTHONPATH` |
 | `RUN node ...` / `python ...` | Native interpreter execution, including scripts, `-c`/`-e`, and Python modules |
+| `RUN php ...` / `composer ...` | Native PHP scripts, lint, inline code, built-in server, and local Composer project commands |
 | `RUN apt/apt-get update/install/clean/autoclean` | Translate the package catalog below into pinned native dependencies |
 | `RUN git/make/cmake/ninja` | Native tools with common directory/file options mapped into the app tree |
 | `RUN gcc/g++/clang/clang++/cc/c++` | Native Clang; object compilation and explicit `-o` executable linking with `.exe` mappings |
@@ -74,6 +77,9 @@ match their specified components: `24` matches `24.x`, while `3.14.10` requires
 that patch version. Cached matching images are preferred; otherwise the registry's
 highest matching numeric tag is resolved. Omitted tags and `latest` select the
 current image. All generated dependencies use fully qualified manifest digest pins.
+PHP additionally accepts `cli` and versioned `-cli` tags with Debian or Alpine
+suffixes. Native PHP packaging revisions such as `8.5.12-1` match Docker's
+`8.5.12` version; the highest matching revision is preferred.
 
 If a requested numeric version has no native match, or the Dockerfile uses an
 unknown tag or Linux image digest, select an explicit native replacement:
@@ -82,7 +88,8 @@ unknown tag or Linux image digest, select an explicit native replacement:
 quasidock convert . --id my-app --base node:24.22.2
 ```
 
-The replacement must be a standalone native image of the expected family. The
+The replacement must be a standalone native image of the expected family, except
+Composer, whose own layer is imported as application files. The
 converter reports the chosen image and version. `QUASIDOCK_REGISTRY` and existing
 registry credentials apply. No Linux image layers are downloaded.
 
@@ -114,6 +121,8 @@ independently. Generated references are pinned to manifest digests.
 | `python3`, `python3-pip`, `python3-dev` | `python-sdk` | `python` |
 | `nodejs`, `npm` | `node` | `node` |
 | `golang`, `golang-go` | `go` | `go` |
+| `php`, `php-cli` | `php` | `php` |
+| `composer` | `composer` (own layer) and `php` | `composer`, `php` |
 | `git` | `mingit` | `git` |
 | `make` | `make` | `make` |
 | `cmake`, `ninja-build` | `cmake` (includes Ninja) | `cmake` |
@@ -165,7 +174,8 @@ address the stage that first supplies the tool, including a language base.
 Inherited tools keep their ancestor's selection. Unknown aliases/selectors,
 duplicate name/index aliases, and conflicting base/tool selections fail
 conversion. Known unused selections are reported without resolving them. Native
-images must match the catalog's image ID and have no base images of their own.
+images must match the catalog's image ID and have no base images of their own,
+except Composer's source image.
 Distro bases use tool options rather than `--base` or `--stage-base`; existing
 language-base options remain available.
 
@@ -192,6 +202,54 @@ Unknown packages, curl, package version constraints, `.deb` files, repository
 changes, upgrades, and removals are unsupported. Use native image overrides for
 tool versions. Mappings may supply bundled extras, such as pip with Python or
 Ninja with CMake.
+
+## PHP and Composer
+
+PHP commands map script paths and the file options `-c`, `-f`, `-F`, and `-t`
+(including attached and long forms) into the app tree. Inline PHP code, INI
+definitions, server addresses, and script arguments remain literal data. For
+example, with `public/index.php` in the build context:
+
+```dockerfile
+FROM php:8.5-cli-bookworm
+WORKDIR /app
+COPY . .
+RUN php -l /app/public/index.php
+CMD ["php", "-S", "0.0.0.0:8080", "-t", "/app/public"]
+```
+
+PHP uses the native image's bundled configuration and extensions. Linux PHP
+configuration locations, `.so` extensions, `docker-php-ext-*`, `phpize`, PECL
+install commands, `install-php-extensions`, Apache helpers, and FPM need manual
+native packaging. Conversion does not replace Apache with PHP's built-in server.
+
+Composer imports its pinned image's own layer under the app's `.composer`
+directory and runs `composer.phar` with the stage's native PHP. Its image's
+bundled PHP is not added as a runtime. `FROM composer` supplies both tools;
+Debian-derived PHP stages can add Composer with `RUN apt install composer`.
+Select versions independently with `--tool php=php:VERSION` and
+`--tool composer=composer:VERSION`, or their stage-specific equivalents.
+Composer's `-d` / `--working-dir` paths are mapped; global commands and
+self-update are unsupported.
+
+Composer builders can pass installed dependencies to a PHP target:
+
+```dockerfile
+FROM composer:2 AS vendor
+WORKDIR /app
+COPY . .
+RUN composer install --no-dev --no-interaction --prefer-dist
+
+FROM php:8.5-cli
+WORKDIR /app
+COPY --from=vendor /app /app
+CMD ["php", "/app/main.php"]
+```
+
+Composer scripts and dependencies must support Windows. Builder tools and the
+root-level `.composer` directory stay in the builder when only `/app` is copied.
+Copies from external images, such as `COPY --from=composer:2 /usr/bin/composer`,
+remain unsupported; use a named Composer build stage or the apt mapping.
 
 ## Multi-stage conversion
 
@@ -396,10 +454,13 @@ and foreground/detached working directories. A CLI integration test converts,
 builds, and runs a three-stage native executable example, rebuilds live edits,
 and selects and runs an earlier target. Target/override tests cover inherited
 bases, conflicts, unused branches, native family checks, and digest pinning.
-`tests/dockerfile.ps1` currently builds and runs single-stage Node.js, Go, and Python
+`tests/dockerfile.ps1` builds and runs single-stage Node.js, Go, Python, and PHP
 examples, including native shell pipelines, executable renames, a local Python
 wheel console command, argument/exit-code checks, missing/duplicate metadata,
-and an Ubuntu apt/Flask wildcard install with an HTTP response check. Add
+an Ubuntu apt/Flask wildcard install with an HTTP response check, PHP lint and
+literal arguments/exit codes, its built-in HTTP server, and an offline Composer install passed through an
+inherited build stage to a PHP runtime. Use `-Language php` for the PHP/Composer
+cases. Add
 `-NativeTools` to pull existing Git, compiler, Make, and CMake images and test a
 Debian mixed-tool build plus a multi-stage C executable copied into scratch.
 It uses an

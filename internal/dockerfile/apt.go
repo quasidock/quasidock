@@ -9,6 +9,7 @@ import (
 var aptPackages = map[string][]string{
 	"python3": {"python"}, "python3-pip": {"python"}, "python3-dev": {"python"},
 	"nodejs": {"node"}, "npm": {"node"}, "golang": {"go"}, "golang-go": {"go"},
+	"php": {"php"}, "php-cli": {"php"}, "composer": {"composer"},
 	"git": {"git"}, "make": {"make"}, "cmake": {"cmake"}, "ninja-build": {"cmake"},
 	"clang": {"compiler"}, "gcc": {"compiler"}, "g++": {"compiler"},
 	"build-essential": {"compiler", "make"},

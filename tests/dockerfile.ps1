@@ -1,7 +1,7 @@
 param(
     [string]$Quasidock = (Join-Path $PSScriptRoot '..\out\bin\quasidock.exe'),
     [string]$SeedDownloads = $env:SEED_DOWNLOADS,
-    [ValidateSet('node', 'go', 'python')][string[]]$Language = @('node', 'go', 'python'),
+    [ValidateSet('node', 'go', 'python', 'php')][string[]]$Language = @('node', 'go', 'python', 'php'),
     [switch]$NativeTools,
     [string]$WorkParent = [IO.Path]::GetTempPath()
 )
@@ -55,7 +55,11 @@ try {
                 }
             }
         }
-        Invoke-ConversionCLI @('build', $conversionRecipeFile) | Write-Host
+        if ($conversionRecipe -eq 'php') {
+            Invoke-ConversionCLI @('pull', "php:$($conversionRecipeData.version)") | Write-Host
+        } else {
+            Invoke-ConversionCLI @('build', $conversionRecipeFile) | Write-Host
+        }
     }
 
     if ($NativeTools) {
@@ -68,6 +72,29 @@ try {
         $conversionProject = Join-Path $conversionWork $conversionLanguage
         New-Item -ItemType Directory -Path $conversionProject | Out-Null
         switch ($conversionLanguage) {
+            'php' {
+                $conversionVersion = (Get-Content -Raw (Join-Path $conversionRepo 'recipes\php.json') | ConvertFrom-Json).version -replace '-\d+$', ''
+                $conversionPHPDockerfile = @'
+FROM php:PHP_VERSION-cli-bookworm
+WORKDIR /app
+COPY . .
+RUN php -c /app/php.ini -l /app/main.php
+RUN php -r 'if (ini_get("memory_limit") !== "67M") exit(7);' -c /app/php.ini
+RUN php -r 'file_put_contents("built.txt", "built");'
+RUN ["php", "-r", "if (array_slice($argv, 1) !== ['$VALUE', 'a*b', '/literal']) exit(7);", "--", "$VALUE", "a*b", "/literal"]
+ENTRYPOINT ["php", "/app/main.php"]
+'@
+                Write-ConversionFile (Join-Path $conversionProject 'Dockerfile') ($conversionPHPDockerfile.Replace('PHP_VERSION', $conversionVersion))
+                Write-ConversionFile (Join-Path $conversionProject 'main.php') @'
+<?php
+if (array_slice($argv, 1) === ['args', 'one two', '$VALUE', 'a*b', '/literal']) { echo 'args-ok'; exit; }
+if (array_slice($argv, 1) === ['exit']) { exit(23); }
+if (count($argv) !== 1 || file_get_contents('asset.txt') !== 'live' || file_get_contents('built.txt') !== 'built') { exit(2); }
+echo 'php-ok';
+'@
+                Write-ConversionFile (Join-Path $conversionProject 'php.ini') 'memory_limit=67M'
+                Write-ConversionFile (Join-Path $conversionProject 'asset.txt') 'live'
+            }
             'node' {
                 $conversionVersion = (Get-Content -Raw (Join-Path $conversionRepo 'recipes\node.json') | ConvertFrom-Json).version
                 Write-ConversionFile (Join-Path $conversionProject 'Dockerfile') @"
@@ -156,6 +183,42 @@ def main():
         $conversionResult = Invoke-ConversionCLI @('run', '--rm', $conversionID)
         if ($conversionResult -ne "$conversionLanguage-ok") { throw "Unexpected $conversionLanguage output: $conversionResult" }
         Write-Host "PASS $conversionLanguage conversion, build and run"
+        if ($conversionLanguage -eq 'php') {
+            $conversionArguments = Invoke-ConversionCLI @('run', '--rm', $conversionID, $conversionID, 'args', 'one two', '$VALUE', 'a*b', '/literal')
+            if ($conversionArguments -ne 'args-ok') { throw "PHP arguments changed: $conversionArguments" }
+            Assert-ConversionFailure @('run', '--rm', $conversionID, $conversionID, 'exit') 23 ''
+            Write-Host 'PASS PHP literal arguments and exit codes'
+
+            $conversionListener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0)
+            $conversionListener.Start()
+            $conversionPort = $conversionListener.LocalEndpoint.Port
+            $conversionListener.Stop()
+            New-Item -ItemType Directory -Path (Join-Path $conversionProject 'public') | Out-Null
+            Write-ConversionFile (Join-Path $conversionProject 'public\index.php') '<?php echo "php-http-ok";'
+            Write-ConversionFile (Join-Path $conversionProject 'Dockerfile') @"
+FROM php:$conversionVersion-cli
+WORKDIR /app
+COPY . .
+CMD ["php", "-S", "127.0.0.1:$conversionPort", "-t", "/app/public"]
+"@
+            Invoke-ConversionCLI @('convert', $conversionProject, '--id', 'converted-php-http', '--force') | Write-Host
+            Invoke-ConversionCLI @('build', $conversionProject) | Write-Host
+            $conversionPHPContainer = Invoke-ConversionCLI @('run', '-d', 'converted-php-http')
+            try {
+                $conversionResponse = $null
+                $conversionDeadline = [DateTime]::UtcNow.AddSeconds(20)
+                do {
+                    try { $conversionResponse = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:$conversionPort/" -TimeoutSec 1 } catch { Start-Sleep -Milliseconds 100 }
+                } while (!$conversionResponse -and [DateTime]::UtcNow -lt $conversionDeadline)
+                if (!$conversionResponse -or $conversionResponse.Content -ne 'php-http-ok') {
+                    $conversionLogs = Invoke-ConversionCLI @('logs', $conversionPHPContainer)
+                    throw "PHP did not serve the expected response: $conversionLogs"
+                }
+                Write-Host 'PASS PHP built-in server and document-root mapping'
+            } finally {
+                Invoke-ConversionCLI @('rm', '--force', $conversionPHPContainer) | Out-Null
+            }
+        }
         if ($conversionLanguage -eq 'python') {
             $conversionArguments = Invoke-ConversionCLI @('run', '--rm', $conversionID, $conversionID, 'args', 'one two', '$VALUE', 'a*b', '/literal')
             if ($conversionArguments -ne 'args-ok') { throw "Console arguments changed: $conversionArguments" }
@@ -184,6 +247,37 @@ CMD ["conversion-command"]
             Assert-ConversionFailure @('build', $conversionProject) 1 'expected one installed entry point, found 2'
             Write-Host 'PASS Python console arguments, exit codes, missing and duplicate metadata'
         }
+    }
+
+    if ($Language -contains 'php') {
+        $conversionComposerVersion = (Get-Content -Raw (Join-Path $conversionRepo 'recipes\composer.json') | ConvertFrom-Json).version
+        Invoke-ConversionCLI @('pull', "composer:$conversionComposerVersion") | Write-Host
+        $conversionPHPVersion = (Get-Content -Raw (Join-Path $conversionRepo 'recipes\php.json') | ConvertFrom-Json).version -replace '-\d+$', ''
+        $conversionComposerProject = Join-Path $conversionWork 'composer'
+        Copy-Item -LiteralPath (Join-Path $conversionRepo 'tests\php\composer') -Destination $conversionComposerProject -Recurse
+        Write-ConversionFile (Join-Path $conversionComposerProject 'Dockerfile') @"
+FROM composer:$conversionComposerVersion AS vendor
+WORKDIR /app
+COPY . .
+RUN composer install --no-dev --no-interaction --no-plugins --no-scripts
+FROM vendor AS autoload
+RUN composer --working-dir=/app dumpautoload --optimize --no-scripts
+FROM php:$conversionPHPVersion-cli
+WORKDIR /app
+COPY --from=autoload /app /app
+CMD ["php", "/app/main.php"]
+"@
+        Write-ConversionFile (Join-Path $conversionComposerProject 'main.php') @'
+<?php
+require __DIR__ . '/vendor/autoload.php';
+if (Zigsaw\Hello\Hello::hi() !== 'hello from a package Composer installed') { exit(2); }
+echo 'composer-ok';
+'@
+        Invoke-ConversionCLI @('convert', $conversionComposerProject, '--id', 'converted-composer') | Write-Host
+        Invoke-ConversionCLI @('build', $conversionComposerProject) | Write-Host
+        $conversionComposerOutput = Invoke-ConversionCLI @('run', '--rm', 'converted-composer')
+        if ($conversionComposerOutput -ne 'composer-ok') { throw "Composer output: $conversionComposerOutput" }
+        Write-Host 'PASS offline Composer install, inherited autoload stage and PHP runtime isolation'
     }
 
     if ($Language -contains 'python') {

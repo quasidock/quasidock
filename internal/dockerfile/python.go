@@ -44,6 +44,9 @@ func pythonPip(args []commandWord) int {
 }
 
 func (s *state) invocationAt(command, wd string, runtime bool) ([]string, error) {
+	if canonicalCommand(command) == "composer" && s.hasTool("composer") && s.hasTool("php") {
+		return []string{"${php}/php.exe", "${app}/.composer/composer.phar"}, nil
+	}
 	exe, err := s.executableAt(command, wd)
 	if err == nil {
 		return []string{exe}, nil
@@ -65,10 +68,12 @@ func renderInvocation(invocation []string, runtime bool) string {
 	parts := make([]string, len(invocation))
 	for i, arg := range invocation {
 		parts[i] = quote(arg)
-		if i == 0 && !runtime {
-			for _, command := range nativeCommands {
-				if arg == "${"+command.tool+"}/"+command.path {
-					parts[i] = command.buildName
+		if !runtime {
+			if i == 0 {
+				for _, command := range nativeCommands {
+					if arg == "${"+command.tool+"}/"+command.path {
+						parts[i] = command.buildName
+					}
 				}
 			}
 			if strings.HasPrefix(arg, "${app}/") {

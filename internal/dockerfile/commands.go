@@ -68,6 +68,8 @@ func linuxCommand(name string) bool {
 	switch name {
 	case "apt", "apt-get", "apt-cache", "apk", "yum", "dnf", "dpkg", "rpm", "pacman", "sudo", "su":
 		return true
+	case "docker-php-ext-install", "docker-php-ext-configure", "docker-php-ext-enable", "docker-php-source", "docker-php-entrypoint", "install-php-extensions", "phpize", "php-config", "pecl", "php-fpm", "apache2-foreground", "a2enmod", "a2dissite":
+		return true
 	}
 	return false
 }
@@ -128,6 +130,10 @@ func (s *state) compileCall(words []commandWord, assigns []*syntax.Assign, wd st
 		allowed = s.hasTool("node")
 	case "python":
 		allowed = s.hasTool("python")
+	case "php":
+		allowed = s.hasTool("php")
+	case "composer":
+		allowed = s.hasTool("composer") && s.hasTool("php")
 	case "go":
 		allowed = s.hasTool("go") && len(args) > 0 && (args[0].value == "build" || (len(args) > 1 && args[0].value == "mod" && args[1].value == "download") || (runtime && (args[0].value == "run" || args[0].value == "version")))
 	case "git", "make", "cmake", "ninja", "cc", "c++":

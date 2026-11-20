@@ -12,16 +12,18 @@ import (
 type nativeCommand struct{ tool, path, buildName string }
 
 var nativeCommands = map[string]nativeCommand{
-	"python": {"python", "python.exe", "python"},
-	"node":   {"node", "node.exe", "node"},
-	"npm":    {"node", "npm.cmd", "npm"},
-	"go":     {"go", "bin/go.exe", "go"},
-	"git":    {"git", "cmd/git.exe", "git.exe"},
-	"make":   {"make", "bin/make.exe", "make.exe"},
-	"cmake":  {"cmake", "bin/cmake.exe", "cmake.exe"},
-	"ninja":  {"cmake", "bin/ninja.exe", "ninja.exe"},
-	"cc":     {"compiler", "sdk-bin/cc.exe", "cc.exe"},
-	"c++":    {"compiler", "sdk-bin/c++.exe", "c++.exe"},
+	"python":   {"python", "python.exe", "python"},
+	"node":     {"node", "node.exe", "node"},
+	"npm":      {"node", "npm.cmd", "npm"},
+	"go":       {"go", "bin/go.exe", "go"},
+	"php":      {"php", "php.exe", "php"},
+	"composer": {"composer", "composer.phar", "composer"},
+	"git":      {"git", "cmd/git.exe", "git.exe"},
+	"make":     {"make", "bin/make.exe", "make.exe"},
+	"cmake":    {"cmake", "bin/cmake.exe", "cmake.exe"},
+	"ninja":    {"cmake", "bin/ninja.exe", "ninja.exe"},
+	"cc":       {"compiler", "sdk-bin/cc.exe", "cc.exe"},
+	"c++":      {"compiler", "sdk-bin/c++.exe", "c++.exe"},
 }
 
 func canonicalCommand(name string) string {

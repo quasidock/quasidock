@@ -261,11 +261,6 @@ transfer plan across existing local layers:
    `st.PutBlobFile`. Any Range refusal (`ErrRangeIgnored`) or hash mismatch
    falls back cleanly to a full `reg.DownloadBlob` transfer.
 
-For scale context, Zigsaw rebuilt its 196 MiB `mingw` layer with one edited
-file and reused 99.6% of the existing blob across ~4 Range requests fetching
-under 1 MiB ([Zigsaw iteration 66](../legacy/iteration-66.md); also tested in
-[`tests/registry.sh`](../tests/registry.sh)).
-
 ### Reading one file
 
 Two CLI subcommands in [`internal/cli/images.go`](../internal/cli/images.go)

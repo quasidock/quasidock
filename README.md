@@ -6,7 +6,7 @@ Docker-style CLI.
 Version **0.10** supports Docker-style container lifecycle management (`run`, `ps`,
 `logs`, `exec`, `start`, `restart`, `kill`, `stop`, `rm`, `inspect`, `prune`), per-container isolated data, image
 management, named volumes, local directory bind mounts, and Quasidock images for
-`windows/amd64`. Supported Node.js, Go, Python, and Ubuntu/Debian Dockerfiles, including
+`windows/amd64`. Supported Node.js, Go, Python, PHP CLI, Composer, and Ubuntu/Debian Dockerfiles, including
 multi-stage builds with `COPY --from`, can be
 [converted to native recipes](docs/dockerfile-conversion.md). The Docker Engine
 API and general Docker images are not supported.
@@ -33,6 +33,23 @@ go test -count=1 ./...
 Tests run as the current Windows user; some create temporary AppContainer profiles
 and HKCU keys. CLI integration tests use a loopback registry and locally built
 executables, without downloaded applications.
+
+With [Task](https://taskfile.dev) installed, the root `Taskfile.yml` provides
+shortcuts for common development commands:
+
+```powershell
+task                      # List available tasks
+task build                # Build all three executables
+task build:strip          # Build with trimming and stripped debug information
+task run -- help          # Build and run Quasidock with the supplied arguments
+task test                 # Run all Go tests without cached results
+task fmt                  # Format Go source files
+task vet                  # Run Go static analysis
+task check                # Run vet, then tests
+```
+
+Pass extra build options or test flags after `--`, for example
+`task build -- --prefix out/custom` or `task test -- -run TestName`.
 
 ## Images
 
@@ -193,52 +210,6 @@ older binaries capture missing snapshots on their first start. Finish active
 containers before replacing the binary: live supervisors from older binaries use
 a different control protocol.
 
-## Persistent storage
-
-Named volumes reuse data across containers and image versions. Mount the complete
-`${data}` tree to preserve profile, cache, and registry state, or a subpath to
-persist selected application files. Quote mount arguments with single quotes in
-PowerShell so `${data}` reaches Quasidock literally.
-
-```powershell
-quasidock volume create node-state
-quasidock run --rm -v 'node-state:${data}' node node.exe -e 'require("fs").writeFileSync(process.env.HOME + "/saved.txt", "hello")'
-quasidock run --rm -v 'node-state:${data}' node node.exe -e 'console.log(require("fs").readFileSync(process.env.HOME + "/saved.txt", "utf8"))'
-quasidock run --rm --mount 'type=bind,source=C:\work,target=${data}/workspace' node node.exe --version
-quasidock volume ls
-quasidock volume inspect -f '{{.Mountpoint}}' node-state
-quasidock volume rm node-state
-```
-
-`volume create NAME` is idempotent and volume names resolve case-insensitively.
-`run` automatically creates missing named volumes. In `-v`, absolute and explicitly
-relative paths select binds; other sources select named volumes. Bind directories
-must already exist. Relative binds resolve against the caller's original working
-directory, including detached runs. Use `--mount type=bind` to explicitly bind a
-relative directory whose name could also be a volume name. Fields containing commas
-can be CSV-quoted, for example `'type=bind,"source=C:\work, files",target=${data}/workspace'`.
-
-Mounts support writable directories on local NTFS volumes. Destinations are
-`${data}` or `${data}/PATH`; multiple destinations must be disjoint. A root mount
-cannot be combined with subpath mounts. Arbitrary absolute destinations, read-only
-mounts, files, remote shares, anonymous volumes, and volume drivers are unsupported.
-Mounts do not copy image files into new volumes. Multiple running containers may
-share storage; applications coordinate their concurrent writes. Existing HKCU key
-conflicts still apply when containers use different backing registry directories.
-
-Container inspection includes normalized `HostConfig.Mounts` and resolved
-`Mounts` with `Type`, `Name` (for volumes), `Source`, `Destination`, and `RW`.
-Named volumes live under `volumes/<name>/data`, separate from container metadata.
-Any retained container record pins its named volumes, including exited containers
-and failed launches. Remove those containers before removing their volumes.
-
-`--rm`, `rm`, `container prune`, image removal, and ordinary `prune` (including
-`--data`) preserve named volumes and bind contents. Use `volume rm NAME...` or
-`volume prune` to delete unreferenced named volumes; `volume prune --dry-run`
-reports candidates without deleting them. Bind contents are never collected.
-`repair` restores mount permissions left behind after a supervisor crash while
-preserving access required by live consumers.
-
 ## Windows sandbox and Quasidock extensions
 
 `--sandbox=soft|low|appcontainer` chooses environment shaping, low-integrity
@@ -278,7 +249,7 @@ named stage with `--target NAME` and replace individual native bases with
 [conversion compatibility table](docs/dockerfile-conversion.md).
 
 Ubuntu/Debian conversion maps a bounded apt package catalog to native Python,
-Node.js, Go, Git, Make, CMake/Ninja, and Clang images. Use `--tool TOOL=IMAGE` or
+Node.js, Go, PHP, Composer, Git, Make, CMake/Ninja, and Clang images. Use `--tool TOOL=IMAGE` or
 `--stage-tool NAME_OR_INDEX:TOOL=IMAGE` to select native versions. Distro tags do
 not select runtime versions; conversion reports substitutions and pins native
 dependencies by digest.

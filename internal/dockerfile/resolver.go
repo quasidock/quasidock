@@ -18,8 +18,11 @@ func versionMatches(version, prefix string) bool {
 	return prefix == "" || version == prefix || strings.HasPrefix(version, prefix+".")
 }
 func newer(a, b string) bool {
-	aa, bb := strings.Split(a, "."), strings.Split(b, ".")
-	for i := 0; i < 3; i++ {
+	parts := func(version string) []string {
+		return strings.FieldsFunc(version, func(r rune) bool { return r == '.' || r == '-' })
+	}
+	aa, bb := parts(a), parts(b)
+	for i := 0; i < 4; i++ {
 		var x, y int
 		if i < len(aa) {
 			x, _ = strconv.Atoi(aa[i])
@@ -38,10 +41,13 @@ func (r ImageResolver) Resolve(image, version, override string) (Dependency, err
 	ctx := r.Context
 	reg := ctx.Env[remote.RegistryVar]
 	check := func(ref string, config oci.AppConfig) (Dependency, error) {
-		if config.ID != image || len(config.From) > 0 {
+		if image == "composer" && config.ID != image {
+			return Dependency{}, fmt.Errorf("%s must be a composer image", ref)
+		}
+		if image != "composer" && (config.ID != image || len(config.From) > 0) {
 			return Dependency{}, fmt.Errorf("%s must be a standalone %s image", ref, image)
 		}
-		if override == "" && !versionMatches(config.Version, version) {
+		if override == "" && !versionMatches(imageVersion(image, config.Version), version) {
 			return Dependency{}, fmt.Errorf("%s provides %s, not requested %s; select a replacement with --base or --stage-base", ref, config.Version, version)
 		}
 		return Dependency{ref, config}, nil
@@ -53,7 +59,7 @@ func (r ImageResolver) Resolve(image, version, override string) (Dependency, err
 		}
 		var candidates []Dependency
 		for _, ref := range idx.Images {
-			if ref.ID != image || !versionMatches(ref.Version, version) {
+			if ref.ID != image || !versionMatches(imageVersion(image, ref.Version), version) {
 				continue
 			}
 			img, err := ctx.Store.ReadImage(ref.ID, ref.Manifest)
@@ -89,7 +95,11 @@ func (r ImageResolver) Resolve(image, version, override string) (Dependency, err
 			}
 			var matches []string
 			for _, tag := range tags {
-				if numericTag.MatchString(tag) && !strings.Contains(tag, "-") && versionMatches(tag, version) {
+				numeric := numericTag.MatchString(tag) && !strings.Contains(tag, "-")
+				if image == "php" {
+					numeric = phpNativeTag.MatchString(tag)
+				}
+				if numeric && versionMatches(imageVersion(image, tag), version) {
 					matches = append(matches, tag)
 				}
 			}

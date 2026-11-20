@@ -11,8 +11,7 @@ in [Quasidock 0.3](iteration-3.md).
 
 Each image is an OCI manifest (`application/vnd.oci.image.manifest.v1+json`)
 pointing to an app config blob (`application/vnd.quasidock.app.config.v2+json`;
-`v1+json` and legacy `application/vnd.zigsaw.app.config.v2+json` / `v1+json`
-configs are still accepted on read) and `N + 1` filesystem layers ordered as
+`v1+json` and `N + 1` filesystem layers ordered as
 the image's `from` base runtime layers followed by the app's own layer
 ([`oci.go`](../internal/oci/oci.go)).
 
@@ -281,10 +280,7 @@ chunk ([`lazy.go`](../internal/lazy/lazy.go)).
    `tmp\lazy-unpack*`, waits (200 ms poll) until `!DeploymentInUse`, unregisters
    the sync root, removes placeholders, renames `tmp\lazy-unpack*` into
    `deploy\<hex>\`, and deletes `lazy\<hex>`. Replacing placeholders with plain
-   files avoids Windows's per-process image-section penalty on hydrated DLLs
-   (60 ms per launch for llvm-mingw's 77 MB `libLLVM-23.dll` vs 0.5 ms for a
-   plain copy, measured in [Zigsaw iteration 78](../legacy/iteration-78.md) and
-   [`experiment-cloud-files.md`](experiment-cloud-files.md)).
+   files avoids Windows's per-process image-section penalty on hydrated DLLs.
 
 ## Signatures
 

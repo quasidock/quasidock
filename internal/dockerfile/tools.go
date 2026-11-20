@@ -11,6 +11,7 @@ import (
 
 var toolImages = map[string]string{
 	"python": "python-sdk", "node": "node", "go": "go", "git": "mingit",
+	"php": "php", "composer": "composer",
 	"make": "make", "cmake": "cmake", "compiler": "llvm-mingw",
 }
 
@@ -58,6 +59,9 @@ func (s *state) addTool(alias, version, legacyOverride string, base bool) error 
 		instruction = "FROM"
 	}
 	s.tools[alias] = toolRequest{toolImages[alias], version, override, instruction, s.stageIndex(), s.currentLine, base}
+	if alias == "composer" {
+		return s.addTool("php", "", "", base)
+	}
 	return nil
 }
 
@@ -84,7 +88,13 @@ func (s *state) resolveTools(resolve func(string, string, string) (Dependency, e
 			s.diagnostic(request.line, request.instruction, fmt.Sprintf("resolving %s: %v", alias, err), false)
 			continue
 		}
-		s.r.From[alias] = dep.Reference
+		if alias == "composer" {
+			// Import only Composer's own layer. Its bundled PHP must not compete
+			// with the stage's selected PHP, and composite runtimes are unsupported.
+			s.installComposer(dep.Reference)
+		} else {
+			s.r.From[alias] = dep.Reference
+		}
 		if dep.Config.Permissions.Sandbox == oci.SandboxSoft || (request.base && s.r.Permissions.Sandbox != oci.SandboxSoft) {
 			s.r.Permissions.Sandbox = dep.Config.Permissions.Sandbox
 		}

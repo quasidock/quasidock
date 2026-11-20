@@ -16,6 +16,10 @@ import (
 func argumentPaths(name string, args []commandWord) (map[int]string, error) {
 	paths := map[int]string{}
 	switch name {
+	case "php":
+		return phpArgumentPaths(args)
+	case "composer":
+		return composerArgumentPaths(args)
 	case "git", "make", "cmake", "ninja", "cc", "c++":
 		return nativeArgumentPaths(name, args)
 	case "echo", "printf", "pwd", "true", "false", "tr", "npm":

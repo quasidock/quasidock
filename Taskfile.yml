@@ -1,0 +1,47 @@
+version: '3'
+
+tasks:
+  default:
+    desc: List available tasks
+    cmds:
+      - task --list
+
+  build:
+    desc: Build the Windows executables in out/bin
+    cmds:
+      - go run ./scripts/build.go {{.CLI_ARGS}}
+
+  build:strip:
+    desc: Build stripped Windows executables in out/bin
+    cmds:
+      - go run ./scripts/build.go --strip {{.CLI_ARGS}}
+
+  run:
+    desc: Build and run Quasidock (task run -- help)
+    deps:
+      - task: build
+        vars:
+          CLI_ARGS: ''
+    cmds:
+      - ./out/bin/quasidock.exe {{.CLI_ARGS}}
+
+  test:
+    desc: Run all Go tests without cached results
+    cmds:
+      - go test -count=1 {{.CLI_ARGS}} ./...
+
+  fmt:
+    desc: Format Go source files
+    cmds:
+      - go fmt ./...
+
+  vet:
+    desc: Run Go static analysis
+    cmds:
+      - go vet ./...
+
+  check:
+    desc: Run static analysis and tests
+    cmds:
+      - task: vet
+      - task: test

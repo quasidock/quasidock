@@ -240,6 +240,8 @@ func (s *state) instruction(command any, node *parser.Node) error {
 			s.family = "go"
 		case "python":
 			s.family = "python"
+		case "php", "composer":
+			s.family = parts[0]
 		case "ubuntu", "debian":
 			if len(parts) == 2 && !distroTag.MatchString(parts[1]) {
 				return errors.New("distro base requires a valid nonempty image tag")
@@ -259,14 +261,21 @@ func (s *state) instruction(command any, node *parser.Node) error {
 			}
 			s.family = "scratch"
 		default:
-			return fmt.Errorf("base %q is unsupported; use an official node, golang, python, ubuntu or debian base, or scratch", c.BaseName)
+			return fmt.Errorf("base %q is unsupported; use an official node, golang, python, php, composer, ubuntu or debian base, or scratch", c.BaseName)
 		}
 		hasOverride := s.opts.Base != "" || s.toolOverride(s.family) != ""
 		if strings.Contains(expandedBase, "@") && !hasOverride {
 			return errors.New("Linux image digests cannot be reused; select a native image with --base, --stage-base, --tool or --stage-tool")
 		}
 		if len(parts) == 2 && parts[1] != "latest" {
-			m := numericTag.FindStringSubmatch(parts[1])
+			pattern := numericTag
+			if s.family == "php" {
+				if phpServerTag.MatchString(parts[1]) {
+					return errors.New("PHP Apache, FPM and ZTS variants have no native translation; use a PHP CLI base and an explicit native startup command")
+				}
+				pattern = phpTag
+			}
+			m := pattern.FindStringSubmatch(parts[1])
 			if m == nil && !hasOverride {
 				return errors.New("base tag is not a supported numeric version; select a native image with --base or --stage-base")
 			}
@@ -275,7 +284,7 @@ func (s *state) instruction(command any, node *parser.Node) error {
 			}
 		}
 		if s.family != "scratch" {
-			s.apt = !strings.Contains(base, "alpine")
+			s.apt = s.family != "composer" && !strings.Contains(base, "alpine")
 			if err := s.addTool(s.family, s.requested, s.opts.Base, true); err != nil {
 				return err
 			}
@@ -419,7 +428,7 @@ func appPath(wd, value string) (string, error) {
 func quote(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'" }
 
 func nativePlaceholder(value string) bool {
-	for _, name := range []string{"app}", "data}", "cache}", "roots}", "node}", "go}", "python}", "busybox}", "git}", "compiler}", "make}", "cmake}", "listen:", "port:", "uses:"} {
+	for _, name := range []string{"app}", "data}", "cache}", "roots}", "node}", "go}", "python}", "php}", "composer}", "busybox}", "git}", "compiler}", "make}", "cmake}", "listen:", "port:", "uses:"} {
 		if strings.Contains(value, "${"+name) {
 			return true
 		}
@@ -460,6 +469,8 @@ func (s *state) startup() error {
 				cmd = &instructions.ShellDependantCmdLine{CmdLine: []string{"node"}}
 			case "python":
 				cmd = &instructions.ShellDependantCmdLine{CmdLine: []string{"python"}}
+			case "php", "composer":
+				cmd = &instructions.ShellDependantCmdLine{CmdLine: []string{s.family}}
 			case "scratch":
 				return errors.New("scratch stages require CMD or ENTRYPOINT naming a native executable")
 			case "ubuntu", "debian":

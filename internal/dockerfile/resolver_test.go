@@ -128,3 +128,50 @@ func TestResolverVersionsAndOverride(t *testing.T) {
 		t.Fatalf("expected metadata only, got %d blob requests", reg.Count("/blobs/"))
 	}
 }
+
+func TestPHPVersionsAndComposerMetadata(t *testing.T) {
+	reg := testregistry.New()
+	defer reg.Close()
+	for _, version := range []string{"8.5.11", "8.5.12", "8.5.12-1", "8.5.12-10", "8.6.0"} {
+		nativeImage(t, reg, "php", version)
+	}
+	composerPin := nativeConfigImage(t, reg, "composer", "2.10.3", oci.AppConfig{
+		ID: "composer", Version: "2.10.3", Entrypoint: []string{"${php}/php.exe", "${app}/composer.phar"},
+		From: map[string]oci.Runtime{"php": {ID: "php", Version: "8.5.12-1", Image: testregistry.Digest([]byte("php manifest")), Layer: testregistry.Digest([]byte("fixture layer"))}},
+	})
+	nativeImage(t, reg, "busybox", "latest")
+	ctx := context.New()
+	var err error
+	ctx.Store, err = store.Open(t.TempDir(), false, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx.Env[remote.RegistryVar] = reg.Host() + "/images"
+	resolver := ImageResolver{Context: ctx}
+	for _, version := range []string{"8", "8.5", "8.5.12"} {
+		dep, err := resolver.Resolve("php", version, "")
+		want := "8.5.12-10"
+		if version == "8" {
+			want = "8.6.0"
+		}
+		if err != nil || dep.Config.Version != want {
+			t.Fatalf("php %s: %+v %v", version, dep, err)
+		}
+	}
+	opts := options(t)
+	opts.Tools = map[string]string{"php": "php:8.5.12-10"}
+	result, err := Convert([]byte("FROM composer:2\nRUN composer --version\nCMD [\"php\",\"-v\"]"), opts, resolver)
+	if err != nil {
+		t.Fatalf("%v: %v", err, result.Diagnostics)
+	}
+	source := result.Recipe.Stages[0].Sources[0]
+	if !strings.HasSuffix(*source.Image, composerPin) || result.Recipe.From["composer"] != "" || result.Recipe.From["php"] == "" {
+		t.Fatalf("composite Composer was not imported as source: %+v", result.Recipe)
+	}
+	if reg.Count("/blobs/") != 4 {
+		t.Fatalf("conversion fetched more than four native configs: %d", reg.Count("/blobs/"))
+	}
+	if _, err := resolver.Resolve("composer", "2", "php:8.5.12-1"); err == nil || !strings.Contains(err.Error(), "must be a composer image") {
+		t.Fatalf("accepted a PHP image as Composer: %v", err)
+	}
+}
