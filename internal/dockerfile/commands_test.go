@@ -137,7 +137,7 @@ CMD ["/package/server"]`)
 
 func TestRunUnsupportedAndAmbiguousCommands(t *testing.T) {
 	for _, command := range []string{
-		"curl example.com", "apt-get update", "for x in a; do echo x; done", "echo $(pwd)", "echo $((1+1))", "echo x &", "echo ~", "cat ../../escape",
+		"curl example.com", "apt-get upgrade", "for x in a; do echo x; done", "echo $(pwd)", "echo $((1+1))", "echo x &", "echo ~", "cat ../../escape",
 		"mkdir -m", "cp -t /out /input", "echo x >$UNKNOWN", "echo x >*.txt", "echo x 2>&$FD", "cd /one; cat relative.txt", "cd /one || true; cat relative.txt", "mkdir /out || true", "mkdir /out | cat",
 	} {
 		t.Run(command, func(t *testing.T) {
@@ -153,7 +153,7 @@ func TestRunUnsupportedAndAmbiguousCommands(t *testing.T) {
 			t.Fatalf("conditional mapping accepted: %v %v", err, result.Diagnostics)
 		}
 	}
-	for _, command := range []string{"pip install --target=/elsewhere flask", "python -B -mpip install -t/elsewhere flask", "python -m pip uninstall flask", "apt-get update"} {
+	for _, command := range []string{"pip install --target=/elsewhere flask", "python -B -mpip install -t/elsewhere flask", "python -m pip uninstall flask", "apt-get upgrade"} {
 		if result, err := Convert([]byte("FROM python\nRUN "+command), options(t), &fakeResolver{}); err == nil {
 			t.Fatalf("unsupported Python command accepted: %s %+v", command, result)
 		}

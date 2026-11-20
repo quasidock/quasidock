@@ -16,6 +16,8 @@ import (
 func argumentPaths(name string, args []commandWord) (map[int]string, error) {
 	paths := map[int]string{}
 	switch name {
+	case "git", "make", "cmake", "ninja", "cc", "c++":
+		return nativeArgumentPaths(name, args)
 	case "echo", "printf", "pwd", "true", "false", "tr", "npm":
 		return paths, nil
 	case "mkdir", "cp", "mv", "rm", "touch", "cat", "head", "tail", "grep", "sort", "uniq", "wc", "tee":

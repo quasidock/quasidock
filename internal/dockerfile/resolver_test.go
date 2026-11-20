@@ -65,6 +65,40 @@ func TestStageOverridesResolvePinnedNativeFamilies(t *testing.T) {
 		}
 	}
 }
+
+func TestDistroToolOverridesResolvePinnedNativeFamilies(t *testing.T) {
+	reg := testregistry.New()
+	defer reg.Close()
+	pythonPin := nativeConfigImage(t, reg, "python-sdk", "latest", oci.AppConfig{ID: "python-sdk", Version: "3.14.10", Entrypoint: []string{"python.exe"}, Permissions: oci.Permissions{Sandbox: oci.SandboxLow}})
+	gitPin := nativeConfigImage(t, reg, "mingit", "2.56.0", oci.AppConfig{ID: "mingit", Version: "2.56.0", Entrypoint: []string{"cmd/git.exe"}, Permissions: oci.Permissions{Sandbox: oci.SandboxSoft}})
+	nativeImage(t, reg, "busybox", "latest")
+	nativeImage(t, reg, "node", "latest")
+	nativeConfigImage(t, reg, "python-sdk", "composite", oci.AppConfig{ID: "python-sdk", Version: "3.14.10", Entrypoint: []string{"python.exe"}, From: map[string]oci.Runtime{"node": {ID: "node", Version: "24", Image: gitPin, Layer: testregistry.Digest([]byte("fixture layer"))}}})
+	ctx := context.New()
+	var err error
+	ctx.Store, err = store.Open(t.TempDir(), false, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx.Env[remote.RegistryVar] = reg.Host() + "/images"
+	opts := options(t)
+	opts.Tools = map[string]string{"git": "mingit:2.56.0"}
+	data := []byte("FROM ubuntu:24.04 AS app\nRUN apt install python3 python3-pip git\nCMD [\"python3\",\"main.py\"]")
+	result, err := Convert(data, opts, ImageResolver{Context: ctx})
+	if err != nil || !strings.HasSuffix(result.Recipe.From["python"], pythonPin) || !strings.HasSuffix(result.Recipe.From["git"], gitPin) || result.Recipe.Permissions.Sandbox != oci.SandboxSoft {
+		t.Fatalf("%v %+v", err, result)
+	}
+	if reg.Count("/blobs/") != 3 {
+		t.Fatal("conversion must read only the three native config blobs")
+	}
+	for _, image := range []string{"node", "python-sdk:composite"} {
+		opts.StageTools = map[string]map[string]string{"APP": {"python": image}}
+		result, err := Convert(data, opts, ImageResolver{Context: ctx})
+		if err == nil || result.Recipe != nil || !strings.Contains(fmt.Sprint(result.Diagnostics), "standalone python-sdk image") || !strings.Contains(fmt.Sprint(result.Diagnostics), "Dockerfile:2: RUN") {
+			t.Fatalf("invalid tool %s: %v %v", image, err, result.Diagnostics)
+		}
+	}
+}
 func TestResolverVersionsAndOverride(t *testing.T) {
 	reg := testregistry.New()
 	defer reg.Close()

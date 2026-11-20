@@ -46,6 +46,8 @@ func (g *stageGraph) baseOverrides(opts Options, selection stageSelection) (map[
 			message = "duplicate --stage-base overrides for the same stage"
 		case stage.parent >= 0 || stage.base == "scratch":
 			message = "--stage-base requires a concrete external base; override the external ancestor of an inherited stage, and keep scratch empty"
+		case distroBase(stage.base):
+			message = "distro bases use --tool or --stage-tool to select native tools"
 		default:
 			overrides[stage.index] = opts.StageBases[selector]
 		}
@@ -59,6 +61,8 @@ func (g *stageGraph) baseOverrides(opts Options, selection stageSelection) (map[
 		switch {
 		case target.parent >= 0 || target.base == "scratch":
 			message = "--base requires a concrete external base on the selected target; use --stage-base on its external ancestor for an inherited target, and keep scratch empty"
+		case distroBase(target.base):
+			message = "distro bases use --tool or --stage-tool to select native tools"
 		case overrides[target.index] != "":
 			message = "--base conflicts with --stage-base for the selected target"
 		default:
@@ -69,6 +73,12 @@ func (g *stageGraph) baseOverrides(opts Options, selection stageSelection) (map[
 		}
 	}
 	return overrides, diagnostics
+}
+
+func distroBase(base string) bool {
+	base = strings.TrimPrefix(strings.TrimPrefix(base, "docker.io/"), "library/")
+	name := strings.FieldsFunc(base, func(r rune) bool { return r == ':' || r == '@' })
+	return len(name) > 0 && (name[0] == "ubuntu" || name[0] == "debian")
 }
 
 func (g *stageGraph) targetDiagnostic(opts Options, selection stageSelection) Diagnostic {

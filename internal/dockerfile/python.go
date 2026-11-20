@@ -48,7 +48,8 @@ func (s *state) invocationAt(command, wd string, runtime bool) ([]string, error)
 	if err == nil {
 		return []string{exe}, nil
 	}
-	if s.family != "python" || !consoleName.MatchString(command) || linuxCommand(command) || busyboxCommand(command) {
+	_, native := nativeCommands[canonicalCommand(command)]
+	if !s.hasTool("python") || native || !consoleName.MatchString(command) || linuxCommand(command) || busyboxCommand(command) {
 		return nil, err
 	}
 	if runtime {
@@ -65,17 +66,13 @@ func renderInvocation(invocation []string, runtime bool) string {
 	for i, arg := range invocation {
 		parts[i] = quote(arg)
 		if i == 0 && !runtime {
-			switch {
-			case strings.HasPrefix(arg, "${app}/"):
+			for _, command := range nativeCommands {
+				if arg == "${"+command.tool+"}/"+command.path {
+					parts[i] = command.buildName
+				}
+			}
+			if strings.HasPrefix(arg, "${app}/") {
 				parts[i] = buildPath(strings.TrimPrefix(arg, "${app}/"))
-			case arg == "${python}/python.exe":
-				parts[i] = "python"
-			case arg == "${node}/node.exe":
-				parts[i] = "node"
-			case arg == "${node}/npm.cmd":
-				parts[i] = "npm"
-			case arg == "${go}/bin/go.exe":
-				parts[i] = "go"
 			}
 		}
 	}

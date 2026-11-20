@@ -2,6 +2,7 @@ param(
     [string]$Quasidock = (Join-Path $PSScriptRoot '..\out\bin\quasidock.exe'),
     [string]$SeedDownloads = $env:SEED_DOWNLOADS,
     [ValidateSet('node', 'go', 'python')][string[]]$Language = @('node', 'go', 'python'),
+    [switch]$NativeTools,
     [string]$WorkParent = [IO.Path]::GetTempPath()
 )
 
@@ -55,6 +56,12 @@ try {
             }
         }
         Invoke-ConversionCLI @('build', $conversionRecipeFile) | Write-Host
+    }
+
+    if ($NativeTools) {
+        foreach ($conversionTool in @('mingit', 'llvm-mingw', 'make', 'cmake')) {
+            Invoke-ConversionCLI @('pull', $conversionTool) | Write-Host
+        }
     }
 
     foreach ($conversionLanguage in $Language) {
@@ -187,8 +194,9 @@ CMD ["conversion-command"]
         $conversionPort = $conversionListener.LocalEndpoint.Port
         $conversionListener.Stop()
         Write-ConversionFile (Join-Path $conversionFlaskProject 'Dockerfile') @"
-FROM python:3.14
+FROM ubuntu:24.04
 EXPOSE 8501
+RUN apt-get update && apt-get install -y python3 python3-pip
 RUN pip install flask==3.0.*
 COPY hello.py /
 ENV FLASK_APP=hello
@@ -214,10 +222,59 @@ def index():
                 $conversionLogs = Invoke-ConversionCLI @('logs', $conversionFlaskContainer)
                 throw "Flask did not serve the expected response: $conversionLogs"
             }
-            Write-Host 'PASS Flask wildcard install, relocated console startup and HTTP response'
+            Write-Host 'PASS Ubuntu apt mapping, Flask wildcard install, relocated console startup and HTTP response'
         } finally {
             Invoke-ConversionCLI @('rm', '--force', $conversionFlaskContainer) | Out-Null
         }
+    }
+
+    if ($NativeTools) {
+        $conversionNativeProject = Join-Path $conversionWork 'native-tools'
+        New-Item -ItemType Directory -Path $conversionNativeProject | Out-Null
+        Write-ConversionFile (Join-Path $conversionNativeProject 'Dockerfile') @'
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install --no-install-recommends -y git build-essential cmake ninja-build && apt-get clean
+RUN rm -rf /var/lib/apt/lists/*
+WORKDIR /src
+COPY . .
+RUN git -C /src init && git -C /src status --short
+RUN make -C /src -f /src/Makefile
+RUN cmake -S /src -B /build && cmake --build /build
+CMD ["/build/server.exe"]
+'@
+        Write-ConversionFile (Join-Path $conversionNativeProject 'main.c') '#include <stdio.h>
+int main(void) { puts("native-tools-ok"); return 0; }
+'
+        Write-ConversionFile (Join-Path $conversionNativeProject 'Makefile') "all:`n`t`$(CC) main.c -o make-server.exe`n"
+        Write-ConversionFile (Join-Path $conversionNativeProject 'CMakeLists.txt') "cmake_minimum_required(VERSION 3.20)`nproject(native_tools C)`nadd_executable(server main.c)`n"
+        Invoke-ConversionCLI @('convert', $conversionNativeProject, '--id', 'converted-native-tools') | Write-Host
+        Invoke-ConversionCLI @('build', $conversionNativeProject) | Write-Host
+        $conversionNativeOutput = Invoke-ConversionCLI @('run', '--rm', 'converted-native-tools')
+        if ($conversionNativeOutput -notmatch 'native-tools-ok') { throw "Native tools output: $conversionNativeOutput" }
+        Write-Host 'PASS Debian Git, GNU Make, CMake/Ninja and native compiler composition'
+
+        $conversionCompilerProject = Join-Path $conversionWork 'compiler-stages'
+        New-Item -ItemType Directory -Path $conversionCompilerProject | Out-Null
+        Write-ConversionFile (Join-Path $conversionCompilerProject 'Dockerfile') @'
+FROM ubuntu:24.04 AS build
+RUN apt install -y gcc
+WORKDIR /src
+COPY main.c .
+RUN mkdir -p /out && gcc main.c -o /out/server
+FROM scratch
+COPY --from=build /out/server /app/server
+CMD ["/app/server"]
+'@
+        Write-ConversionFile (Join-Path $conversionCompilerProject 'main.c') '#include <stdio.h>
+int main(void) { puts("compiler-stages-ok"); return 0; }
+'
+        Invoke-ConversionCLI @('convert', $conversionCompilerProject, '--id', 'converted-compiler-stages') | Write-Host
+        $conversionCompilerRecipe = Get-Content -Raw (Join-Path $conversionCompilerProject 'quasidock.json') | ConvertFrom-Json
+        if ($conversionCompilerRecipe.from.compiler -or !$conversionCompilerRecipe.builds[0].from.compiler) { throw 'Compiler leaked out of its build unit' }
+        Invoke-ConversionCLI @('build', $conversionCompilerProject) | Write-Host
+        $conversionCompilerOutput = Invoke-ConversionCLI @('run', '--rm', 'converted-compiler-stages')
+        if ($conversionCompilerOutput -notmatch 'compiler-stages-ok') { throw "Compiler stage output: $conversionCompilerOutput" }
+        Write-Host 'PASS native compiler output mapping, multi-stage copy and scratch runtime'
     }
 } catch {
     Write-Host $_.Exception.Message

@@ -114,10 +114,6 @@ in [`internal/format/format.go`](../internal/format/format.go):
      `estargz.StoreUncompressedSizeAnnotation`) onto the manifest layer
      descriptor.
 
-For historical throughput context, Zigsaw measured 5.2 s to convert `mingw` to
-eStargz versus 7.3 s for single-threaded gzip because containerd's builder
-compresses members across CPU cores ([Zigsaw iteration 64](../legacy/iteration-64.md)).
-
 ### Prioritized files
 
 Recipes with `"layer": "estargz"` can declare an optional `"prefetch"` array
@@ -141,13 +137,6 @@ pushing to a local registry, pulling with `--lazy` (`QUASIDOCK_TEST_LAZY_MIN=1`,
 in the current Go port, `internal/lazy/helper.go` does not yet emit those log
 lines or honor `QUASIDOCK_TEST_LAZY_NO_HYDRATE` / `QUASIDOCK_TEST_LAZY_GATE`
 (see [Pulling](#pulling)).
-
-In Zigsaw's prototype measurements on `qt6`, cold start without prefetching
-pulled roughly 5.8 MiB (~1.5% of a ~396 MiB image), and a 165-file prefetch
-prefix (~31 MiB) eliminated cold-start demand round trips, where registry
-latency (~85–90 ms per request across 4 connections) otherwise dominated startup
-([Zigsaw iteration 77](../legacy/iteration-77.md),
-[iteration 78](../legacy/iteration-78.md)).
 
 ### Recipes
 

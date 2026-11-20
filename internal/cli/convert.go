@@ -15,10 +15,10 @@ import (
 	"github.com/quasidock/quasidock/internal/recipe"
 )
 
-const convertUsage = "usage: quasidock convert [CONTEXT] [-f DOCKERFILE] [-o RECIPE|-] [--id ID] [--version VERSION] [--build-arg NAME=VALUE] [--target NAME] [--base IMAGE] [--stage-base NAME_OR_INDEX=IMAGE]... [--force]"
+const convertUsage = "usage: quasidock convert [CONTEXT] [-f DOCKERFILE] [-o RECIPE|-] [--id ID] [--version VERSION] [--build-arg NAME=VALUE] [--target NAME] [--base IMAGE] [--stage-base NAME_OR_INDEX=IMAGE]... [--tool TOOL=IMAGE]... [--stage-tool NAME_OR_INDEX:TOOL=IMAGE]... [--force]"
 
 func convertCommand(ctx *context.Context, args []string) (uint32, error) {
-	opts := dockerfile.Options{BuildArgs: map[string]string{}, StageBases: map[string]string{}}
+	opts := dockerfile.Options{BuildArgs: map[string]string{}, StageBases: map[string]string{}, Tools: map[string]string{}, StageTools: map[string]map[string]string{}}
 	force, stdout := false, false
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
@@ -74,6 +74,32 @@ func convertCommand(ctx *context.Context, args []string) (uint32, error) {
 				return 1, fmt.Errorf("duplicate --stage-base override for %q", selector)
 			}
 			opts.StageBases[selector] = image
+		case "--tool", "--stage-tool":
+			selector, spec := "", value
+			if name == "--stage-tool" {
+				var ok bool
+				selector, spec, ok = strings.Cut(value, ":")
+				if !ok || selector == "" {
+					return 1, errors.New("--stage-tool needs NAME_OR_INDEX:TOOL=IMAGE")
+				}
+				selector = strings.ToLower(selector)
+			}
+			alias, image, ok := strings.Cut(spec, "=")
+			if !ok || alias == "" || strings.TrimSpace(image) == "" {
+				return 1, fmt.Errorf("%s needs a tool alias and a nonempty IMAGE separated by =", name)
+			}
+			alias = strings.ToLower(alias)
+			destination := opts.Tools
+			if name == "--stage-tool" {
+				if opts.StageTools[selector] == nil {
+					opts.StageTools[selector] = map[string]string{}
+				}
+				destination = opts.StageTools[selector]
+			}
+			if _, exists := destination[alias]; exists {
+				return 1, fmt.Errorf("duplicate %s override for tool %q", name, alias)
+			}
+			destination[alias] = image
 		case "--build-arg":
 			k, v, ok := strings.Cut(value, "=")
 			if !ok || k == "" {

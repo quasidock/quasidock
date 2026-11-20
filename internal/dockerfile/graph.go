@@ -35,10 +35,11 @@ func (s *dockerStage) label() string {
 func (s *dockerStage) unitName() string { return fmt.Sprintf("docker-stage-%d", s.index) }
 
 type stageGraph struct {
-	stages  []*dockerStage
-	names   map[string]int
-	globals map[string]string
-	escape  rune
+	stages        []*dockerStage
+	names         map[string]int
+	globals       map[string]string
+	escape        rune
+	toolOverrides map[int]map[string]string
 }
 
 type stageSelection struct {
@@ -123,7 +124,7 @@ func parseStageGraph(parsed *parser.Result, opts Options) (*stageGraph, []Diagno
 
 func externalBaseName(base string) bool {
 	switch base {
-	case "node", "golang", "python", "scratch":
+	case "node", "golang", "python", "scratch", "ubuntu", "debian":
 		return true
 	}
 	return false
@@ -212,7 +213,7 @@ func (g *stageGraph) diagnostic(opts Options, stage *dockerStage, node *parser.N
 func (g *stageGraph) translateStage(stage *dockerStage, parent *state, opts Options, previous map[int]*state) *state {
 	s := newState(opts, g.escape, g.globals)
 	s.graph, s.input, s.previous = g, stage, previous
-	if len(g.stages) > 1 || opts.Target != "" || len(opts.StageBases) > 0 {
+	if len(g.stages) > 1 || opts.Target != "" || len(opts.StageBases) > 0 || len(opts.StageTools) > 0 {
 		s.stage = stage.label()
 	}
 	if stage.parent >= 0 {
@@ -238,5 +239,6 @@ func (g *stageGraph) translateStage(stage *dockerStage, parent *state, opts Opti
 			s.diagnostic(instruction.node.StartLine, strings.ToUpper(instruction.node.Value), err.Error(), false)
 		}
 	}
+	s.validateStageTools()
 	return s
 }
