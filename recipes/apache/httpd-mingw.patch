@@ -1,0 +1,96 @@
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -20,6 +20,10 @@
+ CMAKE_MINIMUM_REQUIRED(VERSION 3.16...3.29)
+ 
+ PROJECT(HTTPD C)
++
++# Native MinGW DLL and import-library names, without a second lib prefix.
++SET(CMAKE_SHARED_LIBRARY_PREFIX "")
++SET(CMAKE_IMPORT_LIBRARY_PREFIX "")
+ 
+ INCLUDE(CheckSymbolExists)
+ INCLUDE(CheckCSourceCompiles)
+@@ -892,7 +896,7 @@
+     ADD_LIBRARY(${mod_name} SHARED ${all_mod_sources} build/win32/httpd.rc)
+     SET(install_modules ${install_modules} ${mod_name})
+     SET(install_modules_pdb ${install_modules_pdb} "$<TARGET_PDB_FILE:${mod_name}>")
+-    IF("${${mod_name}_install_lib}")
++    IF(MSVC AND "${${mod_name}_install_lib}")
+       SET(installed_mod_libs_exps
+           ${installed_mod_libs_exps}
+           "$<TARGET_LINKER_FILE:${mod_name}>"
+@@ -902,7 +906,6 @@
+     SET(mod_extra_libs "${mod_name}_extra_libs")
+     SET_TARGET_PROPERTIES(${mod_name} PROPERTIES
+       SUFFIX .so
+-      LINK_FLAGS /base:@${PROJECT_BINARY_DIR}/BaseAddr.ref,${mod_name}.so
+     )
+     TARGET_LINK_LIBRARIES(${mod_name} ${${mod_extra_libs}} libhttpd ${EXTRA_LIBS} ${APR_LIBRARIES} ${HTTPD_SYSTEM_LIBS})
+     DEFINE_WITH_BLANKS(define_long_name "LONG_NAME" "${mod_name} for Apache HTTP Server")
+@@ -927,9 +930,6 @@
+ 
+ ###########   HTTPD LIBRARIES   ############
+ ADD_LIBRARY(libhttpd SHARED ${LIBHTTPD_SOURCES} build/win32/httpd.rc)
+-SET_TARGET_PROPERTIES(libhttpd PROPERTIES
+-  LINK_FLAGS /base:@${PROJECT_BINARY_DIR}/BaseAddr.ref,libhttpd.dll
+-)
+ SET(install_targets ${install_targets} libhttpd)
+ SET(install_bin_pdb ${install_bin_pdb} $<TARGET_PDB_FILE:libhttpd>)
+ TARGET_LINK_LIBRARIES(libhttpd ${EXTRA_LIBS} ${APR_LIBRARIES} ${PCRE_LIBRARIES} ${HTTPD_SYSTEM_LIBS})
+@@ -1042,7 +1042,9 @@
+ )
+ INSTALL(FILES ${other_installed_h} DESTINATION include)
+ INSTALL(FILES ${installed_mod_libs_exps} DESTINATION lib)
+-INSTALL(FILES "$<TARGET_LINKER_FILE_DIR:libhttpd>/libhttpd.exp" DESTINATION LIB)
++IF(MSVC)
++  INSTALL(FILES "$<TARGET_LINKER_FILE_DIR:libhttpd>/libhttpd.exp" DESTINATION LIB)
++ENDIF()
+ 
+ IF(INSTALL_MANUAL) # Silly?  This takes a while, and a dev doesn't need it.
+   INSTALL(DIRECTORY docs/manual/ DESTINATION manual)
+--- a/include/ap_config.h
++++ b/include/ap_config.h
+@@ -134,7 +134,7 @@
+ #endif
+ 
+ #include "os.h"
+-#if (!defined(WIN32) && !defined(NETWARE)) || defined(__MINGW32__)
++#if (!defined(WIN32) && !defined(NETWARE))
+ #include "ap_config_auto.h"
+ #endif
+ #include "ap_config_layout.h"
+--- a/modules/arch/win32/mod_win32.c
++++ b/modules/arch/win32/mod_win32.c
+@@ -74,7 +74,7 @@
+ }
+ 
+ static const char *set_interpreter_source(cmd_parms *cmd, void *dv,
+-                                          char *arg)
++                                          const char *arg)
+ {
+     win32_dir_conf *d = (win32_dir_conf *)dv;
+     if (!strcasecmp(arg, "registry")) {
+--- a/server/mpm/winnt/service.c
++++ b/server/mpm/winnt/service.c
+@@ -19,7 +19,9 @@
+  * preload the API symbols now...
+  */
+ 
++#ifndef __MINGW32__
+ #define _WINUSER_
++#endif
+ 
+ #include "apr.h"
+ #include "apr_strings.h"
+@@ -38,8 +40,10 @@
+ #ifdef NOUSER
+ #undef NOUSER
+ #endif
++#ifndef __MINGW32__
+ #undef _WINUSER_
+ #include <winuser.h>
++#endif
+ #include <time.h>
+ 
+ APLOG_USE_MODULE(mpm_winnt);

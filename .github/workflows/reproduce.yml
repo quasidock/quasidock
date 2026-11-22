@@ -173,6 +173,50 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
+  # Apache is built locally until its first publication; the published-image
+  # lists must only contain images that are already available in the registry.
+  apache:
+    runs-on: windows-2025
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.26'
+      - name: Build quasidock
+        run: go run ./scripts/build.go
+      - name: Build Apache in two independent stores
+        shell: bash
+        env:
+          QUASIDOCK_REGISTRY_USERNAME: ${{ github.actor }}
+          QUASIDOCK_REGISTRY_PASSWORD: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          export MSYS_NO_PATHCONV=1
+          mkdir -p "$RUNNER_TEMP/apache-logs"
+          for store in apache-one apache-two; do
+            export QUASIDOCK_HOME="$RUNNER_TEMP/$store"
+            ./out/bin/quasidock.exe build recipes/apache.json 2>&1 | tee "$RUNNER_TEMP/apache-logs/$store.log"
+            ./out/bin/quasidock.exe inspect -f '{{.Id}}' apache | tr -d '\r' >"$RUNNER_TEMP/apache-logs/$store.digest"
+          done
+          cmp "$RUNNER_TEMP/apache-logs/apache-one.digest" "$RUNNER_TEMP/apache-logs/apache-two.digest"
+      - name: HTTP and TLS in every sandbox
+        shell: bash
+        env:
+          APACHE_HOME: ${{ runner.temp }}/apache-two
+          LOG_DIR: ${{ runner.temp }}/apache-logs
+        run: bash tests/apache.sh 2>&1 | tee "$RUNNER_TEMP/apache-logs/tests.log"
+      - name: Upload Apache logs
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: logs-apache
+          path: ${{ runner.temp }}/apache-logs
+          if-no-files-found: ignore
+          retention-days: 14
+
   suites:
     needs: pins
     runs-on: windows-2025

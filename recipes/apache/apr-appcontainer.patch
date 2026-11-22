@@ -1,0 +1,101 @@
+--- a/file_io/win32/filepath.c
++++ b/file_io/win32/filepath.c
+@@ -36,6 +36,21 @@
+  *
+  * OS2 appears immune from the nonsense :)
+  */
++
++/* AppContainers may traverse an ancestor without permission to list it.
++ * Keep validating later components; the final component must still be readable.
++ */
++static int filepath_in_appcontainer(void)
++{
++    HANDLE token;
++    DWORD is_appcontainer = 0, size;
++    if (OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token)) {
++        GetTokenInformation(token, TokenIsAppContainer, &is_appcontainer,
++                            sizeof(is_appcontainer), &size);
++        CloseHandle(token);
++    }
++    return is_appcontainer != 0;
++}
+ 
+ APR_DECLARE(apr_status_t) apr_filepath_root(const char **rootpath, 
+                                             const char **inpath, 
+@@ -947,6 +962,10 @@
+             keptlen += seglen;
+ 
+             if (rv != APR_SUCCESS) {
++                if (saveslash && APR_STATUS_IS_EACCES(rv)
++                    && filepath_in_appcontainer()) {
++                    continue;
++                }
+                 if (APR_STATUS_IS_ENOENT(rv))
+                     break;
+                 if (APR_STATUS_IS_EPATHWILD(rv))
+--- a/file_io/win32/filestat.c
++++ b/file_io/win32/filestat.c
+@@ -640,10 +640,46 @@
+                 return rv;
+             }
+             hFind = FindFirstFileW(wfname, &FileInfo.w);
+-            if (hFind == INVALID_HANDLE_VALUE)
+-                return apr_get_os_error();
+-            FindClose(hFind);
+-            finddata = 1;
++            if (hFind == INVALID_HANDLE_VALUE) {
++                DWORD error = GetLastError(), length;
++                HANDLE file;
++                apr_wchar_t finalpath[APR_PATH_MAX], *base;
++
++                /* Listing the parent can be denied while this file is granted
++                 * (notably an AppContainer's image/data roots). Obtain its
++                 * canonical name from a readable handle instead. VOLUME_NAME_NONE
++                 * avoids the mount-manager lookup forbidden in AppContainers.
++                 * OPEN_REPARSE_POINT preserves APR_FINFO_LINK semantics.
++                 */
++                if (error != ERROR_ACCESS_DENIED)
++                    return APR_FROM_OS_ERROR(error);
++                file = CreateFileW(wfname, FILE_READ_ATTRIBUTES,
++                                   FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
++                                   NULL, OPEN_EXISTING,
++                                   FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
++                                   NULL);
++                if (file == INVALID_HANDLE_VALUE)
++                    return apr_get_os_error();
++                length = GetFinalPathNameByHandleW(file, finalpath,
++                                                  APR_PATH_MAX, VOLUME_NAME_NONE);
++                error = GetLastError();
++                CloseHandle(file);
++                if (!length)
++                    return APR_FROM_OS_ERROR(error);
++                if (length >= APR_PATH_MAX)
++                    return APR_ENAMETOOLONG;
++                base = wcsrchr(finalpath, L'\\');
++                base = base ? base + 1 : finalpath;
++                if (wcslen(base) >= sizeof(FileInfo.w.cFileName) / sizeof(apr_wchar_t))
++                    return APR_ENAMETOOLONG;
++                if (!GetFileAttributesExW(wfname, GetFileExInfoStandard, &FileInfo.i))
++                    return apr_get_os_error();
++                wcscpy(FileInfo.w.cFileName, base);
++            }
++            else {
++                FindClose(hFind);
++                finddata = 1;
++            }
+ 
+             if (unicode_to_utf8_path(tmpname, sizeof(tmpname),
+                                      FileInfo.w.cFileName)) {
+--- a/file_io/win32/pipe.c
++++ b/file_io/win32/pipe.c
+@@ -138,7 +138,9 @@
+     if (apr_os_level >= APR_WIN_NT) {
+         char rand[8];
+         int pid = getpid();
+-#define FMT_PIPE_NAME "\\\\.\\pipe\\apr-pipe-%x.%lx."
++/* These private pipes stay within the process tree. LOCAL is also valid
++ * outside AppContainers and permits child startup inside one. */
++#define FMT_PIPE_NAME "\\\\.\\pipe\\LOCAL\\apr-pipe-%x.%lx."
+         /*                                    ^   ^ ^
+          *                                  pid   | |
+          *                                        | |

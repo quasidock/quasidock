@@ -48,6 +48,7 @@ if [ "$id" = kanboard ]; then
     exit 1
 fi
 case $id in
+apache) args=(-v) ;;
 rnote) args=(--help) ;;
 busybox) args=(true) ;;
 node) args=(-e 0) ;;

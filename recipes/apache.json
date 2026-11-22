@@ -1,0 +1,232 @@
+{
+  "id": "apache",
+  "version": "2.4.71",
+  "name": "Apache HTTP Server",
+  "summary": "Native Apache HTTP Server with TLS, compression, rewrite and proxy modules, built with LLVM-MinGW",
+  "homepage": "https://httpd.apache.org/",
+  "license": "Apache-2.0",
+  "entrypoint": [
+    "bin/httpd.exe",
+    "-d",
+    "${app}",
+    "-f",
+    "${app}\\conf\\httpd.conf"
+  ],
+  "path": [
+    "bin"
+  ],
+  "env": {
+    "HTTPD_DOCUMENT_ROOT": "${app}\\htdocs",
+    "HTTPD_DATA": "${data}",
+    "HTTPD_HTTP_PORT": "${listen:http}",
+    "HTTPD_HTTPS_PORT": "${listen:https}",
+    "SSL_CERT_FILE": "${roots}"
+  },
+  "permissions": {
+    "network": true,
+    "filesystem": [
+      "cwd"
+    ],
+    "services": [
+      {
+        "name": "http",
+        "port": 8080
+      },
+      {
+        "name": "https",
+        "port": 8443
+      }
+    ]
+  },
+  "sdk": {
+    "busybox": "busybox:FRP-6075-g169694ebd@sha256:baca1ecd27b7b5ffe54402d4f8b6e36802d9db5e0e4cb2b7ab13104031045c50",
+    "cmake": "cmake:4.4.4@sha256:b96b30bb57b5147726b7deef2607917b43972bb896d9f5d3e3082e31368dbeae",
+    "llvm": "llvm-mingw:20261020@sha256:65425754b958693accc5dc8d8e8ca0dfa6235669c286cc8875105171b3e299b9",
+    "perl": "perl:5.42.3.1@sha256:2854c34722b812ef3173f5d4ab6fb091ac45dc16d6079865a5024d6a6527dfd6",
+    "make": "make:4.4.1@sha256:006bae7035738763ef26e8d8f995567375c90f73ff1cac885036f4139af67b2b"
+  },
+  "cleanup": [
+    "/include",
+    "/lib",
+    "/share",
+    "/man",
+    "/manual",
+    "/build",
+    "/logs",
+    "/cgi-bin",
+    "/icons",
+    "/error",
+    "/conf/original",
+    "*.pdb",
+    "*.a",
+    "/bin/ApacheMonitor.exe",
+    "/bin/wintty.exe"
+  ],
+  "stages": [
+    {
+      "name": "expat",
+      "sources": [
+        {
+          "url": "https://github.com/libexpat/libexpat/releases/download/R_2_10_0/expat-2.10.0.tar.gz",
+          "sha256": "5466a341f9c692ef7a958a6881311be597f8e1ce345984cf78414f54793dea4c",
+          "strip": 1
+        }
+      ],
+      "build": [
+        "cmake -S . -B out -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_INSTALL_PREFIX=\"$PREFIX\" -DEXPAT_SHARED_LIBS=OFF -DEXPAT_BUILD_TOOLS=OFF -DEXPAT_BUILD_EXAMPLES=OFF -DEXPAT_BUILD_TESTS=OFF -DEXPAT_BUILD_DOCS=OFF",
+        "cmake --build out",
+        "cmake --install out",
+        "mkdir -p \"$PREFIX/licenses\" && cp COPYING \"$PREFIX/licenses/expat.txt\""
+      ]
+    },
+    {
+      "name": "pcre2",
+      "sources": [
+        {
+          "url": "https://github.com/PCRE2Project/pcre2/releases/download/pcre2-10.49/pcre2-10.49.tar.gz",
+          "sha256": "929f0b20e62879252a15886b06c89f1edef61a363cbd5826fb041080a5e557ae",
+          "strip": 1
+        }
+      ],
+      "build": [
+        "cmake -S . -B out -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_INSTALL_PREFIX=\"$PREFIX\" -DBUILD_SHARED_LIBS=OFF -DBUILD_STATIC_LIBS=ON -DPCRE2_BUILD_TESTS=OFF -DPCRE2_BUILD_PCRE2GREP=OFF -DPCRE2_SUPPORT_JIT=ON",
+        "cmake --build out",
+        "cmake --install out",
+        "cp LICENCE.md \"$PREFIX/licenses/pcre2.txt\""
+      ]
+    },
+    {
+      "name": "zlib",
+      "sources": [
+        {
+          "url": "https://github.com/madler/zlib/releases/download/v1.4/zlib-1.4.tar.xz",
+          "sha256": "4f11c512053d7bab8d9e9b89bde3575add3e4c50a383b42ef6cb837035fc5a7c",
+          "strip": 1
+        }
+      ],
+      "build": [
+        "cmake -S . -B out -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_INSTALL_PREFIX=\"$PREFIX\" -DZLIB_BUILD_TESTING=OFF -DZLIB_BUILD_SHARED=OFF",
+        "cmake --build out",
+        "cmake --install out",
+        "mv \"$PREFIX/lib/libzs.a\" \"$PREFIX/lib/libz.a\"",
+        "cp LICENSE \"$PREFIX/licenses/zlib.txt\""
+      ]
+    },
+    {
+      "name": "openssl",
+      "env": {
+        "CFLAGS": "-O2",
+        "PERL": "perl",
+        "PERL5OPT": "-IB:/src/openssl/zigsaw -Munixspec"
+      },
+      "sources": [
+        {
+          "url": "https://github.com/openssl/openssl/releases/download/openssl-3.5.9/openssl-3.5.9.tar.gz",
+          "sha256": "603f5602e2eef00d77fbd429d34dcd5822bb301757a1bc9cdb24c670f1eb859a",
+          "strip": 1
+        },
+        {
+          "path": "gtk4-sdk/openssl-unixspec.pm",
+          "dest": "zigsaw/unixspec.pm"
+        }
+      ],
+      "build": [
+        "perl Configure mingw64 no-shared no-asm no-tests no-docs no-apps no-module --prefix=\"$PREFIX\" --libdir=lib",
+        "make build_generated $(sed -n '/^GENERATED=/,/[^\\\\]$/p' Makefile | tr ' ' '\\n' | grep '[.][ch]$')",
+        "make -n build_libs | grep -e ' -c -o ' | tr '\\n' '\\0' | xargs -0 -P \"$(nproc)\" -n 1 sh -c",
+        "make build_sw",
+        "make install_dev",
+        "sed -i 's/^Libs: .* -lcrypto$/& -lws2_32 -lgdi32 -lcrypt32/' \"$PREFIX/lib/pkgconfig/libcrypto.pc\"",
+        "grep -q '^Libs: .* -lcrypt32$' \"$PREFIX/lib/pkgconfig/libcrypto.pc\"",
+        "cp LICENSE.txt \"$PREFIX/LICENSE.openssl\""
+      ]
+    },
+    {
+      "name": "apr",
+      "sources": [
+        {
+          "url": "https://dlcdn.apache.org/apr/apr-1.7.6.tar.gz",
+          "sha256": "6a10e7f7430510600af25fabf466e1df61aaae910bf1dc5d10c44a4433ccc81d",
+          "strip": 1
+        },
+        {
+          "path": "apache/apr-mingw.patch",
+          "dest": "quasidock/mingw.patch"
+        },
+        {
+          "path": "apache/apr-appcontainer.patch",
+          "dest": "quasidock/appcontainer.patch"
+        }
+      ],
+      "build": [
+        "patch -p1 < quasidock/mingw.patch",
+        "patch -p1 < quasidock/appcontainer.patch",
+        "cmake -S . -B out -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_INSTALL_PREFIX=\"$PREFIX\" -DAPR_INSTALL_PRIVATE_H=ON -DAPR_BUILD_STATIC=OFF -DINSTALL_PDB=OFF -DMIN_WINDOWS_VER=0x0A00",
+        "cmake --build out",
+        "cmake --install out",
+        "cp LICENSE \"$PREFIX/licenses/apr.txt\" && cp NOTICE \"$PREFIX/licenses/apr-NOTICE.txt\""
+      ]
+    },
+    {
+      "name": "apr-util",
+      "sources": [
+        {
+          "url": "https://dlcdn.apache.org/apr/apr-util-1.6.6.tar.gz",
+          "sha256": "acd5f38440eda830e40c4fe35c2a6b8119493cfdba9c9d73d985c317beb4e4f8",
+          "strip": 1
+        },
+        {
+          "path": "apache/apr-util-mingw.patch",
+          "dest": "quasidock/mingw.patch"
+        }
+      ],
+      "build": [
+        "patch -p1 < quasidock/mingw.patch",
+        "cmake -S . -B out -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_INSTALL_PREFIX=\"$PREFIX\" -DAPR_LIBRARIES=B:/prefix/lib/libapr-1.dll.a -DAPU_HAVE_CRYPTO=OFF -DAPU_HAVE_ODBC=OFF -DAPR_HAS_LDAP=OFF -DINSTALL_PDB=OFF",
+        "cmake --build out",
+        "cmake --install out",
+        "cp LICENSE \"$PREFIX/licenses/apr-util.txt\" && cp NOTICE \"$PREFIX/licenses/apr-util-NOTICE.txt\""
+      ]
+    },
+    {
+      "name": "httpd",
+      "sources": [
+        {
+          "url": "https://dlcdn.apache.org/httpd/httpd-2.4.71.tar.gz",
+          "sha256": "6b0433674ded858d2ac01e95345935ce127d5d287471762f0a7f10f4969cbfe8",
+          "strip": 1
+        },
+        {
+          "path": "apache/httpd-mingw.patch",
+          "dest": "quasidock/mingw.patch"
+        },
+        {
+          "path": "apache/build-httpd.sh",
+          "dest": "quasidock/build-httpd.sh"
+        }
+      ],
+      "build": [
+        "patch -p1 < quasidock/mingw.patch",
+        "sh quasidock/build-httpd.sh",
+        "cp LICENSE NOTICE \"$PREFIX/\""
+      ]
+    },
+    {
+      "name": "configuration",
+      "sources": [
+        {
+          "path": "apache/httpd.conf",
+          "dest": "conf/httpd.conf"
+        },
+        {
+          "path": "apache/https.conf",
+          "dest": "conf/extra/https.conf"
+        },
+        {
+          "path": "apache/index.html",
+          "dest": "htdocs/index.html"
+        }
+      ]
+    }
+  ]
+}

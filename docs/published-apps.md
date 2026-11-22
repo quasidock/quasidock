@@ -53,7 +53,7 @@ catalog are published, and [recipes.md](recipes.md) for the recipe format.
 | [`7zip`](../recipes/7zip.json) | `26.05` | `7z.exe` | 7-Zip file archiver |
 | [`notepad-plus-plus`](../recipes/notepad-plus-plus.json) | `8.9.8.1` | `notepad++.exe` | Notepad++ source code editor |
 | [`sumatrapdf`](../recipes/sumatrapdf.json) | `3.6.1` | `SumatraPDF-3.6.1-64.exe` | Reader for PDF, EPUB, XPS, DjVu, and CHM |
-| [`php-sdk`](../recipes/php-sdk.json) | `8.5.12-1` | `php.exe` | PHP 8.5 NTS SDK with `dev\zigsaw\php-ext.php` (`from: zig`, `busybox`, `node`; `soft` sandbox) |
+| [`php-sdk`](../recipes/php-sdk.json) | `8.5.12-1` | `php.exe` | PHP 8.5 NTS SDK with `dev\quasidock\php-ext.php` (`from: zig`, `busybox`, `node`; `soft` sandbox) |
 | [`php`](../recipes/php.json) | `8.5.12-1` | `php.exe` | PHP 8.5 NTS runtime stripped from `php-sdk` |
 | [`composer`](../recipes/composer.json) | `2.10.3` | `${php}\php.exe ${app}\composer.phar` | Composer PHP dependency manager (`from: php`) |
 | [`kanboard`](../recipes/kanboard.json) | `1.2.57` | `${php}\php.exe ${app}\serve.php` | Kanboard web app (`from: php`, `http` on `8471`, `soft` sandbox; `low` unsupported) |
@@ -113,7 +113,7 @@ backs `zls`; `mingit` backs `vscodium`; and `cmake`, `meson`, `llvm-mingw`, and
 `busybox` back the GTK and Qt SDK images.
 
 Custom extension images can still be composed with `from` and built using the
-published SDKs (`php-sdk` ships `dev\zigsaw\php-ext.php` and `zig` for PHP
+published SDKs (`php-sdk` ships `dev\quasidock\php-ext.php` and `zig` for PHP
 extensions loaded via `PHP_INI_SCAN_DIR`, while `postgresql-sdk` ships
 `pg_config` and `pgxs` for `make` and `llvm-mingw`); standalone extension
 images are no longer published separately. Note that `php` bundles a `php.ini`

@@ -44,9 +44,8 @@ loopback exemptions, and forwards.
 
 ## What Windows does
 
-Measured unelevated in Zigsaw iterations 50–52 (and 70) on Windows 11 26300 and
-Server 2025 CI with separate endpoint processes, passing only on round-trip
-echo:
+Measured unelevated on Windows 11 26300 and Server 2025 CI with
+separate endpoint processes, passing only on round-trip echo:
 
 | path | result |
 | --- | --- |
@@ -57,13 +56,13 @@ echo:
 | a socket the host connected, handed to an AppContainer process | the container talks to the host's server |
 | `WSADuplicateSocket` into an AppContainer process that's already running | works |
 | an unconnected socket the host made, handed in | the container connects it to the host, and to the internet with no network capability |
-| `AF_UNIX`, between the host and a container either way, or two containers (Zigsaw iteration 52) | works, with no network capability. Only the socket file's ACL decides, which it inherits from its directory: a client that may only read and execute it is refused (`10013`), as is a container not granted it at all |
+| `AF_UNIX`, between the host and a container either way, or two containers | works, with no network capability. Only the socket file's ACL decides, which it inherits from its directory: a client that may only read and execute it is refused (`10013`), as is a container not granted it at all |
 | `AF_UNIX`, from a low-integrity process to a socket a medium-integrity one made | refused (`10013`): connecting writes to the socket file, which has its directory's label (medium, by default). The host reaches a low-integrity server's socket, in a directory labelled low |
 | `AF_UNIX` paths | up to 108 bytes, all of `sun_path`, with no room for a NUL. PostgreSQL refuses a path of 108 or more |
 | a named pipe the host makes for one capability | opens only from a process that holds that capability |
 | `OpenProcess` for memory writes and handle duplication | allowed within one AppContainer, even with different capabilities. Denied across containers |
 | `CheckNetIsolation LoopbackExempt -a -p=<sid>`, unelevated (Administrators member with filtered UAC token) | succeeded. The exempt container then reached the host, also through the LAN address. Connections into containers were still dropped |
-| `NetworkIsolationSetAppContainerConfig`, the API underneath, unelevated | succeeds in 2–4 ms (2–7 ms for a standard user on Windows 11 26300 in Zigsaw iteration 70); taking the exemption back also succeeds |
+| `NetworkIsolationSetAppContainerConfig`, the API underneath, unelevated | succeeds in 2–4 ms (2–7 ms for a standard user on Windows 11 26300); taking the exemption back also succeeds |
 | an exempt container with no network capability, to the host | connects: the exemption doesn't need `internetClient` or `privateNetworkClientServer` |
 | the host to an exempt container | dropped |
 | `CreateAppContainerProfile` of one new name, from 8 threads at once | some calls fail with `0x8007000a` or `0x8000ffff` (or `0x80070003` on CI) instead of `E_ALREADY_EXISTS` |
@@ -223,17 +222,6 @@ calls `exemptLoopback`:
 - If Windows refuses the exemption call, `exemptLoopback` removes any newly
   added `loopback` grant record, prints a `note:` message explaining the
   fallback, and proceeds with `LoopbackIsolated`.
-- **Current cleanup status**: [`appcontainer.Unexempt`](../internal/appcontainer/appcontainer.go)
-  removes a package SID from the loopback exemption table and is tested in
-  [`internal/appcontainer/appcontainer_test.go`](../internal/appcontainer/appcontainer_test.go),
-  and [`tests/network.sh`](../tests/network.sh) expects exemptions to be taken
-  back when the last run ends and on `quasidock repair` (note also `yours()` in
-  `tests/network.sh` currently invokes `CheckNetIsolation.exe` with
-  `zigsaw.$APP`). However, in the current Go codebase, `grants.Settle` (called by
-  `Session.End` and `quasidock repair`) and `grants.UndoAll` (called by
-  `quasidock image rm`, alongside `appcontainer.DeleteProfile`) drop the
-  `loopback` record from `grants\<id>.txt` without calling
-  `appcontainer.Unexempt` ([`internal/grants/grants.go`](../internal/grants/grants.go)).
 
 #### (b) Forwards
 

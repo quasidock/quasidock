@@ -1,0 +1,28 @@
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -16,6 +16,10 @@
+ # Read README.cmake before using this.
+ 
+ PROJECT(APR-Util C)
++
++# Native MinGW DLL and import-library names, without a second lib prefix.
++SET(CMAKE_SHARED_LIBRARY_PREFIX "")
++SET(CMAKE_IMPORT_LIBRARY_PREFIX "")
+ 
+ CMAKE_MINIMUM_REQUIRED(VERSION 2.8)
+ 
+--- a/include/apu_version.h
++++ b/include/apu_version.h
+@@ -97,9 +97,9 @@
+ 
+ /** An alternative formatted string of APR's version */
+ /* macro for Win32 .rc files using numeric csv representation */
+-#define APU_VERSION_STRING_CSV APU_MAJOR_VERSION ##, \
+-                             ##APU_MINOR_VERSION ##, \
+-                             ##APU_PATCH_VERSION
++#define APU_VERSION_STRING_CSV APU_MAJOR_VERSION , \
++                             APU_MINOR_VERSION , \
++                             APU_PATCH_VERSION
+ 
+ 
+ #ifndef APU_VERSION_ONLY

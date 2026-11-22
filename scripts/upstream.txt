@@ -231,6 +231,13 @@ graphviz git https://gitlab.com/graphviz/graphviz {version} series=1
 
 # --- Libraries -----------------------------------------------------------------
 
+apache git https://github.com/apache/httpd {version}
+  https://dlcdn.apache.org/httpd/httpd-{version}.tar.gz
+apr-util git https://github.com/apache/apr-util {version}
+  https://dlcdn.apache.org/apr/apr-util-{version}.tar.gz
+apr git https://github.com/apache/apr {version}
+  https://dlcdn.apache.org/apr/apr-{version}.tar.gz
+
 openssl git https://github.com/openssl/openssl openssl-{version}
   https://github.com/openssl/openssl/releases/download/openssl-{version}/openssl-*.tar.gz
 zlib git https://github.com/madler/zlib v{version}

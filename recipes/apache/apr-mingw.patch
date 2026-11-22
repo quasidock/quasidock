@@ -1,0 +1,148 @@
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -20,6 +20,10 @@
+ CMAKE_MINIMUM_REQUIRED(VERSION 2.8)
+ 
+ PROJECT(APR C)
++
++# Native MinGW DLL and import-library names, without a second lib prefix.
++SET(CMAKE_SHARED_LIBRARY_PREFIX "")
++SET(CMAKE_IMPORT_LIBRARY_PREFIX "")
+ 
+ # Enable support for MSVC runtime library selection by abstraction
+ # if supported by CMake.
+--- a/include/apr.hwc
++++ b/include/apr.hwc
+@@ -75,7 +75,7 @@
+ #ifndef _WIN32_WINNT
+ #define _WIN32_WINNT @win32_winnt_str@
+ #endif
+-#ifndef NOUSER
++#if !defined(NOUSER) && !defined(__MINGW32__)
+ #define NOUSER
+ #endif
+ #ifndef NOMCX
+--- a/include/arch/win32/apr_private.h
++++ b/include/arch/win32/apr_private.h
+@@ -45,7 +45,7 @@
+  */
+ #ifndef _WIN32_WCE
+ #define HAVE_ACLAPI 1
+-#ifdef __wtypes_h__
++#if defined(__wtypes_h__) || defined(__MINGW32__)
+ #include <accctrl.h>
+ #else
+ #define __wtypes_h__
+--- a/include/arch/win32/apr_arch_misc.h
++++ b/include/arch/win32/apr_arch_misc.h
+@@ -47,7 +47,7 @@
+ #include <tlhelp32.h>
+ #endif
+ 
+-#if defined(HAVE_IF_INDEXTONAME) && defined(_MSC_VER)
++#if defined(HAVE_IF_INDEXTONAME)
+ #include <Iphlpapi.h>
+ #endif
+ 
+--- a/atomic/win32/apr_atomic.c
++++ b/atomic/win32/apr_atomic.c
+@@ -24,7 +24,7 @@
+ APR_DECLARE(apr_uint32_t) apr_atomic_add32(volatile apr_uint32_t *mem, apr_uint32_t val)
+ {
+ #if (defined(_M_IA64) || defined(_M_AMD64))
+-    return InterlockedExchangeAdd(mem, val);
++    return InterlockedExchangeAdd((volatile LONG *)mem, val);
+ #else
+     return InterlockedExchangeAdd((long *)mem, val);
+ #endif
+@@ -38,7 +38,7 @@
+ APR_DECLARE(void) apr_atomic_sub32(volatile apr_uint32_t *mem, apr_uint32_t val)
+ {
+ #if (defined(_M_IA64) || defined(_M_AMD64))
+-    InterlockedExchangeAdd(mem, -val);
++    InterlockedExchangeAdd((volatile LONG *)mem, -val);
+ #else
+     InterlockedExchangeAdd((long *)mem, -val);
+ #endif
+@@ -48,7 +48,7 @@
+ {
+     /* we return old value, win32 returns new value :( */
+ #if (defined(_M_IA64) || defined(_M_AMD64)) && !defined(RC_INVOKED)
+-    return InterlockedIncrement(mem) - 1;
++    return InterlockedIncrement((volatile LONG *)mem) - 1;
+ #else
+     return InterlockedIncrement((long *)mem) - 1;
+ #endif
+@@ -57,7 +57,7 @@
+ APR_DECLARE(int) apr_atomic_dec32(volatile apr_uint32_t *mem)
+ {
+ #if (defined(_M_IA64) || defined(_M_AMD64)) && !defined(RC_INVOKED)
+-    return InterlockedDecrement(mem);
++    return InterlockedDecrement((volatile LONG *)mem);
+ #else
+     return InterlockedDecrement((long *)mem);
+ #endif
+@@ -66,7 +66,7 @@
+ APR_DECLARE(void) apr_atomic_set32(volatile apr_uint32_t *mem, apr_uint32_t val)
+ {
+ #if (defined(_M_IA64) || defined(_M_AMD64)) && !defined(RC_INVOKED)
+-    InterlockedExchange(mem, val);
++    InterlockedExchange((volatile LONG *)mem, val);
+ #else
+     InterlockedExchange((long*)mem, val);
+ #endif
+@@ -81,7 +81,7 @@
+                                            apr_uint32_t cmp)
+ {
+ #if (defined(_M_IA64) || defined(_M_AMD64)) && !defined(RC_INVOKED)
+-    return InterlockedCompareExchange(mem, with, cmp);
++    return InterlockedCompareExchange((volatile LONG *)mem, with, cmp);
+ #else
+     return InterlockedCompareExchange((long*)mem, with, cmp);
+ #endif
+@@ -99,7 +99,7 @@
+ APR_DECLARE(apr_uint32_t) apr_atomic_xchg32(volatile apr_uint32_t *mem, apr_uint32_t val)
+ {
+ #if (defined(_M_IA64) || defined(_M_AMD64)) && !defined(RC_INVOKED)
+-    return InterlockedExchange(mem, val);
++    return InterlockedExchange((volatile LONG *)mem, val);
+ #else
+     return InterlockedExchange((long *)mem, val);
+ #endif
+--- a/misc/win32/misc.c
++++ b/misc/win32/misc.c
+@@ -188,7 +188,7 @@
+ 
+         dll_handle = LoadLibrary(dll->dll_name);
+ 
+-        cached_dll_handle = InterlockedCompareExchangePointer(&dll->dll_handle,
++        cached_dll_handle = InterlockedCompareExchangePointer((void *volatile *)&dll->dll_handle,
+                                                               dll_handle,
+                                                               INVALID_HANDLE_VALUE);
+         if (cached_dll_handle == INVALID_HANDLE_VALUE) {
+--- a/network_io/unix/sockaddr.c
++++ b/network_io/unix/sockaddr.c
+@@ -29,7 +29,7 @@
+ #include <net/if.h>
+ #endif
+ 
+-#if defined(HAVE_IF_INDEXTONAME) && defined(_MSC_VER)
++#if defined(HAVE_IF_INDEXTONAME) && defined(WIN32)
+ #include "arch/win32/apr_arch_misc.h"
+ #endif
+ 
+--- a/include/apr_version.h
++++ b/include/apr_version.h
+@@ -113,9 +113,9 @@
+ 
+ /** An alternative formatted string of APR's version */
+ /* macro for Win32 .rc files using numeric csv representation */
+-#define APR_VERSION_STRING_CSV APR_MAJOR_VERSION ##, \
+-                             ##APR_MINOR_VERSION ##, \
+-                             ##APR_PATCH_VERSION
++#define APR_VERSION_STRING_CSV APR_MAJOR_VERSION , \
++                             APR_MINOR_VERSION , \
++                             APR_PATCH_VERSION
+ 
+ 
+ #ifndef APR_VERSION_ONLY
