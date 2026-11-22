@@ -24,7 +24,7 @@ import (
 
 func containerCommand(ctx *context.Context, args []string) (uint32, error) {
 	if len(args) == 0 {
-		return 1, errors.New("usage: quasidock container <ls|inspect|exec|start|restart|kill|stop|rm|logs|prune>")
+		return 1, errors.New("usage: quasidock container <create|ls|inspect|exec|start|restart|kill|stop|rm|logs|prune>")
 	}
 	cmd, rest := args[0], args[1:]
 	if cmd == "--help" || cmd == "help" {
@@ -32,6 +32,8 @@ func containerCommand(ctx *context.Context, args []string) (uint32, error) {
 		return 0, nil
 	}
 	switch cmd {
+	case "create":
+		return createCommand(ctx, rest)
 	case "exec":
 		return execCommand(ctx, rest)
 	case "ls", "list":
@@ -49,6 +51,23 @@ func containerCommand(ctx *context.Context, args []string) (uint32, error) {
 	default:
 		return 1, fmt.Errorf("unknown container command %q", cmd)
 	}
+}
+
+func createCommand(ctx *context.Context, args []string) (uint32, error) {
+	opts, err := parseCreateOptions(ctx, args)
+	if err != nil {
+		return 1, err
+	}
+	opts.Image, err = selectContainerImage(ctx, opts)
+	if err != nil {
+		return 1, err
+	}
+	rec, err := run.Create(ctx, opts)
+	if err != nil {
+		return 1, err
+	}
+	_, err = fmt.Fprintln(ctx.Stdout, rec.ID)
+	return 0, err
 }
 
 func containerList(ctx *context.Context, args []string) error {

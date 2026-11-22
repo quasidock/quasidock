@@ -44,7 +44,7 @@
       ]
     },
     {
-      "name": "zigsaw",
+      "name": "quasidock",
       "sources": [
         { "path": "kanboard/serve.php", "dest": "serve.php" },
         { "path": "kanboard/router.php", "dest": "router.php" }

@@ -51,10 +51,18 @@ func TestRestartPreservesMountedDataAndRegistry(t *testing.T) {
 				counter = `$HOME\..\workspace\counter`
 			}
 			t.Cleanup(func() { _, _ = call(st.Root, "rm", "-f", name) })
-			must(t, "run", "-d", "--rm", "--name", name, "--sandbox="+tc.sandbox, "-v", source+":"+tc.target, app, "fixture.exe", "state-hold", counter, key)
+			must(t, "create", "--rm", "--name", name, "--sandbox="+tc.sandbox, "-v", source+":"+tc.target, app, "fixture.exe", "state-hold", counter, key)
+			unstarted, err := st.ResolveContainer(name)
+			if err != nil || unstarted.State.Running || unstarted.State.Launched {
+				t.Fatalf("create launched container: %+v %v", unstarted, err)
+			}
+			must(t, "start", name)
 			before, err := st.ResolveContainer(name)
 			if err != nil {
 				t.Fatal(err)
+			}
+			if before.ID != unstarted.ID {
+				t.Fatal("start replaced the created container")
 			}
 			counterPath := filepath.Join(before.Mounts[0].Source, "home", "counter")
 			if tc.target != "${data}" {

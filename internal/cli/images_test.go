@@ -430,6 +430,12 @@ func TestPullSignatureGatePreservesReferences(t *testing.T) {
 	if _, err := pullImage(ctx, name, false); err == nil || !strings.Contains(err.Error(), "Nothing was installed") {
 		t.Fatalf("invalid signature: %v", err)
 	}
+	if _, err := createCommand(ctx, []string{"--pull=always", name}); err == nil || !strings.Contains(err.Error(), "Nothing was installed") {
+		t.Fatalf("create accepted invalid signature: %v", err)
+	}
+	if containers, err := ctx.Store.ListContainers(true); err != nil || len(containers) != 0 {
+		t.Fatalf("rejected signature created a container: %v %v", containers, err)
+	}
 	if reg.Count("/blobs/"+layer.Digest) != before {
 		t.Fatal("rejected image downloaded a layer")
 	}

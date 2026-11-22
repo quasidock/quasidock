@@ -82,3 +82,48 @@ func TestAutoRemoveAfterAbandonedRestartReservation(t *testing.T) {
 		t.Fatalf("abandoned reservation disabled automatic removal: %v", err)
 	}
 }
+
+func TestPruneCreatedContainers(t *testing.T) {
+	st, err := Open(t.TempDir(), false, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name, runID string
+		autoRemove  bool
+		age         time.Duration
+	}{
+		{name: "unstarted"},
+		{name: "unstarted-auto-remove", autoRemove: true},
+		{name: "launching", runID: "launch-token"},
+		{name: "abandoned-launch", runID: "old-token", age: time.Minute},
+	} {
+		_, err := st.CreateContainer(tc.name, ContainerRecord{
+			Created:    time.Now().Add(-tc.age).UTC().Format(time.RFC3339Nano),
+			HostConfig: ContainerHostConfig{AutoRemove: tc.autoRemove},
+			State:      ContainerState{Status: "created", RunID: tc.runID},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, dry := range []bool{true, false} {
+		removed, _, protected, err := st.PruneContainers(dry)
+		if err != nil || len(removed) != 3 || protected != 1 {
+			t.Fatalf("prune dry=%t: removed=%v protected=%d err=%v", dry, removed, protected, err)
+		}
+		for _, c := range removed {
+			if c.BareName() == "launching" {
+				t.Fatal("prune bypassed launch grace period")
+			}
+		}
+		all, err := st.ListContainers(true)
+		want := 1
+		if dry {
+			want = 4
+		}
+		if err != nil || len(all) != want {
+			t.Fatalf("prune dry=%t left %d containers, want %d: %v", dry, len(all), want, err)
+		}
+	}
+}

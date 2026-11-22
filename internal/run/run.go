@@ -143,23 +143,10 @@ func Run(ctx *context.Context, opts Options) (uint32, error) {
 	}
 	defer storeLock.Release()
 
-	imageRef := opts.ID
-	selected := opts.Image
-	if selected == nil {
-		selected, err = ctx.Store.ResolveLocalImage(ctx.Env["QUASIDOCK_REGISTRY"], opts.ID)
-		if err != nil {
-			return 1, err
-		}
-	} else {
-		selected, err = ctx.Store.ResolveLocalImage("", selected.Manifest)
-		if err != nil {
-			return 1, err
-		}
+	selected, err := selectedImage(ctx, opts)
+	if err != nil {
+		return 1, err
 	}
-	if imageRef == "" {
-		imageRef = selected.ID
-	}
-	opts.ID = selected.ID
 
 	lazyLayers, err := lazyLayersOf(ctx, selected.Manifest)
 	if err != nil {
@@ -180,79 +167,21 @@ func Run(ctx *context.Context, opts Options) (uint32, error) {
 		return 1, err
 	}
 
-	fsSpecs := opts.Settings.FilesystemFor(img.Config.Permissions.Filesystem)
-	for _, spec := range fsSpecs {
-		if g := oci.ParseFsGrant(spec); g == nil {
-			img.Release()
-			storeLock.Release()
-			return 1, ctx.Fail("invalid filesystem permission %q", spec)
-		}
-	}
-
-	hostCwd, err := os.Getwd()
-	if err != nil {
-		img.Release()
-		storeLock.Release()
-		return 1, err
-	}
-	if err := validateMountSources(ctx, opts.Mounts, hostCwd); err != nil {
-		img.Release()
-		storeLock.Release()
-		return 1, err
-	}
-
-	var sandboxStr string
-	if opts.Settings.Sandbox != nil {
-		sandboxStr = string(*opts.Settings.Sandbox)
-	}
-	rec := store.ContainerRecord{
-		Image:      selected.Manifest,
-		ImageRef:   imageRef,
-		AppID:      img.Config.ID,
-		AppVersion: img.Config.Version,
-		Args:       append([]string(nil), opts.Args...),
-		Config: store.ContainerConfig{
-			Image:       imageRef,
-			Cmd:         append([]string(nil), opts.Args...),
-			Env:         append([]string(nil), opts.Settings.Env...),
-			Tty:         opts.TTY,
-			AttachStdin: !opts.Detach && opts.Interactive,
-			OpenStdin:   opts.Interactive,
-		},
-		HostConfig: store.ContainerHostConfig{
-			Mounts:       append([]mounts.Spec(nil), opts.Mounts...),
-			AutoRemove:   opts.AutoRemove,
-			Sandbox:      sandboxStr,
-			Network:      opts.Settings.Network,
-			Host:         opts.Settings.Host,
-			Filesystem:   append([]string(nil), opts.Settings.Filesystem...),
-			NoFilesystem: append([]string(nil), opts.Settings.NoFilesystem...),
-			Ports:        append([]string(nil), opts.Settings.Ports...),
-		},
-		RunSpec: store.ContainerRunSpec{
-			Args:       append([]string(nil), opts.Args...),
-			Entrypoint: opts.Entrypoint,
-			Env:        append([]string(nil), opts.Settings.Env...),
-			HostCwd:    hostCwd,
-		},
-	}
-	if opts.Entrypoint != nil {
-		rec.Config.Entrypoint = []string{*opts.Entrypoint}
-	}
-	snapshotInheritedEnv(ctx.Env, &rec.RunSpec)
-	rec.State.RunID, err = newRunID()
+	runID, err := newRunID()
 	if err != nil {
 		img.Release()
 		return 1, err
 	}
 
-	created, err := ctx.Store.CreateContainer(opts.Name, rec)
+	created, err := createContainer(ctx, opts, selected, img.Config, runID)
 	if err != nil {
 		img.Release()
 		storeLock.Release()
 		return 1, err
 	}
+	opts.ID = selected.ID
 	opts.ContainerID = created.ID
+	hostCwd := created.RunSpec.HostCwd
 	op, err := ctx.Store.LockContainer(created.ID)
 	if err != nil {
 		img.Release()

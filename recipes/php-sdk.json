@@ -88,7 +88,7 @@
       ]
     },
     {
-      "name": "zigsaw",
+      "name": "quasidock",
       "sources": [
         { "path": "php-sdk/php.ini", "dest": "php.ini" },
         { "path": "php-sdk/zig-php.h", "dest": "dev/zigsaw/zig-php.h" },

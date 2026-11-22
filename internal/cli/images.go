@@ -250,38 +250,40 @@ func pullImage(ctx *context.Context, image string, isLazy bool) (*oci.Image, err
 }
 
 func runImage(ctx *context.Context, opts run.Options) (uint32, error) {
-	// Exclude GC while selecting or filling the cache. Run reacquires this lock
-	// and checks the selected record before acquiring its process-backed leases.
-	err := func() error {
-		lock, err := ctx.Store.Lock(false)
-		if err != nil {
-			return err
-		}
-		defer lock.Release()
-		ref, err := ctx.Store.ResolveLocalImage(ctx.Env["QUASIDOCK_REGISTRY"], opts.ID)
-		missing := errors.Is(err, store.ErrImageNotFound)
-		if err != nil && !missing {
-			return err
-		}
-		if opts.Pull == "always" || missing && opts.Pull != "never" {
-			if oci.DigestHex(opts.ID) != "" {
-				return errors.New("pull needs a repository reference; a manifest ID is a local selector")
-			}
-			img, err := pullImage(ctx, opts.ID, false)
-			if err != nil {
-				return err
-			}
-			ref = &store.Ref{ID: img.Config.ID, Version: img.Config.Version, Manifest: img.ManifestDigest, Source: img.Source}
-		} else if err != nil {
-			return err
-		}
-		opts.Image = ref
-		return nil
-	}()
+	ref, err := selectContainerImage(ctx, opts)
 	if err != nil {
 		return 1, err
 	}
+	opts.Image = ref
 	return run.Run(ctx, opts)
+}
+
+func selectContainerImage(ctx *context.Context, opts run.Options) (*store.Ref, error) {
+	// Exclude GC while selecting or filling the cache. Run and Create reacquire
+	// this lock and recheck the selected digest before creating the record.
+	lock, err := ctx.Store.Lock(false)
+	if err != nil {
+		return nil, err
+	}
+	defer lock.Release()
+	ref, err := ctx.Store.ResolveLocalImage(ctx.Env["QUASIDOCK_REGISTRY"], opts.ID)
+	missing := errors.Is(err, store.ErrImageNotFound)
+	if err != nil && !missing {
+		return nil, err
+	}
+	if opts.Pull == "always" || missing && opts.Pull != "never" {
+		if oci.DigestHex(opts.ID) != "" {
+			return nil, errors.New("pull needs a repository reference; a manifest ID is a local selector")
+		}
+		img, err := pullImage(ctx, opts.ID, false)
+		if err != nil {
+			return nil, err
+		}
+		ref = &store.Ref{ID: img.Config.ID, Version: img.Config.Version, Manifest: img.ManifestDigest, Source: img.Source}
+	} else if err != nil {
+		return nil, err
+	}
+	return ref, nil
 }
 
 func imageRemove(ctx *context.Context, args []string) error {

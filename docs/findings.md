@@ -311,94 +311,6 @@ mismatches:
 - **Windows Server 2025**: CI runs [`tests/matrix.sh`](../tests/matrix.sh) under
   administrator runners, unlike the unprivileged Windows 11 development tests.
 
-## Prebuilt GUI apps
-
-[Zigsaw iteration 17](../legacy/iteration-17.md), 2026-10-14, Windows 11 26300.
-Unlike CLI tools or GTK builds steered by environment variables, most prebuilt
-Windows desktop applications query Windows directly.
-
-*(Feature update: Quasidock removed desktop shortcuts, file associations, and
-URI scheme registration in 0.2 ([iteration 2](iteration-2.md)), and removed
-`--file` and named user-folder junctions tested by Zigsaw's removed
-`tests/guiapps.sh` in 0.3 ([iteration 3](iteration-3.md)). Container state now
-lives per container under `containers/<id>/data` or explicit `-v`/`--mount`
-targets since 0.6–0.7.)*
-
-### Where Windows sends a program
-
-[`tests/cmd/hostprobe/main.go`](../tests/cmd/hostprobe/main.go) (built via
-`go run ./scripts/build.go hostprobe`) and
-[`tests/hostprobe/app.json`](../tests/hostprobe/app.json) report what
-`SHGetKnownFolderPath`, `GetTempPath2`, `GetUserProfileDirectory`, the Windows
-registry, COM file dialogs, and the clipboard return inside each sandbox. Here
-`data` is the container's data directory (`containers/<id>/data`), and `home` is
-the profile directory created inside it by
-[`internal/environment/environment.go`](../internal/environment/environment.go):
-
-| | soft | low | appcontainer |
-|---|---|---|---|
-| RoamingAppData | data `home\AppData\Roaming` | the same | the same |
-| LocalAppData | data `home\AppData\Local` | the same | the container's folder in data (`...\Packages\quasidock.<id>\AC`) |
-| LocalAppDataLow | real, writable | real, writable | the container's folder in data |
-| Documents, Downloads | data `home\Documents`..., missing | the same | the same |
-| Profile | real, writable | real, read-only | real, unreadable |
-| ProgramData | real, writable | real, read-only | real, unreadable |
-| `GetTempPath2` | data, as TEMP | the same | the container's Temp in data |
-| `GetUserProfileDirectory` | real | real | real |
-| write `HKCU\Software` | ok (the real registry) | denied | denied |
-| write `HKCU\Software\AppDataLow` | ok | ok | denied |
-| read `HKLM` | ok | ok | ok |
-| create the file dialog (COM) | ok | ok | ok |
-| open the clipboard, without a window | ok | ok | denied |
-
-- **AppData follows `USERPROFILE`.** Windows stores default shell folder
-  templates as `%USERPROFILE%\AppData\Roaming` and similar, expanding them using
-  the process environment, so Quasidock's `USERPROFILE` steers Shell API
-  callers alongside env-var callers.
-- **What does not follow `USERPROFILE`**: `LocalLow` (derived from the user
-  profile associated with the token), the real user profile folder itself,
-  `ProgramData`, and `HKCU`. Under `soft` a process can write all of them; at
-  low integrity only `LocalLow` and `HKCU\Software\AppDataLow`; in an
-  AppContainer none of them.
-- **Desktop, Documents, Downloads, and Pictures** also follow `USERPROFILE`
-  into `home`, which does not contain them unless created or mounted. In Notepad++'s
-  Open dialog in Zigsaw iteration 17, only This PC and drives appeared.
-- Container environments intentionally omit `ProgramData`, `ProgramFiles`,
-  `ProgramFiles(x86)`, `PUBLIC`, and `COMPUTERNAME`
-  ([`internal/environment/environment.go`](../internal/environment/environment.go)).
-  None of the tested GUI apps missed them, and omitting `ProgramFiles` keeps
-  builds from probing host installations (such as CMake searching host
-  directories).
-
-### Four apps
-
-Measured in [Zigsaw iteration 17](../legacy/iteration-17.md) using upstream
-archives and Zigsaw's then-supported `--file` launcher against 7-Zip 26.04's
-file manager (`7zFM`), Notepad++ 8.9.8.1, SumatraPDF 3.6.1, and VLC 3.0.24
-(note [`recipes/7zip.json`](../recipes/7zip.json) now packages 7-Zip 26.05 with
-CLI entrypoint `7z.exe` while retaining `"registry": ["Software\\7-Zip"]`):
-
-| App | soft | appcontainer | low | Its settings |
-|---|---|---|---|---|
-| 7-Zip 26.04's file manager | ok | opens its root view instead (known gap) | ok | `HKCU\Software\7-Zip`: real registry under `soft` without HKCU persistence; kept with container data and saved in all three sandboxes once registry persistence was added ([the registry](#the-registry)) |
-| Notepad++ 8.9.8.1 | ok | ok | ok | data, `AppData\Roaming\Notepad++` |
-| SumatraPDF 3.6.1 | ok | ok | ok | data, `AppData\Local\SumatraPDF` (in an AppContainer, the container's folder) |
-| VLC 3.0.24 | ok | ok | ok | data, `AppData\Roaming\vlc` |
-| VLC decoding a clip without a window | ok | ok | ok | |
-
-- **Portable markers and AppData fallbacks**: recipes remove files that make
-  apps write beside their read-only binaries (such as Notepad++'s
-  `doLocalConf.xml`). SumatraPDF falls back to AppData automatically when its
-  install folder is read-only.
-- **7-Zip's file manager in an AppContainer** opened its root view instead of the
-  archive because it walks the path from the drive root down, hitting the
-  AppContainer ancestor traversal restriction.
-- **Taskbar buttons**: at low integrity and in AppContainers, VLC's calls to add
-  buttons to its taskbar icon failed with `E_ACCESSDENIED` because Explorer runs
-  at medium integrity.
-- Upstream SHA-256 hashes were pinned for Notepad++ and VLC; all four recipes
-  built bit-identically across three stores in Zigsaw.
-
 ## The user's folders
 
 [Zigsaw iteration 18](../legacy/iteration-18.md), 2026-10-14, Windows 11 26300.
@@ -487,200 +399,6 @@ Inside sandboxes on prepared vs unprepared `HKCU` keys:
   sandboxes because it creates keys one level at a time.
   [`recipes/7zip.json`](../recipes/7zip.json) (26.05, CLI `7z.exe`) still
   declares `"registry": ["Software\\7-Zip"]`.
-
-## PHP extensions without MSVC
-
-[Zigsaw iteration 23](../legacy/iteration-23.md), 2026-10-16, Windows 11 26300,
-originally tested php.net's PHP 8.5.11 x64 builds (NTS and TS, "vs17" MSVC
-14.44) and devel packs against Zig 0.16.0 (Clang 21.1), Visual Studio 18
-Insiders (MSVC 14.44 and 14.51), and MSYS2 GCC 16.1 / binutils 2.46. Current
-[`recipes/php-sdk.json`](../recipes/php-sdk.json) and
-[`recipes/php.json`](../recipes/php.json) build PHP 8.5.12-1 with Zig 0.17.0.
-
-*(Feature update: Quasidock removed extension points and `--extension` in 0.3
-([iteration 3](iteration-3.md)), and later removed the seven standalone `php-*`
-extension recipes (`php-apcu`, `php-igbinary`, `php-redis`, `php-ssh2`,
-`php-xdebug`, `php-yaml`, `php-zstd`).
-[`recipes/php-sdk.json`](../recipes/php-sdk.json) still ships `php-ext`
-([`recipes/php-sdk/php-ext.php`](../recipes/php-sdk/php-ext.php)), and apps can
-still build and load custom PHP extensions via `from`, as in
-[`tests/build/php/app.json.in`](../tests/build/php/app.json.in) and
-[`tests/php/consumer.json.in`](../tests/php/consumer.json.in).)*
-
-**With `zig`, yes** — [`recipes/php-sdk/php-ext.php`](../recipes/php-sdk/php-ext.php)
-supplies `-fms-extensions`, `zig-php.h`, `zig-php.c`, and `-Wno-date-time` (see
-also [the recipes guide](recipes.md)):
-
-| Without | What happens |
-|---|---|
-| `-fms-extensions` | `zend_atomic.h` calls `_InterlockedExchange8`, undeclared; and `__declspec(thread)` (`TSRM_TLS` in TS builds) is not thread-local |
-| `_PID_T_` | `php.h`'s `typedef int pid_t` clashes with MinGW's 64-bit `pid_t` |
-| `ZEND_FASTCALL` as `__vectorcall` | 340 of `php8.dll`'s exports are `__vectorcall` (`_emalloc@@8`), causing link failures on all of them |
-| `HAVE_BUILTIN_CONSTANT_P` | link fails on `_emalloc_40@@0`: size-class allocators only exist where PHP was built with `__builtin_constant_p` |
-| `_TIMEZONE_DEFINED` | `struct timezone` is defined twice (`win32/time.h` vs MinGW `time.h`); Xdebug fails to compile |
-| `zig-php.c` | Xdebug fails to link `zend_string_equal_val@@16`, which MSVC builds inline |
-| `P_tmpdir` | Xdebug defaults temp output to `\` (drive root) rather than `C:\Windows\Temp`, failing 52 tests when run from `C:` |
-
-**Compared with MSVC 14.44** (measured in Zigsaw iteration 23 on PHP 8.5.11):
-
-| | zig | MSVC 14.44 |
-|---|---|---|
-| Test extension: classes, objects, callbacks, exceptions, streams, ini, `phpinfo()`, `zend_try` bailout (NTS & TS) | all 24 checks pass (27 checks now in [`tests/build.sh`](../tests/build.sh)) | the same |
-| Sizes and offsets of 123 structs and fields (`zval`, `zend_class_entry`, executor globals, `php_stream`...) | | identical except `long double` (`16` vs `8` bytes), used only by `zend_max_align_t` to size caller-allocated buffers |
-| APCu 5.1.28 tests | 56 pass | the same |
-| Xdebug 3.5.3 tests (own runner) | 745 pass, 148 skipped | the same |
-| Extension imports | UCRT (`api-ms-win-crt-*`), like `php8.dll` | UCRT plus `VCRUNTIME140.dll` |
-
-Xdebug's `remote_log-win` test only passes when
-`C:\Windows\Temp\remote-log-win.txt` is initially absent (the test unlinks it
-while Xdebug holds it open, leaving it behind for subsequent runs).
-
-**PHP checks the PE linker version.** It refuses any extension whose PE header
-records a newer linker than core (`Can't load module ... as it's linked with
-14.51, but the core is linked with 14.44`), so Visual Studio 18's default
-toolset produces DLLs rejected by PHP 8.5. `lld` writes linker version `14.0`,
-which passes.
-
-**GCC and GNU ld do not fit.** GCC lacks `__vectorcall` (requiring import-lib
-aliasing to `name@@bytes` plus stand-ins for `__assume` and 8-bit
-`_Interlocked*` intrinsics), GNU `ld` writes linker version `2.46` (rejected
-unless binary-patched to `14.0`), and GCC warns on `__declspec(thread)` and
-ignores it, turning `TSRMLS_CACHE` into a single shared variable across threads.
-
-**Running PHP.** Official Windows builds read `php.ini` from `PHPRC` before
-`HKLM\SOFTWARE\PHP` keys, executable dir, or Windows dir. Default
-`extension_dir` is `C:\php\ext`. `${VAR}` inside `php.ini` expands environment
-variables, and `PHP_INI_SCAN_DIR` takes `;`-separated directories. PHP streams
-HTTPS checks Windows' certificate stores, whereas `curl` uses OpenSSL unless
-given `curl.cainfo` or `CURLSSLOPT_NATIVE_CA`. PHP finds the Visual C++
-redistributable in `System32` across all three sandboxes and loads extension DLLs
-from other layers (`from`). Xdebug's step debugger reaches `127.0.0.1` in `soft`
-and `low`, not in `appcontainer`.
-
-`run-tests.php` parses `TEST_PHP_ARGS` both as its own flags and passes them on,
-loading `-d extension=...` twice ("Module is already loaded"), and silently
-exits 0 when given a nonexistent test path.
-
-### With the libraries PHP ships
-
-[Zigsaw iteration 24](../legacy/iteration-24.md), 2026-10-16, on the same PHP
-8.5.11 toolchain (`recipes/php-sdk.json` has since updated to PHP 8.5.12-1 with
-deps such as OpenSSL 3.5.9 and GLib 2.90.1):
-
-- **PHP ships third-party libraries two ways.** `php8.dll` statically embeds
-  and exports zlib (44 symbols), libxml2 (~1,440 `xml*`/`html*` symbols), and
-  libiconv (`libiconv*`). OpenSSL, libssh2, SQLite, libsodium, nghttp2, libpq,
-  ICU, brotli, GLib, enchant, and Cyrus SASL ship as DLLs beside `php.exe`.
-- **Headers and import libraries** come from php.net's `deps` archives
-  (`downloads.php.net/~windows/php-sdk/deps/vs17/x64/`). Every DLL matches
-  PHP's release zip byte for byte, static libraries are plain COFF without
-  `/GL`, and libxml2 headers include `iconv.h`.
-- **`zig` links directly against MSVC `.lib` import libraries**
-  (`libssh2.lib`, `libcrypto.lib`, and `php8.lib` for zlib/libxml2/iconv
-  symbols), avoiding `zlib_a.lib`.
-- **Extensions linked this way matched MSVC 14.44 test-by-test** in Zigsaw
-  iteration 24:
-
-| | zig | MSVC 14.44 |
-|---|---|---|
-| Xdebug 3.5.3 with zlib compression | 744 pass | the same |
-| igbinary 3.2.17RC1 | 134 pass, 17 skipped | the same |
-| ssh2 1.5.0 against Go SSH server ([`tests/php/servers`](../tests/php/servers)) | 14 of 15 (`ssh2_send_signal` fails on Git Bash `SIGINT`) | the same |
-| PhpRedis 6.3.0 + igbinary against `miniredis` | 108 pass, 46 fail, 98 skipped | the same, test by test |
-
-- **`config.w32` requirements**: `get_define("PHPDLL")` (checked by igbinary),
-  `PHP_PHP_BUILD`, `SETUP_OPENSSL`, and header hygiene (`clang` errors where
-  MSVC only warns `C4013` on undeclared `usleep`/`gettimeofday` in PhpRedis).
-  igbinary 3.2.17RC1 (rather than 3.2.16, which included removed
-  `php_smart_string.h`) fixes PHP 8.5 compatibility, and `_MSC_VER` checks had
-  to be patched for Clang.
-- **Cross-extension DLL imports** (such as PhpRedis importing
-  `igbinary_serialize` from `php_igbinary.dll`): Windows matches DLL imports by
-  already-loaded module name, so `php_igbinary.dll` must load first in
-  `php.ini`, otherwise Windows reports only "The specified module could not be
-  found".
-- **PHP extension build ID**: `php -i` reports `"API20250925,NTS,VS17"`
-  against which PHP validates extension DLLs (previously used by Zigsaw's
-  removed PHP extension point).
-
-### With libraries PHP doesn't ship
-
-[Zigsaw iteration 25](../legacy/iteration-25.md), 2026-10-16:
-
-- **PhpRedis** has no Windows `config.w32` options for zstd, lz4, or lzf (only
-  `config.m4`). Tests therefore used PECL `yaml` 2.3.0 (`libyaml`) and `zstd`
-  0.18.0 (`libzstd`).
-- **`libyaml` 0.2.5's release tarball** contains `CMakeLists.txt` without
-  `cmake/config.h.in` and `yamlConfig.cmake.in` (GitHub's tag archive has them),
-  and CMake 4 needs `-DCMAKE_POLICY_VERSION_MINIMUM=3.5`.
-- **`CHECK_LIB` return value**: `config.w32` returns the matched library path
-  rather than a boolean; `yaml` inspects it for `_a.lib` to decide whether to
-  define `YAML_DECLARE_STATIC`.
-- **Static libraries built with `zig`** passed identically to php.net DLLs in
-  Zigsaw iteration 25:
-
-| | zig, with static library | php.net build |
-|---|---|---|
-| `yaml` 2.3.0 tests | 76 pass | the same |
-| `zstd` 0.18.0 tests | 61 pass, 5 skipped | the same |
-
-### PHP's `is_writable()` at low integrity
-
-At low integrity, `is_writable()` and `is_writeable()` return `false` on every
-file and directory — even low-labelled container `data`, `TEMP`, and writable
-host grants that PHP can actually write to. `tsrm_win32_access` in
-`TSRM/tsrm_win32.c` queries `GetFileSecurityW` for owner, group, and DACL,
-omitting `LABEL_SECURITY_INFORMATION`; `AccessCheck` treats a security
-descriptor without a label as medium integrity and denies write access to a
-low token.
-
-Code that checks `is_writable()` before writing fails at low integrity:
-[`recipes/kanboard.json`](../recipes/kanboard.json) therefore sets
-`"sandbox": "soft"` and documents this in `permissions.unsupported.low`.
-Composer, which attempts writes directly, works under `low`.
-
-### PHP 8.5.12's memory limit and an extension's `zend_try`
-
-Starting in PHP 8.5.12 (`Zend/zend_alloc.c` gained 405 lines), exceeding
-`memory_limit` queues a delayed error raised at the next VM interrupt up to a
-hard cap instead of bailing out immediately, so an enclosing C extension
-`zend_try`/`zend_catch` does not run and the fatal trace loses PHP frames:
-
-| Fatal error inside `zprobe_guard` closure | 8.5.11 | 8.5.12-1 |
-|---|---|---|
-| Duplicate class declaration | caught, 7 frames | caught, 7 frames |
-| `trigger_error(..., E_USER_ERROR)` | caught, 7 frames | caught, 7 frames |
-| `str_repeat` past `memory_limit` | caught, 7 frames | **not caught, 2 frames** |
-| Array growing past `memory_limit` | caught, 7 frames | **not caught, 2 frames** |
-
-In [`tests/build.sh`](../tests/build.sh) (`SECTIONS=php tests/build.sh`), the
-extension bailout check now uses a duplicate class declaration (surfaced in
-[Zigsaw iteration 69](../legacy/iteration-69.md) when the test's PHP version
-number was fixed). Shutdown handlers still execute; the delayed bailout matches
-upstream Windows builds.
-
-### Composer and Kanboard
-
-- **Kanboard's release tarball excludes `composer.json` and `composer.lock`**
-  (`export-ignore`) and ships pre-installed `vendor\`. Fetching those two files
-  from the tag commit in [`recipes/kanboard.json`](../recipes/kanboard.json)
-  and running Composer's vendor step reproduced 18 packages in 30 s (16 s with
-  warm Composer cache) across separate stores in Zigsaw.
-- **Composer output vs Kanboard's tarball `vendor\`**: all overlapping code
-  files matched byte for byte, differing only in Composer's generated
-  autoloader (`autoload.php`, `composer\`) and 41 package metadata/test files
-  (`composer.json`, `README.md`, `.gitignore`) stripped by upstream packaging.
-- **PHP's built-in web server ignores `.htaccess` and `web.config`**, which
-  normally hide Kanboard's `app\` and `data\` directories.
-  [`recipes/kanboard/router.php`](../recipes/kanboard/router.php) refuses
-  requests for `app\`, `libs\`, `vendor\`, and `cli`, while Kanboard's data
-  lives in container `data`.
-- **Browser launch isolation**: opening a URL via Explorer lets the host shell
-  launch the browser outside the server container's Job Object so closing the
-  browser does not wait on the server.
-- **Composer `diagnose`**: finds tools placed on container `PATH` (such as `7z`
-  if `7zip` is included via `from`; Quasidock removed standalone exports in
-  [iteration 2](iteration-2.md)).
 
 ## Projects with their own recipe
 
@@ -1051,11 +769,6 @@ Probed with `java Probe.java` on JDK and compiled bytecode on JRE:
   32.4 and 33.5 s against 31.2 and 32.9 s). Quasidock sets `CGO_ENABLED=0` and
   `GOAMD64=v1` in [scripts/build.go](../scripts/build.go).
 
-- **VLC sometimes starts playing 30 s late.** In one Zigsaw `tests/guiapps.sh`
-  run (a suite removed in Quasidock [iteration 2](iteration-2.md)), VLC's window
-  appeared immediately but took 30.7 s to name and start playing the clip; 13
-  manual runs and 5 suite runs took 0.7–1.2 s. Cause not found.
-
 - **Fixed: `soft` runs could modify installed apps.** Python wrote a file into
   its shared deployed layer, breaking the image digest. `acl.Protect` in
   [internal/acl/acl.go](../internal/acl/acl.go) adds a deny-write-and-delete
@@ -1120,28 +833,6 @@ IDs updated for Quasidock):
   took 55 min, `gettext` 39 min, `gnumeric` 27 min, and `rnote` 15 min (on 16
   CPUs locally, `gtk4-sdk` took 15 min).
 
-## gettext's build time (Zigsaw iteration 38)
-
-Measured during [Zigsaw iteration 38](../legacy/iteration-38.md) (before
-`gettext` later moved to `llvm-mingw` in Zigsaw iteration 63;
-[recipes/gettext.json](../recipes/gettext.json) still uses the `pmake.sh`
-wrapper):
-
-- **BusyBox's `make` runs one command at a time.** Its help notes
-  `-j NUM   Jobs to run in parallel (not implemented)`, so `make -j"$(nproc)"`
-  ran serially.
-
-- **Automake `.dirstamp` rules invalidate pre-compiled objects.** Objects
-  compiled ahead of `make` had older timestamps than the `.dirstamp` files
-  `make` created afterwards, causing `make` to recompile 380 of `gettext`'s
-  1,400 files until the wrapper pre-created `.dirstamp` files first.
-
-- **`configure` under BusyBox misses `install`.** Without an `install` program
-  detected on `PATH`, `configure` falls back to automake's `install-sh` shell
-  script, starting several processes per file (8.5 min for ~2,200 files vs
-  ~4.5 min using BusyBox's `install` via `INSTALL`). Both changes preserved
-  byte-identical output files.
-
 ## Qt 6 with zig (Zigsaw iteration 39)
 
 Discovered in [Zigsaw iteration 39](../legacy/iteration-39.md) when Qt 6 first
@@ -1198,7 +889,7 @@ avoided several `zig` workarounds):
   another build, CMake failed launching Ninja (`0xc0000142`,
   `STATUS_DLL_INIT_FAILED`), not reproduced later.
 
-## CMake's search paths, and Qt Quick (Zigsaw iteration 40)
+## CMake's search paths, and Qt Quick
 
 Measured during [Zigsaw iteration 40](../legacy/iteration-40.md):
 
@@ -1243,22 +934,7 @@ Measured during [Zigsaw iteration 40](../legacy/iteration-40.md):
   `qmlcachegen` pass). See [Qt on llvm-mingw](#qt-on-llvm-mingw-zigsaw-iteration-62)
   for current toolchain timings.
 
-## `zig` hanging on a console
-
-When Zig 0.16 (`zig` 0.17 upstream has the same code) writes to an interactive
-console, a worker thread draws `std.Progress` 200 ms into the process: it
-takes the stderr lock, queries terminal capabilities (which can fail as
-canceled), and `tryLockStderr` returns the error without releasing the lock.
-Any short compile (e.g., OpenSSL via `xargs -P`) that exits around 200 ms
-cancels that check and deadlocks in `std.process.cleanExit` (reproduced in 26
-of 3,201 console runs exiting at 198–214 ms; masked if `NO_COLOR` is set or
-stderr is redirected).
-
-[internal/builder/builder.go](../internal/builder/builder.go) sets
-`ZIG_PROGRESS=off` for all recipe build commands (which Zig cannot parse as a
-handle, disabling the progress thread entirely).
-
-## TeX Live and Ghostscript (Zigsaw iteration 43)
+## TeX Live and Ghostscript
 
 Found in [Zigsaw iteration 43](../legacy/iteration-43.md):
 
@@ -1411,31 +1087,6 @@ against local `zot` via [tests/oci.sh](../tests/oci.sh) (recipes updated to Go
   fails with `Access is denied` inside an AppContainer (`oras push`, remote
   registry commands, and `cosign` key reads work).
 
-## Zig 0.17 (Zigsaw iteration 58)
-
-Measured in [Zigsaw iteration 58](../legacy/iteration-58.md) when the `zig`
-recipe ([recipes/zig.json](../recipes/zig.json)) moved from 0.16.0 to 0.17.0
-(LLVM/Clang 22.1.8; note Quasidock itself is written in Go, so Zigsaw's
-compiler API changes in `.zig` files no longer apply):
-
-- **Deterministic deflate compatibility.** Zigsaw verified Zig 0.17.0's deflate
-  (level 6, 64 KiB buffers) matched 0.16.0's byte for byte across `zig`,
-  `mingit`, `gtk4-sdk`, and `texlive`. (Quasidock compresses layers with Go's
-  `compress/gzip` / `internal/estargz` in [internal/format/format.go](../internal/format/format.go).)
-
-- **`zig rc` builds `resinator` on first run.** `zig rc` is no longer prebuilt
-  in the compiler binary; its first invocation compiles `resinator` offline
-  into the global cache (~41 s once per store, instant thereafter).
-
-- **`zig cc` reproducibility and cgo.** `zig cc -O2 -s -Wl,-Brepro`, `ar`,
-  `ranlib`, `as`, and `dlltool` match 0.16 behavior; `zig cc -###` still exits
-  1, so cgo builds require `-buildid=` (tested in
-  [tests/build.sh](../tests/build.sh)).
-
-- **ZLS 0.17.0.** Requires `zig:0.17.0`; `zig build --fetch` populates
-  `zig-pkg` (marking `tracy` lazy) and `zig build --system zig-pkg` builds
-  offline in ~3 min ([recipes/zls.json](../recipes/zls.json)).
-
 ## The small chains on Zig 0.17 (Zigsaw iteration 60)
 
 Measured in [Zigsaw iteration 60](../legacy/iteration-60.md) on Windows 11
@@ -1458,7 +1109,7 @@ Measured in [Zigsaw iteration 60](../legacy/iteration-60.md) on Windows 11
   `ghostscript`, and `php-sdk` build cleanly on `zig:0.17.0`; note standalone
   PHP extension recipes were later removed in Quasidock.)
 
-## GDAL and PostgreSQL on `llvm-mingw` (Zigsaw iteration 61)
+## GDAL and PostgreSQL on `llvm-mingw`
 
 In [Zigsaw iteration 61](../legacy/iteration-61.md), `gdal-sdk`, `gdal`,
 `postgresql-sdk`, and `postgresql` moved from `zig` 0.16 to
@@ -1592,8 +1243,7 @@ Measured in [Zigsaw iteration 63](../legacy/iteration-63.md) moving `gettext`,
 
 ## Links, and what runs reach
 
-Tested in [Zigsaw iteration 68](../legacy/iteration-68.md) and
-[tests/reach.sh](../tests/reach.sh).
+Tested in [tests/reach.sh](../tests/reach.sh).
 
 ### A `quasidock` started from inside a run
 
@@ -1803,8 +1453,8 @@ runs at Medium Mandatory Level, and fails `net session`) on Windows 11 26300
 
 ## Signing with cosign
 
-Evaluated in [Zigsaw iteration 74](../legacy/iteration-74.md) using `cosign`
-3.1.4 directly from the store (see [scripts/sign-lib.sh](../scripts/sign-lib.sh),
+Evaluated using `cosign`3.1.4 directly from the store
+(see [scripts/sign-lib.sh](../scripts/sign-lib.sh),
 [scripts/sign-images.sh](../scripts/sign-images.sh), and
 [tests/signing.sh](../tests/signing.sh)):
 
@@ -1831,42 +1481,6 @@ Evaluated in [Zigsaw iteration 74](../legacy/iteration-74.md) using `cosign`
 - **MSYS2 `curl` trap in test scripts.** Under `MSYS_NO_PATHCONV=1`,
   `curl -o /dev/null` treats `/dev/null` as a Windows path and fails; use
   `-o NUL` with `-f`.
-
-## Defender and exact bytes
-
-In [Zigsaw iteration 70](../legacy/iteration-70.md), standard-user testing
-caught Defender blocking `0.69.0` (`Trojan:Win32/Bearfoos.A!ml`, threat ID
-`2147731250`), while the exact same source tree with the version changed to
-`0.70.0` (or unstripped) scanned and ran clean:
-
-| Zigsaw build (`0.69.0` experiment) | Scanned and run |
-|---|---|
-| `v0.69.0` & `v0.68.0` GitHub releases | clean; `pull`, 3 sandboxes, `rm` ran cleanly |
-| Working tree built as `0.69.0` | **flagged** by `MpCmdRun` (admin & standard user) |
-| Same files with version `0.70.0` | clean, during scan and run |
-| Working tree unstripped (debug info) | clean |
-
-Only changing the bytes mattered—not program behavior. Quasidock's release
-workflow ([.github/workflows/release.yml](../.github/workflows/release.yml))
-and [tests/standard-user.sh](../tests/standard-user.sh) run
-[scripts/defender-scan.sh](../scripts/defender-scan.sh) against all three
-packaged binaries (`quasidock.exe`, `quasidock-relay.exe`,
-`quasidock-host.exe`) before publishing so Defender blocks are caught prior to
-release. (Earlier notes saying `Get-MpPreference` suppressed local scans did
-not hold for later scans, which did catch `0.69.0`.)
-
-### A release's bytes, and line endings
-
-Zigsaw `v0.69.0` differed by 840 bytes between local and CI builds because the
-manifest files lacked a `.gitattributes` LF rule and `core.autocrlf=true` on
-GitHub runners turned LF into CRLF. Quasidock embeds its manifest via
-[internal/winres/winres.go](../internal/winres/winres.go) (`TimeDateStamp = 0`)
-and pins `internal/winres/testdata/* text eol=lf` alongside `LICENSE` and `*.ps1`
-in [.gitattributes](../.gitattributes). `scripts/package.sh` builds with
-`--strip` (`-trimpath -ldflags=-s -w`, `GOAMD64=v1`), and
-[scripts/sign-release.sh](../scripts/sign-release.sh) verifies a byte-identical
-rebuild of all three binaries against the Reproduce workflow before signing
-`SHA256SUMS`.
 
 ## An empty macro in BusyBox's `make`
 
@@ -2027,23 +1641,3 @@ and [iteration 78](../legacy/iteration-78.md), ~5–10 MB/s from `ghcr.io`):
   initializes and exits `0` ([iteration 2](iteration-2.md)), leaving live
   interactive Ctrl+C delivery untested end to end.
 - **Tools with fixed install paths or installers.**
-
-## Options for enforcement
-
-The `soft` sandbox covers reproducibility. Whether Quasidock needs a stricter
-default sandbox for general toolchains led to three options:
-
-1. **Keep `appcontainer` opt-in for self-contained tools.** Document which
-   tools work; no extra infrastructure needed.
-2. **Low-integrity sandbox (`--sandbox=low`, the default since Zigsaw
-   iteration 54).** Integrity labeling works without admin rights: it blocks
-   writes outside `AppData\LocalLow`, `HKCU\Software\AppDataLow`, container
-   data, and granted `--filesystem` paths while keeping reads and network open
-   and preserving drive letters and `lstat("C:\\")`
-   ([Zigsaw iteration 8](#a-low-integrity-sandbox), [above](#the-low-sandbox)).
-   Paths that cannot safely be labeled low (user profile, drive roots) become
-   read-only for the run instead of failing outright.
-3. **One-time admin setup for AppContainer.** Granting
-   `ALL APPLICATION PACKAGES` read attributes on `C:\` would resolve Node
-   lookup failures, but drive-letter conversion restrictions would still break
-   several tools, so admin setup alone does not make `appcontainer` universal.

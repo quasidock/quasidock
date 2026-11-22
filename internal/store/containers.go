@@ -599,8 +599,9 @@ func (s *Store) PruneContainers(dryRun bool) ([]ContainerRecord, uint64, int, er
 				running++
 				return
 			}
-			// Give a newly created container a short grace window while its detached supervisor initializes.
-			if c.State.Status == "created" && !c.State.Launched && c.State.Error == "" && c.State.FinishedAt == "" {
+			// Protect an imminent launch while its supervisor initializes. An
+			// intentionally unstarted container has no launch token and is eligible now.
+			if c.State.Status == "created" && c.State.RunID != "" && !c.State.Launched && c.State.Error == "" && c.State.FinishedAt == "" {
 				if createdAt, err := time.Parse(time.RFC3339Nano, c.Created); err == nil && now.Sub(createdAt) < 10*time.Second {
 					running++
 					return

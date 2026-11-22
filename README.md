@@ -3,7 +3,7 @@
 Quasidock runs sandboxed Windows programs from OCI-distributed images using a
 Docker-style CLI.
 
-Version **0.10** supports Docker-style container lifecycle management (`run`, `ps`,
+Version **0.10** supports Docker-style container lifecycle management (`create`, `run`, `ps`,
 `logs`, `exec`, `start`, `restart`, `kill`, `stop`, `rm`, `inspect`, `prune`), per-container isolated data, image
 management, named volumes, local directory bind mounts, and Quasidock images for
 `windows/amd64`. Supported Node.js, Go, Python, PHP CLI, Composer, and Ubuntu/Debian Dockerfiles, including
@@ -86,7 +86,7 @@ each shared layer once within an image.
 
 `rmi repository:tag` untags that reference. `rmi sha256:...` removes the manifest
 and all its local names; a bare app ID removes its current default image.
-Images referenced by running or exited containers cannot be removed (untagging a
+Images referenced by created, running, or exited containers cannot be removed (untagging a
 secondary alias succeeds; removing the final reference requires removing those
 containers first). Shared layers remain while other images, containers, or
 builds need them. `quasidock prune` collects stopped containers first, then
@@ -97,7 +97,8 @@ removes leftover legacy app data once unused.
 
 | Command | Alias | Purpose |
 |---|---|---|
-| `container ls` | `ps` | List running containers (`-a` includes exited; `-q` prints IDs) |
+| `container create` | `create` | Save a new container without starting it; print its full ID |
+| `container ls` | `ps` | List running containers (`-a` includes created and exited; `-q` prints IDs) |
 | `container inspect` | `inspect` | Container JSON metadata or `-f TEMPLATE` (`inspect` falls back to images) |
 | `container logs` | `logs` | Fetch captured output (`-f`/`--follow`, `-n`/`--tail LINES`) |
 | `container exec` | `exec` | Run another command in a running container (`-d`, `-i`, `-t`, `-e`, `-w`) |
@@ -109,8 +110,23 @@ removes leftover legacy app data once unused.
 | `container prune` | — | Remove all stopped containers |
 
 ```text
+quasidock create [OPTIONS] IMAGE [COMMAND] [ARG...]
 quasidock run [OPTIONS] IMAGE [COMMAND] [ARG...]
 ```
+
+`create` saves the image digest and launch configuration, allocates private data,
+and prints the full container ID without starting the program. It supports the
+same configuration options as `run`, except `-d` / `--detach`. Created containers
+appear as `Created` in `ps -a`; their logs are empty until the first start.
+`-i` and `-t` save preferences, while `start` launches in the background without
+attaching stdin. `--rm` keeps an unstarted container and a failed-start record,
+then removes it after a successful launch exits. `rm` and `container prune` can
+remove created containers immediately.
+
+Creation validates options, image metadata, and mount sources. Executable lookup
+and runtime-dependent checks happen at start. Named volumes are created or
+referenced at creation, while mount attachment, sandbox setup, registry sessions,
+and service allocation wait until start.
 
 Without a command or `--entrypoint`, the container runs the image's `entrypoint`
 followed by its default `cmd`. Passing a `COMMAND` after `IMAGE` resolves that
@@ -123,6 +139,10 @@ clears default `cmd`, and passes the remaining arguments after `IMAGE`.
 
 ```powershell
 quasidock run --rm node node.exe -e 'console.log(process.version)'
+quasidock create --name node-later node node.exe -e 'console.log(process.version)'
+quasidock start node-later
+quasidock logs node-later
+quasidock rm node-later
 quasidock run -d --name node-demo node node.exe -e 'setInterval(() => {}, 1000)'
 quasidock logs node-demo
 quasidock exec node-demo node.exe --version
@@ -136,18 +156,19 @@ quasidock run --entrypoint=node.exe node -e 'console.log(process.version)'
 quasidock run --pull=never -e EXAMPLE=value node node.exe -e 'console.log(process.env.EXAMPLE)'
 ```
 
-Run options stop at IMAGE; subsequent flags belong to the application. Single-letter
-boolean flags before IMAGE can be combined (for example `-it`, `-dit`).
+Run and create options stop at IMAGE; subsequent flags belong to the application.
+Single-letter boolean flags before IMAGE can be combined (for example `-it`, or
+`-dit` with `run`).
 
 | Option | Behavior |
 |---|---|
 | `--name NAME` | Assign a unique container name (`[a-zA-Z0-9][a-zA-Z0-9_.-]*`) |
 | `--rm` | Delete the container and its private data on exit; preserve mounted contents and mounted registry state |
-| `-d`, `--detach` | Supervise the container in the background and print its 64-hex container ID |
+| `-d`, `--detach` | `run` only: supervise the container in the background and print its 64-hex container ID |
 | `-i`, `--interactive` | Attach host stdin when running in the foreground (otherwise stdin is `\\.\NUL`) |
 | `-t`, `--tty` | Record TTY preference on container metadata (pipe-backed streams; no ConPTY yet) |
 | `--pull=missing` | Default: use the cached selection, or pull if missing |
-| `--pull=always` | Pull before running; a failed pull fails the run |
+| `--pull=always` | Pull before creating or running; a failed pull fails the command |
 | `--pull=never` | Use only local images; a missing image is an error |
 | `-e NAME=VALUE`, `--env NAME=VALUE` | Set a variable; the last setting wins |
 | `-e NAME`, `--env NAME` | Inherit a host variable, or unset it if absent |
@@ -155,9 +176,10 @@ boolean flags before IMAGE can be combined (for example `-it`, `-dit`).
 | `--mount type=volume\|bind,source=SOURCE,target=TARGET` | Explicitly select a writable directory mount |
 | `--verbose` | Print runtime diagnostics |
 
-Each `run` allocates an isolated container under `containers/<id>/` with its own
-`state.json`, `container.log`, and `data/` directory (`${data}`, `HOME`, `APPDATA`,
-`LOCALAPPDATA`, `TEMP`, cache, and per-container HKCU hive). Multiple containers—
+Each `run` or `create` allocates an isolated container under `containers/<id>/`
+with its own `state.json` and `data/` directory. Launch creates `container.log`
+and prepares `${data}`, `HOME`, `APPDATA`, `LOCALAPPDATA`, `TEMP`, cache, and the
+per-container HKCU hive. Multiple containers—
 including different versions of the same app—can run concurrently without sharing
 state unless mounted storage is explicitly shared. Containers persist after exit
 unless `--rm` is set. Docker-style `-p` port publishing remains deferred.
@@ -188,7 +210,7 @@ for executable lookup, without substituting the image's entrypoint or default
 command. Shell expressions require an explicit shell such as `cmd.exe /c`.
 
 Exec inherits the environment and working directory from container startup,
-including saved `run -e` values. Repeatable `-e` / `--env NAME[=VALUE]` overrides
+including saved `run -e` or `create -e` values. Repeatable `-e` / `--env NAME[=VALUE]` overrides
 only this command; a bare name inherits the exec caller's value or removes the
 variable if absent. `-w` / `--workdir DIR` selects an existing directory, supports
 placeholders such as `${data}`, and resolves relative directories against the
@@ -204,7 +226,7 @@ ends its remaining descendants. All exec processes end when the main command
 exits or the container stops, restarts, or is removed. Older running supervisors
 must be stopped and started with the new binary before they support exec.
 
-Values inherited with `run -e NAME`, including absent variables, are saved when
+Values inherited with `run -e NAME` or `create -e NAME`, including absent variables, are saved when
 the container is created and reused across starts. Existing stopped records from
 older binaries capture missing snapshots on their first start. Finish active
 containers before replacing the binary: live supervisors from older binaries use

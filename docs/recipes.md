@@ -141,8 +141,8 @@ container runtime (for `entrypoint`, `cmd`, `path`, and `env`):
 
 - `${app}`: the image's own deployment directory.
 - `${data}`: the container's isolated data directory (`containers/<id>/data`),
-  created fresh on each `quasidock run` (and deleted on exit when `--rm` is
-  passed).
+  allocated fresh by `quasidock create` or `quasidock run` and reused by `start`
+  and `restart` (deleted after a successful launch exits when `--rm` is passed).
 - `${cache}`: `${data}\cache` at container runtime; `B:\cache\<tool id>` for
   tool images during `quasidock build`.
 - `${roots}`: path to a PEM bundle of trusted root CAs from the Windows store,

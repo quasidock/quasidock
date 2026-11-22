@@ -30,6 +30,8 @@ import (
 const usage = `usage: quasidock [--verbose] <command> [options]
 
 Docker-style container commands:
+  container create | create [options] IMAGE [COMMAND] [ARG...]
+                                       create a container without starting it; print its ID
   container ls | ps [-a|--all] [-q|--quiet]
                                        list running containers (or all with -a)
   container inspect | inspect [-f TEMPLATE] NAME|ID [NAME|ID...]
@@ -98,7 +100,7 @@ exec options (before CONTAINER):
   -w, --workdir DIR                   existing directory (default: container's initial cwd)
   --verbose                           print runtime diagnostics
 
-run options (before IMAGE):
+run/create options (before IMAGE; create rejects -d/--detach):
   --name NAME                         assign a name to the container
   --rm                                automatically remove the container when it exits
   -d, --detach                        run container in background and print container ID
@@ -123,7 +125,8 @@ QUASIDOCK_REGISTRY changes the default registry (ghcr.io/quasidock/quasidock).
 A bare cached app ID selects its last successful build/pull; full sha256 IDs
 select local manifests. Explicit names and tags select exactly that reference.
 Image IDs are manifest digests. images -q prints full IDs; inspect is local-only.
-Each run creates a container with isolated data under containers/<id>/data.
+Each run or create allocates isolated data under containers/<id>/data.
+create saves configuration without launching; start launches it in background.
 Use an explicit command after IMAGE to replace the image's entrypoint and default cmd.
 Mount targets are ${data} or ${data}/PATH. Named volumes survive container removal.
 Read-only mounts, overlapping targets, and -p are not supported yet.
@@ -166,6 +169,7 @@ func readOption(args []string, i *int, flags []string) (Option, error) {
 }
 
 type settingsParser struct {
+	command      string
 	settings     run.Settings
 	filesystem   []string
 	nofilesystem []string
@@ -225,7 +229,7 @@ func (p *settingsParser) apply(opt Option) error {
 		}
 		p.ports = append(p.ports, val)
 	default:
-		return fmt.Errorf("unknown run option --%s", name)
+		return fmt.Errorf("unknown %s option --%s", p.command, name)
 	}
 	return nil
 }
@@ -240,9 +244,17 @@ func (p *settingsParser) finish() run.Settings {
 }
 
 func parseRunOptions(ctx *context.Context, args []string) (run.Options, error) {
+	return parseContainerOptions(ctx, args, "run")
+}
+
+func parseCreateOptions(ctx *context.Context, args []string) (run.Options, error) {
+	return parseContainerOptions(ctx, args, "create")
+}
+
+func parseContainerOptions(ctx *context.Context, args []string, command string) (run.Options, error) {
 	opts := run.Options{Pull: "missing"}
 	args = append([]string(nil), args...)
-	var parser settingsParser
+	parser := settingsParser{command: command}
 
 	flags := []string{"rm", "detach", "interactive", "tty", "verbose", "ephemeral"}
 	i := 0
@@ -272,6 +284,9 @@ func parseRunOptions(ctx *context.Context, args []string) (run.Options, error) {
 					for _, ch := range args[i][1:] {
 						switch ch {
 						case 'd':
+							if command == "create" {
+								return opts, errors.New("create does not support --detach; use start to launch the container")
+							}
 							opts.Detach = true
 						case 'i':
 							opts.Interactive = true
@@ -290,9 +305,9 @@ func parseRunOptions(ctx *context.Context, args []string) (run.Options, error) {
 					}
 				}
 				if strings.ContainsRune(args[i], 'v') {
-					return opts, fmt.Errorf("unsupported run option %q; pass -v SOURCE:TARGET separately from boolean flag clusters", args[i])
+					return opts, fmt.Errorf("unsupported %s option %q; pass -v SOURCE:TARGET separately from boolean flag clusters", command, args[i])
 				}
-				return opts, fmt.Errorf("unknown run option %q", args[i])
+				return opts, fmt.Errorf("unknown %s option %q", command, args[i])
 			}
 			break
 		}
@@ -318,6 +333,9 @@ func parseRunOptions(ctx *context.Context, args []string) (run.Options, error) {
 			}
 			opts.AutoRemove = true
 		case "detach":
+			if command == "create" {
+				return opts, errors.New("create does not support --detach; use start to launch the container")
+			}
 			if opt.Value != nil {
 				return opts, errors.New("--detach takes no value")
 			}
@@ -364,7 +382,7 @@ func parseRunOptions(ctx *context.Context, args []string) (run.Options, error) {
 		i++
 	}
 	if i == len(args) {
-		return opts, errors.New("usage error")
+		return opts, fmt.Errorf("usage: quasidock %s [OPTIONS] IMAGE [COMMAND] [ARG...]", command)
 	}
 
 	opts.ID = args[i]
@@ -739,7 +757,7 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 		return 0, nil
 	}
 	switch cmd {
-	case "convert", "build", "volume", "container", "ps", "exec", "start", "restart", "kill", "stop", "rm", "logs", "image", "images", "inspect", "tag", "pull", "push", "rmi", "run", "search", "trust", "signature", "prune", "repair", "grants":
+	case "convert", "build", "volume", "container", "create", "ps", "exec", "start", "restart", "kill", "stop", "rm", "logs", "image", "images", "inspect", "tag", "pull", "push", "rmi", "run", "search", "trust", "signature", "prune", "repair", "grants":
 	default:
 		return usageError()
 	}
@@ -762,7 +780,7 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 		return execCommand(ctx, rest)
 	case "ps":
 		return containerCommand(ctx, append([]string{"ls"}, rest...))
-	case "start", "restart", "kill", "stop", "rm", "logs":
+	case "create", "start", "restart", "kill", "stop", "rm", "logs":
 		return containerCommand(ctx, append([]string{cmd}, rest...))
 	case "inspect":
 		return inspectAny(ctx, rest)
