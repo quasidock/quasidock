@@ -18,11 +18,11 @@
   },
   "permissions": { "filesystem": ["cwd"] },
   "from": {
-    "perl": "perl:5.42.3.1@sha256:f5c9f71d4c4867cd2c91100b2de48a95c3e2f6f17b12454d39feea99e6daa178",
+    "perl": "perl:5.42.3.1@sha256:2854c34722b812ef3173f5d4ab6fb091ac45dc16d6079865a5024d6a6527dfd6",
     "gs": "ghostscript:10.08.0@sha256:54970c331bab95b9224e51bf1ed0857746030a7a7db01d4260aa946d19b5df74"
   },
   "sdk": {
-    "busybox": "busybox:FRP-6075-g169694ebd@sha256:3d73278be5092691667ebeecd92ffe034fb6898221024e4859325fb379178d2a"
+    "busybox": "busybox:FRP-6075-g169694ebd@sha256:baca1ecd27b7b5ffe54402d4f8b6e36802d9db5e0e4cb2b7ab13104031045c50"
   },
   "cleanup": [
     "/tlpkg/tlperl", "/tlpkg/tlgs", "/tlpkg/installer", "/tlpkg/tltcl", "/tlpkg/translations", "/tlpkg/backups",

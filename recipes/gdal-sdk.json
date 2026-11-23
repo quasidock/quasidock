@@ -9,10 +9,10 @@
   "path": ["bin"],
   "env": { "GDAL_DATA": "${app}\\share\\gdal", "PROJ_DATA": "${app}\\share\\proj" },
   "sdk": {
-    "meson": "meson:1.12.1@sha256:bb01866aa3300aec3881be865d697c5de46084c204c9a97e9bdaae2675dde5b9",
-    "cmake": "cmake:4.4.4@sha256:bb0949026f8d4c087ebaf2e8bd385e4202363c8fa48fc70ede498958b5a0f8af",
+    "meson": "meson:1.12.1@sha256:9b656a460928dbde77dc31f5827e9b99ad4b53e007de87b19b6fbec26785bbc3",
+    "cmake": "cmake:4.4.4@sha256:b96b30bb57b5147726b7deef2607917b43972bb896d9f5d3e3082e31368dbeae",
     "llvm": "llvm-mingw:20261020@sha256:65425754b958693accc5dc8d8e8ca0dfa6235669c286cc8875105171b3e299b9",
-    "busybox": "busybox:FRP-6075-g169694ebd@sha256:3d73278be5092691667ebeecd92ffe034fb6898221024e4859325fb379178d2a"
+    "busybox": "busybox:FRP-6075-g169694ebd@sha256:baca1ecd27b7b5ffe54402d4f8b6e36802d9db5e0e4cb2b7ab13104031045c50"
   },
   "cleanup": ["/lib/cmake", "*.la", "/share/bash-completion", "/share/doc", "/share/man"],
   "stages": [

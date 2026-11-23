@@ -10,8 +10,8 @@
     "filesystem": ["cwd"]
   },
   "sdk": {
-    "zig": "zig:0.17.0@sha256:d56d973884d07ce551d9697535f43d18183a3ce0ee3f79f0c9d40ce041842d5f",
-    "busybox": "busybox:FRP-6075-g169694ebd@sha256:3d73278be5092691667ebeecd92ffe034fb6898221024e4859325fb379178d2a"
+    "zig": "zig:0.17.0@sha256:56fc3e4f42c25dbf70236aedb053606311cb2d4b582ad4d1e26e76036c08eab1",
+    "busybox": "busybox:FRP-6075-g169694ebd@sha256:baca1ecd27b7b5ffe54402d4f8b6e36802d9db5e0e4cb2b7ab13104031045c50"
   },
   "cleanup": ["/include", "/lib"],
   "stages": [

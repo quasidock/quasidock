@@ -27,7 +27,7 @@
   "from": { "java": "java-sdk:25.0.5_8@sha256:8febd72d8cddbf9ca931a3b95d4714dd190f86428adba1b70deffa2fcf81c23d" },
   "sdk": {
     "maven": "maven:3.10.0@sha256:50dfb31e20a15df21eca3f40aca42e05009ef4066997d755eeca16ecc19d4d3f",
-    "busybox": "busybox:FRP-6075-g169694ebd@sha256:3d73278be5092691667ebeecd92ffe034fb6898221024e4859325fb379178d2a"
+    "busybox": "busybox:FRP-6075-g169694ebd@sha256:baca1ecd27b7b5ffe54402d4f8b6e36802d9db5e0e4cb2b7ab13104031045c50"
   },
   "stages": [
     {

@@ -8,7 +8,7 @@
   },
   "sdk": {
     "llvm": "llvm-mingw:20261020@sha256:65425754b958693accc5dc8d8e8ca0dfa6235669c286cc8875105171b3e299b9",
-    "busybox": "busybox:FRP-6075-g169694ebd@sha256:3d73278be5092691667ebeecd92ffe034fb6898221024e4859325fb379178d2a"
+    "busybox": "busybox:FRP-6075-g169694ebd@sha256:baca1ecd27b7b5ffe54402d4f8b6e36802d9db5e0e4cb2b7ab13104031045c50"
   },
   "cleanup": [
     "/share/doc/gettext/examples",

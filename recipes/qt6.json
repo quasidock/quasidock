@@ -50,7 +50,7 @@
     "filesystem": ["cwd"]
   },
   "registry": ["Software\\QtProject"],
-  "sdk": { "qtsdk": "qt6-sdk:6.12.0@sha256:8bd2cde304bee7d25bb2cd2300389ea805b9fbadaa58ac17c67fc08ff1022b3e" },
+  "sdk": { "qtsdk": "qt6-sdk:6.12.0@sha256:9dab4d2a933dafb453af96a7c0bbc1da6705cc03e1c7f99579736059dd30c200" },
   "cleanup": [
     "/include",
     "/lib",
@@ -124,7 +124,7 @@
     {
       "name": "qt",
       "sources": [
-        { "image": "qt6-sdk:6.12.0@sha256:8bd2cde304bee7d25bb2cd2300389ea805b9fbadaa58ac17c67fc08ff1022b3e" }
+        { "image": "qt6-sdk:6.12.0@sha256:9dab4d2a933dafb453af96a7c0bbc1da6705cc03e1c7f99579736059dd30c200" }
       ]
     },
     {

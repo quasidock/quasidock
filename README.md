@@ -4,7 +4,7 @@ Quasidock runs sandboxed Windows programs from OCI-distributed images using a
 Docker-style CLI.
 
 Version **0.10** supports Docker-style container lifecycle management (`create`, `run`, `ps`,
-`logs`, `exec`, `attach`, `start`, `restart`, `pause`, `unpause`, `kill`, `stop`, `rm`, `inspect`, `prune`), per-container isolated data, image
+`logs`, `exec`, `attach`, `start`, `restart`, `pause`, `unpause`, `kill`, `stop`, `rm`, `inspect`, `diff`, `prune`), per-container isolated data, image
 management, named volumes, local directory bind mounts, and Quasidock images for
 `windows/amd64`. Supported Node.js, Go, Python, PHP CLI, Composer, and Ubuntu/Debian Dockerfiles, including
 multi-stage builds with `COPY --from`, can be
@@ -100,6 +100,7 @@ removes leftover legacy app data once unused.
 | `container create` | `create` | Save a new container without starting it; print its full ID |
 | `container ls` | `ps` | List running containers (`-a` includes created and exited; `-q` prints IDs) |
 | `container inspect` | `inspect` | Container JSON metadata or `-f TEMPLATE` (`inspect` falls back to images) |
+| `container diff` | `diff` | List additions to private `${data}`; exclude mounted storage |
 | `container logs` | `logs` | Fetch captured output (`-f`/`--follow`, `-n`/`--tail LINES`) |
 | `container exec` | `exec` | Run another command in a running container (`-d`, `-i`, `-t`, `-e`, `-w`) |
 | `container attach` | `attach` | Attach to a background container's live output and optional stdin |
@@ -212,6 +213,16 @@ per-container HKCU hive. Multiple containers—
 including different versions of the same app—can run concurrently without sharing
 state unless mounted storage is explicitly shared. Containers persist after exit
 unless `--rm` is set. Docker-style `-p` port publishing remains deferred.
+
+`diff CONTAINER` (also `container diff`) lists files and directories added to the
+container's initially empty private data, sorted as `A /home/example.txt`. Here
+`/` means `${data}`. Runtime-created profile, cache, and registry files count as
+additions. Editing an added file keeps it `A`; deleting it removes its entry.
+Mounted storage, image files, host filesystem grants, and container metadata/logs
+outside `${data}` are excluded. A mount covering `${data}` produces empty output.
+Diff supports created, running, paused, and exited containers; a live scan is
+best effort and does not pause the application. See
+[persistent storage](docs/persistent-storage.md).
 
 `start` and `restart` reuse the same container ID, saved command, image digest,
 working directory, private data, mounts, and registry state. They append to the

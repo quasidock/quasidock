@@ -9,7 +9,7 @@
   "permissions": {
     "filesystem": ["cwd"]
   },
-  "from": { "node": "node:24.22.2@sha256:12f553caa736c3964e18c4ffb88691ea9c6da5bd0ea657f6df29cfa360763df4" },
+  "from": { "node": "node:24.22.2@sha256:2a86a90b9beab4b7894fc1d0d76e015220c1c4243858a6118ad0066c772a07a8" },
   "stages": [
     {
       "name": "prettier",

@@ -473,15 +473,15 @@
   },
   "cleanup": ["*.bat"],
   "from": {
-    "cmake": "cmake:4.4.4@sha256:bb0949026f8d4c087ebaf2e8bd385e4202363c8fa48fc70ede498958b5a0f8af",
+    "cmake": "cmake:4.4.4@sha256:b96b30bb57b5147726b7deef2607917b43972bb896d9f5d3e3082e31368dbeae",
     "llvm": "llvm-mingw:20261020@sha256:65425754b958693accc5dc8d8e8ca0dfa6235669c286cc8875105171b3e299b9",
-    "busybox": "busybox:FRP-6075-g169694ebd@sha256:3d73278be5092691667ebeecd92ffe034fb6898221024e4859325fb379178d2a"
+    "busybox": "busybox:FRP-6075-g169694ebd@sha256:baca1ecd27b7b5ffe54402d4f8b6e36802d9db5e0e4cb2b7ab13104031045c50"
   },
   "stages": [
     {
       "name": "base",
       "sources": [
-        { "image": "qt6-sdk-base:6.12.0@sha256:9300d3987b27b00ca7af7dfb39dc3cd115049a1339168bee5c9920461fdc4a9a" }
+        { "image": "qt6-sdk-base:6.12.0@sha256:c4cc999f49234b144b69aa9825a04bd9cdec77e44cb5c6346d34f984e196f6f0" }
       ]
     },
     {

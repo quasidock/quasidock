@@ -348,17 +348,22 @@ func TestContainerPauseUnpause(t *testing.T) {
 			out string
 			err error
 		}
-		results := make(chan result, 2)
-		for _, args := range [][]string{{"pause", "concurrent"}, {"exec", "concurrent", "fixture.exe", "log", "race", ""}} {
-			go func() { out, err := call(args...); results <- result{out, err} }()
+		paused, executed := make(chan result, 1), make(chan result, 1)
+		go func() { out, err := call("pause", "concurrent"); paused <- result{out, err} }()
+		go func() {
+			out, err := call("exec", "concurrent", "fixture.exe", "log", "race", "")
+			executed <- result{out, err}
+		}()
+		if r := <-paused; r.err != nil {
+			t.Fatalf("pause/exec race: %s %v", r.out, r.err)
 		}
-		for range 2 {
-			r := <-results
-			if r.err != nil && !strings.Contains(r.out, "paused") {
-				t.Fatalf("pause/exec race: %s %v", r.out, r.err)
-			}
-		}
+		// An admitted exec belongs to the frozen job. Thaw it before waiting
+		// for completion; otherwise this test waits until its command times out.
 		must(t, "unpause", "concurrent")
+		if r := <-executed; r.err != nil && !strings.Contains(r.out, "paused") {
+			t.Fatalf("pause/exec race: %s %v", r.out, r.err)
+		}
+		results := make(chan result, 2)
 		for _, args := range [][]string{{"pause", "concurrent"}, {"restart", "-t=0", "concurrent"}} {
 			go func() { out, err := call(args...); results <- result{out, err} }()
 		}

@@ -14,15 +14,15 @@
   },
   "cleanup": ["__pycache__"],
   "sdk": {
-    "cmake": "cmake:4.4.4@sha256:bb0949026f8d4c087ebaf2e8bd385e4202363c8fa48fc70ede498958b5a0f8af",
-    "perl": "perl:5.42.3.1@sha256:f5c9f71d4c4867cd2c91100b2de48a95c3e2f6f17b12454d39feea99e6daa178",
-    "rust": "rust:1.99.0@sha256:a7657fc530d9b76b81a20116d5f02097d6922294f39163d202a6d0ca9fca6e9b",
-    "cargo-c": "cargo-c:0.10.25@sha256:06a080764be30b815c5c8c8d596194344bdbf6c2d4054743882bd6e63c5bfe21"
+    "cmake": "cmake:4.4.4@sha256:b96b30bb57b5147726b7deef2607917b43972bb896d9f5d3e3082e31368dbeae",
+    "perl": "perl:5.42.3.1@sha256:2854c34722b812ef3173f5d4ab6fb091ac45dc16d6079865a5024d6a6527dfd6",
+    "rust": "rust:1.99.0@sha256:62344d25e7c11b393e6094386eca31bc4f8f0bdbe45845fc61fe58700f112f8d",
+    "cargo-c": "cargo-c:0.10.25@sha256:796088c5e02aef272bea1df667952836d49f71df3ef39dad1f58749ae5822222"
   },
   "from": {
-    "meson": "meson:1.12.1@sha256:bb01866aa3300aec3881be865d697c5de46084c204c9a97e9bdaae2675dde5b9",
+    "meson": "meson:1.12.1@sha256:9b656a460928dbde77dc31f5827e9b99ad4b53e007de87b19b6fbec26785bbc3",
     "llvm": "llvm-mingw:20261020@sha256:65425754b958693accc5dc8d8e8ca0dfa6235669c286cc8875105171b3e299b9",
-    "busybox": "busybox:FRP-6075-g169694ebd@sha256:3d73278be5092691667ebeecd92ffe034fb6898221024e4859325fb379178d2a"
+    "busybox": "busybox:FRP-6075-g169694ebd@sha256:baca1ecd27b7b5ffe54402d4f8b6e36802d9db5e0e4cb2b7ab13104031045c50"
   },
   "stages": [
     {

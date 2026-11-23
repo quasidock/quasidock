@@ -10,8 +10,8 @@
     "filesystem": ["cwd:ro"]
   },
   "sdk": {
-    "go": "go:1.27.3@sha256:db33d93cf5feb68f1ca4e4fcaf0b465420689bcf3bb96d41daff1d3ea3c297fc",
-    "busybox": "busybox:FRP-6075-g169694ebd@sha256:3d73278be5092691667ebeecd92ffe034fb6898221024e4859325fb379178d2a"
+    "go": "go:1.27.3@sha256:7ce8afd12dc7371e8f546f455036b941fdfdcbbaa81cefb3c320ea693d951ccc",
+    "busybox": "busybox:FRP-6075-g169694ebd@sha256:baca1ecd27b7b5ffe54402d4f8b6e36802d9db5e0e4cb2b7ab13104031045c50"
   },
   "stages": [
     {

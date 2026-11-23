@@ -18,8 +18,8 @@
   "sdk": {
     "gtksdk": "gtk4-sdk:4.24.1@sha256:7c063e56d0148fbc2ea019ddce1b4368d0aee279ff30b5417bad3e8ad78ca682",
     "gtk3sdk": "gtk3-sdk:3.24.52@sha256:03d48cf8138d5d9b28d59a51b34b454d5ff8127abc4bd37e6407a2d15468fc37",
-    "cmake": "cmake:4.4.4@sha256:bb0949026f8d4c087ebaf2e8bd385e4202363c8fa48fc70ede498958b5a0f8af",
-    "perl": "perl:5.42.3.1@sha256:f5c9f71d4c4867cd2c91100b2de48a95c3e2f6f17b12454d39feea99e6daa178"
+    "cmake": "cmake:4.4.4@sha256:b96b30bb57b5147726b7deef2607917b43972bb896d9f5d3e3082e31368dbeae",
+    "perl": "perl:5.42.3.1@sha256:2854c34722b812ef3173f5d4ab6fb091ac45dc16d6079865a5024d6a6527dfd6"
   },
   "cleanup": [
     "/include",

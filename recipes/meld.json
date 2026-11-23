@@ -21,7 +21,7 @@
     "gtk": "gtk4:4.24.1@sha256:550c7eddb54fc071caae8955664a76ed418c65e727237ba8585ee6827f4e5ad1",
     "gtk3": "gtk3:3.24.52@sha256:c558346bcb30030982e187c1027238660b51d8fd7909a029ddb6c33fbc297a1c",
     "pygobject": "pygobject:3.58.1@sha256:531997dbcd802f556ef7cfb776d64be9663edc4c55443ea978acf81397edc904",
-    "git": "mingit:2.56.0.windows.1@sha256:fc3e29f8e695bba0d168d477395c743f02119ef3a0a56f83cc036449ed7488c7"
+    "git": "mingit:2.56.0.windows.1@sha256:0d95f29457f4bb30c50c62ac12c9afd45d7b2e252d9f553a16a11f8381b4d3da"
   },
   "sdk": {
     "gtksdk": "gtk4-sdk:4.24.1@sha256:7c063e56d0148fbc2ea019ddce1b4368d0aee279ff30b5417bad3e8ad78ca682",

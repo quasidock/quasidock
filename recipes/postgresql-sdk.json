@@ -8,12 +8,12 @@
   "entrypoint": "bin/pg_config.exe",
   "path": ["bin"],
   "sdk": {
-    "meson": "meson:1.12.1@sha256:bb01866aa3300aec3881be865d697c5de46084c204c9a97e9bdaae2675dde5b9",
-    "cmake": "cmake:4.4.4@sha256:bb0949026f8d4c087ebaf2e8bd385e4202363c8fa48fc70ede498958b5a0f8af",
+    "meson": "meson:1.12.1@sha256:9b656a460928dbde77dc31f5827e9b99ad4b53e007de87b19b6fbec26785bbc3",
+    "cmake": "cmake:4.4.4@sha256:b96b30bb57b5147726b7deef2607917b43972bb896d9f5d3e3082e31368dbeae",
     "llvm": "llvm-mingw:20261020@sha256:65425754b958693accc5dc8d8e8ca0dfa6235669c286cc8875105171b3e299b9",
-    "busybox": "busybox:FRP-6075-g169694ebd@sha256:3d73278be5092691667ebeecd92ffe034fb6898221024e4859325fb379178d2a",
-    "perl": "perl:5.42.3.1@sha256:f5c9f71d4c4867cd2c91100b2de48a95c3e2f6f17b12454d39feea99e6daa178",
-    "python": "python:3.14.10@sha256:887cfcc7cad5bd8c423efd6087c7ef5f02906791ba2780b6030f789534679e72"
+    "busybox": "busybox:FRP-6075-g169694ebd@sha256:baca1ecd27b7b5ffe54402d4f8b6e36802d9db5e0e4cb2b7ab13104031045c50",
+    "perl": "perl:5.42.3.1@sha256:2854c34722b812ef3173f5d4ab6fb091ac45dc16d6079865a5024d6a6527dfd6",
+    "python": "python:3.14.10@sha256:6c21dc182028bd8bf86a9b13969425eceb7701c611e13c74c73491c5a9509605"
   },
   "cleanup": [
     "/lib/cmake",

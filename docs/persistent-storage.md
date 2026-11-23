@@ -43,3 +43,28 @@ and failed launches. Remove those containers before removing their volumes.
 reports candidates without deleting them. Bind contents are never collected.
 `repair` restores mount permissions left behind after a supervisor crash while
 preserving access required by live consumers.
+
+## Inspect private data changes
+
+`quasidock diff CONTAINER` and `quasidock container diff CONTAINER` compare private
+data with the empty tree at container creation. Output contains sorted `A PATH`
+lines for surviving files and directories; `/home/file.txt` means
+`${data}/home/file.txt`. The data root itself is omitted. Runtime-created profile,
+cache, and registry files are included, with registry hives reported as files
+rather than individual keys.
+
+Every surviving entry is an addition to that empty baseline. Editing a file
+leaves it `A`; deleting it removes the entry. There are no saved snapshots or
+`C`/`D` entries. Image deployments, host filesystem grants, and container
+metadata/logs outside `${data}` are excluded.
+
+Mount destinations and their contents are excluded even when their junctions
+are detached. A mount at `${data}` produces empty output. Other reparse points
+are listed as leaf entries; their targets are never enumerated.
+
+Diff accepts a container name, full ID, or unique ID prefix, for created, running,
+paused, and exited containers. A running application can continue writing during
+the scan, so results are best effort. Disappearing descendants are skipped;
+missing data roots, permission failures, and other scan errors fail the command
+without printing scan results. Success returns exit code 0, including when there
+are additions or the output is empty.

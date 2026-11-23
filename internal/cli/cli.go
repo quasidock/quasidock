@@ -36,6 +36,7 @@ Docker-style container commands:
                                        list running containers (or all with -a)
   container inspect | inspect [-f TEMPLATE] NAME|ID [NAME|ID...]
                                        inspect containers or images (JSON by default)
+  container diff | diff CONTAINER      list additions to private data; exclude mounts
   container logs | logs [-f|--follow] [-n|--tail LINES] CONTAINER
                                        fetch the logs of a container
   container exec | exec [options] CONTAINER COMMAND [ARG...]
@@ -133,6 +134,7 @@ select local manifests. Explicit names and tags select exactly that reference.
 Image IDs are manifest digests. images -q prints full IDs; inspect is local-only.
 Each run or create allocates isolated data under containers/<id>/data.
 create saves configuration without launching; start defaults to background.
+diff lists A /PATH relative to initially empty private data; mounts are excluded.
 attach and start -a/-i use pipes; Ctrl+C forwards TERM, --sig-proxy=false detaches.
 Interactive -t console sessions detach with Ctrl+P, Ctrl+Q (override --detach-keys).
 Use an explicit command after IMAGE to replace the image's entrypoint and default cmd.
@@ -765,7 +767,7 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 		return 0, nil
 	}
 	switch cmd {
-	case "convert", "build", "volume", "container", "create", "ps", "exec", "attach", "start", "restart", "pause", "unpause", "kill", "stop", "rm", "logs", "image", "images", "inspect", "tag", "pull", "push", "rmi", "run", "search", "trust", "signature", "prune", "repair", "grants":
+	case "convert", "build", "volume", "container", "create", "ps", "diff", "exec", "attach", "start", "restart", "pause", "unpause", "kill", "stop", "rm", "logs", "image", "images", "inspect", "tag", "pull", "push", "rmi", "run", "search", "trust", "signature", "prune", "repair", "grants":
 	default:
 		return usageError()
 	}
@@ -788,7 +790,7 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 		return execCommand(ctx, rest)
 	case "ps":
 		return containerCommand(ctx, append([]string{"ls"}, rest...))
-	case "create", "attach", "start", "restart", "pause", "unpause", "kill", "stop", "rm", "logs":
+	case "create", "diff", "attach", "start", "restart", "pause", "unpause", "kill", "stop", "rm", "logs":
 		return containerCommand(ctx, append([]string{cmd}, rest...))
 	case "inspect":
 		return inspectAny(ctx, rest)

@@ -20,10 +20,10 @@
     ],
     "unsupported": { "low": "PHP's is_writable() is false for everything at low integrity, so Kanboard says its data can't be written" }
   },
-  "from": { "php": "php:8.5.12-1@sha256:12e0c8ba350be5cbc974ed42cf87358136479e8b8b5960e7ea9720643c445df5" },
+  "from": { "php": "php:8.5.12-1@sha256:bce8b34a93950ba3f8813b6e7508e3309912f6f413569569ee830b4b1aefa296" },
   "sdk": {
-    "composer": "composer:2.10.3@sha256:8a70709c07ddec60e2bfca5487d2a4596fe88272e68d4b1e080c7d5d87f3634b",
-    "busybox": "busybox:FRP-6075-g169694ebd@sha256:3d73278be5092691667ebeecd92ffe034fb6898221024e4859325fb379178d2a"
+    "composer": "composer:2.10.3@sha256:3f0ca9f779ca10f4138b88794c1ac94d468d7db8af1a97b713c7645eb72e0ec6",
+    "busybox": "busybox:FRP-6075-g169694ebd@sha256:baca1ecd27b7b5ffe54402d4f8b6e36802d9db5e0e4cb2b7ab13104031045c50"
   },
   "stages": [
     {
