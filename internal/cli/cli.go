@@ -40,8 +40,10 @@ Docker-style container commands:
                                        fetch the logs of a container
   container exec | exec [options] CONTAINER COMMAND [ARG...]
                                        run another command in a running container
-  container start | start CONTAINER [CONTAINER...]
-                                       start existing containers in background
+  container attach | attach [--no-stdin] [--sig-proxy=false] [--detach-keys KEYS] CONTAINER
+                                       attach to a background container's live streams
+  container start | start [-a|--attach] [-i|--interactive] [--sig-proxy=false] [--detach-keys KEYS] CONTAINER [CONTAINER...]
+                                       start containers; -a/-i attaches to one container
   container restart | restart [-t|--time SECONDS] CONTAINER [CONTAINER...]
                                        restart containers (default grace: 10 seconds)
   container kill | kill [-s|--signal KILL|TERM] CONTAINER [CONTAINER...]
@@ -126,7 +128,9 @@ A bare cached app ID selects its last successful build/pull; full sha256 IDs
 select local manifests. Explicit names and tags select exactly that reference.
 Image IDs are manifest digests. images -q prints full IDs; inspect is local-only.
 Each run or create allocates isolated data under containers/<id>/data.
-create saves configuration without launching; start launches it in background.
+create saves configuration without launching; start defaults to background.
+attach and start -a/-i use pipes; Ctrl+C forwards TERM, --sig-proxy=false detaches.
+Interactive -t console sessions detach with Ctrl+P, Ctrl+Q (override --detach-keys).
 Use an explicit command after IMAGE to replace the image's entrypoint and default cmd.
 Mount targets are ${data} or ${data}/PATH. Named volumes survive container removal.
 Read-only mounts, overlapping targets, and -p are not supported yet.
@@ -716,7 +720,7 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 		return 1, fmt.Errorf("%s was removed; use quasidock %s", cmd, replacement)
 	}
 	if cmd == "container-supervisor" {
-		if len(rest) != 3 {
+		if len(rest) != 3 && (len(rest) != 4 || rest[3] != "attach") {
 			return usageError()
 		}
 		_ = os.Setenv("QUASIDOCK_HOME", rest[0])
@@ -726,7 +730,7 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 		}
 		ctx.Store = st
 		ctx.Store.Verbose = ctx.Verbose
-		return run.Supervise(ctx, rest[1], rest[2])
+		return run.Supervise(ctx, rest[1], rest[2], len(rest) == 4)
 	}
 	if cmd == "login" {
 		opts, err := parseLoginOptions(rest)
@@ -757,7 +761,7 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 		return 0, nil
 	}
 	switch cmd {
-	case "convert", "build", "volume", "container", "create", "ps", "exec", "start", "restart", "kill", "stop", "rm", "logs", "image", "images", "inspect", "tag", "pull", "push", "rmi", "run", "search", "trust", "signature", "prune", "repair", "grants":
+	case "convert", "build", "volume", "container", "create", "ps", "exec", "attach", "start", "restart", "kill", "stop", "rm", "logs", "image", "images", "inspect", "tag", "pull", "push", "rmi", "run", "search", "trust", "signature", "prune", "repair", "grants":
 	default:
 		return usageError()
 	}
@@ -780,7 +784,7 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 		return execCommand(ctx, rest)
 	case "ps":
 		return containerCommand(ctx, append([]string{"ls"}, rest...))
-	case "create", "start", "restart", "kill", "stop", "rm", "logs":
+	case "create", "attach", "start", "restart", "kill", "stop", "rm", "logs":
 		return containerCommand(ctx, append([]string{cmd}, rest...))
 	case "inspect":
 		return inspectAny(ctx, rest)

@@ -4,7 +4,7 @@ Quasidock runs sandboxed Windows programs from OCI-distributed images using a
 Docker-style CLI.
 
 Version **0.10** supports Docker-style container lifecycle management (`create`, `run`, `ps`,
-`logs`, `exec`, `start`, `restart`, `kill`, `stop`, `rm`, `inspect`, `prune`), per-container isolated data, image
+`logs`, `exec`, `attach`, `start`, `restart`, `kill`, `stop`, `rm`, `inspect`, `prune`), per-container isolated data, image
 management, named volumes, local directory bind mounts, and Quasidock images for
 `windows/amd64`. Supported Node.js, Go, Python, PHP CLI, Composer, and Ubuntu/Debian Dockerfiles, including
 multi-stage builds with `COPY --from`, can be
@@ -102,7 +102,8 @@ removes leftover legacy app data once unused.
 | `container inspect` | `inspect` | Container JSON metadata or `-f TEMPLATE` (`inspect` falls back to images) |
 | `container logs` | `logs` | Fetch captured output (`-f`/`--follow`, `-n`/`--tail LINES`) |
 | `container exec` | `exec` | Run another command in a running container (`-d`, `-i`, `-t`, `-e`, `-w`) |
-| `container start` | `start` | Start existing containers in the background |
+| `container attach` | `attach` | Attach to a background container's live output and optional stdin |
+| `container start` | `start` | Start existing containers; `-a` attaches output, `-i` also attaches saved stdin |
 | `container restart` | `restart` | Stop and start containers (`-t`/`--time SECONDS`, default 10s) |
 | `container kill` | `kill` | Immediately terminate process trees; `-s`/`--signal TERM` requests graceful shutdown |
 | `container stop` | `stop` | Stop running containers (`-t`/`--time SECONDS`, default 10s) |
@@ -118,8 +119,9 @@ quasidock run [OPTIONS] IMAGE [COMMAND] [ARG...]
 and prints the full container ID without starting the program. It supports the
 same configuration options as `run`, except `-d` / `--detach`. Created containers
 appear as `Created` in `ps -a`; their logs are empty until the first start.
-`-i` and `-t` save preferences, while `start` launches in the background without
-attaching stdin. `--rm` keeps an unstarted container and a failed-start record,
+`-i` and `-t` save preferences. Plain `start` launches in the background;
+`start -a` streams output and `start -ai` also forwards stdin if `-i` was saved.
+`--rm` keeps an unstarted container and a failed-start record,
 then removes it after a successful launch exits. `rm` and `container prune` can
 remove created containers immediately.
 
@@ -143,6 +145,10 @@ quasidock create --name node-later node node.exe -e 'console.log(process.version
 quasidock start node-later
 quasidock logs node-later
 quasidock rm node-later
+quasidock create -it --name node-repl node node.exe -i
+quasidock start -ai node-repl
+# Detach with Ctrl+P, Ctrl+Q, then reattach:
+quasidock attach node-repl
 quasidock run -d --name node-demo node node.exe -e 'setInterval(() => {}, 1000)'
 quasidock logs node-demo
 quasidock exec node-demo node.exe --version
@@ -165,7 +171,7 @@ Single-letter boolean flags before IMAGE can be combined (for example `-it`, or
 | `--name NAME` | Assign a unique container name (`[a-zA-Z0-9][a-zA-Z0-9_.-]*`) |
 | `--rm` | Delete the container and its private data on exit; preserve mounted contents and mounted registry state |
 | `-d`, `--detach` | `run` only: supervise the container in the background and print its 64-hex container ID |
-| `-i`, `--interactive` | Attach host stdin when running in the foreground (otherwise stdin is `\\.\NUL`) |
+| `-i`, `--interactive` | Enable stdin: forward it in foreground runs, or keep a supervisor-owned pipe open for later attachment in background runs (otherwise stdin is `\\.\NUL`) |
 | `-t`, `--tty` | Record TTY preference on container metadata (pipe-backed streams; no ConPTY yet) |
 | `--pull=missing` | Default: use the cached selection, or pull if missing |
 | `--pull=always` | Pull before creating or running; a failed pull fails the command |
@@ -188,7 +194,11 @@ unless `--rm` is set. Docker-style `-p` port publishing remains deferred.
 working directory, private data, mounts, and registry state. They append to the
 existing log and never pull a newer image. `start` succeeds without another launch
 when a container is already running; `restart` also starts stopped containers.
-Both launch in the background; attached start is unsupported. A failed start keeps
+`start` defaults to background; `start -a` or `-i` attaches to exactly one container,
+including one already running. Either flag streams stdout/stderr, and `-i` forwards
+stdin only if the container was created with `-i`. Attached start subscribes before
+launch, captures initial output, and returns the application's exit code without
+printing a container name. `restart` launches in the background. A failed start keeps
 the existing record and data for retry. Restart preserves a running `--rm`
 container through the stop/start cycle, then automatic removal resumes on its
 next exit. It also retains the record if the replacement launch fails.
@@ -201,6 +211,31 @@ case-insensitively. Foreground TERM is unsupported so native terminal Ctrl+C kee
 its existing behavior; KILL works for foreground containers. `stop` and `restart`
 wait their requested grace period before forcing termination; `-t 0` forces it
 immediately. Killing a stopped container is an error.
+
+`attach [OPTIONS] CONTAINER` (also `container attach`) joins the primary process's
+live streams for a container launched by `run -d` or `start`. It streams stdout
+and stderr separately without replaying historical logs. It forwards stdin when
+the container has saved `-i` and stdin remains open; `--no-stdin` selects an output
+viewer. Multiple viewers may connect, but only one session may own stdin. A second
+writer is rejected with guidance to use `--no-stdin`.
+
+Ctrl+C requests TERM through targeted Ctrl+Break and keeps waiting; applications
+may ignore it. `--sig-proxy=false` makes Ctrl+C disconnect with exit code 130 and
+leaves the container running. Both `attach` and attached `start` support that flag
+and `--detach-keys`. Interactive `-t` sessions with console stdin detach with Ctrl+P
+then Ctrl+Q and return 0; use, for example, `--detach-keys=ctrl-x,x` to override the
+sequence or `--detach-keys=` to disable it. Redirected stdin preserves all bytes.
+The client restores console input modes after disconnecting; no ConPTY is allocated.
+
+Keyboard detachment or a lost client releases stdin without closing it. Actual
+stdin EOF closes the process's input for that run, allowing pipelines to finish;
+later attachments can still view output. Attach returns the primary process's exit
+code after draining output, including for `--rm` containers. Stop, kill, and restart
+end attachments to the old run; attach never follows a replacement run. A viewer
+that exceeds its bounded output queue or stalls pipe writes for five seconds is
+disconnected so other viewers and logging can continue. Foreground `run` attachment
+is unsupported; its native Ctrl+C behavior is preserved. Older live supervisors must
+be stopped and started with this binary before attachment is available.
 
 `exec [OPTIONS] CONTAINER COMMAND [ARG...]` (also `container exec`) runs an
 explicit command in a running container's existing sandbox, data, mounts, and

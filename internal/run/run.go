@@ -115,6 +115,8 @@ type Options struct {
 	Settings    Settings
 	operation   *store.ContainerOperation
 	runLock     *store.Lock
+	attachment  *attachRuntime
+	attachStart bool
 }
 
 // ReadyEventName returns the named manual-reset Win32 event signaled by a
@@ -215,28 +217,41 @@ func Run(ctx *context.Context, opts Options) (uint32, error) {
 }
 
 func launchSupervisor(ctx *context.Context, created *store.ContainerRecord, hostCwd string) error {
-	readyEvent, err := win32.CreateEvent(ReadyEventName(created.ID, created.State.RunID), true, false)
+	det, readyEvent, err := spawnSupervisor(ctx, created, hostCwd, false)
 	if err != nil {
-		return fmt.Errorf("creating container ready event: %w", err)
+		return err
 	}
 	defer win32.CloseHandle(readyEvent)
+	defer win32.CloseHandle(det.Process)
+	return awaitSupervisor(ctx, created, det.Process, readyEvent, 30000)
+}
+
+func spawnSupervisor(ctx *context.Context, created *store.ContainerRecord, hostCwd string, attach bool) (process.Detached, win32.HANDLE, error) {
+	readyEvent, err := win32.CreateEvent(ReadyEventName(created.ID, created.State.RunID), true, false)
+	if err != nil {
+		return process.Detached{}, 0, fmt.Errorf("creating container ready event: %w", err)
+	}
 
 	exePath, err := os.Executable()
 	if err != nil {
-		return err
+		win32.CloseHandle(readyEvent)
+		return process.Detached{}, 0, err
 	}
 	var supArgs []string
 	if ctx.Verbose {
 		supArgs = append(supArgs, "--verbose")
 	}
 	supArgs = append(supArgs, "container-supervisor", ctx.Store.Root, created.ID, created.State.RunID)
+	if attach {
+		supArgs = append(supArgs, "attach")
+	}
 	cmdline := process.BuildCommandLine(exePath, supArgs)
 	det, err := process.StartDetached(exePath, cmdline, hostCwd)
 	if err != nil {
-		return fmt.Errorf("starting detached supervisor: %w", err)
+		win32.CloseHandle(readyEvent)
+		return process.Detached{}, 0, fmt.Errorf("starting detached supervisor: %w", err)
 	}
-	defer win32.CloseHandle(det.Process)
-	return awaitSupervisor(ctx, created, det.Process, readyEvent, 30000)
+	return det, readyEvent, nil
 }
 
 func awaitSupervisor(ctx *context.Context, created *store.ContainerRecord, supervisor, readyEvent win32.HANDLE, timeoutMs win32.DWORD) error {
@@ -275,7 +290,7 @@ func awaitSupervisor(ctx *context.Context, created *store.ContainerRecord, super
 
 // Supervise executes a previously created container in the background under a
 // detached supervisor process.
-func Supervise(ctx *context.Context, containerID, runID string) (uint32, error) {
+func Supervise(ctx *context.Context, containerID, runID string, attached ...bool) (code uint32, runErr error) {
 	if !oci.IsSha256Hex(containerID) || !validRunID(runID) {
 		return 1, errors.New("invalid container supervisor arguments")
 	}
@@ -323,6 +338,13 @@ func Supervise(ctx *context.Context, containerID, runID string) (uint32, error) 
 			Ports:        append([]string(nil), rec.HostConfig.Ports...),
 		},
 	}
+	opts.attachStart = len(attached) != 0 && attached[0]
+	opts.attachment, err = newAttachRuntime(rec.ID, runID, rec.Config.OpenStdin, rec.Config.Tty)
+	if err != nil {
+		recordLaunchFailure(ctx.Store, rec.ID, runID, err)
+		return 1, err
+	}
+	defer func() { opts.attachment.finish(code, runErr) }()
 
 	storeLock, err := ctx.Store.Lock(false)
 	if err != nil {
@@ -440,6 +462,9 @@ func executeContainer(
 		}
 		if readyEvent != 0 {
 			win32.SetEvent(readyEvent)
+		}
+		if opts.attachment != nil {
+			opts.attachment.finish(code, runErr)
 		}
 		runLock.Release()
 		if opts.operation != nil {
@@ -856,13 +881,41 @@ func launchContainer(
 
 	var stdinHandle win32.HANDLE
 	var nulIn win32.HANDLE
-	if !detached && opts.Interactive {
+	var pipeIn *os.File
+	if opts.attachment != nil && opts.Interactive {
+		var writer *os.File
+		pipeIn, writer, err = os.Pipe()
+		if err != nil {
+			win32.CloseHandle(outRead)
+			win32.CloseHandle(outWrite)
+			win32.CloseHandle(errRead)
+			win32.CloseHandle(errWrite)
+			return 1, false, err
+		}
+		defer pipeIn.Close()
+		opts.attachment.setInput(writer)
+		stdinHandle = win32.HANDLE(pipeIn.Fd())
+	} else if !detached && opts.Interactive {
 		stdinHandle = win32.GetStdHandle(win32.STD_INPUT_HANDLE)
 	} else {
 		nulIn = openNulRead()
 		stdinHandle = nulIn
 	}
 	stdio := [3]win32.HANDLE{stdinHandle, outWrite, errWrite}
+	if opts.attachStart {
+		select {
+		case <-opts.attachment.gate:
+		case <-time.After(execStartupTimeout):
+			win32.CloseHandle(outRead)
+			win32.CloseHandle(outWrite)
+			win32.CloseHandle(errRead)
+			win32.CloseHandle(errWrite)
+			if nulIn != 0 {
+				win32.CloseHandle(nulIn)
+			}
+			return 1, false, errors.New("timed out waiting for startup attachment")
+		}
+	}
 
 	var creationFlags win32.DWORD
 	if detached {
@@ -907,6 +960,9 @@ func launchContainer(
 	})
 	win32.CloseHandle(outWrite)
 	win32.CloseHandle(errWrite)
+	if pipeIn != nil {
+		pipeIn.Close()
+	}
 	if nulIn != 0 {
 		win32.CloseHandle(nulIn)
 	}
@@ -923,6 +979,10 @@ func launchContainer(
 	logW := lockedWriter{mu: &logMu, w: logFile}
 	var outDst io.Writer = logW
 	var errDst io.Writer = logW
+	if opts.attachment != nil {
+		outDst = io.MultiWriter(logW, attachWriter{opts.attachment, attachStdout})
+		errDst = io.MultiWriter(logW, attachWriter{opts.attachment, attachStderr})
+	}
 	if !detached {
 		stdout := ctx.Stdout
 		if stdout == nil {
@@ -937,15 +997,23 @@ func launchContainer(
 	}
 
 	var pipeWG sync.WaitGroup
-	pipeWG.Add(2)
-	go func() {
-		defer pipeWG.Done()
-		pumpPipe(outRead, outDst)
-	}()
-	go func() {
-		defer pipeWG.Done()
-		pumpPipe(errRead, errDst)
-	}()
+	var pumpsOnce sync.Once
+	startPumps := func() {
+		pumpsOnce.Do(func() {
+			pipeWG.Add(2)
+			go func() {
+				defer pipeWG.Done()
+				pumpPipe(outRead, outDst)
+			}()
+			go func() {
+				defer pipeWG.Done()
+				pumpPipe(errRead, errDst)
+			}()
+		})
+	}
+	if opts.attachment == nil {
+		startPumps()
+	}
 
 	child.Process = hProcess
 	live := &execRuntime{
@@ -954,6 +1022,7 @@ func launchContainer(
 	}
 	if err := live.start(created.ID, created.State.RunID); err != nil {
 		process.EndJob(job)
+		startPumps()
 		pipeWG.Wait()
 		if watcher != nil {
 			written.Finish(ctx.Store, cfg.ID, watcher)
@@ -981,17 +1050,25 @@ func launchContainer(
 			StartedAt:    startedAt,
 			Launched:     true,
 		}
+		if opts.attachment != nil {
+			c.State.AttachProtocol = attachProtocol
+		}
 		return nil
 	})
 	if stateErr != nil {
 		live.Close()
 		process.EndJob(job)
+		startPumps()
 		pipeWG.Wait()
 		if watcher != nil {
 			written.Finish(ctx.Store, cfg.ID, watcher)
 		}
 		return 1, false, stateErr
 	}
+	if opts.attachment != nil {
+		opts.attachment.markStarted(func() error { return win32.SendConsoleBreak(win32.GetProcessId(hProcess)) })
+	}
+	startPumps()
 	if readyEvent != 0 {
 		win32.SetEvent(readyEvent)
 	}
@@ -999,7 +1076,7 @@ func launchContainer(
 		opts.operation.Release()
 	}
 
-	code, err := waitControlled(ctx, created, &child, detached, controlEvent, live)
+	code, err := waitControlled(ctx, created, &child, detached, controlEvent, live, opts.attachment)
 	pipeWG.Wait()
 
 	if code != 0 {

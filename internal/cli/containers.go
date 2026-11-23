@@ -24,7 +24,7 @@ import (
 
 func containerCommand(ctx *context.Context, args []string) (uint32, error) {
 	if len(args) == 0 {
-		return 1, errors.New("usage: quasidock container <create|ls|inspect|exec|start|restart|kill|stop|rm|logs|prune>")
+		return 1, errors.New("usage: quasidock container <create|ls|inspect|exec|attach|start|restart|kill|stop|rm|logs|prune>")
 	}
 	cmd, rest := args[0], args[1:]
 	if cmd == "--help" || cmd == "help" {
@@ -36,11 +36,15 @@ func containerCommand(ctx *context.Context, args []string) (uint32, error) {
 		return createCommand(ctx, rest)
 	case "exec":
 		return execCommand(ctx, rest)
+	case "attach":
+		return attachCommand(ctx, rest)
+	case "start":
+		return startCommand(ctx, rest)
 	case "ls", "list":
 		return 0, containerList(ctx, rest)
 	case "inspect":
 		return 0, containerInspect(ctx, rest)
-	case "start", "restart", "kill", "stop":
+	case "restart", "kill", "stop":
 		return 0, containerLifecycle(ctx, cmd, rest)
 	case "rm", "remove":
 		return 0, containerRemove(ctx, rest)

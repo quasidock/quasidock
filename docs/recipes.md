@@ -1073,7 +1073,7 @@ Downstream GTK 4 applications build with `"from": { "gtk": "gtk4:..." }` and
 
 - **[recipes/gnome-text-editor.json](../recipes/gnome-text-editor.json)**
   (51.0) builds `gtksourceview` 5.22.0, `libspelling` 0.4.10 (linked with
-  Windows `-licu` and a stub `icu-uloc.h` staged at `zigsaw/unicode/uloc.h`),
+  Windows `-licu` and a stub `icu-uloc.h` staged at `quasidock/unicode/uloc.h`),
   `editorconfig-core-c`, and GNOME Text Editor.
 - **[recipes/rnote.json](../recipes/rnote.json)** (0.14.2) uses `rust` and
   `gtk4-sdk` (aliased as `toolkit`), replacing upstream's Unix-dependent Cargo
@@ -1251,7 +1251,7 @@ for reproducible offline builds:
   (`buildscript`, `repositories`) to that directory's `file:` URI, and fails
   with `GradleException` if a non-Maven repository is declared.
 - [recipes/gradle/GradleVendor.java](../recipes/gradle/GradleVendor.java)
-  (staged at `zigsaw/GradleVendor.java`): copies downloaded artifacts from a
+  (staged at `quasidock/GradleVendor.java`): copies downloaded artifacts from a
   Gradle home's `caches/modules-2/files-2.1/<group>/<module>/<version>/<sha1>/<file>`
   layout into a plain Maven repository layout
   `<group-dirs>/<module>/<version>/<file>`, stripping non-deterministic Gradle
@@ -1332,7 +1332,7 @@ temporary test certificate. CI also compares builds from two independent stores.
 - **[recipes/php-sdk.json](../recipes/php-sdk.json)** (`8.5.12-1`, `"from": {
   "zig": "...", "busybox": "...", "node": "..." }`) pairs upstream MSVC-built
   PHP with PHP development headers, `.lib` import libraries, `php.net`
-  dependency `deps/`, and the `php-ext` extension builder under `dev/zigsaw/`
+  dependency `deps/`, and the `php-ext` extension builder under `dev/quasidock/`
   ([php-ext.php](../recipes/php-sdk/php-ext.php),
   [config-w32.js](../recipes/php-sdk/config-w32.js),
   [zig-php.h](../recipes/php-sdk/zig-php.h),

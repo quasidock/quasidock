@@ -419,7 +419,7 @@ func TestContainerStartRestartKill(t *testing.T) {
 	})
 }
 
-func startLifecycleConsole(t *testing.T, exe string, args []string) (win32.HANDLE, win32.HANDLE) {
+func startLifecycleConsole(t *testing.T, exe string, args []string, capture ...io.Writer) (win32.HANDLE, win32.HANDLE) {
 	t.Helper()
 	inRead, inWrite, err := win32.CreatePipe(nil, 0)
 	if err != nil {
@@ -434,7 +434,11 @@ func startLifecycleConsole(t *testing.T, exe string, args []string) (win32.HANDL
 	defer win32.CloseHandle(outWrite)
 	output := os.NewFile(uintptr(outRead), "console-output")
 	t.Cleanup(func() { _ = output.Close() })
-	go func() { _, _ = io.Copy(io.Discard, output) }()
+	var dst io.Writer = io.Discard
+	if len(capture) != 0 {
+		dst = capture[0]
+	}
+	go func() { _, _ = io.Copy(dst, output) }()
 	var pc uintptr
 	if hr := win32.CreatePseudoConsole(win32.COORD{X: 100, Y: 30}, inRead, outWrite, 0, &pc); hr < 0 {
 		t.Fatalf("CreatePseudoConsole: 0x%x", hr)

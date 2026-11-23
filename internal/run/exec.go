@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -23,7 +22,7 @@ import (
 
 const execProtocol = 1
 const execStartupTimeout = 30 * time.Second
-const maxExecFrame = 1024 * 1024
+const maxExecFrame = maxStreamFrame
 const (
 	execLaunch byte = iota
 	execStarted
@@ -56,46 +55,7 @@ type execRequest struct {
 
 func execPipeName(id, runID string) string { return `\\.\pipe\quasidock-exec-` + id + "-" + runID }
 
-type execStream struct {
-	*os.File
-	mu sync.Mutex
-}
-
-func (s *execStream) send(kind byte, data []byte) error {
-	if len(data) > maxExecFrame {
-		return errors.New("exec frame is too large")
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	var header [5]byte
-	header[0] = kind
-	binary.LittleEndian.PutUint32(header[1:], uint32(len(data)))
-	if _, err := s.Write(header[:]); err != nil {
-		return err
-	}
-	// Empty frames are complete after the header. A detached caller can close
-	// immediately after reading it; even a zero-byte write can then fail and
-	// cause the supervisor to kill a successfully acknowledged command.
-	if len(data) == 0 {
-		return nil
-	}
-	_, err := s.Write(data)
-	return err
-}
-
-func (s *execStream) receive() (byte, []byte, error) {
-	var header [5]byte
-	if _, err := io.ReadFull(s, header[:]); err != nil {
-		return 0, nil, err
-	}
-	n := binary.LittleEndian.Uint32(header[1:])
-	if n > maxExecFrame {
-		return 0, nil, errors.New("exec frame is too large")
-	}
-	data := make([]byte, n)
-	_, err := io.ReadFull(s, data)
-	return header[0], data, err
-}
+type execStream = framedStream
 
 func execEnvironment(host map[string]string, entries []string) (map[string]*string, error) {
 	changes := make(map[string]*string)

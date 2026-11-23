@@ -96,6 +96,20 @@ func StartContainer(ctx *context.Context, target string) (*store.ContainerRecord
 }
 
 func startContainerLocked(ctx *context.Context, rec *store.ContainerRecord) (*store.ContainerRecord, error) {
+	rec, err := prepareStart(ctx, rec)
+	if err != nil {
+		return nil, err
+	}
+	if err := launchSupervisor(ctx, rec, rec.RunSpec.HostCwd); err != nil {
+		if !ctx.Store.IsContainerRunning(rec.ID) {
+			recordLaunchFailure(ctx.Store, rec.ID, rec.State.RunID, err)
+		}
+		return rec, err
+	}
+	return ctx.Store.ReadContainer(rec.ID)
+}
+
+func prepareStart(ctx *context.Context, rec *store.ContainerRecord) (*store.ContainerRecord, error) {
 	runID, err := newRunID()
 	if err != nil {
 		return nil, err
@@ -117,13 +131,7 @@ func startContainerLocked(ctx *context.Context, rec *store.ContainerRecord) (*st
 	if err != nil {
 		return nil, err
 	}
-	if err := launchSupervisor(ctx, rec, cwd); err != nil {
-		if !ctx.Store.IsContainerRunning(rec.ID) {
-			recordLaunchFailure(ctx.Store, rec.ID, runID, err)
-		}
-		return rec, err
-	}
-	return ctx.Store.ReadContainer(rec.ID)
+	return rec, nil
 }
 
 // RestartContainer preserves the record through both halves of the operation,

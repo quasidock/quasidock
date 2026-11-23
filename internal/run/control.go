@@ -129,12 +129,18 @@ func sendControl(ctx *context.Context, rec *store.ContainerRecord, signal KillSi
 	}
 }
 
-func waitControlled(ctx *context.Context, rec *store.ContainerRecord, child *process.Child, detached bool, event win32.HANDLE, live *execRuntime) (uint32, error) {
+func waitControlled(ctx *context.Context, rec *store.ContainerRecord, child *process.Child, detached bool, event win32.HANDLE, live *execRuntime, attachment *attachRuntime) (uint32, error) {
 	defer child.Close()
 	defer live.Close()
+	if attachment != nil {
+		defer attachment.stopAccepting()
+	}
 	for {
 		switch win32.WaitForMultipleObjects([]win32.HANDLE{child.Process, event}, false, win32.INFINITE) {
 		case win32.WAIT_OBJECT_0:
+			if attachment != nil {
+				attachment.stopAccepting()
+			}
 			live.Close()
 			return child.Wait()
 		case win32.WAIT_OBJECT_0 + 1:

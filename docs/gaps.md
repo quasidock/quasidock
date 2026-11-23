@@ -5,8 +5,11 @@ Known limitations, platform constraints, and incomplete features in Quasidock
 
 ## Runs, sandboxes, and grants
 
-- **Lifecycle signals and attachment.** `start` and `restart` launch in the
-  background; `start -a`/`-i` and automatic restart policies are unsupported.
+- **Lifecycle signals and attachment.** `start` defaults to background and
+  supports `-a`/`-i`; `restart` launches in the background. Attachment supports
+  `run -d` and `start` containers only, with one stdin writer and multiple output
+  viewers; foreground `run` attachment and automatic restart policies remain
+  unsupported. Clients do not follow a replacement run after restart.
   `kill --signal TERM` maps to Ctrl+Break for detached console process groups,
   which applications may ignore. Foreground TERM is rejected to preserve native
   terminal Ctrl+C. KILL ends the Job Object for either mode. Finish active runs
@@ -101,12 +104,18 @@ Known limitations, platform constraints, and incomplete features in Quasidock
   `QUASIDOCK_LOOPBACK_EXEMPTION=0`.
 - **`-t` / `--tty` and ConPTY Ctrl+C testing.** `quasidock run` accepts `-t`
   / `--tty` (`Config.Tty`), but does not allocate a ConPTY pseudo-console; runs
-  use pipes (`CreatePipe`) and attach `\\.\NUL` to stdin unless `-i` is given.
+  use pipes and attach `\\.\NUL` to stdin unless `-i` is given. Background `-i`
+  keeps a supervisor-owned pipe open for later attachment. Attach has no terminal
+  allocation or resize handling; it supports detach keys for interactive `-t`
+  sessions with console stdin and preserves redirected bytes. Its Ctrl+C forwards
+  the existing Ctrl+Break-based TERM request, which applications may ignore.
   `tests/ctrlc.sh` builds `node` and runs `tests/cmd/ctrlc/main.go`, whose
   `CreatePseudoConsole` helpers are implemented while `main()` currently exits
   `0` without running a live interactive Ctrl+C test
   ([iteration 2](iteration-2.md)). The offline CLI lifecycle test separately checks
   that a foreground application receives native Ctrl+C through a pseudoconsole.
+  Attachment tests also check TERM forwarding, keyboard detachment, and console
+  input mode restoration through a pseudoconsole.
 - **Exec terminal and inspection support.** `exec` and `container exec` support
   running containers only, with `-d`, `-i`, `-t`, `-e`, and `-w`. Exec `-t` is
   pipe-backed like `run -t`: no ConPTY, resize handling, or detach keys. Exec

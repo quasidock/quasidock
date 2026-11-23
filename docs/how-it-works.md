@@ -146,7 +146,8 @@ quasidock rm $cid
   attempt, and prints the 64-hex container ID. A startup timeout terminates the
   supervisor using its owned process handle; closing its Job Object kills the
   application tree. Standard output and error drain concurrently into
-  `containers\<id>\container.log`.
+  `containers\<id>\container.log`. Background `-i` keeps a supervisor-owned stdin
+  pipe open for later attachment, rather than using NUL.
 - **Starting and restarting**: saved `RunSpec` inputs and the pinned image digest
   recreate the command without allocating another container or resolving a newer
   tag. Logs append across launches. Operation locks in `containers\operations\`
@@ -154,6 +155,18 @@ quasidock rm $cid
   this reservation across shutdown and launch. Exit cleanup checks the run ID
   under the same lock before automatic removal, so the outgoing supervisor cannot
   remove a replacement run.
+- **Attachment**: background supervisors serve a separate current-user-only local
+  named pipe scoped to container ID and RunID. `State.AttachProtocol` advertises
+  support. Subscribers receive live stdout/stderr and the primary exit status;
+  historical output remains in `logs`. Each subscriber has a bounded 1 MiB output
+  queue and a five-second write deadline, so a stalled viewer cannot block logging.
+  Only one session owns stdin. A runtime-owned input pump uses acknowledged chunks
+  and survives detachment; EOF closes stdin, while disconnect releases its writer.
+  Attached start connects and subscribes before child launch, then releases the
+  operation lock at startup acknowledgement. Ctrl+C forwards targeted TERM unless
+  disabled; interactive console clients interpret detach keys and restore console
+  modes on exit. Completion drains output and sends the final status before
+  automatic removal. Restart ends the old session instead of switching its RunID.
 - **Stopping, killing, and `--rm`**: launch-scoped control events and atomic
   request/result files acknowledge signals. The supervisor sends targeted
   `CTRL_BREAK_EVENT` for TERM or calls `TerminateJobObject` for KILL. TERM does
