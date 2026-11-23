@@ -11,7 +11,7 @@
   "permissions": {
     "filesystem": ["cwd"]
   },
-  "sdk": { "busybox": "busybox:FRP-6075-g169694ebd@sha256:baca1ecd27b7b5ffe54402d4f8b6e36802d9db5e0e4cb2b7ab13104031045c50" },
+  "sdk": { "busybox": "busybox:FRP-6075-g169694ebd@sha256:3d73278be5092691667ebeecd92ffe034fb6898221024e4859325fb379178d2a" },
   "cleanup": [
     "/c",
     "/data",

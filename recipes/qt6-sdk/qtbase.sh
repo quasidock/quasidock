@@ -17,4 +17,4 @@ grep -qF '/* RT_MANIFEST */ \"${target_mn_filename}\"")' src/corelib/Qt6CoreMacr
 # only in its own namespace: an app's single-instance check (Flameshot's
 # KDSingleApplication) failed, and the app quit. In one, servers and sockets
 # use that namespace.
-patch -p1 < zigsaw/qlocalserver-appcontainer.patch
+patch -p1 < quasidock/qlocalserver-appcontainer.patch

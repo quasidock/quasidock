@@ -14,7 +14,7 @@
   "from": { "gtk": "gtk4:4.24.1@sha256:550c7eddb54fc071caae8955664a76ed418c65e727237ba8585ee6827f4e5ad1" },
   "sdk": {
     "gtksdk": "gtk4-sdk:4.24.1@sha256:7c063e56d0148fbc2ea019ddce1b4368d0aee279ff30b5417bad3e8ad78ca682",
-    "cmake": "cmake:4.4.4@sha256:b96b30bb57b5147726b7deef2607917b43972bb896d9f5d3e3082e31368dbeae"
+    "cmake": "cmake:4.4.4@sha256:bb0949026f8d4c087ebaf2e8bd385e4202363c8fa48fc70ede498958b5a0f8af"
   },
   "cleanup": [
     "/include",
@@ -40,10 +40,10 @@
     },
     {
       "name": "libspelling",
-      "env": { "CFLAGS": "-IB:/src/libspelling/zigsaw" },
+      "env": { "CFLAGS": "-IB:/src/libspelling/quasidock" },
       "sources": [
         { "url": "https://download.gnome.org/sources/libspelling/0.4/libspelling-0.4.10.tar.xz", "sha256": "56e3f01a3a18b575beea4c34349f99cdaba316e1f7c271b1231f7bcf5d9af73b", "strip": 1 },
-        { "path": "gnome-text-editor/icu-uloc.h", "dest": "zigsaw/unicode/uloc.h" }
+        { "path": "gnome-text-editor/icu-uloc.h", "dest": "quasidock/unicode/uloc.h" }
       ],
       "build": [
         "sed -i \"s/^libicu_dep = dependency('icu-uc')$/libicu_dep = declare_dependency(link_args: ['-licu'])/\" lib/enchant/meson.build",
@@ -67,14 +67,14 @@
       "name": "gnome-text-editor",
       "sources": [
         { "url": "https://download.gnome.org/sources/gnome-text-editor/51/gnome-text-editor-51.0.tar.xz", "sha256": "2b76e6da1506346c54b36ba1a3aeedcd28f4cb7d6a8793d217f209456c92dd4c", "strip": 1 },
-        { "path": "gtk4-sdk/svg2ico.sh", "dest": "zigsaw/svg2ico.sh" }
+        { "path": "gtk4-sdk/svg2ico.sh", "dest": "quasidock/svg2ico.sh" }
       ],
       "build": [
         "sed -i \"/^subdir('help')$/d\" meson.build",
         "! grep -q \"subdir('help')\" meson.build",
         "meson setup out --prefix=\"$PREFIX\" --buildtype=release",
         "meson install -C out",
-        "sh zigsaw/svg2ico.sh \"$PREFIX/share/icons/hicolor/scalable/apps/org.gnome.TextEditor.svg\" \"$PREFIX/share/icons/org.gnome.TextEditor.ico\""
+        "sh quasidock/svg2ico.sh \"$PREFIX/share/icons/hicolor/scalable/apps/org.gnome.TextEditor.svg\" \"$PREFIX/share/icons/org.gnome.TextEditor.ico\""
       ]
     }
   ]

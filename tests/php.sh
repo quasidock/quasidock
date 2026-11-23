@@ -159,7 +159,7 @@ composer_installs() {
     local sb=$1 out
     rm -rf "$work\\composer" && cp -r "$(cygpath -u "$root")/tests/php/composer" "$(cygpath -u "$work")/composer"
     out=$(cd "$work\\composer" && qd_run z --sandbox=$sb --rm $COMPOSER install --no-interaction --no-ansi 2>&1 | tr -d '\r')
-    grep -q 'Installing zigsaw/hello (1.0.0)' <<<"$out" || { echo "$sb: $(tail -1 <<<"$out")"; return 1; }
+    grep -q 'Installing quasidock/hello (1.0.0)' <<<"$out" || { echo "$sb: $(tail -1 <<<"$out")"; return 1; }
     out=$(cd "$work\\composer" && qd_run z --sandbox=$sb --rm $COMPOSER run-script which --no-ansi 2>&1 | tr -d '\r')
     grep -q '^Composer version 2\.10\.3' <<<"$out" || { echo "$sb, its script: $(tail -1 <<<"$out")"; return 1; }
     # Without what zigsaw says about grants: the run's grant of the working

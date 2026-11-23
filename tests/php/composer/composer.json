@@ -1,5 +1,5 @@
 {
-    "name": "zigsaw/composer-test",
+    "name": "quasidock/composer-test",
     "description": "tests/php.sh: a project Composer installs offline, from a path repository",
     "type": "project",
     "license": "BSD-3-Clause",
@@ -7,6 +7,6 @@
         { "packagist.org": false },
         { "type": "path", "url": "hello", "options": { "symlink": false } }
     ],
-    "require": { "zigsaw/hello": "*" },
+    "require": { "quasidock/hello": "*" },
     "scripts": { "which": "composer --version" }
 }

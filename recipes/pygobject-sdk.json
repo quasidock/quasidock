@@ -14,12 +14,12 @@
       "name": "python",
       "sources": [
         { "url": "https://www.nuget.org/api/v2/package/python/3.14.10", "sha256": "f54ba67c9951c3d773ea47d2bb095150c037c399f0423a968bcda22809241784", "type": "zip", "dest": "nupkg" },
-        { "path": "pygobject/sitecustomize.py", "dest": "zigsaw/sitecustomize.py" }
+        { "path": "pygobject/sitecustomize.py", "dest": "quasidock/sitecustomize.py" }
       ],
       "build": [
         "cp -r nupkg/tools/. \"$PREFIX/\"",
         "cp \"$PREFIX/python.exe\" \"$PREFIX/python3.exe\"",
-        "cp zigsaw/sitecustomize.py \"$PREFIX/Lib/site-packages/\"",
+        "cp quasidock/sitecustomize.py \"$PREFIX/Lib/site-packages/\"",
         "mkdir -p \"$PREFIX/Lib/pkgconfig\"",
         "for pc in python3 python-3.14 python3-embed python-3.14-embed; do printf '%s\\n' 'prefix=${pcfiledir}/../..' 'includedir=${prefix}/include' 'libdir=${prefix}/libs' '' 'Name: Python' 'Description: Python 3.14, the python.org build' 'Version: 3.14.7' 'Libs: -L${libdir} -lpython314' 'Cflags: -I${includedir}' > \"$PREFIX/Lib/pkgconfig/$pc.pc\" || exit 1; done",
         "pkg-config --modversion python3 && pkg-config --cflags python-3.14"

@@ -23,8 +23,8 @@
   },
   "sdk": { "pgsdk": "postgresql-sdk:18.6@sha256:78844dc4dd9e47cc326e0a56fe216d7fe207ee6cbda16dabb7ba1ad510e7ac12" },
   "from": {
-    "perl": "perl:5.42.3.1@sha256:2854c34722b812ef3173f5d4ab6fb091ac45dc16d6079865a5024d6a6527dfd6",
-    "python": "python:3.14.10@sha256:6c21dc182028bd8bf86a9b13969425eceb7701c611e13c74c73491c5a9509605"
+    "perl": "perl:5.42.3.1@sha256:f5c9f71d4c4867cd2c91100b2de48a95c3e2f6f17b12454d39feea99e6daa178",
+    "python": "python:3.14.10@sha256:887cfcc7cad5bd8c423efd6087c7ef5f02906791ba2780b6030f789534679e72"
   },
   "cleanup": [
     "/include",

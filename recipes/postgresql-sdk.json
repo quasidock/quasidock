@@ -8,12 +8,12 @@
   "entrypoint": "bin/pg_config.exe",
   "path": ["bin"],
   "sdk": {
-    "meson": "meson:1.12.1@sha256:9b656a460928dbde77dc31f5827e9b99ad4b53e007de87b19b6fbec26785bbc3",
-    "cmake": "cmake:4.4.4@sha256:b96b30bb57b5147726b7deef2607917b43972bb896d9f5d3e3082e31368dbeae",
+    "meson": "meson:1.12.1@sha256:bb01866aa3300aec3881be865d697c5de46084c204c9a97e9bdaae2675dde5b9",
+    "cmake": "cmake:4.4.4@sha256:bb0949026f8d4c087ebaf2e8bd385e4202363c8fa48fc70ede498958b5a0f8af",
     "llvm": "llvm-mingw:20261020@sha256:65425754b958693accc5dc8d8e8ca0dfa6235669c286cc8875105171b3e299b9",
-    "busybox": "busybox:FRP-6075-g169694ebd@sha256:baca1ecd27b7b5ffe54402d4f8b6e36802d9db5e0e4cb2b7ab13104031045c50",
-    "perl": "perl:5.42.3.1@sha256:2854c34722b812ef3173f5d4ab6fb091ac45dc16d6079865a5024d6a6527dfd6",
-    "python": "python:3.14.10@sha256:6c21dc182028bd8bf86a9b13969425eceb7701c611e13c74c73491c5a9509605"
+    "busybox": "busybox:FRP-6075-g169694ebd@sha256:3d73278be5092691667ebeecd92ffe034fb6898221024e4859325fb379178d2a",
+    "perl": "perl:5.42.3.1@sha256:f5c9f71d4c4867cd2c91100b2de48a95c3e2f6f17b12454d39feea99e6daa178",
+    "python": "python:3.14.10@sha256:887cfcc7cad5bd8c423efd6087c7ef5f02906791ba2780b6030f789534679e72"
   },
   "cleanup": [
     "/lib/cmake",
@@ -86,10 +86,10 @@
     },
     {
       "name": "openssl",
-      "env": { "CFLAGS": "-O2", "PERL": "perl", "PERL5OPT": "-IB:/src/openssl/zigsaw -Munixspec" },
+      "env": { "CFLAGS": "-O2", "PREFIX": "B:/prefix", "PERL": "perl", "PERL5OPT": "-IB:/src/openssl/quasidock -Munixspec" },
       "sources": [
         { "url": "https://github.com/openssl/openssl/releases/download/openssl-3.5.9/openssl-3.5.9.tar.gz", "sha256": "603f5602e2eef00d77fbd429d34dcd5822bb301757a1bc9cdb24c670f1eb859a", "strip": 1 },
-        { "path": "gtk4-sdk/openssl-unixspec.pm", "dest": "zigsaw/unixspec.pm" }
+        { "path": "gtk4-sdk/openssl-unixspec.pm", "dest": "quasidock/unixspec.pm" }
       ],
       "build": [
         "perl Configure mingw64 no-shared no-asm no-tests no-docs no-apps no-module --prefix=\"$PREFIX\" --libdir=lib",
@@ -106,13 +106,13 @@
       "name": "icu-headers",
       "sources": [
         { "url": "https://github.com/unicode-org/icu/releases/download/release-72-1/icu4c-72_1-src.tgz", "sha256": "a2d2d38217092a7ed56635e34467f92f976b370e20182ad325edea6681a71d68", "strip": 1 },
-        { "path": "postgresql/icu-uc.pc", "dest": "zigsaw/icu-uc.pc" },
-        { "path": "postgresql/icu-i18n.pc", "dest": "zigsaw/icu-i18n.pc" }
+        { "path": "postgresql/icu-uc.pc", "dest": "quasidock/icu-uc.pc" },
+        { "path": "postgresql/icu-i18n.pc", "dest": "quasidock/icu-i18n.pc" }
       ],
       "build": [
         "mkdir -p \"$PREFIX/include/unicode\" \"$PREFIX/lib/pkgconfig\"",
         "cp source/common/unicode/*.h source/i18n/unicode/*.h \"$PREFIX/include/unicode/\"",
-        "cp zigsaw/icu-uc.pc zigsaw/icu-i18n.pc \"$PREFIX/lib/pkgconfig/\""
+        "cp quasidock/icu-uc.pc quasidock/icu-i18n.pc \"$PREFIX/lib/pkgconfig/\""
       ]
     },
     {
@@ -126,18 +126,18 @@
       "name": "postgresql",
       "sources": [
         { "url": "https://ftp.postgresql.org/pub/source/v18.6/postgresql-18.6.tar.gz", "sha256": "983ee554ec53dbeb9b70797bef9fcf4e67e117e7e48ca1463cc80b3ff8e8ff3f", "strip": 1 },
-        { "path": "postgresql/signal-pipes.patch", "dest": "zigsaw/signal-pipes.patch" },
-        { "path": "postgresql/clang-mingw.patch", "dest": "zigsaw/clang-mingw.patch" },
-        { "path": "postgresql/initdb-nul.patch", "dest": "zigsaw/initdb-nul.patch" },
-        { "path": "postgresql/plperl-nul.patch", "dest": "zigsaw/plperl-nul.patch" },
-        { "path": "postgresql/pg-config-long.patch", "dest": "zigsaw/pg-config-long.patch" }
+        { "path": "postgresql/signal-pipes.patch", "dest": "quasidock/signal-pipes.patch" },
+        { "path": "postgresql/clang-mingw.patch", "dest": "quasidock/clang-mingw.patch" },
+        { "path": "postgresql/initdb-nul.patch", "dest": "quasidock/initdb-nul.patch" },
+        { "path": "postgresql/plperl-nul.patch", "dest": "quasidock/plperl-nul.patch" },
+        { "path": "postgresql/pg-config-long.patch", "dest": "quasidock/pg-config-long.patch" }
       ],
       "build": [
-        "patch -p1 < zigsaw/signal-pipes.patch",
-        "patch -p1 < zigsaw/clang-mingw.patch",
-        "patch -p1 < zigsaw/initdb-nul.patch",
-        "patch -p1 < zigsaw/plperl-nul.patch",
-        "patch -p1 < zigsaw/pg-config-long.patch",
+        "patch -p1 < quasidock/signal-pipes.patch",
+        "patch -p1 < quasidock/clang-mingw.patch",
+        "patch -p1 < quasidock/initdb-nul.patch",
+        "patch -p1 < quasidock/plperl-nul.patch",
+        "patch -p1 < quasidock/pg-config-long.patch",
         "PATH=\"B:/src/flex-bison;$PATH\" meson setup out --prefix=\"$PREFIX\" --buildtype=release -Dauto_features=disabled -Dssl=openssl -Dzlib=enabled -Dlz4=enabled -Dzstd=enabled -Dicu=enabled -Dlibxml=enabled -Dldap=enabled -Dplperl=enabled -Dplpython=enabled -Dtap_tests=disabled -Ddocs=disabled -Ddocs_pdf=disabled -DPYTHON=B:/src/python-dev/nupkg/tools/python.exe",
         "! grep -q PG_INT128_TYPE out/src/include/pg_config.h",
         "meson install -C out",

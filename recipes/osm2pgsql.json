@@ -18,9 +18,9 @@
   "sdk": {
     "pgsdk": "postgresql-sdk:18.6@sha256:78844dc4dd9e47cc326e0a56fe216d7fe207ee6cbda16dabb7ba1ad510e7ac12",
     "gdalsdk": "gdal-sdk:3.13.3@sha256:f228291cd151bfc6b31f72922a710c5cc595b811041c8e6debe7eec5f7a8b63a",
-    "cmake": "cmake:4.4.4@sha256:b96b30bb57b5147726b7deef2607917b43972bb896d9f5d3e3082e31368dbeae",
+    "cmake": "cmake:4.4.4@sha256:bb0949026f8d4c087ebaf2e8bd385e4202363c8fa48fc70ede498958b5a0f8af",
     "llvm": "llvm-mingw:20261020@sha256:65425754b958693accc5dc8d8e8ca0dfa6235669c286cc8875105171b3e299b9",
-    "busybox": "busybox:FRP-6075-g169694ebd@sha256:baca1ecd27b7b5ffe54402d4f8b6e36802d9db5e0e4cb2b7ab13104031045c50"
+    "busybox": "busybox:FRP-6075-g169694ebd@sha256:3d73278be5092691667ebeecd92ffe034fb6898221024e4859325fb379178d2a"
   },
   "cleanup": ["/include", "/lib", "*.a", "/share/doc", "/share/man", "/bin/osm2pgsql-replication"],
   "stages": [
@@ -58,13 +58,13 @@
       "name": "boost",
       "sources": [
         { "url": "https://github.com/boostorg/boost/releases/download/boost-1.92.0/boost-1.92.0-b2-nodocs.tar.xz", "sha256": "ea7b982002cc9dfbe59b0b217b206f470dc75f3de0bb2973d844118934d82411", "dest": "boost.tar.xz", "type": "file" },
-        { "path": "osm2pgsql/BoostConfig.cmake", "dest": "zigsaw/BoostConfig.cmake" },
-        { "path": "osm2pgsql/BoostConfigVersion.cmake", "dest": "zigsaw/BoostConfigVersion.cmake" }
+        { "path": "osm2pgsql/BoostConfig.cmake", "dest": "quasidock/BoostConfig.cmake" },
+        { "path": "osm2pgsql/BoostConfigVersion.cmake", "dest": "quasidock/BoostConfigVersion.cmake" }
       ],
       "build": [
         "tar xJf boost.tar.xz boost-1.92.0/boost boost-1.92.0/LICENSE_1_0.txt && mv boost-1.92.0/boost \"$PREFIX/include/\" && test -f \"$PREFIX/include/boost/geometry.hpp\"",
         "cp boost-1.92.0/LICENSE_1_0.txt \"$PREFIX/licenses/boost.txt\"",
-        "mkdir -p \"$PREFIX/lib/cmake/Boost-1.92.0\" && cp zigsaw/BoostConfig.cmake zigsaw/BoostConfigVersion.cmake \"$PREFIX/lib/cmake/Boost-1.92.0/\""
+        "mkdir -p \"$PREFIX/lib/cmake/Boost-1.92.0\" && cp quasidock/BoostConfig.cmake quasidock/BoostConfigVersion.cmake \"$PREFIX/lib/cmake/Boost-1.92.0/\""
       ]
     },
     {
@@ -72,10 +72,10 @@
       "env": { "CXXFLAGS": "-DXML_STATIC -DNOMINMAX -DWIN32_LEAN_AND_MEAN -D_POSIX_THREAD_SAFE_FUNCTIONS=200112L" },
       "sources": [
         { "url": "https://github.com/osm2pgsql-dev/osm2pgsql/archive/refs/tags/2.3.1.tar.gz", "sha256": "e90461bd78787fd5cf82f73ac4bc0cfccbc4f498f35dce59eb4d168a380d6ac0", "strip": 1 },
-        { "path": "osm2pgsql/default-style.patch", "dest": "zigsaw/default-style.patch" }
+        { "path": "osm2pgsql/default-style.patch", "dest": "quasidock/default-style.patch" }
       ],
       "build": [
-        "patch -p1 < zigsaw/default-style.patch && grep -q GetModuleFileNameW src/osm2pgsql.cpp",
+        "patch -p1 < quasidock/default-style.patch && grep -q GetModuleFileNameW src/osm2pgsql.cpp",
         "g=$(dirname \"$(dirname \"$(command -v gdalinfo)\")\") && sdk=$(dirname \"$(pg_config --bindir)\") && LDFLAGS=\"$LDFLAGS -L$g/lib\" cmake -S . -B out -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=B:/prefix \"-DCMAKE_PREFIX_PATH=B:/prefix;$g;$sdk\" \"-DCMAKE_CXX_FLAGS_INIT=-fmacro-prefix-map=$sdk=pgsdk -fmacro-prefix-map=$g=gdalsdk\" \"-DCMAKE_CXX_STANDARD_LIBRARIES=-lsqlite3 -lshell32 -lole32\" -DBUILD_TESTS=OFF -DWITH_LUAJIT=OFF > configure.log 2>&1 || { tail -80 configure.log; exit 1; }",
         "grep -E 'Found|Building|Libraries used|Not building|osm2pgsql-gen' configure.log || true",
         "cmake --build out",

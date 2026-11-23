@@ -13,7 +13,7 @@
   "from": { "java": "java:25.0.5_8@sha256:cf6e3c25a745b91bd94d4aebff340702f7ef7e6935f1f91c9ef322daec09291d" },
   "sdk": {
     "gradle": "gradle:9.8.1@sha256:b9fb24491d6aac1653495cc256175dede16d1ec68a689e211503307950b5e1c3",
-    "busybox": "busybox:FRP-6075-g169694ebd@sha256:baca1ecd27b7b5ffe54402d4f8b6e36802d9db5e0e4cb2b7ab13104031045c50"
+    "busybox": "busybox:FRP-6075-g169694ebd@sha256:3d73278be5092691667ebeecd92ffe034fb6898221024e4859325fb379178d2a"
   },
   "stages": [
     {

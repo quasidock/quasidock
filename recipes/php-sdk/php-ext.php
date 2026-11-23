@@ -96,7 +96,7 @@ function build(string $dev, array $args): int
         // 0.17) makes an error, as Xdebug's int * for a DWORD * is.
         ['-O2', '-fms-extensions', '-Wno-date-time', '-Wno-error=implicit-function-declaration',
          '-Wno-error=incompatible-pointer-types',
-         '-include', "$dev/zigsaw/zig-php.h", "-I$tmp", '-I.'],
+         '-include', "$dev/quasidock/zig-php.h", "-I$tmp", '-I.'],
         array_map(fn($d) => "-I$dev/include$d", ['', '/main', '/Zend', '/TSRM', '/ext']),
         // The headers of libraries the recipe built first, in the build's
         // prefix, then of those PHP's build links with, which its configure
@@ -119,7 +119,7 @@ function build(string $dev, array $args): int
             $obj = "$tmp/" . str_replace(['/', '\\', '.'], '_', ltrim($s['file'], './')) . '.o';
             $compiles[] = [$s['file'], array_merge(['cc'], $cflags, ['-c', $s['file'], '-o', $obj]), $obj];
         }
-        $compiles[] = ['zig-php.c', array_merge(['cc'], $base, ['-c', "$dev/zigsaw/zig-php.c", '-o', "$tmp/zig-php.o"]), "$tmp/zig-php.o"];
+        $compiles[] = ['zig-php.c', array_merge(['cc'], $base, ['-c', "$dev/quasidock/zig-php.c", '-o', "$tmp/zig-php.o"]), "$tmp/zig-php.o"];
         runAll($compiles, $jobs);
 
         $libs = [];

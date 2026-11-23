@@ -11,8 +11,8 @@
     "filesystem": ["cwd"]
   },
   "sdk": {
-    "zig": "zig:0.17.0@sha256:56fc3e4f42c25dbf70236aedb053606311cb2d4b582ad4d1e26e76036c08eab1",
-    "busybox": "busybox:FRP-6075-g169694ebd@sha256:baca1ecd27b7b5ffe54402d4f8b6e36802d9db5e0e4cb2b7ab13104031045c50"
+    "zig": "zig:0.17.0@sha256:d56d973884d07ce551d9697535f43d18183a3ce0ee3f79f0c9d40ce041842d5f",
+    "busybox": "busybox:FRP-6075-g169694ebd@sha256:3d73278be5092691667ebeecd92ffe034fb6898221024e4859325fb379178d2a"
   },
   "stages": [
     {
@@ -27,11 +27,11 @@
         "RANLIB": "ranlib.exe",
         "RM": "rm -f",
         "PATH_SEPARATOR": ";",
-        "LD": "sh B:/src/ghostscript/zigsaw/ld.sh"
+        "LD": "sh B:/src/ghostscript/quasidock/ld.sh"
       },
       "sources": [
         { "url": "https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10080/ghostscript-10.08.0.tar.xz", "sha256": "c20492bc8ebb96c87fa2e52a0926e1cda8cde95d66145e018ac713fed5da38cf", "strip": 1 },
-        { "path": "gtk4-sdk/autotools-ld.sh", "dest": "zigsaw/ld.sh" }
+        { "path": "gtk4-sdk/autotools-ld.sh", "dest": "quasidock/ld.sh" }
       ],
       "build": [
         "sed -i '/just define a dummy here for Windows/{n;n;s/^#ifdef _WIN32$/#if defined(_WIN32) \\&\\& !defined(__MINGW32__)/}' base/mkromfs.c",

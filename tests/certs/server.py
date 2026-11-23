@@ -4,7 +4,7 @@
 
 It serves https://localhost:<port> on 127.0.0.1 and ::1: /ok answers "ok",
 /pkg.tar.gz is a small tarball (for zig fetch), /packages.json a Composer
-repository with one package, zigsaw/certs 1.0.0, whose archive isn't there
+repository with one package, quasidock/certs 1.0.0, whose archive isn't there
 (a dry run doesn't fetch it), and anything else is 404, which git reports as a
 repository that isn't there, not a TLS error. Given an HTTP port and a CRL
 file, it also serves http://localhost:<http port>, the same and /ca.crl,
@@ -40,8 +40,8 @@ def tarball():
 bodies = {
     "/ok": ("text/plain", b"ok\n"),
     "/pkg.tar.gz": ("application/gzip", tarball()),
-    "/packages.json": ("application/json", json.dumps({"packages": {"zigsaw/certs": {"1.0.0": {
-        "name": "zigsaw/certs",
+    "/packages.json": ("application/json", json.dumps({"packages": {"quasidock/certs": {"1.0.0": {
+        "name": "quasidock/certs",
         "version": "1.0.0",
         "dist": {"type": "zip", "url": f"https://localhost:{port}/certs.zip"},
     }}}}).encode()),

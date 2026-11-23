@@ -473,9 +473,9 @@
   },
   "cleanup": ["*.bat"],
   "from": {
-    "cmake": "cmake:4.4.4@sha256:b96b30bb57b5147726b7deef2607917b43972bb896d9f5d3e3082e31368dbeae",
+    "cmake": "cmake:4.4.4@sha256:bb0949026f8d4c087ebaf2e8bd385e4202363c8fa48fc70ede498958b5a0f8af",
     "llvm": "llvm-mingw:20261020@sha256:65425754b958693accc5dc8d8e8ca0dfa6235669c286cc8875105171b3e299b9",
-    "busybox": "busybox:FRP-6075-g169694ebd@sha256:baca1ecd27b7b5ffe54402d4f8b6e36802d9db5e0e4cb2b7ab13104031045c50"
+    "busybox": "busybox:FRP-6075-g169694ebd@sha256:3d73278be5092691667ebeecd92ffe034fb6898221024e4859325fb379178d2a"
   },
   "stages": [
     {
@@ -488,10 +488,10 @@
       "name": "qtdeclarative",
       "sources": [
         { "url": "https://github.com/qt/qtdeclarative/archive/refs/tags/v6.12.0.tar.gz", "sha256": "0b71aa358703de8217177dbb620c86af9e9804482e607bb2cadbf116a65bd9c6", "strip": 1 },
-        { "url": "https://www.python.org/ftp/python/3.14.7/python-3.14.7-embed-amd64.zip", "sha256": "d297e5ff019966817ad8502465176139f2d3d840fa4ed84b13bed399a6ab1f15", "dest": "zigsaw/python" }
+        { "url": "https://www.python.org/ftp/python/3.14.7/python-3.14.7-embed-amd64.zip", "sha256": "d297e5ff019966817ad8502465176139f2d3d840fa4ed84b13bed399a6ab1f15", "dest": "quasidock/python" }
       ],
       "build": [
-        "cmake -S . -B out -DCMAKE_BUILD_TYPE=Release -DCMAKE_SYSTEM_VERSION=10.0.26300 -DCMAKE_INSTALL_PREFIX=\"$PREFIX\" -DQT_BUILD_EXAMPLES=OFF -DQT_BUILD_TESTS=OFF -DBUILD_WITH_PCH=OFF -DQT_GENERATE_SBOM=OFF -DQT_UNITY_BUILD=ON -DFEATURE_quickcontrols2_imagine=OFF -DFEATURE_quickcontrols2_stylekit=OFF -DPython_EXECUTABLE=B:/src/qtdeclarative/zigsaw/python/python.exe",
+        "cmake -S . -B out -DCMAKE_BUILD_TYPE=Release -DCMAKE_SYSTEM_VERSION=10.0.26300 -DCMAKE_INSTALL_PREFIX=\"$PREFIX\" -DQT_BUILD_EXAMPLES=OFF -DQT_BUILD_TESTS=OFF -DBUILD_WITH_PCH=OFF -DQT_GENERATE_SBOM=OFF -DQT_UNITY_BUILD=ON -DFEATURE_quickcontrols2_imagine=OFF -DFEATURE_quickcontrols2_stylekit=OFF -DPython_EXECUTABLE=B:/src/qtdeclarative/quasidock/python/python.exe",
         "cmake --build out",
         "find out -path '*/.rcc/qmlcache/*' -type f \\( -name '*.cpp' -o -name '*.aotstats' \\) -delete",
         "cmake --build out",

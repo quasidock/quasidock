@@ -116,8 +116,9 @@
       "name": "openssl",
       "env": {
         "CFLAGS": "-O2",
+        "PREFIX": "B:/prefix",
         "PERL": "perl",
-        "PERL5OPT": "-IB:/src/openssl/zigsaw -Munixspec"
+        "PERL5OPT": "-IB:/src/openssl/quasidock -Munixspec"
       },
       "sources": [
         {
@@ -127,7 +128,7 @@
         },
         {
           "path": "gtk4-sdk/openssl-unixspec.pm",
-          "dest": "zigsaw/unixspec.pm"
+          "dest": "quasidock/unixspec.pm"
         }
       ],
       "build": [

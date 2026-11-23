@@ -8,7 +8,7 @@
   },
   "sdk": {
     "llvm": "llvm-mingw:20261020@sha256:65425754b958693accc5dc8d8e8ca0dfa6235669c286cc8875105171b3e299b9",
-    "busybox": "busybox:FRP-6075-g169694ebd@sha256:baca1ecd27b7b5ffe54402d4f8b6e36802d9db5e0e4cb2b7ab13104031045c50"
+    "busybox": "busybox:FRP-6075-g169694ebd@sha256:3d73278be5092691667ebeecd92ffe034fb6898221024e4859325fb379178d2a"
   },
   "cleanup": [
     "/share/doc/gettext/examples",
@@ -41,10 +41,10 @@
       },
       "sources": [
         { "url": "https://ftp.gnu.org/gnu/libiconv/libiconv-1.19.tar.gz", "sha256": "88dd96a8c0464eca144fc791ae60cd31cd8ee78321e67397e25fc095c4a19aa6", "strip": 1 },
-        { "path": "gtk4-sdk/autotools-mtimes.sh", "dest": "zigsaw/mtimes.sh" }
+        { "path": "gtk4-sdk/autotools-mtimes.sh", "dest": "quasidock/mtimes.sh" }
       ],
       "build": [
-        "sh zigsaw/mtimes.sh",
+        "sh quasidock/mtimes.sh",
         "sh ./configure --disable-dependency-tracking --build=x86_64-w64-mingw32 --host=x86_64-w64-mingw32 --prefix=\"$PREFIX\" --disable-static --enable-relocatable --disable-nls lt_cv_deplibs_check_method=pass_all gl_cv_cc_visibility=no > configure.log 2>&1 || { tail -60 config.log; exit 1; }",
         "make MAKE=\"sh B:/src/pmake/pmake.sh\" > make.log 2>&1 || { tail -80 make.log; exit 1; }",
         "make install > install.log 2>&1 || { tail -60 install.log; exit 1; }"
@@ -71,10 +71,10 @@
       },
       "sources": [
         { "url": "https://ftp.gnu.org/gnu/gettext/gettext-1.0.tar.xz", "sha256": "71132a3fb71e68245b8f2ac4e9e97137d3e5c02f415636eb508ae607bc01add7", "strip": 1 },
-        { "path": "gtk4-sdk/autotools-mtimes.sh", "dest": "zigsaw/mtimes.sh" }
+        { "path": "gtk4-sdk/autotools-mtimes.sh", "dest": "quasidock/mtimes.sh" }
       ],
       "build": [
-        "sh zigsaw/mtimes.sh",
+        "sh quasidock/mtimes.sh",
         "sh ./configure -C --disable-dependency-tracking --build=x86_64-w64-mingw32 --host=x86_64-w64-mingw32 --prefix=\"$PREFIX\" --disable-static --enable-relocatable --disable-java --disable-csharp --disable-openmp --disable-curses --disable-libasprintf --without-emacs --without-git --without-cvs --without-bzip2 --without-xz --enable-threads=windows --with-libiconv-prefix=B:/prefix lt_cv_deplibs_check_method=pass_all gl_cv_cc_visibility=no > configure.log 2>&1 || { tail -40 configure.log; for f in config.log */config.log; do echo \"== $f\"; tail -60 $f; done; exit 1; }",
         "make MAKE=\"sh B:/src/pmake/pmake.sh\" MAKEINFO=true HELP2MAN=true > make.log 2>&1 || { tail -80 make.log; exit 1; }",
         "make install INSTALL=\"install -c\" MAKEINFO=true HELP2MAN=true > install.log 2>&1 || { tail -60 install.log; exit 1; }"

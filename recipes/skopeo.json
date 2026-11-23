@@ -12,15 +12,15 @@
     "filesystem": ["cwd"]
   },
   "sdk": {
-    "go": "go:1.27.3@sha256:7ce8afd12dc7371e8f546f455036b941fdfdcbbaa81cefb3c320ea693d951ccc",
-    "busybox": "busybox:FRP-6075-g169694ebd@sha256:baca1ecd27b7b5ffe54402d4f8b6e36802d9db5e0e4cb2b7ab13104031045c50"
+    "go": "go:1.27.3@sha256:db33d93cf5feb68f1ca4e4fcaf0b465420689bcf3bb96d41daff1d3ea3c297fc",
+    "busybox": "busybox:FRP-6075-g169694ebd@sha256:3d73278be5092691667ebeecd92ffe034fb6898221024e4859325fb379178d2a"
   },
   "stages": [
     {
       "name": "skopeo",
       "sources": [
         { "url": "https://proxy.golang.org/go.podman.io/skopeo/@v/v1.24.1.zip", "sha256": "1058922bb267ae88cc0a607f7d47e582180da64a1c26de4a73c5a29465202de9", "strip": 2 },
-        { "path": "skopeo/policy.json", "dest": "zigsaw/policy.json" }
+        { "path": "skopeo/policy.json", "dest": "quasidock/policy.json" }
       ],
       "env": { "CGO_ENABLED": "0" },
       "vendor": {
@@ -39,7 +39,7 @@
       "build": [
         "go build -mod=vendor -tags 'exclude_graphdriver_btrfs containers_image_openpgp' -ldflags '-s -w' -o \"$PREFIX/skopeo.exe\" ./cmd/skopeo",
         "mkdir -p \"$PREFIX/etc/containers\"",
-        "cp zigsaw/policy.json \"$PREFIX/etc/containers/\"",
+        "cp quasidock/policy.json \"$PREFIX/etc/containers/\"",
         "cp LICENSE README.md \"$PREFIX/\""
       ]
     }

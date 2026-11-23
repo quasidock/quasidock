@@ -141,11 +141,11 @@ psql_get() { says 1 z "$1" --entrypoint=psql $PG "host=localhost port=$pgport db
 # (A handler of its own, too, as an installed Xdebug adds its stack to them.)
 php_stream_get() { says ok z "$1" $PHP -r "\$w = []; set_error_handler(function (\$n, \$m) use (&\$w) { \$w[] = \$m; return true; }); \$r = file_get_contents('$url/ok'); echo \$r === false ? implode(' / ', \$w) : trim(\$r), PHP_EOL;"; }
 php_curl_get() { says ok z "$1" $PHP -r "\$c = curl_init('$url/ok'); curl_setopt(\$c, CURLOPT_RETURNTRANSFER, true); \$r = curl_exec(\$c); echo \$r === false ? curl_error(\$c) : trim(\$r), PHP_EOL;"; }
-# Composer resolves zigsaw/certs from the server's repository (composer.json).
+# Composer resolves quasidock/certs from the server's repository (composer.json).
 composer_get() {
     local out
     out=$(z "$1" $COMPOSER update --dry-run --no-interaction --no-plugins --no-scripts 2>&1 | tr -d '\r')
-    grep -q 'Locking zigsaw/certs (1.0.0)' <<<"$out" && return 0
+    grep -q 'Locking quasidock/certs (1.0.0)' <<<"$out" && return 0
     # Its error, which Composer wraps over lines (and follows with the
     # command's usage), on one; any other error, as it is.
     if grep -q 'curl error' <<<"$out"; then
@@ -261,8 +261,8 @@ printf '%s\n' 'file(DOWNLOAD "${URL}" STATUS status TLS_VERIFY ON LOG log)' 'lis
     'endif()' >download.cmake
 # zig fetch looks for a build.zig.
 printf '%s\n' 'pub fn build(_: *@import("std").Build) void {}' >build.zig
-# Composer's project: zigsaw/certs, from the server's repository only.
-printf '{"repositories": [{"type": "composer", "url": "%s"}, {"packagist.org": false}], "require": {"zigsaw/certs": "1.0.0"}}\n' "$url" >composer.json
+# Composer's project: quasidock/certs, from the server's repository only.
+printf '{"repositories": [{"type": "composer", "url": "%s"}, {"packagist.org": false}], "require": {"quasidock/certs": "1.0.0"}}\n' "$url" >composer.json
 if has $JDK; then z soft --entrypoint=javac $JDK -d classes Get.java >/dev/null 2>&1 || echo "compiling Get.java failed"; fi
 
 bash "$QD_IMAGES_HELPER" run "$zigsaw" --rm $PY server.py $port leaf.crt leaf.key ready $crlport ca.crl >server.out 2>&1 &

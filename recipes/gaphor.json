@@ -24,7 +24,7 @@
   "sdk": {
     "gtksdk": "gtk4-sdk:4.24.1@sha256:7c063e56d0148fbc2ea019ddce1b4368d0aee279ff30b5417bad3e8ad78ca682",
     "pygobjectsdk": "pygobject-sdk:3.58.1@sha256:f5df4adc9e7bdc10e9e495017802a0acb80ec71f4ad995b13f523d7aecd737c7",
-    "cmake": "cmake:4.4.4@sha256:b96b30bb57b5147726b7deef2607917b43972bb896d9f5d3e3082e31368dbeae"
+    "cmake": "cmake:4.4.4@sha256:bb0949026f8d4c087ebaf2e8bd385e4202363c8fa48fc70ede498958b5a0f8af"
   },
   "cleanup": [
     "/include",
@@ -72,28 +72,28 @@
       "name": "gaphor",
       "sources": [
         { "url": "https://files.pythonhosted.org/packages/2e/9f/33c39e6c936a167a299f99a1ac87b0a487974ffd8b8eb33398e20b5566f9/gaphor-3.3.2.tar.gz", "sha256": "dc4cad4df94e861584923091e5eab45fc13e4c84d3bd0bd8606b0f2b3ba2bfba", "strip": 1 },
-        { "path": "gaphor/requirements.txt", "dest": "zigsaw/requirements.txt" },
-        { "path": "gaphor/build-requirements.txt", "dest": "zigsaw/build-requirements.txt" },
-        { "path": "gtk4-sdk/svg2ico.sh", "dest": "zigsaw/svg2ico.sh" }
+        { "path": "gaphor/requirements.txt", "dest": "quasidock/requirements.txt" },
+        { "path": "gaphor/build-requirements.txt", "dest": "quasidock/build-requirements.txt" },
+        { "path": "gtk4-sdk/svg2ico.sh", "dest": "quasidock/svg2ico.sh" }
       ],
       "vendor": {
         "commands": [
-          "python3 -m pip download --no-cache-dir --disable-pip-version-check --no-deps --only-binary=:all: --platform win_amd64 --python-version 3.14 --implementation cp --require-hashes -r zigsaw/requirements.txt -r zigsaw/build-requirements.txt -d wheels"
+          "python3 -m pip download --no-cache-dir --disable-pip-version-check --no-deps --only-binary=:all: --platform win_amd64 --python-version 3.14 --implementation cp --require-hashes -r quasidock/requirements.txt -r quasidock/build-requirements.txt -d wheels"
         ],
         "dir": "wheels",
         "sha256": "4e373f0012e8c1b2daa7c4ec0aa855e37079cd0ff9506cf405a0241577b8fa70"
       },
       "build": [
-        "python3 -m pip install --no-cache-dir --disable-pip-version-check --no-index --find-links wheels --no-deps --no-compile --require-hashes --target B:/build-tools -r zigsaw/build-requirements.txt",
-        "python3 -m pip install --no-cache-dir --disable-pip-version-check --no-index --find-links wheels --no-deps --no-compile --require-hashes --target \"$PREFIX/Lib/site-packages\" -r zigsaw/requirements.txt",
+        "python3 -m pip install --no-cache-dir --disable-pip-version-check --no-index --find-links wheels --no-deps --no-compile --require-hashes --target B:/build-tools -r quasidock/build-requirements.txt",
+        "python3 -m pip install --no-cache-dir --disable-pip-version-check --no-index --find-links wheels --no-deps --no-compile --require-hashes --target \"$PREFIX/Lib/site-packages\" -r quasidock/requirements.txt",
         "PYTHONPATH=B:/build-tools python3 -m pip install --no-cache-dir --disable-pip-version-check --no-index --no-deps --no-compile --no-build-isolation --target \"$PREFIX/Lib/site-packages\" .",
         "rm -rf \"$PREFIX/Lib/site-packages/bin\"",
-        "for r in \"$PREFIX\"/Lib/site-packages/*.dist-info/RECORD; do grep -v '^[.][.]/[.][.]/bin/' \"$r\" > zigsaw/RECORD && mv zigsaw/RECORD \"$r\" || exit 1; done",
+        "for r in \"$PREFIX\"/Lib/site-packages/*.dist-info/RECORD; do grep -v '^[.][.]/[.][.]/bin/' \"$r\" > quasidock/RECORD && mv quasidock/RECORD \"$r\" || exit 1; done",
         "! grep -l '^[.][.]/[.][.]/bin/' \"$PREFIX\"/Lib/site-packages/*.dist-info/RECORD",
         "mkdir -p \"$PREFIX/share/glib-2.0/schemas\" \"$PREFIX/share/icons\"",
         "cp gaphor/ui/installschemas/org.gaphor.Gaphor.gschema.xml \"$PREFIX/share/glib-2.0/schemas/\"",
         "glib-compile-schemas \"$PREFIX/share/glib-2.0/schemas\"",
-        "sh zigsaw/svg2ico.sh gaphor/ui/icons/hicolor/scalable/apps/org.gaphor.Gaphor.svg \"$PREFIX/share/icons/org.gaphor.Gaphor.ico\"",
+        "sh quasidock/svg2ico.sh gaphor/ui/icons/hicolor/scalable/apps/org.gaphor.Gaphor.svg \"$PREFIX/share/icons/org.gaphor.Gaphor.ico\"",
         "ls \"$PREFIX/Lib/site-packages/gaphor/__main__.py\" \"$PREFIX/Lib/site-packages/PIL/__init__.py\" \"$PREFIX/share/glib-2.0/schemas/gschemas.compiled\""
       ]
     }

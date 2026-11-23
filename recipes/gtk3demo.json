@@ -19,11 +19,11 @@
       "name": "icons",
       "sources": [
         { "url": "https://download.gnome.org/sources/gtk/3.24/gtk-3.24.52.tar.xz", "sha256": "80931fa472a77b9a164f6740e3c0b444fac6770054632d35a7ff9d679e5e7b9f", "strip": 1 },
-        { "path": "gtk3/png2ico.sh", "dest": "zigsaw/png2ico.sh" }
+        { "path": "gtk3/png2ico.sh", "dest": "quasidock/png2ico.sh" }
       ],
       "build": [
         "mkdir -p \"$PREFIX\"",
-        "for app in gtk-demo/gtk3-demo widget-factory/gtk3-widget-factory; do d=demos/${app%/*}/data; n=${app#*/}; sh zigsaw/png2ico.sh \"$PREFIX/$n.ico\" 16:$d/16x16/$n.png 24:$d/24x24/$n.png 32:$d/32x32/$n.png 48:$d/48x48/$n.png 256:$d/256x256/$n.png || exit 1; done"
+        "for app in gtk-demo/gtk3-demo widget-factory/gtk3-widget-factory; do d=demos/${app%/*}/data; n=${app#*/}; sh quasidock/png2ico.sh \"$PREFIX/$n.ico\" 16:$d/16x16/$n.png 24:$d/24x24/$n.png 32:$d/32x32/$n.png 48:$d/48x48/$n.png 256:$d/256x256/$n.png || exit 1; done"
       ]
     }
   ]

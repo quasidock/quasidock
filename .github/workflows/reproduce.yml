@@ -73,8 +73,10 @@ jobs:
       - name: The upstream checker, and its table against the recipes
         run: bash tests/upstream.sh
 
-      - name: What rebuilds in what order
-        run: bash tests/rebuild.sh
+      - name: Rebuild ordering and local repinning, offline
+        run: |
+          bash tests/rebuild.sh
+          bash tests/repin.sh
 
   # The groups of scripts/published-groups.txt this run checks, and those of
   # tests/build.sh, as JSON lists, and whether gtk-suites runs.

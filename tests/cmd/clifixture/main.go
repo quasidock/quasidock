@@ -37,7 +37,13 @@ func main() {
 				os.Exit(5)
 			}
 			return
-		case "console-run":
+		case "close-stdin":
+			os.Stdin.Close()
+			time.Sleep(100 * time.Millisecond)
+			fmt.Fprintln(os.Stdout, "closed-input-output")
+			fmt.Fprintln(os.Stderr, "closed-input-error")
+			os.Exit(27)
+		case "console-run", "console-run-check-mode":
 			// Test runners may inherit Ctrl+C-disabled state from their launcher.
 			// Establish the same state as an ordinary interactive shell, keeping
 			// this wrapper alive while the application handles the console event.
@@ -52,7 +58,34 @@ func main() {
 			defer win32.SetConsoleCtrlHandler(handler, false)
 			cmd := exec.Command(args[1], args[2:]...)
 			cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-			if err := cmd.Run(); err != nil {
+			var originalMode win32.DWORD
+			inputHandle := win32.GetStdHandle(win32.STD_INPUT_HANDLE)
+			if args[0] == "console-run-check-mode" {
+				// CreateProcess with a pseudoconsole can leave the wrapper's
+				// standard handles unset. Open its actual console explicitly.
+				input, err := os.OpenFile("CONIN$", os.O_RDWR, 0)
+				if err != nil {
+					panic(err)
+				}
+				defer input.Close()
+				output, err := os.OpenFile("CONOUT$", os.O_WRONLY, 0)
+				if err != nil {
+					panic(err)
+				}
+				defer output.Close()
+				cmd.Stdin, cmd.Stdout, cmd.Stderr = input, output, output
+				inputHandle = win32.HANDLE(input.Fd())
+			}
+			win32.GetConsoleMode(inputHandle, &originalMode)
+			commandErr := cmd.Run()
+			if args[0] == "console-run-check-mode" {
+				var finalMode win32.DWORD
+				if !win32.GetConsoleMode(inputHandle, &finalMode) || originalMode != finalMode {
+					fmt.Fprintf(cmd.Stderr, "console mode changed: %#x -> %#x\n", originalMode, finalMode)
+					os.Exit(91)
+				}
+			}
+			if err := commandErr; err != nil {
 				if exit, ok := err.(*exec.ExitError); ok {
 					win32.ExitProcess(uint32(exit.ExitCode()))
 				}
@@ -231,12 +264,16 @@ func main() {
 			}
 			_, _ = os.Stdout.Write(data)
 			return
-		case "log":
+		case "log", "log-exit":
 			if len(args) > 1 {
 				fmt.Fprintln(os.Stdout, args[1])
 			}
 			if len(args) > 2 {
 				fmt.Fprintln(os.Stderr, args[2])
+			}
+			if args[0] == "log-exit" {
+				code, _ := strconv.Atoi(args[3])
+				os.Exit(code)
 			}
 			return
 		case "lines":

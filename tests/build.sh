@@ -1155,7 +1155,7 @@ check "built again, the extension's image is the same" phpext_again
 mkdir -p "$work\\phpdir" && cp -r "$(cygpath -u "$root")"/tests/build/php/zprobe/. "$(cygpath -u "$work")/phpdir/"
 php_ext_no_recipe() {
     local out
-    out=$(cd "$work\\phpdir" && qd_run z php-sdk "$QUASIDOCK_HOME\\deploy\\$(own_layer php-sdk)\\dev\\zigsaw\\php-ext.php" build 2>&1) || { echo "$out" | tail -2; return 1; }
+    out=$(cd "$work\\phpdir" && qd_run z php-sdk "$QUASIDOCK_HOME\\deploy\\$(own_layer php-sdk)\\dev\\quasidock\\php-ext.php" build 2>&1) || { echo "$out" | tail -2; return 1; }
     # (The SDK runs under soft: PHP's run labels the directory, and says so.)
     out=$(cd "$work\\phpdir" && qd_run z php -d "extension=$work\\phpdir\\php_zprobe.dll" -r 'echo zprobe_config(), "\n";' 2>"$work\\stderr" | tr -d '\r')
     [ "$out" = "hello from config.w32, version info: yes" ] || { echo "got: $out $(tr '\r\n' '  ' <"$work\\stderr")"; return 1; }

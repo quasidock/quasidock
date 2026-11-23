@@ -792,6 +792,23 @@ default registry), failing on missing artifacts and warning when a `from` base
 image pin's layers no longer match its version tag (older `sdk` pins do not
 warn).
 
+After publishing, use [`scripts/repin.sh`](../scripts/repin.sh) to refresh local
+recipes from the registry's existing version tags:
+
+```bash
+bash scripts/repin.sh --dry-run                # preview published recipes' pin changes
+bash scripts/repin.sh                          # apply those changes
+bash scripts/repin.sh recipes/apache.json      # refresh only the named recipes
+```
+
+It uses the same anonymous registry lookup and `QUASIDOCK_REGISTRY` as
+`check-pins.sh`, without building or accessing a local store. It changes only
+short `id:version@sha256:...` references, keeping their versions and the rest
+of each file's bytes. Fully qualified references and digest-only source mirrors
+stay as written. All tags must resolve before any file is edited. Review the
+diff before committing; use `rebuild.sh` when changing upstream inputs and
+rebuilding their consumers.
+
 ## Projects
 
 A recipe can live at the root of the project it builds as `quasidock.json`.

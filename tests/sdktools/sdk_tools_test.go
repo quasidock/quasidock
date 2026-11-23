@@ -79,10 +79,10 @@ func TestPackagedSDKCommands(t *testing.T) {
 		"llvm-mingw": {{"ar", `bin\llvm-ar.exe`, "", nil}, {"as", `bin\x86_64-w64-mingw32-clang.exe`, "", []string{"-c", "-x", "assembler"}}},
 		"rust":       {{"dlltool", `lib\rustlib\x86_64-pc-windows-gnu\bin\self-contained\dlltool.exe`, "", []string{"--as", "as"}}},
 		"maven":      {{"mvn", `runtime\java.exe`, "QUASIDOCK_MAVEN_JAVA", nil}},
-		"gradle":     {{"gradle", `runtime\java.exe`, "QUASIDOCK_GRADLE_JAVA", nil}, {"gradle-vendor", `runtime\java.exe`, "QUASIDOCK_GRADLE_JAVA", nil}},
+		"gradle":     {{"gradle", `runtime\java.exe`, "QUASIDOCK_GRADLE_JAVA", nil}, {"gradle-vendor", `runtime\java.exe`, "QUASIDOCK_GRADLE_JAVA", []string{`%QUASIDOCK_SDK_DIR%\quasidock\GradleVendor.java`}}},
 		"meson":      {{"meson", "python.exe", "", nil}, {"pkg-config", `bin\pkgconf.exe`, "", nil}, {"ninja", "ninja.exe", "", nil}},
 		"composer":   {{"composer", `runtime\php.exe`, "QUASIDOCK_COMPOSER_PHP", nil}},
-		"php-sdk":    {{"php-ext", "php.exe", "", nil}},
+		"php-sdk":    {{"php-ext", "php.exe", "", []string{`%QUASIDOCK_SDK_DIR%\dev\quasidock\php-ext.php`}}},
 		"make":       {{"gmake", `bin\make.exe`, "", nil}},
 	}
 	for sdk, commands := range cases {
@@ -139,8 +139,14 @@ func TestPackagedSDKCommands(t *testing.T) {
 				if len(got.Args) < len(wantTail) || !reflect.DeepEqual(got.Args[len(got.Args)-len(wantTail):], wantTail) {
 					t.Fatalf("%s argument forwarding: got %#v, want tail %#v", c.name, got.Args, wantTail)
 				}
-				if c.prefix != nil && !reflect.DeepEqual(got.Args[:len(got.Args)-len(wantTail)], c.prefix) {
-					t.Fatalf("%s prefix: got %#v, want %#v", c.name, got.Args, c.prefix)
+				if c.prefix != nil {
+					wantPrefix := make([]string, len(c.prefix))
+					for i, arg := range c.prefix {
+						wantPrefix[i] = strings.ReplaceAll(arg, "%QUASIDOCK_SDK_DIR%", deploy)
+					}
+					if !reflect.DeepEqual(got.Args[:len(got.Args)-len(wantTail)], wantPrefix) {
+						t.Fatalf("%s prefix: got %#v, want %#v", c.name, got.Args, wantPrefix)
+					}
 				}
 				for _, arg := range got.Args {
 					if strings.Contains(arg, "%QUASIDOCK_") || strings.Contains(arg, original) {

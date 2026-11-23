@@ -14,15 +14,15 @@
   },
   "cleanup": ["__pycache__"],
   "sdk": {
-    "cmake": "cmake:4.4.4@sha256:b96b30bb57b5147726b7deef2607917b43972bb896d9f5d3e3082e31368dbeae",
-    "perl": "perl:5.42.3.1@sha256:2854c34722b812ef3173f5d4ab6fb091ac45dc16d6079865a5024d6a6527dfd6",
-    "rust": "rust:1.99.0@sha256:62344d25e7c11b393e6094386eca31bc4f8f0bdbe45845fc61fe58700f112f8d",
-    "cargo-c": "cargo-c:0.10.25@sha256:796088c5e02aef272bea1df667952836d49f71df3ef39dad1f58749ae5822222"
+    "cmake": "cmake:4.4.4@sha256:bb0949026f8d4c087ebaf2e8bd385e4202363c8fa48fc70ede498958b5a0f8af",
+    "perl": "perl:5.42.3.1@sha256:f5c9f71d4c4867cd2c91100b2de48a95c3e2f6f17b12454d39feea99e6daa178",
+    "rust": "rust:1.99.0@sha256:a7657fc530d9b76b81a20116d5f02097d6922294f39163d202a6d0ca9fca6e9b",
+    "cargo-c": "cargo-c:0.10.25@sha256:06a080764be30b815c5c8c8d596194344bdbf6c2d4054743882bd6e63c5bfe21"
   },
   "from": {
-    "meson": "meson:1.12.1@sha256:9b656a460928dbde77dc31f5827e9b99ad4b53e007de87b19b6fbec26785bbc3",
+    "meson": "meson:1.12.1@sha256:bb01866aa3300aec3881be865d697c5de46084c204c9a97e9bdaae2675dde5b9",
     "llvm": "llvm-mingw:20261020@sha256:65425754b958693accc5dc8d8e8ca0dfa6235669c286cc8875105171b3e299b9",
-    "busybox": "busybox:FRP-6075-g169694ebd@sha256:baca1ecd27b7b5ffe54402d4f8b6e36802d9db5e0e4cb2b7ab13104031045c50"
+    "busybox": "busybox:FRP-6075-g169694ebd@sha256:3d73278be5092691667ebeecd92ffe034fb6898221024e4859325fb379178d2a"
   },
   "stages": [
     {
@@ -61,10 +61,10 @@
     },
     {
       "name": "openssl",
-      "env": { "CFLAGS": "-O2", "PERL": "perl", "PERL5OPT": "-IB:/src/openssl/zigsaw -Munixspec" },
+      "env": { "CFLAGS": "-O2", "PREFIX": "B:/prefix", "PERL": "perl", "PERL5OPT": "-IB:/src/openssl/quasidock -Munixspec" },
       "sources": [
         { "url": "https://github.com/openssl/openssl/releases/download/openssl-3.5.9/openssl-3.5.9.tar.gz", "sha256": "603f5602e2eef00d77fbd429d34dcd5822bb301757a1bc9cdb24c670f1eb859a", "strip": 1 },
-        { "path": "gtk4-sdk/openssl-unixspec.pm", "dest": "zigsaw/unixspec.pm" }
+        { "path": "gtk4-sdk/openssl-unixspec.pm", "dest": "quasidock/unixspec.pm" }
       ],
       "build": [
         "perl Configure mingw64 no-shared no-asm no-tests no-docs no-apps no-module --prefix=\"$PREFIX\" --libdir=lib",
@@ -186,10 +186,10 @@
       },
       "sources": [
         { "url": "https://github.com/hunspell/hunspell/releases/download/v1.7.6/hunspell-1.7.6.tar.gz", "sha256": "9c650ace31d4d8cc1da925a9507c3de1d50f1a54857af2f72429f517d5d53467", "strip": 1 },
-        { "path": "gtk4-sdk/autotools-mtimes.sh", "dest": "zigsaw/mtimes.sh" }
+        { "path": "gtk4-sdk/autotools-mtimes.sh", "dest": "quasidock/mtimes.sh" }
       ],
       "build": [
-        "sh zigsaw/mtimes.sh",
+        "sh quasidock/mtimes.sh",
         "sh ./configure --build=x86_64-w64-mingw32 --host=x86_64-w64-mingw32 --prefix=\"$PREFIX\" --disable-static --disable-nls --without-ui --without-readline lt_cv_deplibs_check_method=pass_all > configure.log 2>&1 || { tail -60 config.log; exit 1; }",
         "sed -i 's/ -shared -nostdlib / -shared /' libtool",
         "make -C src/hunspell -j\"$(nproc)\"",
@@ -216,24 +216,24 @@
       },
       "sources": [
         { "url": "https://github.com/rrthomas/enchant/releases/download/v2.8.21/enchant-2.8.21.tar.gz", "sha256": "dd2a762697c463148a8f59867089a5ebf2dd1449d869f93764b76c12bcf8acc0", "strip": 1 },
-        { "path": "gtk4-sdk/autotools-mtimes.sh", "dest": "zigsaw/mtimes.sh" },
-        { "path": "gtk4-sdk/enchant.ordering", "dest": "zigsaw/enchant.ordering" }
+        { "path": "gtk4-sdk/autotools-mtimes.sh", "dest": "quasidock/mtimes.sh" },
+        { "path": "gtk4-sdk/enchant.ordering", "dest": "quasidock/enchant.ordering" }
       ],
       "build": [
-        "sh zigsaw/mtimes.sh",
+        "sh quasidock/mtimes.sh",
         "sh ./configure --build=x86_64-w64-mingw32 --host=x86_64-w64-mingw32 --prefix=\"$PREFIX\" --disable-static --enable-relocatable --disable-gcc-warnings --with-hunspell --with-winspell --without-aspell --without-nuspell --without-hspell --without-voikko --without-applespell --without-zemberek lt_cv_deplibs_check_method=pass_all > configure.log 2>&1 || { tail -60 config.log; exit 1; }",
         "grep -q '^#define ENABLE_RELOCATABLE 1' config.h && grep -q '^HUNSPELL_LIBS = .*hunspell' providers/Makefile && grep -q '^WINSPELL_CFLAGS = ..' providers/Makefile",
         "sed -i 's/ -shared -nostdlib / -shared /' libtool",
-        "printf '%s\\n' EXPORTS init_enchant_provider > zigsaw/provider.def",
+        "printf '%s\\n' EXPORTS init_enchant_provider > quasidock/provider.def",
         "make -C libgnu -j\"$(nproc)\"",
         "sed -i 's/^nodist_doc_DATA = enchant.html$/nodist_doc_DATA =/' lib/Makefile && ! grep -q '^nodist_doc_DATA = .' lib/Makefile",
         "make -C lib -j\"$(nproc)\"",
         "grep -q '^ *enchant_broker_init' lib/.libs/libenchant-2-2.dll.def && ! grep -v -e '^EXPORTS' -e '^ *enchant_' lib/.libs/libenchant-2-2.dll.def | grep -q .",
-        "make -C providers -j\"$(nproc)\" LDFLAGS=\"$LDFLAGS -export-symbols B:/src/enchant/zigsaw/provider.def\"",
+        "make -C providers -j\"$(nproc)\" LDFLAGS=\"$LDFLAGS -export-symbols B:/src/enchant/quasidock/provider.def\"",
         "make -C lib install",
         "make -C providers install",
         "make install-pkgconfigDATA",
-        "cp zigsaw/enchant.ordering \"$PREFIX/share/enchant-2/enchant.ordering\""
+        "cp quasidock/enchant.ordering \"$PREFIX/share/enchant-2/enchant.ordering\""
       ]
     },
     {

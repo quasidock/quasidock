@@ -16,9 +16,9 @@
     "filesystem": ["cwd"]
   },
   "from": {
-    "zig": "zig:0.17.0@sha256:56fc3e4f42c25dbf70236aedb053606311cb2d4b582ad4d1e26e76036c08eab1",
-    "busybox": "busybox:FRP-6075-g169694ebd@sha256:baca1ecd27b7b5ffe54402d4f8b6e36802d9db5e0e4cb2b7ab13104031045c50",
-    "node": "node:24.22.2@sha256:2a86a90b9beab4b7894fc1d0d76e015220c1c4243858a6118ad0066c772a07a8"
+    "zig": "zig:0.17.0@sha256:d56d973884d07ce551d9697535f43d18183a3ce0ee3f79f0c9d40ce041842d5f",
+    "busybox": "busybox:FRP-6075-g169694ebd@sha256:3d73278be5092691667ebeecd92ffe034fb6898221024e4859325fb379178d2a",
+    "node": "node:24.22.2@sha256:12f553caa736c3964e18c4ffb88691ea9c6da5bd0ea657f6df29cfa360763df4"
   },
   "cleanup": [
     "/dev/php8.lib",
@@ -91,10 +91,10 @@
       "name": "quasidock",
       "sources": [
         { "path": "php-sdk/php.ini", "dest": "php.ini" },
-        { "path": "php-sdk/zig-php.h", "dest": "dev/zigsaw/zig-php.h" },
-        { "path": "php-sdk/zig-php.c", "dest": "dev/zigsaw/zig-php.c" },
-        { "path": "php-sdk/php-ext.php", "dest": "dev/zigsaw/php-ext.php" },
-        { "path": "php-sdk/config-w32.js", "dest": "dev/zigsaw/config-w32.js" }
+        { "path": "php-sdk/zig-php.h", "dest": "dev/quasidock/zig-php.h" },
+        { "path": "php-sdk/zig-php.c", "dest": "dev/quasidock/zig-php.c" },
+        { "path": "php-sdk/php-ext.php", "dest": "dev/quasidock/php-ext.php" },
+        { "path": "php-sdk/config-w32.js", "dest": "dev/quasidock/config-w32.js" }
       ]
     },
     {
