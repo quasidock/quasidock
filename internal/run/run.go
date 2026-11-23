@@ -435,6 +435,7 @@ func executeContainer(
 					return nil
 				}
 				c.State.Running = false
+				c.State.Paused = false
 				c.State.Status = "exited"
 				c.State.Pid = 0
 				c.State.ExitCode = int(code)
@@ -450,6 +451,7 @@ func executeContainer(
 					return nil
 				}
 				c.State.Running = false
+				c.State.Paused = false
 				c.State.Status = "created"
 				c.State.Pid = 0
 				c.State.ExitCode = 1
@@ -1041,14 +1043,15 @@ func launchContainer(
 		c.Args = append([]string(nil), allArgs...)
 		c.Config.WorkingDir = cwd
 		c.State = store.ContainerState{
-			ExecProtocol: execProtocol,
-			RunID:        created.State.RunID,
-			Status:       "running",
-			Running:      true,
-			Pid:          pid,
-			ExitCode:     0,
-			StartedAt:    startedAt,
-			Launched:     true,
+			ControlProtocol: controlProtocol,
+			ExecProtocol:    execProtocol,
+			RunID:           created.State.RunID,
+			Status:          "running",
+			Running:         true,
+			Pid:             pid,
+			ExitCode:        0,
+			StartedAt:       startedAt,
+			Launched:        true,
 		}
 		if opts.attachment != nil {
 			c.State.AttachProtocol = attachProtocol
@@ -1066,7 +1069,12 @@ func launchContainer(
 		return 1, false, stateErr
 	}
 	if opts.attachment != nil {
-		opts.attachment.markStarted(func() error { return win32.SendConsoleBreak(win32.GetProcessId(hProcess)) })
+		opts.attachment.mu.Lock()
+		opts.attachment.admit = live.attachAllowed
+		opts.attachment.mu.Unlock()
+		opts.attachment.markStarted(func() error {
+			return live.control(ctx, created, controlRequest{Signal: SignalTERM}, detached)
+		})
 	}
 	startPumps()
 	if readyEvent != 0 {

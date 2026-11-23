@@ -24,17 +24,19 @@ var (
 )
 
 type ContainerState struct {
-	AttachProtocol int    `json:"AttachProtocol,omitempty"`
-	ExecProtocol   int    `json:"ExecProtocol,omitempty"`
-	RunID          string `json:"RunID,omitempty"`
-	Status         string `json:"Status"`
-	Running        bool   `json:"Running"`
-	Pid            uint32 `json:"Pid"`
-	ExitCode       int    `json:"ExitCode"`
-	Error          string `json:"Error,omitempty"`
-	StartedAt      string `json:"StartedAt,omitempty"`
-	FinishedAt     string `json:"FinishedAt,omitempty"`
-	Launched       bool   `json:"Launched,omitempty"`
+	ControlProtocol int    `json:"ControlProtocol,omitempty"`
+	AttachProtocol  int    `json:"AttachProtocol,omitempty"`
+	ExecProtocol    int    `json:"ExecProtocol,omitempty"`
+	RunID           string `json:"RunID,omitempty"`
+	Status          string `json:"Status"`
+	Running         bool   `json:"Running"`
+	Paused          bool   `json:"Paused"`
+	Pid             uint32 `json:"Pid"`
+	ExitCode        int    `json:"ExitCode"`
+	Error           string `json:"Error,omitempty"`
+	StartedAt       string `json:"StartedAt,omitempty"`
+	FinishedAt      string `json:"FinishedAt,omitempty"`
+	Launched        bool   `json:"Launched,omitempty"`
 }
 
 type ContainerConfig struct {
@@ -251,6 +253,7 @@ func (s *Store) reconcileContainerNoLock(rec *ContainerRecord) (*ContainerRecord
 		return nil, nil
 	}
 	rec.State.Running = false
+	rec.State.Paused = false
 	rec.State.Status = "exited"
 	rec.State.Pid = 0
 	if rec.State.FinishedAt == "" {
@@ -594,6 +597,7 @@ func (s *Store) PruneContainers(dryRun bool) ([]ContainerRecord, uint64, int, er
 			}
 			if dryRun && !s.IsContainerRunning(c.ID) && (c.State.Running || c.State.Status == "created" && c.State.Launched) {
 				c.State.Running = false
+				c.State.Paused = false
 				c.State.Status = "exited"
 			}
 			if c.State.Running || s.IsContainerRunning(c.ID) {

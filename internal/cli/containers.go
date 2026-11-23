@@ -24,7 +24,7 @@ import (
 
 func containerCommand(ctx *context.Context, args []string) (uint32, error) {
 	if len(args) == 0 {
-		return 1, errors.New("usage: quasidock container <create|ls|inspect|exec|attach|start|restart|kill|stop|rm|logs|prune>")
+		return 1, errors.New("usage: quasidock container <create|ls|inspect|exec|attach|start|restart|pause|unpause|kill|stop|rm|logs|prune>")
 	}
 	cmd, rest := args[0], args[1:]
 	if cmd == "--help" || cmd == "help" {
@@ -44,7 +44,7 @@ func containerCommand(ctx *context.Context, args []string) (uint32, error) {
 		return 0, containerList(ctx, rest)
 	case "inspect":
 		return 0, containerInspect(ctx, rest)
-	case "restart", "kill", "stop":
+	case "restart", "pause", "unpause", "kill", "stop":
 		return 0, containerLifecycle(ctx, cmd, rest)
 	case "rm", "remove":
 		return 0, containerRemove(ctx, rest)
@@ -275,6 +275,10 @@ func containerLifecycle(ctx *context.Context, command string, args []string) err
 			_, err = run.StartContainer(ctx, target)
 		case "restart":
 			_, err = run.RestartContainer(ctx, target, timeout)
+		case "pause":
+			_, err = run.PauseContainer(ctx, target)
+		case "unpause":
+			_, err = run.UnpauseContainer(ctx, target)
 		case "kill":
 			_, err = run.KillContainer(ctx, target, signal)
 		case "stop":
@@ -485,10 +489,14 @@ func formatRelativeTime(ts string, now time.Time) string {
 
 func formatContainerStatus(c store.ContainerRecord, now time.Time) string {
 	if c.State.Running {
+		status := "Up"
 		if t, err := parseTimestamp(c.State.StartedAt); err == nil {
-			return "Up " + humanDuration(now.Sub(t))
+			status += " " + humanDuration(now.Sub(t))
 		}
-		return "Up"
+		if c.State.Paused {
+			status += " (Paused)"
+		}
+		return status
 	}
 	if c.State.Status == "created" {
 		return "Created"

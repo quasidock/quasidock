@@ -26,7 +26,7 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/images.sh"
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
 registry=${1:-localhost:5000}
-zigsaw=${2:-$root/out/bin/quasidock.exe}
+quasidock=${2:-$root/out/bin/quasidock.exe}
 if ! curl -sf "http://${registry/localhost/127.0.0.1}/v2/" >/dev/null; then
     echo "no registry answers at $registry; start one first (see the top of this script)"
     exit 1
@@ -46,8 +46,8 @@ mkdir -p "$DOCKER_CONFIG"
 # Two stores: apps are built in one, pushed, and pulled into the other.
 store_a="$work\\a"
 store_b="$work\\b"
-za() { QUASIDOCK_HOME="$store_a" "$zigsaw" "$@"; }
-zb() { QUASIDOCK_HOME="$store_b" "$zigsaw" "$@"; }
+za() { QUASIDOCK_HOME="$store_a" "$quasidock" "$@"; }
+zb() { QUASIDOCK_HOME="$store_b" "$quasidock" "$@"; }
 # SEED_DOWNLOADS: another store's cache\downloads, whose files are linked, or
 # copied, into store a's, so as not to download them again.
 if [ -n "${SEED_DOWNLOADS:-}" ]; then
@@ -88,7 +88,7 @@ check "pushing again uploads nothing" second_push
 check "pull into an empty store" zb pull --yes "$repo/busybox:FRP-6075-g169694ebd"
 check "the pulled app runs" pulled_runs
 check "the pulled image has the pushed digest" same_digest
-full_digest=$(QUASIDOCK_HOME="$store_a" qd_manifest "$zigsaw" "busybox")
+full_digest=$(QUASIDOCK_HOME="$store_a" qd_manifest "$quasidock" "busybox")
 check "pull by digest" zb pull --yes "$repo/busybox@$full_digest"
 check "a digest that doesn't match is refused" fails zb pull --yes "$repo/busybox@sha256:$(printf '0%.0s' {1..64})"
 check "a missing tag is reported" missing_tag
@@ -102,7 +102,7 @@ printf '{ "id": "%s", "version": "1", "entrypoint": "busybox.exe", "layer": "est
 sgz_built() {
     za build "$work\\estargz.json" >/dev/null 2>&1 || return 1
     local manifest
-    manifest=$(QUASIDOCK_HOME="$store_a" qd_manifest "$zigsaw" "$SGZ" | cut -d: -f2)
+    manifest=$(QUASIDOCK_HOME="$store_a" qd_manifest "$quasidock" "$SGZ" | cut -d: -f2)
     grep -q '"containerd.io/snapshot/stargz/toc.digest": *"sha256:' "$store_a\\blobs\\sha256\\$manifest"
 }
 sgz_pushed() {
@@ -112,17 +112,17 @@ sgz_pushed() {
 }
 sgz_pulled() {
     local out
-    out=$(QUASIDOCK_HOME="$work\\sgz" "$zigsaw" --verbose pull --yes "$repo/estargz:1" 2>&1) || { echo "$out" | tail -2; return 1; }
-    [ "$(QUASIDOCK_HOME="$work\\sgz" qd_manifest "$zigsaw" $SGZ)" = "$(qd_manifest za $SGZ)" ]
+    out=$(QUASIDOCK_HOME="$work\\sgz" "$quasidock" --verbose pull --yes "$repo/estargz:1" 2>&1) || { echo "$out" | tail -2; return 1; }
+    [ "$(QUASIDOCK_HOME="$work\\sgz" qd_manifest "$quasidock" $SGZ)" = "$(qd_manifest za $SGZ)" ]
 }
-sgz_runs() { [ "$(QUASIDOCK_HOME="$work\\sgz" bash "$QD_IMAGES_HELPER" run "$zigsaw" $SGZ echo sgz | tr -d '\r')" = sgz ]; }
+sgz_runs() { [ "$(QUASIDOCK_HOME="$work\\sgz" bash "$QD_IMAGES_HELPER" run "$quasidock" $SGZ echo sgz | tr -d '\r')" = sgz ]; }
 sgz_own_files_only() {
     local deployed
     # The lock files next to deployments are the runs'.
     deployed=$(cd "$(cygpath -u "$work\\sgz")/deploy" && find . -type f ! -name '*.lock')
     [[ "$deployed" =~ ^\./[0-9a-f]{64}/busybox\.exe$ ]] || { echo "$deployed"; return 1; }
 }
-sgz_info() { QUASIDOCK_HOME="$work\\sgz" "$zigsaw" image info "$repo/estargz:1" 2>&1 | grep -q '^ *layer  *eStargz$'; }
+sgz_info() { QUASIDOCK_HOME="$work\\sgz" "$quasidock" image info "$repo/estargz:1" 2>&1 | grep -q '^ *layer  *eStargz$'; }
 check "eStargz: the layer's descriptor has its TOC's digest" sgz_built
 check "  pushed, the registry's manifest has it" sgz_pushed
 check "  pulled, with the same manifest" sgz_pulled
@@ -132,7 +132,7 @@ check "  info says the layer is eStargz" sgz_info
 
 # Its files, listed and read from the registry by Range requests, without
 # pulling the layer: a fresh store keeps only the config.
-zp() { QUASIDOCK_HOME="$work\\peek" "$zigsaw" "$@"; }
+zp() { QUASIDOCK_HOME="$work\\peek" "$quasidock" "$@"; }
 sgz_ls() { zp image files "$repo/estargz:1" | grep -qE '^ +[0-9]+  busybox\.exe$'; }
 sgz_cat() { [ "$(zp image cat "$repo/estargz:1" busybox.exe | sha256sum | cut -d' ' -f1)" = 07bb1e5b095b00d68a695481f9240879f33c5724b40aa2308f999d54ed78f075 ]; }
 sgz_peek_blobs() { [ "$(ls "$(cygpath -u "$work\\peek")/blobs/sha256" | wc -l)" -eq 1 ]; }
@@ -147,12 +147,12 @@ check "  cat of a gzip layer says it can't" gzip_cat
 # so busybox.exe's member is the same. In a store whose old blob was
 # damaged after its download, the blob built doesn't match its digest, and
 # is downloaded whole.
-zbad() { QUASIDOCK_HOME="$work\\sgzbad" "$zigsaw" "$@"; }
+zbad() { QUASIDOCK_HOME="$work\\sgzbad" "$quasidock" "$@"; }
 printf '{ "id": "%s", "version": "2", "entrypoint": "busybox.exe", "layer": "estargz",\n  "sdk": { "busybox": "busybox:FRP-6075-g169694ebd@%s" },\n  "stages": [{ "name": "busybox", "sources": [{ "url": "https://frippery.org/files/busybox/busybox-w64-FRP-6075-g169694ebd.exe", "sha256": "07bb1e5b095b00d68a695481f9240879f33c5724b40aa2308f999d54ed78f075", "dest": "busybox.exe" }] },\n    { "name": "note", "build": ["echo version 2 > $PREFIX/a.txt"] }] }\n' \
     $SGZ "$full_digest" >"$work\\estargz2.json"
 own_layer() { # <store>: the blob path of the installed eStargz app's own layer
     local manifest
-    manifest=$(QUASIDOCK_HOME="$1" qd_manifest "$zigsaw" "$SGZ" | head -1 | cut -d: -f2)
+    manifest=$(QUASIDOCK_HOME="$1" qd_manifest "$quasidock" "$SGZ" | head -1 | cut -d: -f2)
     echo "$1\\blobs\\sha256\\$(grep -o '"digest": *"sha256:[0-9a-f]*"' "$1\\blobs\\sha256\\$manifest" | tail -1 | grep -o '[0-9a-f]\{64\}')"
 }
 sgz_v2_pushed() {
@@ -163,15 +163,15 @@ sgz_v2_pushed() {
 }
 sgz_delta() {
     local out size fetched
-    out=$(QUASIDOCK_HOME="$work\\sgz" "$zigsaw" --verbose pull --yes "$repo/estargz:1" 2>&1) || { echo "$out" | tail -2; return 1; }
+    out=$(QUASIDOCK_HOME="$work\\sgz" "$quasidock" --verbose pull --yes "$repo/estargz:1" 2>&1) || { echo "$out" | tail -2; return 1; }
     size=$(stat -c %s "$(own_layer "$store_a")")
     fetched=$(sed -n 's/.*downloading sha256:[0-9a-f]*: \([0-9]*\) of [0-9]* bytes, rest from layers in store.*/\1/p' <<<"$out" | head -1)
     [ -n "$fetched" ] || { echo "$out" | grep -iE 'download|whole|rest' | tail -2; return 1; }
     [ "$((fetched * 4))" -lt "$size" ] || { echo "fetched $fetched of $size"; return 1; }
-    [ "$(QUASIDOCK_HOME="$work\\sgz" qd_manifest "$zigsaw" $SGZ)" = "$(qd_manifest za $SGZ)" ]
+    [ "$(QUASIDOCK_HOME="$work\\sgz" qd_manifest "$quasidock" $SGZ)" = "$(qd_manifest za $SGZ)" ]
 }
 sgz_v2_runs() {
-    [ "$(QUASIDOCK_HOME="$work\\sgz" bash "$QD_IMAGES_HELPER" run "$zigsaw" $SGZ echo v2 | tr -d '\r')" = v2 ] &&
+    [ "$(QUASIDOCK_HOME="$work\\sgz" bash "$QD_IMAGES_HELPER" run "$quasidock" $SGZ echo v2 | tr -d '\r')" = v2 ] &&
         [ "$(cat "$(cygpath -u "$work\\sgz")"/deploy/*/a.txt | tr -d '\r ')" = version2 ]
 }
 sgz_mismatch() {
@@ -189,9 +189,9 @@ check "  a damaged old blob: the blob built is refused, then downloaded whole" s
 # request), into the same blob.
 resumed() {
     local out
-    out=$(QUASIDOCK_TEST_DOWNLOAD_BREAK=100000 QUASIDOCK_HOME="$work\\resume" "$zigsaw" --verbose pull --yes "$repo/busybox:FRP-6075-g169694ebd" 2>&1) || { echo "$out" | tail -2; return 1; }
+    out=$(QUASIDOCK_TEST_DOWNLOAD_BREAK=100000 QUASIDOCK_HOME="$work\\resume" "$quasidock" --verbose pull --yes "$repo/busybox:FRP-6075-g169694ebd" 2>&1) || { echo "$out" | tail -2; return 1; }
     grep -q 'resuming sha256:[0-9a-f]* at 100000 bytes' <<<"$out" || { echo "$out" | tail -3; return 1; }
-    [ "$(QUASIDOCK_HOME="$work\\resume" qd_manifest "$zigsaw" busybox)" = "$digest" ]
+    [ "$(QUASIDOCK_HOME="$work\\resume" qd_manifest "$quasidock" busybox)" = "$digest" ]
 }
 check "a download that breaks off goes on where it got to" resumed
 
@@ -207,13 +207,13 @@ manifest_proxy=$!
 sleep 1
 reset_in_layer() {
     local out
-    out=$(QUASIDOCK_HOME="$work\\reset-layer" "$zigsaw" --verbose pull --yes "127.0.0.1:5002/${repo#*/}/busybox:FRP-6075-g169694ebd" 2>&1) || { echo "$out" | tail -2; return 1; }
+    out=$(QUASIDOCK_HOME="$work\\reset-layer" "$quasidock" --verbose pull --yes "127.0.0.1:5002/${repo#*/}/busybox:FRP-6075-g169694ebd" 2>&1) || { echo "$out" | tail -2; return 1; }
     grep -qiE 'resuming sha256:[0-9a-f]* at [0-9]* bytes, after .*([Cc]onnection[Rr]eset|forcibly closed|connection reset)' <<<"$out" || { echo "$out"; return 1; }
-    [ "$(QUASIDOCK_HOME="$work\\reset-layer" qd_manifest "$zigsaw" busybox)" = "$digest" ]
+    [ "$(QUASIDOCK_HOME="$work\\reset-layer" qd_manifest "$quasidock" busybox)" = "$digest" ]
 }
 reset_in_manifest() {
     local out code
-    out=$(QUASIDOCK_HOME="$work\\reset-manifest" "$zigsaw" pull --yes "127.0.0.1:5003/${repo#*/}/busybox:FRP-6075-g169694ebd" 2>&1)
+    out=$(QUASIDOCK_HOME="$work\\reset-manifest" "$quasidock" pull --yes "127.0.0.1:5003/${repo#*/}/busybox:FRP-6075-g169694ebd" 2>&1)
     code=$?
     [ "$code" = 1 ] && grep -qiE 'ConnectionReset|forcibly closed|connection reset' <<<"$out" || { echo "exit $code: $out"; return 1; }
 }
@@ -226,8 +226,8 @@ wait "$blob_proxy" "$manifest_proxy" 2>/dev/null
 # QUASIDOCK_UPLOAD_CHUNK_SIZE says), and one that breaks off goes on from where
 # the registry got to.
 pulls_back() { # <repository>: into a fresh store, the pushed digest
-    QUASIDOCK_HOME="$work\\chunks" "$zigsaw" pull --yes "$1:FRP-6075-g169694ebd" >/dev/null 2>&1 &&
-        [ "$(QUASIDOCK_HOME="$work\\chunks" qd_manifest "$zigsaw" busybox)" = "$digest" ]
+    QUASIDOCK_HOME="$work\\chunks" "$quasidock" pull --yes "$1:FRP-6075-g169694ebd" >/dev/null 2>&1 &&
+        [ "$(QUASIDOCK_HOME="$work\\chunks" qd_manifest "$quasidock" busybox)" = "$digest" ]
 }
 in_chunks() {
     local out
@@ -239,7 +239,7 @@ broken_chunk() {
     local out
     out=$(QUASIDOCK_UPLOAD_CHUNK_SIZE=65536 QUASIDOCK_TEST_UPLOAD_BREAK=3 qd_push za busybox "$repo/busybox-broken" 2>&1) || { echo "$out"; return 1; }
     grep -qE "broke off .*(at [0-9]* of [0-9]* bytes; resuming|starting it again)" <<<"$out" || { echo "$out"; return 1; }
-    QUASIDOCK_HOME="$work\\chunks" qd_remove_app "$zigsaw" busybox >/dev/null 2>&1
+    QUASIDOCK_HOME="$work\\chunks" qd_remove_app "$quasidock" busybox >/dev/null 2>&1
     pulls_back "$repo/busybox-broken"
 }
 # A chunk that doesn't start where the registry got to
@@ -255,22 +255,22 @@ failed_chunk() {
     local out
     out=$(QUASIDOCK_UPLOAD_CHUNK_SIZE=65536 QUASIDOCK_TEST_UPLOAD_SKIP=2 qd_push za busybox "$repo/busybox-skip" 2>&1) || { echo "$out"; return 1; }
     grep -qE "failed \(HTTP 416\) at [0-9]* of [0-9]* bytes; resuming" <<<"$out" || { echo "$out"; return 1; }
-    QUASIDOCK_HOME="$work\\chunks" qd_remove_app "$zigsaw" busybox >/dev/null 2>&1
+    QUASIDOCK_HOME="$work\\chunks" qd_remove_app "$quasidock" busybox >/dev/null 2>&1
     pulls_back "$repo/busybox-skip"
 }
 lost_chunk() {
     local out
     out=$(QUASIDOCK_UPLOAD_CHUNK_SIZE=65536 QUASIDOCK_TEST_UPLOAD_SKIP=2 QUASIDOCK_TEST_UPLOAD_LOST=1 qd_push za busybox "$repo/busybox-lost" 2>&1) || { echo "$out"; return 1; }
     grep -q "failed a chunk of .* (HTTP 416) and can't say how much of it it has (HTTP 404); uploading it in one request" <<<"$out" || { echo "$out"; return 1; }
-    QUASIDOCK_HOME="$work\\chunks" qd_remove_app "$zigsaw" busybox >/dev/null 2>&1
+    QUASIDOCK_HOME="$work\\chunks" qd_remove_app "$quasidock" busybox >/dev/null 2>&1
     pulls_back "$repo/busybox-lost"
 }
 lost_upload() { # <repository> <expected note> <test hooks...>
     local repository=$1 note=$2 out
     shift 2
-    out=$(env QUASIDOCK_UPLOAD_CHUNK_SIZE=65536 "$@" QUASIDOCK_HOME="$store_a" bash "$QD_IMAGES_HELPER" push "$zigsaw" busybox "$repository" 2>&1) || { echo "$out"; return 1; }
+    out=$(env QUASIDOCK_UPLOAD_CHUNK_SIZE=65536 "$@" QUASIDOCK_HOME="$store_a" bash "$QD_IMAGES_HELPER" push "$quasidock" busybox "$repository" 2>&1) || { echo "$out"; return 1; }
     grep -q "$note" <<<"$out" || { echo "$out"; return 1; }
-    QUASIDOCK_HOME="$work\\chunks" qd_remove_app "$zigsaw" busybox >/dev/null 2>&1
+    QUASIDOCK_HOME="$work\\chunks" qd_remove_app "$quasidock" busybox >/dev/null 2>&1
     pulls_back "$repository"
 }
 check "push in chunks, which pull back as pushed" in_chunks
@@ -306,9 +306,9 @@ plain_image() {
     curl -sf -X PUT -H 'Content-Type: application/octet-stream' --data-binary @"$tar" "$location" >/dev/null || { echo "uploading the plain layer failed"; return 1; }
     python -I -c 'import json,sys; m=json.load(open(sys.argv[1])); m["layers"][-1].update(mediaType="application/vnd.oci.image.layer.v1.tar", digest="sha256:"+sys.argv[2], size=int(sys.argv[3])); json.dump(m,open(sys.argv[4],"w"))' "$(cygpath -w "$manifest")" "$hex" "$size" "$tar.json" || return 1
     curl -sf -X PUT -H 'Content-Type: application/vnd.oci.image.manifest.v1+json' --data-binary @"$tar.json" "$api/manifests/plain" >/dev/null || { echo "uploading the manifest failed"; return 1; }
-    QUASIDOCK_HOME="$work\\plain" "$zigsaw" pull --yes "$repo/busybox:plain" >/dev/null 2>&1 || { echo "pull failed"; return 1; }
-    [ "$(QUASIDOCK_HOME="$work\\plain" bash "$QD_IMAGES_HELPER" run "$zigsaw" busybox echo plain | tr -d '\r')" = plain ] || { echo "it doesn't run"; return 1; }
-    QUASIDOCK_HOME="$work\\plain" bash "$QD_IMAGES_HELPER" push "$zigsaw" busybox "$repo/busybox-plain" >/dev/null 2>&1 || { echo "push failed"; return 1; }
+    QUASIDOCK_HOME="$work\\plain" "$quasidock" pull --yes "$repo/busybox:plain" >/dev/null 2>&1 || { echo "pull failed"; return 1; }
+    [ "$(QUASIDOCK_HOME="$work\\plain" bash "$QD_IMAGES_HELPER" run "$quasidock" busybox echo plain | tr -d '\r')" = plain ] || { echo "it doesn't run"; return 1; }
+    QUASIDOCK_HOME="$work\\plain" bash "$QD_IMAGES_HELPER" push "$quasidock" busybox "$repo/busybox-plain" >/dev/null 2>&1 || { echo "push failed"; return 1; }
 }
 check "an image with a plain tar layer pulls, runs and pushes" plain_image
 
@@ -338,7 +338,7 @@ put_index() { # <tag> <entries...>: prints the index's digest
 }
 index_digest=$(put_index multi "$(entry "$reg2" linux arm64)" "$(entry "$full_digest" windows amd64)")
 put_index linux-only "$(entry "$reg2" linux arm64)" >/dev/null
-zi() { QUASIDOCK_HOME="$work\\idx" "$zigsaw" "$@"; }
+zi() { QUASIDOCK_HOME="$work\\idx" "$quasidock" "$@"; }
 index_pull() {
     local out
     out=$(zi pull --yes "$repo/busybox:multi" 2>&1) || { echo "$out"; return 1; }
@@ -356,8 +356,8 @@ check "  info shows the index" index_info
 check "an index without an image for windows/amd64 is refused, naming its platforms" linux_only
 
 # App ids name images in the default registry, here the test registry.
-sza() { QUASIDOCK_REGISTRY="$repo" QUASIDOCK_HOME="$store_a" "$zigsaw" "$@"; }
-szb() { QUASIDOCK_REGISTRY="$repo" QUASIDOCK_HOME="$store_b" "$zigsaw" "$@"; }
+sza() { QUASIDOCK_REGISTRY="$repo" QUASIDOCK_HOME="$store_a" "$quasidock" "$@"; }
+szb() { QUASIDOCK_REGISTRY="$repo" QUASIDOCK_HOME="$store_b" "$quasidock" "$@"; }
 check "push by app id" sza push busybox
 short_pull() {
     szb pull --yes busybox:FRP-6075-g169694ebd >/dev/null 2>&1 &&
@@ -371,7 +371,7 @@ other_app_image() {
         szb pull --yes other-app:1 2>&1 | grep -q 'holds busybox, not other-app'
 }
 check "pull by app id refuses an image of another app" other_app_image
-check "push requires an explicit local target tag" sh -c "QUASIDOCK_REGISTRY='$repo' QUASIDOCK_HOME='$store_a' \"\$0\" push busybox other-app:2 2>&1 | grep -q 'tag SOURCE TARGET'" "$zigsaw"
+check "push requires an explicit local target tag" sh -c "QUASIDOCK_REGISTRY='$repo' QUASIDOCK_HOME='$store_a' \"\$0\" push busybox other-app:2 2>&1 | grep -q 'tag SOURCE TARGET'" "$quasidock"
 
 # The catalog: push --catalog lists apps as the registry has them at their
 # latest tag, and search and info read it. A second app has a name, a summary
@@ -415,7 +415,7 @@ offline() {
     local other="localhost:5999/${repo#*/}"
     local other_name="${other//[^A-Za-z0-9.-]/_}_catalog_latest" out
     cp "$cache\\$name.json" "$cache\\$other_name.json" && cp "$cache\\$name.digest" "$cache\\$other_name.digest" || return 1
-    out=$(QUASIDOCK_REGISTRY="$other" QUASIDOCK_HOME="$store_b" "$zigsaw" --verbose search catalog 2>&1) &&
+    out=$(QUASIDOCK_REGISTRY="$other" QUASIDOCK_HOME="$store_b" "$quasidock" --verbose search catalog 2>&1) &&
         grep -q "using the catalog of $other fetched " <<<"$out" && grep -q "^$CAT " <<<"$out"
 }
 check "push --catalog lists apps as the registry has them" catalog_pushed
@@ -428,12 +428,12 @@ check "info shows any image, in the catalog or not" info_any_image
 check "push --catalog refuses an app the registry doesn't have" unknown_app
 check "pull tells what the app may reach before downloading it" told_first
 check "search uses the catalog kept from earlier when the registry can't be reached" offline
-check "an app can't have the id catalog" sh -c "sed 's/\"busybox\"/\"catalog\"/' '$root/recipes/busybox.json' > '$work\\catalog-id.json' && ! QUASIDOCK_HOME='$store_a' \"\$0\" build '$work\\catalog-id.json' >/dev/null 2>&1" "$zigsaw"
+check "an app can't have the id catalog" sh -c "sed 's/\"busybox\"/\"catalog\"/' '$root/recipes/busybox.json' > '$work\\catalog-id.json' && ! QUASIDOCK_HOME='$store_a' \"\$0\" build '$work\\catalog-id.json' >/dev/null 2>&1" "$quasidock"
 
 # Pull is non-interactive by default (like docker pull): it prints what the
 # app may reach before downloading and installs without prompting, even with
 # stdin closed. --yes remains accepted as a no-op for compatibility.
-zn() { QUASIDOCK_REGISTRY="$repo" QUASIDOCK_HOME="$work\\consent" "$zigsaw" "$@"; }
+zn() { QUASIDOCK_REGISTRY="$repo" QUASIDOCK_HOME="$work\\consent" "$quasidock" "$@"; }
 pulled_non_interactive() {
     local out
     out=$(zn pull $CAT </dev/null 2>&1) || { echo "$out" | tail -1; return 1; }
@@ -460,7 +460,7 @@ sed "s|https://frippery.org/files/busybox/$bb_file|http://127.0.0.1:18098/$bb_fi
 # store_a's.
 from_sources() {
     local out
-    out=$(QUASIDOCK_REGISTRY="$repo" QUASIDOCK_HOME="$work\\$2" "$zigsaw" build "$1" 2>&1) || { echo "$out" | tail -2; return 1; }
+    out=$(QUASIDOCK_REGISTRY="$repo" QUASIDOCK_HOME="$work\\$2" "$quasidock" build "$1" 2>&1) || { echo "$out" | tail -2; return 1; }
     grep -q "fetching sha256 07bb1e5b095b from the sources next to $repo/busybox" <<<"$out" && grep -q "manifest $full_digest" <<<"$out"
 }
 check "a source whose URL is gone comes from next to its image" from_sources "$work\\busybox-local.json" fresh1
@@ -468,7 +468,7 @@ echo "not busybox" >"$work\\www\\$bb_file"
 check "and one whose URL serves other bytes" from_sources "$work\\busybox-local.json" fresh2
 missing_everywhere() {
     sed -e '/"source_mirrors":/d' -e 's/"busybox"/"test.registry.nosources"/' "$work\\busybox-local.json" >"$work\\nosources.json"
-    QUASIDOCK_REGISTRY="$repo" QUASIDOCK_HOME="$work\\fresh-none" "$zigsaw" build "$work\\nosources.json" 2>&1 |
+    QUASIDOCK_REGISTRY="$repo" QUASIDOCK_HOME="$work\\fresh-none" "$quasidock" build "$work\\nosources.json" 2>&1 |
         grep -q 'sources next to.*test.registry.nosources'
 }
 check "without sources next to the image, the build fails, saying so" missing_everywhere
@@ -484,18 +484,18 @@ printf '{ "id": "test.registry.parallel", "version": "1", "entrypoint": "f1.txt"
 downloads_in() { ls "$(cygpath -u "$work\\$1")/cache/downloads" | wc -l; }
 parallel_fetch() {
     local out
-    out=$(QUASIDOCK_REGISTRY="$repo" QUASIDOCK_HOME="$work\\par1" "$zigsaw" --verbose build "$work\\parallel.json" 2>&1) || { echo "$out" | tail -1; return 1; }
+    out=$(QUASIDOCK_REGISTRY="$repo" QUASIDOCK_HOME="$work\\par1" "$quasidock" --verbose build "$work\\parallel.json" 2>&1) || { echo "$out" | tail -1; return 1; }
     grep -q 'fetch 12 files, 8 at a time' <<<"$out" && [ "$(downloads_in par1)" -eq 12 ]
 }
 one_changed() {
     local out kept
     echo "changed" >"$work\\www\\par\\f7.txt"
-    out=$(QUASIDOCK_REGISTRY="$repo" QUASIDOCK_HOME="$work\\par2" "$zigsaw" build "$work\\parallel.json" 2>&1) && { echo "built"; return 1; }
+    out=$(QUASIDOCK_REGISTRY="$repo" QUASIDOCK_HOME="$work\\par2" "$quasidock" build "$work\\parallel.json" 2>&1) && { echo "built"; return 1; }
     grep -q "^error: .*f7.txt: it's no longer the pinned file .*sources next to" <<<"$out" || { echo "$out"; return 1; }
     # Built again with f7 as pinned, it fetches only what the cache lacks.
     kept=$(downloads_in par2)
     echo "file 7" >"$work\\www\\par\\f7.txt"
-    out=$(QUASIDOCK_REGISTRY="$repo" QUASIDOCK_HOME="$work\\par2" "$zigsaw" build "$work\\parallel.json" 2>&1) || { echo "$out" | tail -1; return 1; }
+    out=$(QUASIDOCK_REGISTRY="$repo" QUASIDOCK_HOME="$work\\par2" "$quasidock" build "$work\\parallel.json" 2>&1) || { echo "$out" | tail -1; return 1; }
     [ "$kept" -gt 1 ] && [ "$(grep -c '^fetching' <<<"$out")" -eq $((12 - kept + 1)) ]
 }
 check "a build's downloads go several at a time" parallel_fetch
@@ -523,11 +523,11 @@ vendor_hash=$(za build "$work\\vendor-unpinned.json" 2>&1 | grep -o '"sha256": "
 vendor_recipe 'mkdir -p deps && echo vendored > deps/x.txt' ", \"sha256\": \"$vendor_hash\"" >"$work\\vendor.json"
 vendor_recipe 'exit 3' ", \"sha256\": \"$vendor_hash\"" >"$work\\vendor-failing.json"
 za build "$work\\vendor.json" >/dev/null 2>&1
-vendored_digest=$(QUASIDOCK_HOME="$store_a" qd_manifest "$zigsaw" "$VENDORED")
+vendored_digest=$(QUASIDOCK_HOME="$store_a" qd_manifest "$quasidock" "$VENDORED")
 vendor_from_sources() {
     local out
     sza push --sources $VENDORED >/dev/null 2>&1 || { echo "push --sources failed"; return 1; }
-    out=$(QUASIDOCK_REGISTRY="$repo" QUASIDOCK_HOME="$work\\fresh-vendor" "$zigsaw" build "$work\\vendor-failing.json" 2>&1) || { echo "$out" | tail -2; return 1; }
+    out=$(QUASIDOCK_REGISTRY="$repo" QUASIDOCK_HOME="$work\\fresh-vendor" "$quasidock" build "$work\\vendor-failing.json" 2>&1) || { echo "$out" | tail -2; return 1; }
     grep -q "module m's vendored files: its vendor commands failed; fetching sha256 ${vendor_hash:0:12}" <<<"$out" &&
         grep -q "manifest $vendored_digest" <<<"$out"
 }
@@ -544,18 +544,18 @@ check "the pulled node runs" qd_run zb node -e 'process.exit(0)'
 # a pull brings it without installing the runtime as an app.
 za build "$root\\recipes\\prettier.json" >/dev/null 2>&1 || { echo "building prettier (on node) failed"; exit 1; }
 store_d="$work\\d"
-zd() { QUASIDOCK_HOME="$store_d" "$zigsaw" "$@"; }
+zd() { QUASIDOCK_HOME="$store_d" "$quasidock" "$@"; }
 check "push an app with a runtime" qd_push za prettier "$repo/prettier"
 check "pull it into an empty store" zd pull --yes "$repo/prettier:3.9.10"
-check "it runs on the runtime its image brought" sh -c "QUASIDOCK_HOME='$store_d' bash '$QD_IMAGES_HELPER' run \"\$0\" prettier --version | grep -q '^3.9.10'" "$zigsaw"
-check "the runtime isn't registered as a top-level image" sh -c "! QUASIDOCK_HOME='$store_d' \"\$0\" inspect node >/dev/null 2>&1" "$zigsaw"
+check "it runs on the runtime its image brought" sh -c "QUASIDOCK_HOME='$store_d' bash '$QD_IMAGES_HELPER' run \"\$0\" prettier --version | grep -q '^3.9.10'" "$quasidock"
+check "the runtime isn't registered as a top-level image" sh -c "! QUASIDOCK_HOME='$store_d' \"\$0\" inspect node >/dev/null 2>&1" "$quasidock"
 
 # Mounts. Pushed by app id, a runtime's image is where pushing an app on it
 # by app id looks for the runtime's layer, and mounts it from there instead
 # of uploading it.
 mounted_runtime() {
     local node_layer out
-    node_layer=$(grep -o 'sha256:[0-9a-f]*' "$store_a\\blobs\\sha256\\$(QUASIDOCK_HOME="$store_a" qd_manifest "$zigsaw" "node" | cut -d: -f2)" | tail -1)
+    node_layer=$(grep -o 'sha256:[0-9a-f]*' "$store_a\\blobs\\sha256\\$(QUASIDOCK_HOME="$store_a" qd_manifest "$quasidock" "node" | cut -d: -f2)" | tail -1)
     sza push node >/dev/null 2>&1 || { echo "pushing node failed"; return 1; }
     out=$(qd_push sza --verbose prettier "$repo/prettier-runtime" 2>&1) || { echo "$out"; return 1; }
     grep -q "^mounted $node_layer ([0-9]* bytes) from ${repo#*/}/node$" <<<"$out" && ! grep -q " upload $node_layer" <<<"$out"
@@ -575,7 +575,7 @@ check "ghcr.io: token, container image refused" refused ghcr.io/oras-project/ora
 # A file of Qt's eStargz runtime, read through ghcr.io's redirect to its
 # storage by Range requests.
 ghcr_cat() {
-    [ "$(QUASIDOCK_HOME="$work\\peek" "$zigsaw" image cat ghcr.io/quasidock/quasidock/qt6@sha256:7190cd43b951f3319098504f6198790eb0ff1943c222c1be96d58698f36f25bc bin/Qt6QuickControls2Native.dll |
+    [ "$(QUASIDOCK_HOME="$work\\peek" "$quasidock" image cat ghcr.io/quasidock/quasidock/qt6@sha256:7190cd43b951f3319098504f6198790eb0ff1943c222c1be96d58698f36f25bc bin/Qt6QuickControls2Native.dll |
         sha256sum | cut -d' ' -f1)" = 6f3cde26e753c28f70729ac1624a119d1539af18393860f45516ca98c5641e6d ]
 }
 check "ghcr.io: cat a file of an eStargz layer by Range requests" ghcr_cat
@@ -591,7 +591,7 @@ if [ -n "${AUTH_REGISTRY:-}" ]; then
     za logout "$AUTH_REGISTRY" >/dev/null 2>&1
     # A fresh store, so the pulls below really fetch from the login registry.
     store_c="$work\c"
-    zc() { QUASIDOCK_HOME="$store_c" "$zigsaw" "$@"; }
+    zc() { QUASIDOCK_HOME="$store_c" "$quasidock" "$@"; }
     asks_for_login() { "$@" 2>&1 | grep -q "quasidock login $AUTH_REGISTRY"; }
     # The right credentials, in the environment: they only go to the default registry.
     env_login() { QUASIDOCK_REGISTRY_USERNAME="$AUTH_USER" QUASIDOCK_REGISTRY_PASSWORD="$AUTH_PASSWORD" "$@"; }
@@ -681,8 +681,8 @@ check "no run labelled or granted the repository" sh -c "! icacls '$root' | grep
 # Installed apps are protected against deletion, so remove them through
 # zigsaw, and the images builds use with prune --downloads.
 for store in "$work\a" "$work\b" "$work\c" "$work\d" "$work\idx" "$work\chunks" "$work\plain" "$work\fresh1" "$work\fresh2" "$work\fresh3" "$work\fresh-none" "$work\fresh-vendor" "$work\consent" "$work\par1" "$work\par2" "$work\sgz" "$work\sgzbad" "$work\reset-layer" "$work\resume"; do
-    for id in busybox node prettier test.registry.vendored test.registry.catalog test.registry.parallel $SGZ; do QUASIDOCK_HOME="$store" qd_remove_app "$zigsaw" "$id" >/dev/null 2>&1; done
-    QUASIDOCK_HOME="$store" "$zigsaw" prune --downloads >/dev/null 2>&1
+    for id in busybox node prettier test.registry.vendored test.registry.catalog test.registry.parallel $SGZ; do QUASIDOCK_HOME="$store" qd_remove_app "$quasidock" "$id" >/dev/null 2>&1; done
+    QUASIDOCK_HOME="$store" "$quasidock" prune --downloads >/dev/null 2>&1
 done
 rm -rf "$work"
 echo

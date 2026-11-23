@@ -25,7 +25,7 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/images.sh"
 export LC_ALL=C
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
-zigsaw=${1:-$root/out/bin/quasidock.exe}
+quasidock=${1:-$root/out/bin/quasidock.exe}
 temp_store=""
 QUASIDOCK_HOME=${ZLS_HOME:-${BUILD_HOME:-}}
 if [ -z "$QUASIDOCK_HOME" ]; then
@@ -65,24 +65,24 @@ check_want() {
     fi
 }
 
-z() { "$zigsaw" "$@"; }
+z() { "$quasidock" "$@"; }
 installed_here=""
-if ! qd_cached "$zigsaw" "$ZLS"; then
+if ! qd_cached "$quasidock" "$ZLS"; then
     installed_here=$ZLS
     z build "$root\\recipes\\zls.json" >"$work\\build.log" 2>&1 || echo "building zls.json failed: $(tail -1 "$work\\build.log")"
 fi
 . "$(cygpath -u "$root")/tests/acprobe.sh"
-acprobe_run "$zigsaw" "$root" "$work"
+acprobe_run "$quasidock" "$root" "$work"
 
 # Runs from the work directory's sandbox folders, never the repository: ZLS
 # has the cwd permission, which low runs label and AppContainer runs grant.
 cd "$work" || exit 1
 
-check "zls --version says 0.17.0" sh -c "[ \"\$(bash '$QD_IMAGES_HELPER' run \"\$0\" $ZLS --version | tr -d '\r')\" = 0.17.0 ]" "$zigsaw"
+check "zls --version says 0.17.0" sh -c "[ \"\$(bash '$QD_IMAGES_HELPER' run \"\$0\" $ZLS --version | tr -d '\r')\" = 0.17.0 ]" "$quasidock"
 caches_in_data() {
     local dir data
     dir=$(qd_run z --name zls-cache-$$ $ZLS env | tr -d '\r' | grep '"global_cache_dir"' | sed -e 's/.*: "//' -e 's/",*$//' -e 's/\\\\/\\/g')
-    data=$(qd_container_data "$zigsaw" zls-cache-$$) || return
+    data=$(qd_container_data "$quasidock" zls-cache-$$) || return
     [[ $dir == "$data\\"* ]] || { echo "global_cache_dir is $dir, want it under $data"; return 1; }
 }
 check "its caches and log are in its data" caches_in_data
@@ -148,7 +148,7 @@ for sb in soft low appcontainer; do
     dir="$work\\$sb"
     mkdir -p "$dir" && cp "$(cygpath -u "$root")"/tests/zls/*.zig "$(cygpath -u "$dir")/"
     uri="file:///$(cygpath -m "$dir")"
-    coproc SERVER { cd "$dir" && exec bash "$QD_IMAGES_HELPER" run "$zigsaw" --interactive --sandbox=$sb $ZLS 2>"$work\\$sb.stderr.txt"; }
+    coproc SERVER { cd "$dir" && exec bash "$QD_IMAGES_HELPER" run "$quasidock" --interactive --sandbox=$sb $ZLS 2>"$work\\$sb.stderr.txt"; }
     # (Bash forgets SERVER once the server exits.)
     to_server=${SERVER[1]} from_server=${SERVER[0]} pid=$SERVER_PID
     send '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"processId":null,"rootUri":"'"$uri"'","capabilities":{"textDocument":{"publishDiagnostics":{}}}}}'
@@ -171,7 +171,7 @@ done
 check "no run labelled or granted the repository" sh -c "! icacls '$root' | grep -q -e 'Mandatory Label' -e 'S-1-15-'"
 
 cd "$root" || exit 1
-acprobe_rm "$zigsaw"
+acprobe_rm "$quasidock"
 for id in $installed_here; do qd_remove_app z "$id" >/dev/null 2>&1; done
 if [ -n "$temp_store" ]; then
     z prune --downloads --data >/dev/null 2>&1

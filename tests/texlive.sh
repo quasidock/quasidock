@@ -29,10 +29,10 @@ export MSYS_NO_PATHCONV=1
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/images.sh"
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
-zigsaw=${1:-$root/out/bin/quasidock.exe}
+quasidock=${1:-$root/out/bin/quasidock.exe}
 QUASIDOCK_HOME=${TEXLIVE_HOME:-${BUILD_HOME:-}}
 APP=texlive
-if [ -z "$QUASIDOCK_HOME" ] || ! qd_cached "$zigsaw" "$APP"; then
+if [ -z "$QUASIDOCK_HOME" ] || ! qd_cached "$quasidock" "$APP"; then
     echo "tests/texlive.sh needs a store with $APP in TEXLIVE_HOME or BUILD_HOME;"
     echo "build recipes\\texlive.json into one first."
     exit 1
@@ -41,9 +41,9 @@ export QUASIDOCK_HOME
 work=$(cygpath -w "$(mktemp -d)")
 # The suite explicitly shares its caches between disposable containers.
 volume=texlive-test-$$
-"$zigsaw" volume create "$volume" >/dev/null || exit 1
-data=$("$zigsaw" volume inspect -f '{{.Mountpoint}}' "$volume" | tr -d '\r') || exit 1
-trap '"$zigsaw" volume rm "$volume" >/dev/null 2>&1' EXIT
+"$quasidock" volume create "$volume" >/dev/null || exit 1
+data=$("$quasidock" volume inspect -f '{{.Mountpoint}}' "$volume" | tr -d '\r') || exit 1
+trap '"$quasidock" volume rm "$volume" >/dev/null 2>&1' EXIT
 
 failures=0
 gaps=0
@@ -74,21 +74,21 @@ check_want() {
     fi
 }
 
-z() { "$zigsaw" "$@"; }
+z() { "$quasidock" "$@"; }
 # tl <program> [args...]: a TeX Live program, run from the work directory.
 tl() {
     local program=$1
     shift
-    timeout 300 bash "$QD_IMAGES_HELPER" run "$zigsaw" --rm -v "$volume:\${data}" ${SANDBOX:+--sandbox=$SANDBOX} --entrypoint "bin/windows/$program.exe" $APP -interaction=nonstopmode "$@"
+    timeout 300 bash "$QD_IMAGES_HELPER" run "$quasidock" --rm -v "$volume:\${data}" ${SANDBOX:+--sandbox=$SANDBOX} --entrypoint "bin/windows/$program.exe" $APP -interaction=nonstopmode "$@"
 }
 tl_plain() {
     local program=$1
     shift
-    timeout 300 bash "$QD_IMAGES_HELPER" run "$zigsaw" --rm -v "$volume:\${data}" ${SANDBOX:+--sandbox=$SANDBOX} --entrypoint "bin/windows/$program.exe" $APP "$@"
+    timeout 300 bash "$QD_IMAGES_HELPER" run "$quasidock" --rm -v "$volume:\${data}" ${SANDBOX:+--sandbox=$SANDBOX} --entrypoint "bin/windows/$program.exe" $APP "$@"
 }
 
 . "$(dirname "$0")/acprobe.sh"
-acprobe_run "$zigsaw" "$root" "$work"
+acprobe_run "$quasidock" "$root" "$work"
 
 cp -r "$root\\tests\\texlive\\." "$work\\"
 # Runs from the work directory: the app has the cwd permission.
@@ -114,7 +114,7 @@ check "LuaLaTeX again, with its format and font names made" typeset lualatex fon
 var_is() {
     local got container_data name=texlive-env-$$-$1
     got=$(qd_run z --name "$name" -v "$volume:\${data}" --entrypoint=bin/windows/kpsewhich.exe $APP -var-value="$1" | tr -d '\r') || return
-    container_data=$(qd_container_data "$zigsaw" "$name") || return
+    container_data=$(qd_container_data "$quasidock" "$name") || return
     z rm "$name" >/dev/null || return
     [ "$(cygpath -w "$got")" = "$container_data\\$2" ] || { echo "$1 is $got"; return 1; }
 }
@@ -130,14 +130,14 @@ bib() {
 check "BibTeX and MakeIndex run" bib
 biber_starts() {
     mkdir -p "$work\\biber"
-    timeout 300 bash "$QD_IMAGES_HELPER" run "$zigsaw" --rm --env="PAR_GLOBAL_TEMP=$work\\biber" --entrypoint=bin/windows/biber.exe $APP --version 2>&1 | tr -d '\r' | grep -qiE '^biber (version: *)?[0-9]'
+    timeout 300 bash "$QD_IMAGES_HELPER" run "$quasidock" --rm --env="PAR_GLOBAL_TEMP=$work\\biber" --entrypoint=bin/windows/biber.exe $APP --version 2>&1 | tr -d '\r' | grep -qiE '^biber (version: *)?[0-9]'
 }
 check "Biber starts" biber_starts
 mp() { tl_plain mpost fig.mp >mpost.out 2>&1 || { tail -5 mpost.out; return 1; }; test -s fig-1.mps; }
 check "MetaPost draws a figure" mp
 latexmk() {
     rm -f mk.pdf
-    timeout 300 bash "$QD_IMAGES_HELPER" run "$zigsaw" --rm -v "$volume:\${data}" $APP -pdf -jobname=mk hello.tex >latexmk.out 2>&1 || { tail -5 latexmk.out; return 1; }
+    timeout 300 bash "$QD_IMAGES_HELPER" run "$quasidock" --rm -v "$volume:\${data}" $APP -pdf -jobname=mk hello.tex >latexmk.out 2>&1 || { tail -5 latexmk.out; return 1; }
     test -s mk.pdf
 }
 check "latexmk, on Perl's image, makes a PDF" latexmk
@@ -151,7 +151,7 @@ ps2pdf() {
 check "LaTeX, dvips and ps2pdf make a PDF through PostScript" ps2pdf
 
 dated() {
-    timeout 300 bash "$QD_IMAGES_HELPER" run "$zigsaw" --env=SOURCE_DATE_EPOCH=1767225600 --env=FORCE_SOURCE_DATE=1 --entrypoint bin/windows/pdflatex.exe $APP \
+    timeout 300 bash "$QD_IMAGES_HELPER" run "$quasidock" --env=SOURCE_DATE_EPOCH=1767225600 --env=FORCE_SOURCE_DATE=1 --entrypoint bin/windows/pdflatex.exe $APP \
         -interaction=nonstopmode -jobname=same hello.tex >same.out 2>&1 || { tail -5 same.out; return 1; }
 }
 same_pdf() {
@@ -176,7 +176,7 @@ SANDBOX=appcontainer check_want "$(ac_if self-long-name)" "pdfLaTeX in an AppCon
 check "no run labelled or granted the repository" sh -c "! icacls '$root' | grep -q -e 'Mandatory Label' -e 'S-1-15-'"
 
 cd "$root" || exit 1
-acprobe_rm "$zigsaw"
+acprobe_rm "$quasidock"
 rm -rf "$work"
 echo
 acprobe_report

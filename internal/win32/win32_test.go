@@ -54,6 +54,29 @@ func TestJobObject(t *testing.T) {
 	}
 }
 
+func TestJobFreeze(t *testing.T) {
+	job, err := win32.CreateJobObject("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer win32.CloseHandle(job)
+	// Windows requires a freeze before the first thaw.
+	for _, frozen := range []bool{true, false, true, false} {
+		if err := win32.SetJobFrozen(job, frozen); err != nil {
+			t.Fatal(err)
+		}
+		if got, err := win32.IsJobFrozen(job); err != nil || got != frozen {
+			t.Fatalf("frozen=%t: got %t, %v", frozen, got, err)
+		}
+	}
+	if err := win32.SetJobFrozen(win32.INVALID_HANDLE_VALUE, true); err == nil {
+		t.Fatal("freeze accepted an invalid job")
+	}
+	if _, err := win32.IsJobFrozen(win32.INVALID_HANDLE_VALUE); err == nil {
+		t.Fatal("query accepted an invalid job")
+	}
+}
+
 func TestGetFileAttributes(t *testing.T) {
 	tempDir := t.TempDir()
 	attrs, err := win32.GetFileAttributes(tempDir)

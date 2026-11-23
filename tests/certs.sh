@@ -32,7 +32,7 @@ export MSYS_NO_PATHCONV=1
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/images.sh"
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
-zigsaw=${1:-$root/out/bin/quasidock.exe}
+quasidock=${1:-$root/out/bin/quasidock.exe}
 QUASIDOCK_HOME=${CERTS_HOME:-${BUILD_HOME:-}}
 PY=python
 NODE=node
@@ -45,7 +45,7 @@ PG=postgresql
 PHP=php
 COMPOSER=composer
 PERL=perl
-has() { qd_cached "$zigsaw" "$1"; }
+has() { qd_cached "$quasidock" "$1"; }
 if [ -z "$QUASIDOCK_HOME" ] || ! has $PY; then
     echo "tests/certs.sh needs a store with $PY in CERTS_HOME or BUILD_HOME"
     exit 1
@@ -60,7 +60,7 @@ url="https://localhost:$port"
 pgvolume=
 if has $PG; then
     pgvolume=certs-postgresql-$$
-    "$zigsaw" volume create "$pgvolume" >/dev/null || exit 1
+    "$quasidock" volume create "$pgvolume" >/dev/null || exit 1
 fi
 
 . "$(dirname "$0")/acprobe.sh"
@@ -103,7 +103,7 @@ z() {
         # Zig fetch compiles Maker on first use with an empty container cache.
         [ "$arg" != "$ZIG" ] || limit=${CERTS_ZIG_TIMEOUT:-600}
     done
-    timeout "$limit" bash "$QD_IMAGES_HELPER" run "$zigsaw" --rm "${shared[@]}" --sandbox="$sandbox" "$@"
+    timeout "$limit" bash "$QD_IMAGES_HELPER" run "$quasidock" --rm "${shared[@]}" --sandbox="$sandbox" "$@"
 }
 # says <want> <command...>: the last line the command prints is want; else
 # it says what came, and the last line of its errors.
@@ -216,14 +216,14 @@ cleanup() {
     fi
     [ -z "$pgserver" ] || { z soft --port=postgresql=$pgport --entrypoint=pg_ctl $PG stop -m fast >/dev/null 2>&1; wait "$pgserver" 2>/dev/null; }
     [ -z "$server" ] || { kill "$server" 2>/dev/null; wait "$server" 2>/dev/null; }
-    [ -z "$pgvolume" ] || "$zigsaw" volume rm "$pgvolume" >/dev/null 2>&1
-    acprobe_rm "$zigsaw" 2>/dev/null
+    [ -z "$pgvolume" ] || "$quasidock" volume rm "$pgvolume" >/dev/null 2>&1
+    acprobe_rm "$quasidock" 2>/dev/null
     rm -rf "$work"
 }
 trap cleanup EXIT
 
 cd "$work" || exit 1
-acprobe_run "$zigsaw" "$root" "$work"
+acprobe_run "$quasidock" "$root" "$work"
 
 # --- The CA, and the servers -------------------------------------------------
 
@@ -265,13 +265,13 @@ printf '%s\n' 'pub fn build(_: *@import("std").Build) void {}' >build.zig
 printf '{"repositories": [{"type": "composer", "url": "%s"}, {"packagist.org": false}], "require": {"quasidock/certs": "1.0.0"}}\n' "$url" >composer.json
 if has $JDK; then z soft --entrypoint=javac $JDK -d classes Get.java >/dev/null 2>&1 || echo "compiling Get.java failed"; fi
 
-bash "$QD_IMAGES_HELPER" run "$zigsaw" --rm $PY server.py $port leaf.crt leaf.key ready $crlport ca.crl >server.out 2>&1 &
+bash "$QD_IMAGES_HELPER" run "$quasidock" --rm $PY server.py $port leaf.crt leaf.key ready $crlport ca.crl >server.out 2>&1 &
 server=$!
 for i in $(seq 30); do [ -e ready ] && break; sleep 1; done
 [ -e ready ] || { echo "the HTTPS server didn't start:"; tail -5 server.out; exit 1; }
 
 if has $PG; then
-    bash "$QD_IMAGES_HELPER" run "$zigsaw" --rm -v "$pgvolume:\${data}" --port=postgresql=$pgport $PG -c ssl=on -c "ssl_cert_file=$work\\leaf.crt" -c "ssl_key_file=$work\\leaf.key" >pg.out 2>&1 &
+    bash "$QD_IMAGES_HELPER" run "$quasidock" --rm -v "$pgvolume:\${data}" --port=postgresql=$pgport $PG -c ssl=on -c "ssl_cert_file=$work\\leaf.crt" -c "ssl_key_file=$work\\leaf.key" >pg.out 2>&1 &
     pgserver=$!
     for i in $(seq 60); do z soft --port=postgresql=$pgport --entrypoint=pg_isready $PG -q 2>/dev/null && break; sleep 1; done
     z soft --port=postgresql=$pgport --entrypoint=pg_isready $PG -q 2>/dev/null || { echo "PostgreSQL's server didn't start:"; tail -5 pg.out; exit 1; }

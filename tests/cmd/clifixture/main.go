@@ -122,7 +122,7 @@ func main() {
 			for {
 				time.Sleep(time.Second)
 			}
-		case "signal-hold", "tree-hold":
+		case "signal-hold", "tree-hold", "heartbeat", "heartbeat-tree":
 			signal := win32.HANDLE(0)
 			var err error
 			signal, err = win32.CreateEvent("", false, false)
@@ -147,12 +147,17 @@ func main() {
 			if args[2] == "no-console" {
 				win32.FreeConsole()
 			}
-			if args[0] == "tree-hold" {
+			heartbeat := args[0] == "heartbeat" || args[0] == "heartbeat-tree"
+			if args[0] == "tree-hold" || args[0] == "heartbeat-tree" {
 				exe, err := os.Executable()
 				if err != nil {
 					panic(err)
 				}
-				child := exec.Command(exe, "signal-hold", ready+".child", "ignore")
+				childMode := "signal-hold"
+				if heartbeat {
+					childMode = "heartbeat"
+				}
+				child := exec.Command(exe, childMode, ready+".child", "ignore")
 				// Server AppContainers cannot open NUL; reuse the stdin handle
 				// supplied by the supervisor instead of os/exec's nil default.
 				child.Stdin, child.Stdout, child.Stderr = os.Stdin, os.Stdout, os.Stderr
@@ -164,8 +169,28 @@ func main() {
 				panic(err)
 			}
 			fmt.Printf("started %d\n", os.Getpid())
+			var ticks *os.File
+			wait := win32.INFINITE
+			if heartbeat {
+				ticks, err = os.OpenFile(ready+".ticks", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+				if err != nil {
+					panic(err)
+				}
+				defer ticks.Close()
+				wait = 20
+			}
 			for {
-				if win32.WaitForSingleObject(signal, win32.INFINITE) != win32.WAIT_OBJECT_0 {
+				if ticks != nil {
+					if _, err := ticks.Write([]byte{'x'}); err != nil {
+						panic(err)
+					}
+					fmt.Printf("tick %s\n", filepath.Base(ready))
+				}
+				result := win32.WaitForSingleObject(signal, wait)
+				if result == win32.WAIT_TIMEOUT && heartbeat {
+					continue
+				}
+				if result != win32.WAIT_OBJECT_0 {
 					panic("signal wait failed")
 				}
 				fmt.Println("signal received")

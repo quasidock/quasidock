@@ -23,7 +23,7 @@ set -u
 export MSYS_NO_PATHCONV=1
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/images.sh"
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
-zigsaw=${QUASIDOCK:-$root\\out\\bin\\quasidock.exe}
+quasidock=${QUASIDOCK:-$root\\out\\bin\\quasidock.exe}
 ZOT=zot
 
 store=${ZOT_HOME:-${BUILD_HOME:-}}
@@ -37,7 +37,7 @@ if [ -z "$store" ]; then
             cp -n "$(cygpath -u "$SEED_DOWNLOADS")"/* "$(cygpath -u "$store")/cache/downloads/"
     fi
 fi
-z() { QUASIDOCK_HOME="$store" "$zigsaw" "$@"; }
+z() { QUASIDOCK_HOME="$store" "$quasidock" "$@"; }
 dir=$(mktemp -d)
 version=$(grep -o '"version": *"[^"]*"' "$root\\recipes\\zot.json" | cut -d'"' -f4)
 if [ "$(qd_version z "$ZOT" 2>/dev/null)" != "$version" ]; then
@@ -64,9 +64,9 @@ config 5001 ', "auth": { "htpasswd": { "path": "htpasswd" } }'
 # zigsaw itself in the background, not a function or subshell running it, so
 # that `kill` below ends zigsaw.
 cd "$dir"
-QUASIDOCK_HOME="$store" bash "$QD_IMAGES_HELPER" run "$zigsaw" $ZOT serve zot-5000.json >zot-5000.log 2>&1 &
+QUASIDOCK_HOME="$store" bash "$QD_IMAGES_HELPER" run "$quasidock" $ZOT serve zot-5000.json >zot-5000.log 2>&1 &
 plain=$!
-QUASIDOCK_HOME="$store" bash "$QD_IMAGES_HELPER" run "$zigsaw" $ZOT serve zot-5001.json >zot-5001.log 2>&1 &
+QUASIDOCK_HOME="$store" bash "$QD_IMAGES_HELPER" run "$quasidock" $ZOT serve zot-5001.json >zot-5001.log 2>&1 &
 login=$!
 cd "$OLDPWD"
 

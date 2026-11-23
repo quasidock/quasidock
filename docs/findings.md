@@ -194,8 +194,7 @@ low (`icacls <dir> /setintegritylevel low`):
 
 ## The low sandbox
 
-[Zigsaw iteration 9](../legacy/iteration-9.md), 2026-10-05, Windows 11
-26300.9550.
+Measured 2026-10-05 on Windows 11 26300.9550.
 
 ### Which grants keep low integrity out
 
@@ -301,13 +300,6 @@ mismatches:
   `9 s`). In Quasidock, each container starts with an isolated
   `containers/<id>/data` directory unless attached to existing state via `-v` or
   `--mount` ([iteration 6](iteration-6.md), [iteration 7](iteration-7.md)).
-- Unlike Zigsaw, which revoked temporary CLI `--filesystem` grants when an app's
-  last run exited against stored overrides, Quasidock removed `override` in 0.3
-  ([iteration 3](iteration-3.md)): host labels and AppContainer capability grants
-  recorded in [`internal/grants/grants.go`](../internal/grants/grants.go) stay
-  until the app's last cached image is removed with `quasidock rmi` or reclaimed
-  with `quasidock grants --take-back` (while loopback exemptions still end when
-  the last run finishes).
 - **Windows Server 2025**: CI runs [`tests/matrix.sh`](../tests/matrix.sh) under
   administrator runners, unlike the unprivileged Windows 11 development tests.
 

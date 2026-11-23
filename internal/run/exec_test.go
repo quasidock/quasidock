@@ -201,6 +201,20 @@ func TestExecProtocolAndShutdown(t *testing.T) {
 			t.Fatalf("cancel: %d %v", kind, err)
 		}
 	})
+	t.Run("paused launch rejected by owner", func(t *testing.T) {
+		r.mu.Lock()
+		r.paused = true
+		r.mu.Unlock()
+		defer func() { r.mu.Lock(); r.paused = false; r.mu.Unlock() }()
+		c := dial()
+		data, _ := json.Marshal(execRequest{Protocol: execProtocol, RunID: runID, Args: []string{exe}})
+		if err := c.send(execLaunch, data); err != nil {
+			t.Fatal(err)
+		}
+		if kind, data, err := c.receive(); err != nil || kind != execError || !strings.Contains(string(data), "paused") {
+			t.Fatalf("paused launch: %d %q %v", kind, data, err)
+		}
+	})
 	t.Run("shutdown cancels blocked input output and handshake", func(t *testing.T) {
 		output, input := dial(), dial()
 		launch(output, "spam")

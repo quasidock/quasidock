@@ -28,7 +28,7 @@ export MSYS_NO_PATHCONV=1
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/images.sh"
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
-zigsaw=${1:-$root/out/bin/quasidock.exe}
+quasidock=${1:-$root/out/bin/quasidock.exe}
 own_store=false
 QUASIDOCK_HOME=${CHROMIUM_HOME:-${BUILD_HOME:-}}
 if [ -z "$QUASIDOCK_HOME" ]; then
@@ -55,8 +55,8 @@ procprobe="$root\\out\\test\\quasidock-procprobe.exe"
 installed=()
 for recipe in recipes\\no-publish\\ungoogled-chromium recipes\\vscodium; do
     id=$(grep -o '"id": *"[^"]*"' "$root\\$recipe.json" | cut -d'"' -f4)
-    qd_cached "$zigsaw" "$id" || installed+=("$id")
-    "$zigsaw" build "$root\\$recipe.json" >"$work\\build.log" 2>&1 || { echo "building $recipe failed: $(tail -1 "$work\\build.log")"; exit 1; }
+    qd_cached "$quasidock" "$id" || installed+=("$id")
+    "$quasidock" build "$root\\$recipe.json" >"$work\\build.log" 2>&1 || { echo "building $recipe failed: $(tail -1 "$work\\build.log")"; exit 1; }
 done
 
 failures=0
@@ -145,7 +145,7 @@ start() {
     local id=$1 cmd=$2 sandbox=$3 file=$4 dir
     shift 4
     dir=$(cygpath -w "$(dirname "$(cygpath -u "$file")")")
-    bash "$QD_IMAGES_HELPER" run "$zigsaw" --sandbox=$sandbox --entrypoint=$cmd --filesystem="$dir" $id "$@" "$file" >"$work\\run.log" 2>&1 &
+    bash "$QD_IMAGES_HELPER" run "$quasidock" --sandbox=$sandbox --entrypoint=$cmd --filesystem="$dir" $id "$@" "$file" >"$work\\run.log" 2>&1 &
     runner=$!
     # Only windows of that run count (its Windows pid; $! is Git Bash's).
     winpid=$(cat /proc/$runner/winpid)
@@ -193,10 +193,10 @@ finish() {
 # A window station is what's refused at low integrity and in an AppContainer:
 # this is why the rows below fail there, so a Windows that allows it shows up
 # here first.
-acprobe_run "$zigsaw" "$root" "$work"
+acprobe_run "$quasidock" "$root" "$work"
 makes_station() {
     local out
-    out=$(cd "$work\\acprobe\\cwd" && bash "$QD_IMAGES_HELPER" run "$zigsaw" --sandbox=$1 $ACPROBE_ID 2>/dev/null | tr -d '\r')
+    out=$(cd "$work\\acprobe\\cwd" && bash "$QD_IMAGES_HELPER" run "$quasidock" --sandbox=$1 $ACPROBE_ID 2>/dev/null | tr -d '\r')
     grep -qx 'window-station ok' <<<"$out" || { grep '^window-station' <<<"$out"; return 1; }
 }
 row "A program can make a window station, which Chromium's sandbox needs before anything else" ok fails fails makes_station
@@ -246,7 +246,7 @@ hands_over() {
     start $id $cmd soft "$one"
     window "$first" 30 || return 1
     dir2=$(cygpath -w "$(dirname "$(cygpath -u "$two")")")
-    bash "$QD_IMAGES_HELPER" run "$zigsaw" --sandbox=soft --entrypoint=$cmd --filesystem="$dir2" $id "$two" >"$work\\second.log" 2>&1 &
+    bash "$QD_IMAGES_HELPER" run "$quasidock" --sandbox=soft --entrypoint=$cmd --filesystem="$dir2" $id "$two" >"$work\\second.log" 2>&1 &
     local other=$!
     for i in $(seq 75); do
         kill -0 $other 2>/dev/null || break
@@ -357,7 +357,7 @@ terminal() {
     local i
     rm -f "$proj\\term.txt"
     cd "$proj" || return 1
-    bash "$QD_IMAGES_HELPER" run "$zigsaw" --entrypoint=VSCodium $CODIUM "$proj" >"$work\\run.log" 2>&1 &
+    bash "$QD_IMAGES_HELPER" run "$quasidock" --entrypoint=VSCodium $CODIUM "$proj" >"$work\\run.log" 2>&1 &
     runner=$!
     winpid=$(cat /proc/$runner/winpid)
     cd "$work" || return 1
@@ -386,7 +386,7 @@ saves() {
     local i saved="$work\\saved-$1.txt" dir
     printf 'before\n' >"$saved"
     dir=$(cygpath -w "$(dirname "$(cygpath -u "$saved")")")
-    bash "$QD_IMAGES_HELPER" run "$zigsaw" --sandbox=$1 --filesystem="$dir" --env="QUASIDOCK_SAVER_FILE=$saved" $CODIUM "--extensionDevelopmentPath=$root\\tests\\chromium\\saver" ${2:-} "$saved" >"$work\\run.log" 2>&1 &
+    bash "$QD_IMAGES_HELPER" run "$quasidock" --sandbox=$1 --filesystem="$dir" --env="QUASIDOCK_SAVER_FILE=$saved" $CODIUM "--extensionDevelopmentPath=$root\\tests\\chromium\\saver" ${2:-} "$saved" >"$work\\run.log" 2>&1 &
     runner=$!
     winpid=$(cat /proc/$runner/winpid)
     window "saved-$1.txt - " 30 || return 1
@@ -406,7 +406,7 @@ check "VSCodium's extension host edits and saves a file (at low, told --no-sandb
 # The console's commands.
 cli_version() {
     local out
-    out=$(bash "$QD_IMAGES_HELPER" run "$zigsaw" --sandbox=$1 --entrypoint=codium $CODIUM --version 2>/dev/null | tr -d '\r' | head -1)
+    out=$(bash "$QD_IMAGES_HELPER" run "$quasidock" --sandbox=$1 --entrypoint=codium $CODIUM --version 2>/dev/null | tr -d '\r' | head -1)
     grep -qx '[0-9]*\.[0-9]*\.[0-9]*' <<<"$out" || { echo "codium-cli --version said \"$out\""; return 1; }
 }
 # In an AppContainer, Node's realpath fails on the drive's root.
@@ -421,7 +421,7 @@ check "VSCodium doesn't look for updates: zigsaw's its way of getting them" no_u
 says_why() {
     local out sb
     for sb in low appcontainer; do
-        out=$(bash "$QD_IMAGES_HELPER" run "$zigsaw" --sandbox=$sb --entrypoint=codium $CODIUM --version 2>&1 </dev/null)
+        out=$(bash "$QD_IMAGES_HELPER" run "$quasidock" --sandbox=$sb --entrypoint=codium $CODIUM --version 2>&1 </dev/null)
         grep -q "can't run under the $sb sandbox: Windows refuses Chromium's sandbox a window station" <<<"$out" || { echo "$sb: $out"; return 1; }
     done
 }
@@ -438,8 +438,8 @@ untouched() {
 check "They left the real AppData, profile and registry alone" untouched
 
 cd "$root" || exit 1
-acprobe_rm "$zigsaw"
-for id in "${installed[@]}"; do qd_remove_app "$zigsaw" "$id" >/dev/null 2>&1; done
+acprobe_rm "$quasidock"
+for id in "${installed[@]}"; do qd_remove_app "$quasidock" "$id" >/dev/null 2>&1; done
 $had_chromium_key || reg delete 'HKCU\Software\Chromium' /f >/dev/null 2>&1
 for d in "${absent_before[@]}"; do rm -rf "$d"; done
 $own_store && rm -rf "$QUASIDOCK_HOME"

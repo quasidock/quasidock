@@ -97,6 +97,9 @@ func Exec(ctx *context.Context, opts ExecOptions) (uint32, error) {
 	if !rec.State.Running || !ctx.Store.IsContainerRunning(rec.ID) {
 		return 1, fmt.Errorf("container %s is not running", rec.ShortID())
 	}
+	if rec.State.Paused {
+		return 1, errors.New("container is paused; unpause it first")
+	}
 	if rec.State.ExecProtocol != execProtocol {
 		return 1, errors.New("container's running supervisor does not support exec; stop and start it with this binary")
 	}
@@ -227,6 +230,7 @@ type execRuntime struct {
 	wg                  sync.WaitGroup
 	listener            *win32.PipeListener
 	closing             bool
+	paused              bool
 	runID               string
 	primary, job, token win32.HANDLE
 	security            *win32.SECURITY_CAPABILITIES
@@ -274,11 +278,17 @@ func (r *execRuntime) start(id, runID string) error {
 func (r *execRuntime) stop() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.stopLocked()
+}
+
+func (r *execRuntime) stopLocked() {
 	if r.closing {
 		return
 	}
 	r.closing = true
-	r.listener.Close()
+	if r.listener != nil {
+		r.listener.Close()
+	}
 	for c := range r.connections {
 		c.Close()
 	}
@@ -468,6 +478,11 @@ func (r *execRuntime) serve(c *execStream) {
 	if r.closing || win32.WaitForSingleObject(r.primary, 0) != win32.WAIT_TIMEOUT {
 		r.mu.Unlock()
 		_ = c.send(execError, []byte("container is stopping"))
+		return
+	}
+	if r.paused {
+		r.mu.Unlock()
+		_ = c.send(execError, []byte("container is paused; unpause it first"))
 		return
 	}
 	child, err := process.Start(spec)

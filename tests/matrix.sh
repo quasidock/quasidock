@@ -37,7 +37,7 @@ export MSYS_NO_PATHCONV=1
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/images.sh" # Keep arguments like "/c" from being rewritten into paths.
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
-zigsaw=${1:-$root/out/bin/quasidock.exe}
+quasidock=${1:-$root/out/bin/quasidock.exe}
 
 own_store=false
 if [ -z "${QUASIDOCK_HOME:-}" ]; then
@@ -68,9 +68,9 @@ PUML=plantuml
 # PDFBox and PlantUML.
 for recipe in busybox zig rust ripgrep bat go fzf zot cmake zstd mingit node python java-sdk java maven gradle pdfbox plantuml; do
     id=$(grep -o '"id": *"[^"]*"' "$root/recipes/$recipe.json" | cut -d'"' -f4)
-    if ! qd_cached "$zigsaw" "$id"; then
+    if ! qd_cached "$quasidock" "$id"; then
         echo "building $id..."
-        out=$("$zigsaw" build "$root/recipes/$recipe.json" 2>&1) || { echo "$out"; exit 1; }
+        out=$("$quasidock" build "$root/recipes/$recipe.json" 2>&1) || { echo "$out"; exit 1; }
     fi
 done
 
@@ -81,7 +81,7 @@ mkdir -p "$outside" && echo secret >"$outside\\secret.txt"
 # ac_if <check...>, the intended outcome under AppContainer of a known gap
 # whose causes are those probe checks.
 . "$(cygpath -u "$root")/tests/acprobe.sh"
-acprobe_run "$zigsaw" "$root" "$work"
+acprobe_run "$quasidock" "$root" "$work"
 
 # --- Harness -----------------------------------------------------------------
 
@@ -104,7 +104,7 @@ run() {
 run_input() {
     local shared=()
     case $current_tool in git|node) shared=(-v "matrix-$current_tool-$sb-$$:\${data}") ;; esac
-    timeout "$limit" bash "$QD_IMAGES_HELPER" run "$zigsaw" --rm --interactive "${shared[@]}" --sandbox="$sb" "$@"
+    timeout "$limit" bash "$QD_IMAGES_HELPER" run "$quasidock" --rm --interactive "${shared[@]}" --sandbox="$sb" "$@"
     local code=$?
     [ $code -eq 124 ] && echo "error: timed out after ${limit}s"
     return $code
@@ -120,7 +120,7 @@ first_error() {
 
 sandboxes="soft appcontainer low"
 matrix_volumes=()
-trap 'for volume in "${matrix_volumes[@]}"; do "$zigsaw" volume rm "$volume" >/dev/null 2>&1; done' EXIT
+trap 'for volume in "${matrix_volumes[@]}"; do "$quasidock" volume rm "$volume" >/dev/null 2>&1; done' EXIT
 
 # Starts a tool's checks. Each sandbox gets a fresh working directory.
 tool() {
@@ -129,7 +129,7 @@ tool() {
     case $current_tool in git|node)
         for sb in $sandboxes; do
             local volume=matrix-$current_tool-$sb-$$
-            "$zigsaw" volume create "$volume" >/dev/null || exit 1
+            "$quasidock" volume create "$volume" >/dev/null || exit 1
             matrix_volumes+=("$volume")
         done ;;
     esac
@@ -233,7 +233,7 @@ expect ok "$(ac_if final-path-dos self-path-dos nul)" ok "npm install" run --ent
 # The recipe points npm's global prefix at ${data}\npm and puts it on PATH.
 npm_global() {
     local data
-    data=$("$zigsaw" volume inspect -f '{{.Mountpoint}}' "matrix-node-$sb-$$" | tr -d '\r') || return
+    data=$("$quasidock" volume inspect -f '{{.Mountpoint}}' "matrix-node-$sb-$$" | tr -d '\r') || return
     run --entrypoint=npm $NODE install -g --no-audit --no-fund semver@7 &&
         run --entrypoint=npm $NODE ls -g | grep -q semver &&
         [ -f "$data\\npm\\node_modules\\semver\\package.json" ]
@@ -344,9 +344,9 @@ printf '%s\n' "${rows[@]}"
 echo
 echo "$mismatches result(s) differ from the intended behaviour, and $gaps known gap(s) failed. The checks took $((SECONDS - started))s."
 
-acprobe_rm "$zigsaw"
+acprobe_rm "$quasidock"
 if $own_store; then
-    for id in $BB $RG $BAT $GIT $NODE $PY $ZIG $GO $FZF $ZOT $CMAKE $ZSTD; do qd_remove_app "$zigsaw" "$id" >/dev/null 2>&1; done
+    for id in $BB $RG $BAT $GIT $NODE $PY $ZIG $GO $FZF $ZOT $CMAKE $ZSTD; do qd_remove_app "$quasidock" "$id" >/dev/null 2>&1; done
     rm -rf "$QUASIDOCK_HOME"
 fi
 rm -rf "$work"

@@ -7,6 +7,46 @@ import (
 	"time"
 )
 
+func TestPausedContainerReconciliation(t *testing.T) {
+	for _, autoRemove := range []bool{false, true} {
+		st, err := Open(t.TempDir(), false, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		rec, err := st.CreateContainer("paused", ContainerRecord{
+			HostConfig: ContainerHostConfig{AutoRemove: autoRemove},
+			State:      ContainerState{Status: "paused", Running: true, Paused: true, Launched: true},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		lk, err := OpenLock(st.ContainerRunLockPath(rec.ID), true, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer lk.Release()
+		listed, err := st.ListContainers(false)
+		if err != nil || len(listed) != 1 || !listed[0].State.Paused {
+			t.Fatalf("paused container missing from ps: %+v %v", listed, err)
+		}
+		for _, dry := range []bool{true, false} {
+			removed, _, active, err := st.PruneContainers(dry)
+			if err != nil || len(removed) != 0 || active != 1 {
+				t.Fatalf("prune touched paused container: %v %d %v", removed, active, err)
+			}
+		}
+		lk.Release()
+		current, err := st.ReadContainer(rec.ID)
+		if autoRemove {
+			if !errors.Is(err, ErrContainerNotFound) {
+				t.Fatalf("dead paused --rm container retained: %v", err)
+			}
+		} else if err != nil || current.State.Status != "exited" || current.State.Running || current.State.Paused {
+			t.Fatalf("dead paused state was not reconciled: %+v %v", current, err)
+		}
+	}
+}
+
 func TestContainerOperationProtectsRestart(t *testing.T) {
 	st, err := Open(t.TempDir(), false, "")
 	if err != nil {

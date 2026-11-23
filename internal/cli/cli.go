@@ -46,6 +46,10 @@ Docker-style container commands:
                                        start containers; -a/-i attaches to one container
   container restart | restart [-t|--time SECONDS] CONTAINER [CONTAINER...]
                                        restart containers (default grace: 10 seconds)
+  container pause | pause CONTAINER [CONTAINER...]
+                                       freeze all processes in running containers
+  container unpause | unpause CONTAINER [CONTAINER...]
+                                       resume paused containers
   container kill | kill [-s|--signal KILL|TERM] CONTAINER [CONTAINER...]
                                        kill a process tree, or request graceful shutdown
   container stop | stop [-t|--time SECONDS] CONTAINER [CONTAINER...]
@@ -761,7 +765,7 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 		return 0, nil
 	}
 	switch cmd {
-	case "convert", "build", "volume", "container", "create", "ps", "exec", "attach", "start", "restart", "kill", "stop", "rm", "logs", "image", "images", "inspect", "tag", "pull", "push", "rmi", "run", "search", "trust", "signature", "prune", "repair", "grants":
+	case "convert", "build", "volume", "container", "create", "ps", "exec", "attach", "start", "restart", "pause", "unpause", "kill", "stop", "rm", "logs", "image", "images", "inspect", "tag", "pull", "push", "rmi", "run", "search", "trust", "signature", "prune", "repair", "grants":
 	default:
 		return usageError()
 	}
@@ -784,7 +788,7 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 		return execCommand(ctx, rest)
 	case "ps":
 		return containerCommand(ctx, append([]string{"ls"}, rest...))
-	case "create", "attach", "start", "restart", "kill", "stop", "rm", "logs":
+	case "create", "attach", "start", "restart", "pause", "unpause", "kill", "stop", "rm", "logs":
 		return containerCommand(ctx, append([]string{cmd}, rest...))
 	case "inspect":
 		return inspectAny(ctx, rest)

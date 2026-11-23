@@ -13,7 +13,7 @@ export MSYS_NO_PATHCONV=1
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/images.sh"
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
-zigsaw=${1:-$root\\out\\bin\\quasidock.exe}
+quasidock=${1:-$root\\out\\bin\\quasidock.exe}
 work=$(cygpath -wl "$(mktemp -d)")
 mkdir -p "$work\\cwd" && cd "$work\\cwd" || exit 1
 (cd "$root" && go run ./scripts/build.go p256sign resetproxy) || { echo "building the helpers failed"; exit 1; }
@@ -44,11 +44,11 @@ repo="$registry/$namespace/app"
 APP=test.signing.app
 
 # The publisher's store, and those of people pulling.
-za() { QUASIDOCK_HOME="$work\\publisher" "$zigsaw" "$@"; }
+za() { QUASIDOCK_HOME="$work\\publisher" "$quasidock" "$@"; }
 in_store() { # <store name> <args>
     local name=$1
     shift
-    QUASIDOCK_HOME="$work\\$name" "$zigsaw" "$@"
+    QUASIDOCK_HOME="$work\\$name" "$quasidock" "$@"
 }
 blobs_in() { ls "$work\\$1\\blobs\\sha256" 2>/dev/null | wc -l; }
 installed() { in_store "$1" inspect -f '{{.Quasidock.Version}}' "$APP" 2>/dev/null | tr -d '\r'; }
@@ -61,7 +61,7 @@ publish() { # <version> [<tag>]: the image's digest goes in $digest
     recipe "$1"
     za build "$work\\app.json" >/dev/null 2>&1 || return 1
     qd_push za "$APP" "$repo:${2:-$1}" >/dev/null 2>&1 || return 1
-    digest=$(QUASIDOCK_HOME="$work\\publisher" qd_manifest "$zigsaw" "$APP" | head -1)
+    digest=$(QUASIDOCK_HOME="$work\\publisher" qd_manifest "$quasidock" "$APP" | head -1)
 }
 "$signer" key one "$work\\one.pub"
 "$signer" key other "$work\\other.pub"
@@ -72,7 +72,7 @@ sign_as() { # <word> <image>
     za signature push "$2" "$p" "$s"
 }
 # Another's image, for keys in the right place and images in the wrong one.
-fingerprint() { QUASIDOCK_HOME="$work\\fp" "$zigsaw" trust add "example.test/fp-$1" "$work\\$1.pub" 2>&1 | grep -o 'key [0-9a-f]*' | cut -d' ' -f2; }
+fingerprint() { QUASIDOCK_HOME="$work\\fp" "$quasidock" trust add "example.test/fp-$1" "$work\\$1.pub" 2>&1 | grep -o 'key [0-9a-f]*' | cut -d' ' -f2; }
 one_fp=$(fingerprint one)
 
 # Copies a manifest, and what it refers to, to another repository and tag, with curl,
@@ -327,7 +327,7 @@ indexed() {
 }
 check "a signature of a multi-platform index covers its image" indexed
 
-for s in "$work"/*/; do QUASIDOCK_HOME="$(cygpath -w "$s")" qd_remove_app "$zigsaw" "$APP" >/dev/null 2>&1; done
+for s in "$work"/*/; do QUASIDOCK_HOME="$(cygpath -w "$s")" qd_remove_app "$quasidock" "$APP" >/dev/null 2>&1; done
 reg delete "HKCU\\$QUASIDOCK_GRANTS_KEY" /f >/dev/null 2>&1
 reg query 'HKCU\Software\QuasidockTest' 2>/dev/null | grep -q . || reg delete 'HKCU\Software\QuasidockTest' /f >/dev/null 2>&1
 cd / && rm -rf "$work" 2>/dev/null

@@ -22,7 +22,7 @@ import (
 )
 
 func TestParseLifecycleArgs(t *testing.T) {
-	for _, command := range []string{"start", "stop", "restart", "kill"} {
+	for _, command := range []string{"start", "stop", "restart", "kill", "pause", "unpause"} {
 		if _, _, _, err := parseLifecycleArgs(command, nil); err == nil {
 			t.Fatalf("%s accepted no targets", command)
 		}
@@ -40,6 +40,8 @@ func TestParseLifecycleArgs(t *testing.T) {
 		}
 	}
 	for command, cases := range map[string][][]string{
+		"pause":   {{"-t", "1", "one"}, {"--signal=TERM", "one"}, {"--force", "one"}},
+		"unpause": {{"--time=1", "one"}, {"-s", "TERM", "one"}},
 		"start":   {{"-a", "one"}, {"-i", "one"}, {"--time=1", "one"}},
 		"restart": {{"--time", "-1", "one"}, {"--time"}, {"-t=999999999999", "one"}, {"--signal=TERM", "one"}},
 		"kill":    {{"-s", "INT", "one"}, {"--signal"}, {"--time=0", "one"}},

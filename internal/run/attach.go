@@ -60,6 +60,9 @@ func attachSupported(ctx *context.Context, rec *store.ContainerRecord) error {
 	if !rec.State.Running || !ctx.Store.IsContainerRunning(rec.ID) {
 		return fmt.Errorf("container %s is not running", rec.ShortID())
 	}
+	if rec.State.Paused {
+		return errors.New("container is paused; unpause it first")
+	}
 	if rec.State.AttachProtocol != attachProtocol {
 		return errors.New("container's supervisor does not support attach; use run -d, or stop and start it with this binary")
 	}

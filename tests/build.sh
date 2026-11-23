@@ -66,7 +66,7 @@ section() {
 }
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
-zigsaw=${1:-$root/out/bin/quasidock.exe}
+quasidock=${1:-$root/out/bin/quasidock.exe}
 QUASIDOCK_HOME=$(cygpath -w "$(mktemp -d)")
 export QUASIDOCK_HOME
 work=$(cygpath -w "$(mktemp -d)")
@@ -106,10 +106,10 @@ check() {
 }
 fails() { ! "$@"; }
 
-z() { "$zigsaw" "$@"; }
+z() { "$quasidock" "$@"; }
 deployments() { find "$QUASIDOCK_HOME/deploy" -mindepth 1 -maxdepth 1 -type d | wc -l; }
 expect_count() { local got; got=$("$1"); [ "$got" -eq "$2" ] || { echo "$1: got $got, want $2"; return 1; }; }
-manifest_of() { qd_manifest "$zigsaw" "$1"; }
+manifest_of() { qd_manifest "$quasidock" "$1"; }
 # Builds a recipe and prints its manifest digest.
 built_manifest() { z build "$1" 2>&1 | grep -o 'manifest sha256:[0-9a-f]*' | cut -d' ' -f2; }
 same_image() { [ "$(built_manifest "$1")" = "$2" ]; }
@@ -169,24 +169,24 @@ path_order() {
 }
 check "PATH has the app's directories, then the runtime's" path_order
 check "the runtime's layer is deployed once" expect_count deployments 2
-check "inspect shows the runtime" sh -c "\"\$0\" inspect -f '{{range .Quasidock.From}}{{.ID}} {{.Version}}{{end}}' '$APP' | grep -q '$BB FRP-'" "$zigsaw"
+check "inspect shows the runtime" sh -c "\"\$0\" inspect -f '{{range .Quasidock.From}}{{.ID}} {{.Version}}{{end}}' '$APP' | grep -q '$BB FRP-'" "$quasidock"
 check "the same recipe builds the same image" same_image "$work\\app.json" "$app_digest"
-check "--sandbox=appcontainer runs it from the runtime" sh -c "bash '$QD_IMAGES_HELPER' run \"\$0\" --sandbox=appcontainer $APP y | grep -q '^args: y'" "$zigsaw"
+check "--sandbox=appcontainer runs it from the runtime" sh -c "bash '$QD_IMAGES_HELPER' run \"\$0\" --sandbox=appcontainer $APP y | grep -q '^args: y'" "$quasidock"
 
 removed_runtime_app() {
     qd_remove_app z $BB >/dev/null 2>&1 && z prune >/dev/null 2>&1 && runs && expect_count deployments 2
 }
 check "removing the runtime's app leaves the app working, and prune keeps the layer" removed_runtime_app
-check "prune keeps the runtime's image for builds" sh -c "\"\$0\" prune --dry-run 2>&1 | grep -q 'kept 1 image(s) that builds use'" "$zigsaw"
+check "prune keeps the runtime's image for builds" sh -c "\"\$0\" prune --dry-run 2>&1 | grep -q 'kept 1 image(s) that builds use'" "$quasidock"
 check "rebuilding uses the kept image" same_image "$work\\app.json" "$app_digest"
 
 app_recipe "$BB" >"$work\\unpinned.json"
 z build "$root\\recipes\\busybox.json" >/dev/null 2>&1
-check "an unpinned runtime names the digest to pin" sh -c "\"\$0\" build '$work\\unpinned.json' 2>&1 | grep -q '\"bb\": \"$BB@$bb_digest\"'" "$zigsaw"
+check "an unpinned runtime names the digest to pin" sh -c "\"\$0\" build '$work\\unpinned.json' 2>&1 | grep -q '\"bb\": \"$BB@$bb_digest\"'" "$quasidock"
 app_recipe "$BB@$bb_digest" nope.exe >"$work\\missing.json"
-check "a command the runtime doesn't have fails the build" sh -c "\"\$0\" build '$work\\missing.json' 2>&1 | grep -q 'not a file in that runtime'" "$zigsaw"
+check "a command the runtime doesn't have fails the build" sh -c "\"\$0\" build '$work\\missing.json' 2>&1 | grep -q 'not a file in that runtime'" "$quasidock"
 app_recipe "$APP@$app_digest" busybox.exe test.runtime.nested >"$work\\nested.json"
-check "a runtime with runtimes of its own is refused" sh -c "\"\$0\" build '$work\\nested.json' 2>&1 | grep -q 'has base images of its own'" "$zigsaw"
+check "a runtime with runtimes of its own is refused" sh -c "\"\$0\" build '$work\\nested.json' 2>&1 | grep -q 'has base images of its own'" "$quasidock"
 fi
 
 # --- images as sources -------------------------------------------------------------
@@ -219,7 +219,7 @@ records_image() { config_of $RT | tr -d ' \r\n' | grep -q "\"images\":\[\"$sdk_d
 check "its config records the SDK image's digest" records_image
 check "the same recipe builds the same image" same_image "$work\\sdk\\runtime.json" "$rt_digest"
 image_recipe "$SDK" >"$work\\sdk\\unpinned.json"
-check "an unpinned image source names the digest to pin" sh -c "\"\$0\" build '$work\\sdk\\unpinned.json' 2>&1 | grep -qF '\"image\": \"$SDK@$sdk_digest\"'" "$zigsaw"
+check "an unpinned image source names the digest to pin" sh -c "\"\$0\" build '$work\\sdk\\unpinned.json' 2>&1 | grep -qF '\"image\": \"$SDK@$sdk_digest\"'" "$quasidock"
 # A module with build commands gets the image's files in its directory, under
 # dest. As an SDK, an image with pkg-config files is where pkg-config and
 # CMake look, after the prefix.
@@ -273,7 +273,7 @@ EOF
 alias_app_recipe "$TOOL@$tool_digest" >"$work\\alias\\app.json"
 check "an app with it as a runtime builds" z build "$work\\alias\\app.json"
 alias_app_digest=$(manifest_of $AAPP)
-check "the runtime's variables come with it" sh -c '[ "$(bash "$QD_IMAGES_HELPER" run "$0" '$AAPP' -c "echo \$ALIAS_TOOL" | tr -d "\r" | tr / \\\\)" = "$1\\deploy\\$2" ]' "$zigsaw" "$QUASIDOCK_HOME" "$(own_layer $TOOL)"
+check "the runtime's variables come with it" sh -c '[ "$(bash "$QD_IMAGES_HELPER" run "$0" '$AAPP' -c "echo \$ALIAS_TOOL" | tr -d "\r" | tr / \\\\)" = "$1\\deploy\\$2" ]' "$quasidock" "$QUASIDOCK_HOME" "$(own_layer $TOOL)"
 # In an AppContainer, BusyBox's sh doesn't see zigsaw, takes itself for an
 # orphan, and doesn't wait for its last command (README's known gaps).
 check "the same recipe builds the same image" same_image "$work\\alias\\app.json" "$alias_app_digest"
@@ -385,7 +385,7 @@ records_files() {
 }
 check "the image's record of the build has the hash of its files" records_files
 echo again >"$proj\\src\\main.txt"
-check "rebuilding from the directory picks up the change" sh -c "\"\$0\" build '$proj' >/dev/null 2>&1" "$zigsaw"
+check "rebuilding from the directory picks up the change" sh -c "\"\$0\" build '$proj' >/dev/null 2>&1" "$quasidock"
 no_manifest() { (cd "$work" && z build 2>&1) | grep -q "has no quasidock.json; give a recipe"; }
 check "a directory without one fails, saying so" no_manifest
 
@@ -399,12 +399,12 @@ placed() {
 }
 check "without build commands, a subdirectory's files are placed, with the .gitignore files above it" placed
 printf '{ "id": "test.project.pinned", "version": "1", "entrypoint": "x", "stages": [{ "name": "m", "sources": [{ "path": "src", "sha256": "%064d" }] }] }\n' 0 >"$proj\\pinned.json"
-check "a directory can't be pinned with a sha256" sh -c "\"\$0\" build '$proj\\pinned.json' 2>&1 | grep -q 'is a directory, whose files are hashed'" "$zigsaw"
+check "a directory can't be pinned with a sha256" sh -c "\"\$0\" build '$proj\\pinned.json' 2>&1 | grep -q 'is a directory, whose files are hashed'" "$quasidock"
 # A link: git would commit it as a link, which an image can't hold.
 mkdir -p "$work\\linked" && echo a >"$work\\linked\\a.txt" && cmd /c mklink /J "$work\\linked\\to-src" "$proj\\src" >/dev/null
 linked_recipe() { printf '{ "id": "test.project.linked", "version": "1", "entrypoint": "a.txt", "stages": [{ "name": "m", "sources": [{ "path": "."%s }] }] }\n' "$1" >"$work\\linked\\quasidock.json"; }
 linked_recipe ""
-check "a link in a project fails the build, naming it" sh -c "\"\$0\" build '$work\\linked' 2>&1 | grep -q 'to-src is a link, which an image can'" "$zigsaw"
+check "a link in a project fails the build, naming it" sh -c "\"\$0\" build '$work\\linked' 2>&1 | grep -q 'to-src is a link, which an image can'" "$quasidock"
 linked_recipe ', "skip": ["/to-src"]'
 check "skipped, the project builds" z build "$work\\linked"
 
@@ -463,7 +463,7 @@ check "prettier formats a file in the working directory" formats
 npm_prefix() {
     local out data
     out=$(qd_run z --name prettier-env --entrypoint='${node}\node.exe' prettier -e 'console.log(process.env.NPM_CONFIG_PREFIX)' | tr -d '\r') || return
-    data=$(qd_container_data "$zigsaw" prettier-env) || return
+    data=$(qd_container_data "$quasidock" prettier-env) || return
     [ "$out" = "$data\\npm" ] || { echo "got $out, want $data\\npm"; return 1; }
 }
 check "node's variables point into the container's data directory" npm_prefix
@@ -533,7 +533,7 @@ printf '      (%d s; the first build took %d s)\n' $((SECONDS - start)) "$hello_
 zig_cache() {
     local out data cache
     out=$(qd_run z --name zig-env zig env | tr -d '\r') || return
-    data=$(qd_container_data "$zigsaw" zig-env) || return
+    data=$(qd_container_data "$quasidock" zig-env) || return
     cache="$data\\cache"
     grep 'global_cache_dir' <<<"$out" | grep -qF "${cache//\\/\\\\}"
 }
@@ -564,7 +564,7 @@ kept_cache() {
     [ -f "$QUASIDOCK_HOME\\cache\\tools\\test.tool.cachey\\n" ] && drive_free && no_build_root
 }
 check "a tool's \${cache} is B:\\cache\\<id>, kept between builds in the store" kept_cache
-check "prune keeps tools' caches, and says so" sh -c "\"\$0\" prune --dry-run 2>&1 | grep -q 'kept the caches of 2 build tool(s)'" "$zigsaw"
+check "prune keeps tools' caches, and says so" sh -c "\"\$0\" prune --dry-run 2>&1 | grep -q 'kept the caches of 2 build tool(s)'" "$quasidock"
 
 # Builds are reused when nothing they depend on changed.
 reused() {
@@ -595,7 +595,7 @@ check "a changed local source is built again" local_source_changed
 # The same recipe in another store, at another path.
 other_store=$(cygpath -w "$(mktemp -d)")\\a-store-at-another-path
 seed "$other_store"
-zo() { QUASIDOCK_HOME="$other_store" "$zigsaw" "$@"; }
+zo() { QUASIDOCK_HOME="$other_store" "$quasidock" "$@"; }
 other_build() {
     zo build "$root\\recipes\\zig.json" >/dev/null 2>&1 && zo build "$root\\recipes\\busybox.json" >/dev/null 2>&1 &&
         [ "$(zo build "$work\\c\\hello.json" 2>&1 | grep -o 'manifest sha256:[0-9a-f]*' | cut -d' ' -f2)" = "$hello_digest" ]
@@ -627,7 +627,7 @@ mkdir -p "$work\\www" && echo served >"$work\\www\\hello.txt"
 httpd=$!
 sh_recipe test.build.offline '"wget -O \"$PREFIX/x.txt\" http://127.0.0.1:18099/hello.txt"' >"$work\\offline.json"
 sh_recipe test.build.online '"wget -O \"$PREFIX/x.txt\" http://127.0.0.1:18099/hello.txt"' '"network": true,' >"$work\\online.json"
-check "build steps can't reach the network by default" sh -c "! \"\$0\" build '$work\\offline.json' >/dev/null 2>&1" "$zigsaw"
+check "build steps can't reach the network by default" sh -c "! \"\$0\" build '$work\\offline.json' >/dev/null 2>&1" "$quasidock"
 online() {
     z build "$work\\online.json" 2>&1 | grep -q 'warning: a build step used the network' &&
         [ "$(tr -d '\r' <"$QUASIDOCK_HOME\\deploy\\$(own_layer test.build.online)\\x.txt")" = served ] &&
@@ -658,7 +658,7 @@ vendored() {
 }
 check "pinned, it builds offline from what the step fetched, and the config records it" vendored
 vendor_recipe ", \"sha256\": \"$(printf '0%.0s' $(seq 64))\"" >"$work\\misvendored.json"
-check "a vendor step that makes something else fails, naming both hashes" sh -c "\"\$0\" build '$work\\misvendored.json' 2>&1 | grep -A2 'sha256 mismatch for what module m.s vendor commands made in deps' | grep -q 'got      $vendor_hash'" "$zigsaw"
+check "a vendor step that makes something else fails, naming both hashes" sh -c "\"\$0\" build '$work\\misvendored.json' 2>&1 | grep -A2 'sha256 mismatch for what module m.s vendor commands made in deps' | grep -q 'got      $vendor_hash'" "$quasidock"
 kill $httpd 2>/dev/null
 vendored_from_cache() {
     local out
@@ -669,16 +669,16 @@ vendored_from_cache() {
 check "with the server gone, a rebuild takes the vendored files from the cache" vendored_from_cache
 
 printf '{ "id": "test.build.nosh", "version": "1", "entrypoint": "x", "sdk": { "zig": "zig@%s" }, "stages": [{ "name": "m", "build": ["true"] }] }\n' "$zig_digest" >"$work\\nosh.json"
-check "sh modules without busybox in the SDK fail, saying so" sh -c "\"\$0\" build '$work\\nosh.json' 2>&1 | grep -q 'add busybox to'" "$zigsaw"
+check "sh modules without busybox in the SDK fail, saying so" sh -c "\"\$0\" build '$work\\nosh.json' 2>&1 | grep -q 'add busybox to'" "$quasidock"
 
 # B:, in use by something else, and left behind by a build that crashed.
 mkdir -p "$work\\other" "$work\\tmp\\quasidock-build-stale"
 subst B: "$work\\other"
-check "a B: zigsaw didn't map fails the build" sh -c "\"\$0\" build '$work\\broken.json' 2>&1 | grep -q 'B: is in use'" "$zigsaw"
+check "a B: zigsaw didn't map fails the build" sh -c "\"\$0\" build '$work\\broken.json' 2>&1 | grep -q 'B: is in use'" "$quasidock"
 subst B: /D
 subst B: "$work\\tmp\\quasidock-build-stale"
 sh_recipe test.build.ok '"echo ok > \"$PREFIX/x.txt\""' >"$work\\ok.json"
-check "a stale B: from an earlier build is replaced" sh -c "\"\$0\" build '$work\\ok.json' >/dev/null 2>&1 && ! subst | grep -q '^B:'" "$zigsaw"
+check "a stale B: from an earlier build is replaced" sh -c "\"\$0\" build '$work\\ok.json' >/dev/null 2>&1 && ! subst | grep -q '^B:'" "$quasidock"
 subst B: /D >/dev/null 2>&1
 
 # Two builds at once take turns with B:.
@@ -686,7 +686,7 @@ sh_recipe test.build.slow '"sleep 4", "echo slow > \"$PREFIX/x.txt\""' >"$work\\
 z build "$work\\slow.json" >"$work\\slow.log" 2>&1 &
 slow=$!
 for _ in $(seq 150); do grep -q 'm 1/2' "$work\\slow.log" 2>/dev/null && break; sleep 0.2; done
-check "a second build waits for the first to finish with B:" sh -c "\"\$0\" build --rebuild '$work\\ok.json' 2>&1 | grep -q 'waiting for another quasidock build'" "$zigsaw"
+check "a second build waits for the first to finish with B:" sh -c "\"\$0\" build --rebuild '$work\\ok.json' 2>&1 | grep -q 'waiting for another quasidock build'" "$quasidock"
 wait $slow
 check "and the first finishes normally" grep -q 'installed test.build.slow' "$work\\slow.log"
 
@@ -772,7 +772,7 @@ if section llvm; then
 # library the image keeps changes with the time it's built at.
 LLVMAPP=test.build.cmake-llvm
 check "llvm-mingw.json builds llvm-mingw's image" z build "$root\\recipes\\llvm-mingw.json"
-qd_cached "$zigsaw" "cmake" || z build "$root\\recipes\\cmake.json" >/dev/null 2>&1
+qd_cached "$quasidock" "cmake" || z build "$root\\recipes\\cmake.json" >/dev/null 2>&1
 mkdir -p "$work\\cmake-llvm" && cp "$(cygpath -u "$root")"/tests/build/c/*.{c,h,cpp,rc} "$(cygpath -u "$root")"/tests/build/cmake/CMakeLists.txt "$(cygpath -u "$work")/cmake-llvm/" &&
     sed -e "s/\"test.build.cmake\"/\"$LLVMAPP\"/" -e "s/\"zig\": \"zig@@ZIG@\"/\"llvm\": \"llvm-mingw@$(manifest_of llvm-mingw)\"/" \
         -e 's|"cleanup": \["/include", "/lib"\],|"cleanup": ["/include"],|' \
@@ -880,11 +880,11 @@ if section msvc; then
 vswhere="$(cygpath -u "$(printenv 'ProgramFiles(x86)')")/Microsoft Visual Studio/Installer/vswhere.exe"
 if [ -f "$vswhere" ]; then
     MSVC=test.build.msvc
-    check "a recipe with \"host\": [\"msvc\"] builds with Visual Studio" sh -c "\"\$0\" build '$root\\tests\\build\\msvc\\hello.json' 2>&1 | grep -q 'warning: built with the host.s msvc'" "$zigsaw"
-    check "it runs" sh -c "bash '$QD_IMAGES_HELPER' run \"\$0\" $MSVC | grep -q '^hello from MSVC'" "$zigsaw"
+    check "a recipe with \"host\": [\"msvc\"] builds with Visual Studio" sh -c "\"\$0\" build '$root\\tests\\build\\msvc\\hello.json' 2>&1 | grep -q 'warning: built with the host.s msvc'" "$quasidock"
+    check "it runs" sh -c "bash '$QD_IMAGES_HELPER' run \"\$0\" $MSVC | grep -q '^hello from MSVC'" "$quasidock"
     records_host() { config_of $MSVC | tr -d ' \r\n' | grep -q '"host":{"msvc":"[0-9.]*","windows-sdk":"[0-9.]*"}'; }
     check "the config records the MSVC and Windows SDK versions" records_host
-    check "MSVC builds aren't reused" sh -c "! \"\$0\" --verbose build '$root\\tests\\build\\msvc\\hello.json' 2>&1 | grep -q 'built before'" "$zigsaw"
+    check "MSVC builds aren't reused" sh -c "! \"\$0\" --verbose build '$root\\tests\\build\\msvc\\hello.json' 2>&1 | grep -q 'built before'" "$quasidock"
     check "and leave nothing behind" free_afterwards
 else
     echo "skip  MSVC: no Visual Studio installer ($vswhere)"
@@ -895,7 +895,7 @@ fi
 
 if section sqlite; then
 check "sqlite.json builds SQLite and zlib from source" z build "$root\\recipes\\sqlite.json"
-check "sqlite3 runs, with zlib" sh -c "[ \"\$(bash '$QD_IMAGES_HELPER' run \"\$0\" sqlite :memory: 'select sqlite_version(), length(sqlar_uncompress(sqlar_compress(zeroblob(1000)), 1000))' | tr -d '\r')\" = '3.53.4|1000' ]" "$zigsaw"
+check "sqlite3 runs, with zlib" sh -c "[ \"\$(bash '$QD_IMAGES_HELPER' run \"\$0\" sqlite :memory: 'select sqlite_version(), length(sqlar_uncompress(sqlar_compress(zeroblob(1000)), 1000))' | tr -d '\r')\" = '3.53.4|1000' ]" "$quasidock"
 fi
 
 # --- 7-Zip, for sources zigsaw doesn't unpack -----------------------------------------
@@ -910,7 +910,7 @@ mkdir -p "$work\\7z\\in" && printf '@echo hello from a .7z\r\n' >"$work\\7z\\in\
 sed -e "s/@SEVENZIP@/$(manifest_of 7zip)/" -e "s/@BUSYBOX@/$bb_digest/" \
     "$root\\tests\\build\\sevenzip\\hello.json.in" >"$work\\7z\\hello.json"
 check "a recipe with 7-Zip in its sdk unpacks a .7z source" z build "$work\\7z\\hello.json"
-check "what it unpacked runs" sh -c "[ \"\$(bash '$QD_IMAGES_HELPER' run \"\$0\" $SEVENZIP | tr -d '\r')\" = 'hello from a .7z' ]" "$zigsaw"
+check "what it unpacked runs" sh -c "[ \"\$(bash '$QD_IMAGES_HELPER' run \"\$0\" $SEVENZIP | tr -d '\r')\" = 'hello from a .7z' ]" "$quasidock"
 fi
 
 # --- Rust from source ---------------------------------------------------------------
@@ -953,7 +953,7 @@ check "built again, from the vendored crates in the cache, it's the same image" 
 # not the x86_64-w64-mingw32-gcc llvm-mingw puts on PATH (whose lld has no
 # libgcc_eh), even for build scripts under --target.
 RUSTLLVM=test.build.rust-llvm
-qd_cached "$zigsaw" "llvm-mingw" || z build "$root\\recipes\\llvm-mingw.json" >/dev/null 2>&1
+qd_cached "$quasidock" "llvm-mingw" || z build "$root\\recipes\\llvm-mingw.json" >/dev/null 2>&1
 mkdir -p "$work\\rust-llvm" && cp "$(cygpath -u "$work")"/rust/{Cargo.toml,Cargo.lock,build.rs,greet.c,main.rs} "$(cygpath -u "$work")/rust-llvm/" &&
     sed -e "s/\"test.build.rust\"/\"$RUSTLLVM\"/" -e "s/@RUST@/$(manifest_of rust)/" -e "s/@BUSYBOX@/$bb_digest/" \
         -e "s/\"zig\": \"zig@@ZIG@\"/\"llvm\": \"llvm-mingw@$(manifest_of llvm-mingw)\"/" \
@@ -1039,7 +1039,7 @@ jdk_runs_cwd() {
     local sb out data
     for sb in soft low appcontainer; do
         out=$(cd "$work\\javatiny" && qd_run z --name jdk-home-$sb --sandbox=$sb java-sdk Tiny.java 2>/dev/null | tr -d '\r')
-        data=$(qd_container_data "$zigsaw" jdk-home-$sb) || return
+        data=$(qd_container_data "$quasidock" jdk-home-$sb) || return
         [ "$out" = "home $data\\home" ] || { echo "$sb, got: $out"; return 1; }
     done
 }
@@ -1081,7 +1081,7 @@ java_app_runs() {
     local id=$1 built=$2 sb out data
     for sb in soft low appcontainer; do
         out=$(qd_run z --name $id-$sb --sandbox=$sb $id zigsaw 2>/dev/null | tr -d '\r')
-        data=$(qd_container_data "$zigsaw" $id-$sb) || return
+        data=$(qd_container_data "$quasidock" $id-$sb) || return
         [ "$(sed -E 's/from Java [0-9][^,]*/from Java (version)/' <<<"$out")" = "hello, zigsaw, from Java (version)$built
 Built with a vendored package
 runs on $(jre_dir)
@@ -1094,7 +1094,7 @@ home is $data\\home" ] || { echo "$sb, got: $out"; return 1; }
 # prefix lists Maven fetches from each repository into .meta, which change
 # upstream; then the build runs offline from it.
 check "maven.json builds Maven's image, on the JDK's" z build "$root\\recipes\\maven.json"
-check "  mvn runs" sh -c "bash '$QD_IMAGES_HELPER' run '$zigsaw' maven -v 2>/dev/null | grep -q '^Apache Maven 3'"
+check "  mvn runs" sh -c "bash '$QD_IMAGES_HELPER' run '$quasidock' maven -v 2>/dev/null | grep -q '^Apache Maven 3'"
 MAVENAPP=test.build.maven
 java_fixture maven pom.xml Hello.java
 check "a Maven project builds, its dependencies and plugins vendored and the build offline" z build "$work\\maven\\hello.json"
@@ -1108,7 +1108,7 @@ check "built again, from the vendored repository in the cache, it's the same ima
 # script in Gradle's image), offline. The project has a settings plugin from
 # Gradle's plugin portal.
 check "gradle.json builds Gradle's image, on the JDK's" z build "$root\\recipes\\gradle.json"
-check "  gradle runs" sh -c "bash '$QD_IMAGES_HELPER' run '$zigsaw' gradle --version 2>/dev/null | grep -q '^Gradle 9'"
+check "  gradle runs" sh -c "bash '$QD_IMAGES_HELPER' run '$quasidock' gradle --version 2>/dev/null | grep -q '^Gradle 9'"
 GRADLEAPP=test.build.gradle
 java_fixture gradle settings.gradle build.gradle Hello.java
 check "a Gradle project builds, its plugin and dependencies vendored and the build offline" z build "$work\\gradle\\hello.json"
@@ -1168,7 +1168,7 @@ fi
 # protected deployments. Enumerate every cached manifest through the CLI.
 check "stopped build-test containers are removed" z container prune
 for digest in $(z images -q); do z rmi "$digest" >/dev/null 2>&1; done
-check "every image is removed" sh -c "[ -z \"\$(\"\$0\" images -q)\" ]" "$zigsaw"
+check "every image is removed" sh -c "[ -z \"\$(\"\$0\" images -q)\" ]" "$quasidock"
 z prune --downloads --data >/dev/null 2>&1
 check "prune --downloads deletes tools' caches" sh -c "[ -z \"\$(ls '$QUASIDOCK_HOME\\cache\\tools')\" ]"
 cd / && rm -rf "$QUASIDOCK_HOME" "$work"

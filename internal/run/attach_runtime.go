@@ -72,6 +72,7 @@ type attachRuntime struct {
 	connections                     map[*framedStream]struct{}
 	writer                          *attachSession
 	signal                          func() error
+	admit                           func() error
 }
 
 type attachSession struct {
@@ -174,7 +175,12 @@ func (r *attachRuntime) serve(c *framedStream) {
 	var reject string
 	if r.ending {
 		reject = "container is stopping"
-	} else if req.Stdin && r.inputOpen && r.writer != nil {
+	} else if r.admit != nil {
+		if err := r.admit(); err != nil {
+			reject = err.Error()
+		}
+	}
+	if reject == "" && req.Stdin && r.inputOpen && r.writer != nil {
 		reject = "container stdin already has a writer; use --no-stdin"
 	}
 	if reject != "" {

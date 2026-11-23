@@ -28,7 +28,7 @@ export MSYS_NO_PATHCONV=1
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/images.sh"
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
-zigsaw=${1:-$root/out/bin/quasidock.exe}
+quasidock=${1:-$root/out/bin/quasidock.exe}
 temp_store=""
 QUASIDOCK_HOME=${JAVAAPPS_HOME:-${BUILD_HOME:-}}
 if [ -z "$QUASIDOCK_HOME" ]; then
@@ -59,12 +59,12 @@ check() {
     fi
 }
 
-z() { "$zigsaw" "$@"; }
+z() { "$quasidock" "$@"; }
 # build_image <id> <recipe>: builds the recipe (from the build cache if the
 # store built it before), noting whether this installed it.
 installed_here=""
 build_image() {
-    qd_cached "$zigsaw" "$1" || installed_here="$installed_here $1"
+    qd_cached "$quasidock" "$1" || installed_here="$installed_here $1"
     z build "$root\\recipes\\$2" >"$work\\$2.log" 2>&1 || echo "building $2 failed: $(tail -1 "$work\\$2.log")"
 }
 build_image java-sdk java-sdk.json
@@ -115,7 +115,7 @@ opens_window() {
     shift 2
     # Not through z: a backgrounded function is a subshell, whose pid isn't
     # zigsaw's.
-    bash "$QD_IMAGES_HELPER" run "$zigsaw" "$@" >"$work\\run.log" 2>&1 &
+    bash "$QD_IMAGES_HELPER" run "$quasidock" "$@" >"$work\\run.log" 2>&1 &
     local runner=$! status i
     # Only windows of that run count (its Windows pid; $! is Git Bash's).
     "$winwait" "$(cat /proc/$runner/winpid)" "$what" 40 --close >/dev/null
@@ -169,8 +169,8 @@ for sb in soft low appcontainer; do
     check "PlantUML draws a sequence and a class diagram as SVG, under $sb" draws $sb
 done
 version=$(grep -o '"version": *"[^"]*"' "$root\\recipes\\plantuml.json" | head -1 | cut -d'"' -f4)
-check "its version names the release and its commit" sh -c "bash '$QD_IMAGES_HELPER' run '$zigsaw' $PLANTUML -version 2>/dev/null | tr -d '\r' | grep -q '^PlantUML version $version / [0-9a-f]\{7\} \[20'"
-check "and the dot it found is its own" sh -c "bash '$QD_IMAGES_HELPER' run '$zigsaw' $PLANTUML -version 2>/dev/null | tr -d '\r' | grep -q '^Installation seems OK'"
+check "its version names the release and its commit" sh -c "bash '$QD_IMAGES_HELPER' run '$quasidock' $PLANTUML -version 2>/dev/null | tr -d '\r' | grep -q '^PlantUML version $version / [0-9a-f]\{7\} \[20'"
+check "and the dot it found is its own" sh -c "bash '$QD_IMAGES_HELPER' run '$quasidock' $PLANTUML -version 2>/dev/null | tr -d '\r' | grep -q '^Installation seems OK'"
 for sb in soft low appcontainer; do
     check "its window comes up, under $sb" opens_window "$work\\$sb" class:SunAwtFrame --sandbox=$sb $PLANTUML -gui
 done
@@ -193,7 +193,7 @@ simulates() {
 for sb in soft low appcontainer; do
     check "Logisim-evolution simulates a half adder from its command line, under $sb" simulates $sb
 done
-check "its version names the release and the time of its tag's commit" sh -c "bash '$QD_IMAGES_HELPER' run '$zigsaw' $LOGISIM --version 2>/dev/null | tr -d '\r' | grep -q '^(Not built from Git repo) (2026-09-12T04:03:35+0000)'"
+check "its version names the release and the time of its tag's commit" sh -c "bash '$QD_IMAGES_HELPER' run '$quasidock' $LOGISIM --version 2>/dev/null | tr -d '\r' | grep -q '^(Not built from Git repo) (2026-09-12T04:03:35+0000)'"
 cp "$root\\tests\\java\\half-adder.circ" "$docs\\"
 for sb in soft low appcontainer; do
     check "its window opens a circuit under $sb" opens_window "$work\\$sb" "main of half-adder" --sandbox=$sb --filesystem="$docs" $LOGISIM "$docs\\half-adder.circ"

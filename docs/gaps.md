@@ -14,6 +14,14 @@ Known limitations, platform constraints, and incomplete features in Quasidock
   which applications may ignore. Foreground TERM is rejected to preserve native
   terminal Ctrl+C. KILL ends the Job Object for either mode. Finish active runs
   before upgrading a binary whose supervisor uses the older stop-event protocol.
+- **Pause platform support.** Pause uses Windows' private Job Object freeze
+  information class, whose layout follows
+  [System Informer's native API headers](https://github.com/winsiderss/phnt/blob/master/ntpsapi.h).
+  Windows versions that reject it report an error without changing container
+  state. Pause does not freeze shared host services or wall-clock time; external
+  peers can time out while application processes are frozen. Existing supervisors
+  without `State.ControlProtocol` must be stopped and started with the current
+  binary before pause is available.
 - **Absolute paths recorded inside container data break if deployments move.**
   A command or launcher that embeds an image's deployment path (such as pip
   entry-point executables pointing at `python.exe`) stops working once that

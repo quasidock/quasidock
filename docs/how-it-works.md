@@ -177,6 +177,20 @@ quasidock rm $cid
   `run.lock` was released (marking them `"exited"` with code `137` if none was
   recorded, or deleting them if `--rm`). `--rm` containers delete
   `containers\<id>\` and temporary registry state on exit.
+- **Pause and unpause**: the same launch-scoped control channel carries pause
+  actions, advertised by `State.ControlProtocol`. The supervisor freezes or thaws
+  the container's Job Object with `SetInformationJobObject`, using the private
+  `JobObjectFreezeInformation` class (18). The job contains the main process,
+  descendants, relay, and nested exec jobs; its supervisor and stream pumps stay
+  outside it. Runtime locking serializes changes with exec admission and TERM
+  delivery, including TERM forwarded by existing attachments. Acknowledgement
+  follows the Windows operation and persisted state update. Failed persistence
+  rolls back the Windows change; failed rollback terminates the job.
+  Paused state keeps `Running=true`, sets `Paused=true` and `Status="paused"`, and
+  clears on exit or crash reconciliation. Pausing retains all resource locks.
+  New exec and attach sessions are rejected while existing sessions survive.
+  Graceful shutdown resumes first; KILL and forced removal terminate frozen jobs
+  directly. Foreground TERM is still rejected without changing pause state.
 - **Exec**: foreground owners and detached supervisors serve a local named pipe
   scoped to container ID and RunID ([`exec.go`](../internal/run/exec.go)). Its ACL permits only
   the current user, and remote clients are rejected. Exec commands reuse the

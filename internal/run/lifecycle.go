@@ -82,6 +82,31 @@ func lockTarget(ctx *context.Context, target string) (*store.ContainerRecord, *s
 	return rec, op, nil
 }
 
+// PauseContainer freezes the current run's job without releasing its resources.
+func PauseContainer(ctx *context.Context, target string) (*store.ContainerRecord, error) {
+	return pauseContainer(ctx, target, actionPause)
+}
+
+// UnpauseContainer resumes the same processes in a paused container.
+func UnpauseContainer(ctx *context.Context, target string) (*store.ContainerRecord, error) {
+	return pauseContainer(ctx, target, actionUnpause)
+}
+
+func pauseContainer(ctx *context.Context, target string, action controlAction) (*store.ContainerRecord, error) {
+	rec, op, err := lockTarget(ctx, target)
+	if err != nil {
+		return nil, err
+	}
+	defer op.Release()
+	if !rec.State.Running || !ctx.Store.IsContainerRunning(rec.ID) {
+		return nil, fmt.Errorf("container %s is not running", rec.ShortID())
+	}
+	if err := sendControlRequest(ctx, rec, controlRequest{Action: action}); err != nil {
+		return nil, err
+	}
+	return ctx.Store.ReadContainer(rec.ID)
+}
+
 // StartContainer starts the recorded image and command under a new supervisor.
 func StartContainer(ctx *context.Context, target string) (*store.ContainerRecord, error) {
 	rec, op, err := lockTarget(ctx, target)
@@ -176,6 +201,14 @@ func stopContainerLocked(ctx *context.Context, rec *store.ContainerRecord, op *s
 		return rec, nil
 	}
 	if seconds > 0 {
+		if rec.State.Paused {
+			if err := sendControlRequest(ctx, rec, controlRequest{Action: actionResume}); err != nil {
+				if ctx.Store.IsContainerRunning(rec.ID) {
+					return nil, err
+				}
+				return finishStopped(ctx, rec, op, preserve)
+			}
+		}
 		deadline := time.Now().Add(time.Duration(seconds) * time.Second)
 		// Foreground runs deliberately retain their caller's process group.
 		// They cannot receive a targeted console signal; still honor the grace
@@ -240,7 +273,7 @@ func KillContainer(ctx *context.Context, target string, signal KillSignal) (*sto
 		return nil, err
 	}
 	if signal == SignalTERM {
-		return rec, nil
+		return ctx.Store.ReadContainer(rec.ID)
 	}
 	if !waitForContainer(ctx.Store, rec.ID, deadline) {
 		return nil, fmt.Errorf("container %s did not finish cleanup after KILL", rec.ShortID())

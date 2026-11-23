@@ -19,14 +19,14 @@
 set -u
 export MSYS_NO_PATHCONV=1
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
-zigsaw=${QUASIDOCK:-$root\\out\\bin\\quasidock.exe}
+quasidock=${QUASIDOCK:-$root\\out\\bin\\quasidock.exe}
 [ -n "${QUASIDOCK_HOME:-}" ] || { echo "QUASIDOCK_HOME isn't set"; exit 2; }
 export QUASIDOCK_HOME
 log=$(mktemp)
 trap 'rm -f "$log"' EXIT
 
 build() {
-    "$zigsaw" build "$root\\recipes\\$1.json" >"$log" 2>&1 || { cat "$log"; echo "building $1 failed"; exit 1; }
+    "$quasidock" build "$root\\recipes\\$1.json" >"$log" 2>&1 || { cat "$log"; echo "building $1 failed"; exit 1; }
 }
 
 mode=pull
@@ -39,12 +39,12 @@ for recipe in "$@"; do
     esac
     id=$(grep -o '"id": *"[^"]*"' "$root\\recipes\\$recipe.json" | cut -d'"' -f4)
     version=$(grep -o '"version": *"[^"]*"' "$root\\recipes\\$recipe.json" | head -1 | cut -d'"' -f4)
-    if [ "$("$zigsaw" inspect -f '{{.Quasidock.Version}}' "$id" 2>/dev/null | tr -d '\r')" = "$version" ]; then
+    if [ "$("$quasidock" inspect -f '{{.Quasidock.Version}}' "$id" 2>/dev/null | tr -d '\r')" = "$version" ]; then
         echo "have    $id $version"
     elif [ $mode = build ]; then
         build "$recipe"
         echo "built   $id $version"
-    elif "$zigsaw" pull --yes "$id:$version" >"$log" 2>&1; then
+    elif "$quasidock" pull --yes "$id:$version" >"$log" 2>&1; then
         echo "pulled  $id $version"
     elif grep -qE "not found|doesn't exist, or needs credentials" "$log"; then
         # As tests/published.sh tells a version that isn't published yet.

@@ -31,7 +31,7 @@ export MSYS_NO_PATHCONV=1
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/images.sh"
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
-zigsaw=${1:-$root/out/bin/quasidock.exe}
+quasidock=${1:-$root/out/bin/quasidock.exe}
 QUASIDOCK_HOME=${PHP_HOME:-${BUILD_HOME:-}}
 if [ -z "$QUASIDOCK_HOME" ]; then
     echo "tests/php.sh needs a store in PHP_HOME or BUILD_HOME; it builds PHP's images there unless it has them."
@@ -56,8 +56,8 @@ check() {
     fi
 }
 
-z() { "$zigsaw" "$@"; }
-manifest_of() { qd_manifest "$zigsaw" "$1"; }
+z() { "$quasidock" "$@"; }
+manifest_of() { qd_manifest "$quasidock" "$1"; }
 own_layer() { grep -o 'sha256:[0-9a-f]*' "$QUASIDOCK_HOME\\blobs\\sha256\\$(manifest_of "$1" | cut -d: -f2)" | tail -1 | cut -d: -f2; }
 deploy_of() { echo "$QUASIDOCK_HOME\\deploy\\$(own_layer "$1")"; }
 recipe_sha256() { grep -o '"sha256": *"[0-9a-f]*"' "$root\\recipes\\$1" | head -1 | cut -d'"' -f4; }
@@ -65,7 +65,7 @@ recipe_sha256() { grep -o '"sha256": *"[0-9a-f]*"' "$root\\recipes\\$1" | head -
 PHP=php SDK=php-sdk COMPOSER=composer KANBOARD=kanboard
 installed=()
 for id in $SDK $PHP $COMPOSER $KANBOARD; do
-    qd_cached "$zigsaw" "$id" || installed+=("$id")
+    qd_cached "$quasidock" "$id" || installed+=("$id")
 done
 
 check "php-sdk.json builds PHP's SDK image" z build "$root\\recipes\\php-sdk.json"
@@ -175,7 +175,7 @@ check "and under low" composer_installs low
 # browser.
 kanboard_port=$((9100 + RANDOM % 800))
 kanboard_start() {
-    bash "$QD_IMAGES_HELPER" run "$zigsaw" --sandbox=$1 --rm --port=http=$kanboard_port $KANBOARD --no-browser >"$work\\kanboard.out" 2>&1 &
+    bash "$QD_IMAGES_HELPER" run "$quasidock" --sandbox=$1 --rm --port=http=$kanboard_port $KANBOARD --no-browser >"$work\\kanboard.out" 2>&1 &
     kanboard=$!
     for _ in $(seq 40); do grep -q 'Development Server' "$work\\kanboard.out" 2>/dev/null && break; sleep 0.25; done
 }

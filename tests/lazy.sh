@@ -25,7 +25,7 @@ export MSYS_NO_PATHCONV=1
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/images.sh"
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
-zigsaw=${1:-$root\\out\\bin\\quasidock.exe}
+quasidock=${1:-$root\\out\\bin\\quasidock.exe}
 (cd "$(cygpath -u "$root")" && go run ./scripts/build.go jobprobe) || { echo "building the job probe failed"; exit 1; }
 jobprobe="$root\\out\\test\\quasidock-jobprobe.exe"
 if [ -n "${LAZY_WORK:-}" ]; then
@@ -47,12 +47,12 @@ APP=test.lazy.app
 repo="$registry/quasidock-lazy-$RANDOM"
 gate="$work\\gate"
 store() { echo "$work\\$1"; }
-za() { QUASIDOCK_HOME="$(store a)" "$zigsaw" "$@"; }
+za() { QUASIDOCK_HOME="$(store a)" "$quasidock" "$@"; }
 # Stores b to d hold the download back while the gate file is there.
-zb() { QUASIDOCK_HOME="$(store b)" QUASIDOCK_TEST_LAZY_GATE="$gate" "$zigsaw" "$@"; }
-zc() { QUASIDOCK_HOME="$(store c)" QUASIDOCK_TEST_LAZY_GATE="$gate" "$zigsaw" "$@"; }
-zd() { QUASIDOCK_HOME="$(store d)" QUASIDOCK_TEST_LAZY_GATE="$gate" "$zigsaw" "$@"; }
-ze() { QUASIDOCK_HOME="$(store e)" QUASIDOCK_TEST_LAZY_REFUSE=1 "$zigsaw" "$@"; }
+zb() { QUASIDOCK_HOME="$(store b)" QUASIDOCK_TEST_LAZY_GATE="$gate" "$quasidock" "$@"; }
+zc() { QUASIDOCK_HOME="$(store c)" QUASIDOCK_TEST_LAZY_GATE="$gate" "$quasidock" "$@"; }
+zd() { QUASIDOCK_HOME="$(store d)" QUASIDOCK_TEST_LAZY_GATE="$gate" "$quasidock" "$@"; }
+ze() { QUASIDOCK_HOME="$(store e)" QUASIDOCK_TEST_LAZY_REFUSE=1 "$quasidock" "$@"; }
 
 cleanup() {
     if [ -n "${LOG_DIR:-}" ]; then
@@ -67,7 +67,7 @@ cleanup() {
     fi
     # rm stops a lazy layer's helper; one whose app is gone already, by its pid.
     for s in b c d e a; do
-        QUASIDOCK_HOME="$(store $s)" qd_remove_app "$zigsaw" $APP >/dev/null 2>&1
+        QUASIDOCK_HOME="$(store $s)" qd_remove_app "$quasidock" $APP >/dev/null 2>&1
         p=$(helper_pid $s) && [ -n "$p" ] && taskkill /F /PID "$p" >/dev/null 2>&1
     done
     reg delete "HKCU\\$QUASIDOCK_GRANTS_KEY" /f >/dev/null 2>&1
@@ -110,7 +110,7 @@ printf 'what a first run reads\n' >"$(cygpath -u "$fixture")/first.txt"
 printf '{ "id": "%s", "version": "1", "entrypoint": "busybox.exe", "layer": "estargz", "prefetch": ["first.txt"],\n  "permissions": { "sandbox": "soft" },\n  "stages": [{ "name": "files", "sources": [\n    { "url": "https://frippery.org/files/busybox/busybox-w64-FRP-6075-g169694ebd.exe", "sha256": "07bb1e5b095b00d68a695481f9240879f33c5724b40aa2308f999d54ed78f075", "dest": "busybox.exe" },\n    { "path": "big.bin" }, { "path": "small.txt" }, { "path": "never.txt" }, { "path": "first.txt" } ] }] }\n' $APP >"$(cygpath -u "$fixture")/app.json"
 za build "$fixture\\app.json" >"$work\\build.txt" 2>&1 || { echo "building the fixture failed:"; tail -3 "$work\\build.txt"; exit 1; }
 qd_push za $APP "$repo:1" >/dev/null 2>&1 || { echo "pushing the fixture failed"; exit 1; }
-manifest=$(QUASIDOCK_HOME="$(store a)" qd_manifest "$zigsaw" "$APP" | head -1 | cut -d: -f2)
+manifest=$(QUASIDOCK_HOME="$(store a)" qd_manifest "$quasidock" "$APP" | head -1 | cut -d: -f2)
 hex=$(tr -d ' \r\n' <"$(store a)\\blobs\\sha256\\$manifest" | grep -o '"digest":"sha256:[0-9a-f]\{64\}"' | tail -1 | grep -o '[0-9a-f]\{64\}')
 deploy_of() { echo "$(store "$1")\\deploy\\$hex"; }
 lazy_of() { echo "$(store "$1")\\lazy\\$hex"; }
@@ -146,7 +146,7 @@ pulled_lazily() {
     [ ! -e "$(store b)\\blobs\\sha256\\$hex" ] && [ -d "$(deploy_of b)" ] && recall_on_access "$(deploy_of b)\\small.txt"
 }
 check "pull --lazy installs the app with its layer as placeholders, and no blob" pulled_lazily
-check "inspect says it's downloading" bash -c "QUASIDOCK_HOME='$(store b)' '$zigsaw' inspect -f '{{.Lazy}}' '$APP' | grep -q 'downloading'"
+check "inspect says it's downloading" bash -c "QUASIDOCK_HOME='$(store b)' '$quasidock' inspect -f '{{.Lazy}}' '$APP' | grep -q 'downloading'"
 # While the download waits on the gate, before any run.
 hydrated_ahead() {
     local i
@@ -159,7 +159,7 @@ hydrated_ahead() {
 check "the helper hydrates the prioritized files ahead of use, and only those" hydrated_ahead
 for sb in soft low appcontainer; do
     check "under $sb, BusyBox starts from a placeholder and reads one" \
-        bash -c "[ \"\$(QUASIDOCK_HOME='$(store b)' QUASIDOCK_TEST_LAZY_GATE='$gate' bash '$QD_IMAGES_HELPER' run '$zigsaw' --sandbox=$sb $APP cat '$(deploy_of b)\\small.txt' 2>&1 | tr -d '\r')\" = 'hello lazy' ]"
+        bash -c "[ \"\$(QUASIDOCK_HOME='$(store b)' QUASIDOCK_TEST_LAZY_GATE='$gate' bash '$QD_IMAGES_HELPER' run '$quasidock' --sandbox=$sb $APP cat '$(deploy_of b)\\small.txt' 2>&1 | tr -d '\r')\" = 'hello lazy' ]"
 done
 # What starts a program reads its image, so zigsaw fetched busybox.exe; the
 # program, the file it read.
@@ -193,7 +193,7 @@ check "and those 16 MiB came in a few requests" few_requests
 taskkill /F /PID "$(helper_pid b)" >/dev/null 2>&1
 told_why() {
     local out
-    out=$(QUASIDOCK_HOME="$(store b)" QUASIDOCK_TEST_LAZY_GATE="$gate" QUASIDOCK_TEST_LAZY_FAIL=never.txt bash "$QD_IMAGES_HELPER" run "$zigsaw" $APP cat "$(deploy_of b)\\never.txt" 2>&1) && { echo "it exited 0"; return 1; }
+    out=$(QUASIDOCK_HOME="$(store b)" QUASIDOCK_TEST_LAZY_GATE="$gate" QUASIDOCK_TEST_LAZY_FAIL=never.txt bash "$QD_IMAGES_HELPER" run "$quasidock" $APP cat "$(deploy_of b)\\never.txt" 2>&1) && { echo "it exited 0"; return 1; }
     grep -q "couldn't be: never.txt" <<<"$out" || { echo "$out"; return 1; }
 }
 check "a fetch that fails makes the run say which file, and why" told_why
@@ -245,15 +245,15 @@ skipped_had() {
 }
 check "the download went on from what killed helpers fetched, and fetched none of it again" skipped_had
 check "the helper is gone" helper_gone b
-check "and the app reads the file nothing fetched" bash -c "[ \"\$(QUASIDOCK_HOME='$(store b)' bash '$QD_IMAGES_HELPER' run '$zigsaw' $APP cat '$(deploy_of b)\\never.txt' 2>&1 | tr -d '\r')\" = 'never read but once' ]"
-check "inspect says nothing of it any more" bash -c "! QUASIDOCK_HOME='$(store b)' '$zigsaw' inspect -f '{{.Lazy}}' '$APP' | grep -q 'downloading\|paused'"
+check "and the app reads the file nothing fetched" bash -c "[ \"\$(QUASIDOCK_HOME='$(store b)' bash '$QD_IMAGES_HELPER' run '$quasidock' $APP cat '$(deploy_of b)\\never.txt' 2>&1 | tr -d '\r')\" = 'never read but once' ]"
+check "inspect says nothing of it any more" bash -c "! QUASIDOCK_HOME='$(store b)' '$quasidock' inspect -f '{{.Lazy}}' '$APP' | grep -q 'downloading\|paused'"
 
 # --- rm, and a job that keeps what it starts ---------------------------------
 touch "$(cygpath -u "$gate")"
 zc pull --yes --lazy "$repo:1" >/dev/null 2>&1
 removed() {
     local pid; pid=$(helper_pid c)
-    QUASIDOCK_HOME="$(store c)" qd_remove_app "$zigsaw" $APP >/dev/null 2>&1 || return 1
+    QUASIDOCK_HOME="$(store c)" qd_remove_app "$quasidock" $APP >/dev/null 2>&1 || return 1
     [ ! -e "$(deploy_of c)" ] && [ ! -e "$(lazy_of c)" ] || { echo "something is left"; return 1; }
     [ -z "$pid" ] || [ "$pid" = 0 ] || ! tasklist /fi "PID eq $pid" /nh 2>/dev/null | grep -q " $pid "
 }
@@ -261,7 +261,7 @@ check "rm while it's lazy stops the helper, and leaves no placeholders or downlo
 
 # As separate arguments: injob takes its command line as it comes, and Git
 # Bash would escape quotes in one. (No spaces in these paths.)
-injob_out=$(QUASIDOCK_HOME="$(store d)" QUASIDOCK_TEST_LAZY_GATE="$gate" "$jobprobe" injob "$zigsaw" pull --yes --lazy "$repo:1" 2>&1)
+injob_out=$(QUASIDOCK_HOME="$(store d)" QUASIDOCK_TEST_LAZY_GATE="$gate" "$jobprobe" injob "$quasidock" pull --yes --lazy "$repo:1" 2>&1)
 check "pull --lazy in a job that keeps what it starts says the download lasts as long as it" grep -q "in a job that keeps what it starts" <<<"$injob_out"
 check "the job's end ended the helper" helper_gone d
 # Stdout only, as above: outside that job may still be inside another.
@@ -292,9 +292,9 @@ fell_back() {
 check "where the volume can't have placeholders, pull --lazy downloads the layer whole" fell_back
 if [ -n "${LAZY_DEV_DRIVE:-}" ]; then
     dev="$LAZY_DEV_DRIVE\\lazy-$$"
-    dev_out=$(QUASIDOCK_HOME="$dev" "$zigsaw" pull --yes --lazy "$repo:1" 2>&1)
+    dev_out=$(QUASIDOCK_HOME="$dev" "$quasidock" pull --yes --lazy "$repo:1" 2>&1)
     check "on a real Dev Drive too" grep -q "can't have Cloud Files placeholders.*downloaded whole" <<<"$dev_out"
-    QUASIDOCK_HOME="$dev" qd_remove_app "$zigsaw" $APP >/dev/null 2>&1
+    QUASIDOCK_HOME="$dev" qd_remove_app "$quasidock" $APP >/dev/null 2>&1
     rm -rf "$(cygpath -u "$dev")"
 fi
 

@@ -4,7 +4,7 @@ Quasidock runs sandboxed Windows programs from OCI-distributed images using a
 Docker-style CLI.
 
 Version **0.10** supports Docker-style container lifecycle management (`create`, `run`, `ps`,
-`logs`, `exec`, `attach`, `start`, `restart`, `kill`, `stop`, `rm`, `inspect`, `prune`), per-container isolated data, image
+`logs`, `exec`, `attach`, `start`, `restart`, `pause`, `unpause`, `kill`, `stop`, `rm`, `inspect`, `prune`), per-container isolated data, image
 management, named volumes, local directory bind mounts, and Quasidock images for
 `windows/amd64`. Supported Node.js, Go, Python, PHP CLI, Composer, and Ubuntu/Debian Dockerfiles, including
 multi-stage builds with `COPY --from`, can be
@@ -86,7 +86,7 @@ each shared layer once within an image.
 
 `rmi repository:tag` untags that reference. `rmi sha256:...` removes the manifest
 and all its local names; a bare app ID removes its current default image.
-Images referenced by created, running, or exited containers cannot be removed (untagging a
+Images referenced by created, running, paused, or exited containers cannot be removed (untagging a
 secondary alias succeeds; removing the final reference requires removing those
 containers first). Shared layers remain while other images, containers, or
 builds need them. `quasidock prune` collects stopped containers first, then
@@ -105,6 +105,8 @@ removes leftover legacy app data once unused.
 | `container attach` | `attach` | Attach to a background container's live output and optional stdin |
 | `container start` | `start` | Start existing containers; `-a` attaches output, `-i` also attaches saved stdin |
 | `container restart` | `restart` | Stop and start containers (`-t`/`--time SECONDS`, default 10s) |
+| `container pause` | `pause` | Freeze all processes in running containers |
+| `container unpause` | `unpause` | Resume paused containers without restarting them |
 | `container kill` | `kill` | Immediately terminate process trees; `-s`/`--signal TERM` requests graceful shutdown |
 | `container stop` | `stop` | Stop running containers (`-t`/`--time SECONDS`, default 10s) |
 | `container rm` | `rm` | Remove containers (`-f`/`--force` stops running containers first) |
@@ -124,6 +126,24 @@ appear as `Created` in `ps -a`; their logs are empty until the first start.
 `--rm` keeps an unstarted container and a failed-start record,
 then removes it after a successful launch exits. `rm` and `container prune` can
 remove created containers immediately.
+
+`pause CONTAINER [CONTAINER...]` freezes the container's process tree, including
+existing `exec` commands and its relay, for foreground or background runs.
+`unpause` resumes the same processes, retaining their PIDs and startup timestamps.
+Paused containers remain in `ps` as `Up ... (Paused)`; inspect reports
+`State.Status="paused"`, `State.Running=true`, and `State.Paused=true`.
+Logs and inspect remain available, and paused containers retain their data,
+mounts, and image references. Prune skips them.
+
+New `exec`, `attach`, and attached `start -a`/`-i` requests fail while paused;
+existing sessions stay connected and continue after unpause. Plain `start`
+leaves a paused container paused. `stop` and `restart` unpause before their
+grace period, and detached `kill --signal TERM` unpauses before signaling.
+Foreground TERM remains unsupported and leaves the container paused. KILL,
+zero-timeout stop/restart, and `rm -f` terminate frozen processes directly.
+Repeated pause or unpause requests report a state error, and neither command
+accepts stopped containers. Supervisors started by older binaries must be
+stopped and started with the current binary before pause is available.
 
 Creation validates options, image metadata, and mount sources. Executable lookup
 and runtime-dependent checks happen at start. Named volumes are created or
@@ -151,6 +171,9 @@ quasidock start -ai node-repl
 quasidock attach node-repl
 quasidock run -d --name node-demo node node.exe -e 'setInterval(() => {}, 1000)'
 quasidock logs node-demo
+quasidock pause node-demo
+quasidock inspect -f '{{.State.Paused}}' node-demo
+quasidock unpause node-demo
 quasidock exec node-demo node.exe --version
 quasidock exec -i -e EXAMPLE=value -w '${data}' node-demo node.exe -e 'console.log(process.env.EXAMPLE)'
 quasidock stop node-demo

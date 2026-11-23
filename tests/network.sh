@@ -24,7 +24,7 @@ export MSYS_NO_PATHCONV=1
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/images.sh"
 
 root=$(cygpath -w "$(cd "$(dirname "$0")/.." && pwd)")
-zigsaw=${1:-$root/out/bin/quasidock.exe}
+quasidock=${1:-$root/out/bin/quasidock.exe}
 work=$(cygpath -w "$(mktemp -d)")
 QUASIDOCK_HOME="$work\\store"
 export QUASIDOCK_HOME
@@ -43,7 +43,7 @@ check() {
         failures=$((failures + 1))
     fi
 }
-z() { timeout 120 "$zigsaw" "$@"; }
+z() { timeout 120 "$quasidock" "$@"; }
 
 (cd "$root" && go run ./scripts/build.go netprobe) || { echo "building the network probe failed"; exit 1; }
 probe_dir="$work\\netprobe"
@@ -122,7 +122,7 @@ answers() { "$probe" ping $1 >/dev/null 2>&1; }
 # serve <run options...>: a run of the app's command, which serves, in the
 # background; $server is its zigsaw.
 serve() {
-    bash "$QD_IMAGES_HELPER" run "$zigsaw" "$@" $APP >"$work\\serve.out" 2>&1 &
+    bash "$QD_IMAGES_HELPER" run "$quasidock" "$@" $APP >"$work\\serve.out" 2>&1 &
     server=$!
 }
 stop() {
@@ -246,7 +246,7 @@ pings() {
 # waiting <run options...>: a run of the app that waits 3 s, in the
 # background; $waiter is its zigsaw.
 waiting() {
-    bash "$QD_IMAGES_HELPER" run "$zigsaw" "$@" --entrypoint=quasidock-netprobe.exe $APP wait 3000 >/dev/null 2>&1 &
+    bash "$QD_IMAGES_HELPER" run "$quasidock" "$@" --entrypoint=quasidock-netprobe.exe $APP wait 3000 >/dev/null 2>&1 &
     waiter=$!
 }
 # becomes <exempt|!exempt>: whether the container is (or isn't) exempt within 3 s.

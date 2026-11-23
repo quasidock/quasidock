@@ -14,13 +14,13 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/images.sh"
 ACPROBE_ID=test.acprobe
 
 acprobe_run() {
-    local zigsaw=$1 root=$2 work=$3 out
+    local quasidock=$1 root=$2 work=$3 out
     (cd "$root" && go run ./scripts/build.go acprobe) || { echo "building the AppContainer probe failed"; exit 1; }
     mkdir -p "$work\\acprobe\\cwd" && cp "$root\\out\\test\\quasidock-acprobe.exe" "$work\\acprobe\\"
     printf '{ "id": "%s", "version": "1", "entrypoint": "quasidock-acprobe.exe", "permissions": { "filesystem": ["cwd"] },\n  "stages": [{ "name": "probe", "sources": [{ "path": "quasidock-acprobe.exe" }] }] }\n' \
         $ACPROBE_ID >"$work\\acprobe\\acprobe.json"
-    out=$("$zigsaw" build "$work\\acprobe\\acprobe.json" 2>&1) || { echo "$out"; exit 1; }
-    probe=$(cd "$work\\acprobe\\cwd" && bash "$QD_IMAGES_HELPER" run "$zigsaw" --sandbox=appcontainer $ACPROBE_ID 2>/dev/null | tr -d '\r')
+    out=$("$quasidock" build "$work\\acprobe\\acprobe.json" 2>&1) || { echo "$out"; exit 1; }
+    probe=$(cd "$work\\acprobe\\cwd" && bash "$QD_IMAGES_HELPER" run "$quasidock" --sandbox=appcontainer $ACPROBE_ID 2>/dev/null | tr -d '\r')
     grep -q '^nul ' <<<"$probe" || { echo "the AppContainer probe didn't run: $probe"; exit 1; }
 }
 

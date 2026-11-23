@@ -320,10 +320,14 @@ func TestContainerAttachAndAttachedStart(t *testing.T) {
 	})
 	t.Run("Ctrl+C forwards TERM or detaches", func(t *testing.T) {
 		t.Setenv("QUASIDOCK_HOME", ctx.Store.Root)
-		for _, proxy := range []bool{true, false} {
+		for _, tc := range []struct{ proxy, paused bool }{{true, false}, {false, false}, {true, true}, {false, true}} {
+			proxy := tc.proxy
 			name := "ctrl-proxy"
 			if !proxy {
 				name = "ctrl-detach"
+			}
+			if tc.paused {
+				name += "-paused"
 			}
 			ready := filepath.Join(buildDir, name)
 			must("create", "-it", "--name", name, app, "fixture.exe", "signal-hold", ready, "exit")
@@ -334,6 +338,9 @@ func TestContainerAttachAndAttachedStart(t *testing.T) {
 			args = append(args, name)
 			proc, input := startLifecycleConsole(t, filepath.Join(buildDir, "fixture.exe"), args)
 			waitLog(t, ready, "")
+			if tc.paused {
+				must("pause", name)
+			}
 			win32.WriteFile(input, []byte{3})
 			if win32.WaitForSingleObject(proc, 5000) != win32.WAIT_OBJECT_0 {
 				t.Fatal("Ctrl+C did not complete")
@@ -347,9 +354,12 @@ func TestContainerAttachAndAttachedStart(t *testing.T) {
 			}
 			if proxy {
 				waitLog(t, ready+".signal", "1")
+				if record(name).State.Paused {
+					t.Fatal("forwarded TERM retained pause state")
+				}
 			} else {
-				if !ctx.Store.IsContainerRunning(record(name).ID) {
-					t.Fatal("Ctrl+C without proxy stopped main")
+				if rec := record(name); !ctx.Store.IsContainerRunning(rec.ID) || rec.State.Paused != tc.paused {
+					t.Fatal("Ctrl+C without proxy changed main or pause state")
 				}
 				must("kill", name)
 			}

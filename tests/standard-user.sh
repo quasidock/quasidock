@@ -119,9 +119,9 @@ check "this is $(whoami), a standard user: not in Administrators, at medium inte
 
 docs=$(powershell -NoProfile -Command "[Environment]::GetFolderPath('MyDocuments')" | tr -d '\r')
 store="$LOCALAPPDATA\\quasidock"
-zigsaw="$store\\bin\\quasidock.exe"
+quasidock="$store\\bin\\quasidock.exe"
 BB=busybox
-z() { "$zigsaw" "$@" </dev/null; }
+z() { "$quasidock" "$@" </dev/null; }
 sch="$(cygpath -u "$WINDIR")/System32/schtasks.exe"
 task="Zigsaw update check"
 
@@ -143,7 +143,7 @@ check "Defender finds nothing in the package's programs" programs_clean
 
 installs() {
     powershell -NoProfile -ExecutionPolicy Bypass -File "$stage\\scripts\\install.ps1" -From "$stage\\package" &&
-        [ -f "$zigsaw" ] && "$zigsaw" version | grep -q '^quasidock '
+        [ -f "$quasidock" ] && "$quasidock" version | grep -q '^quasidock '
 }
 check "install.ps1 installs it in the default store, with no administrator" installs
 on_path() { reg query 'HKCU\Environment' /v Path | grep -qF "$store\\bin"; }
@@ -217,7 +217,7 @@ real_clean() {
 check "nothing it changed is left on your folders" real_clean
 uninstalls() {
     powershell -NoProfile -ExecutionPolicy Bypass -File "$stage\\scripts\\install.ps1" -Uninstall &&
-        [ ! -e "$zigsaw" ] && ! reg query 'HKCU\Environment' /v Path 2>/dev/null | grep -qF "$store\\bin" &&
+        [ ! -e "$quasidock" ] && ! reg query 'HKCU\Environment' /v Path 2>/dev/null | grep -qF "$store\\bin" &&
         ! reg query 'HKCU\Software\Quasidock\Grants' >/dev/null 2>&1
 }
 check "the uninstaller removes it, from PATH too, and its record" uninstalls
