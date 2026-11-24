@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# zigsaw as a real standard user, which neither a machine's administrator nor
+# quasidock as a real standard user, which neither a machine's administrator nor
 # GitHub's runners are: the first things the README says to do, your real
 # folders (safe here, in an account that's only for this), and then the suites
 # that don't need an app's image.
@@ -19,7 +19,7 @@
 # files up to 30 MB are copied. Needs Git Bash, Go and network access.
 #
 # Rows that only say what happened are marked `note`: what Windows lets a
-# standard user do decides those, not zigsaw.
+# standard user do decides those, not quasidock.
 
 set -u
 export MSYS_NO_PATHCONV=1
@@ -133,7 +133,7 @@ if [ -e "$store" ]; then
 fi
 
 # What Defender makes of the programs, before anything else: its machine learning
-# has flagged builds of zigsaw by their exact bytes (docs/findings.md), and then
+# has flagged builds of quasidock by their exact bytes (docs/findings.md), and then
 # none of them starts, so that every row below would only say the same.
 programs_clean() { bash "$stage_u/scripts/defender-scan.sh" "$stage\\package"; }
 check "Defender finds nothing in the package's programs" programs_clean
@@ -165,7 +165,7 @@ check "a named volume keeps data between containers" keeps_data
 logs_in() {
     # Nothing answers there: the login fails, and Credential Manager has to be
     # reached to save or delete. logout needs nothing but it.
-    z logout zigsaw-test.invalid 2>&1 | grep -qv 'error 1312'
+    z logout quasidock-test.invalid 2>&1 | grep -qv 'error 1312'
 }
 check "Credential Manager can be reached (a logout)" logs_in
 

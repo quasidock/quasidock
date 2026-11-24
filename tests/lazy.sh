@@ -161,7 +161,7 @@ for sb in soft low appcontainer; do
     check "under $sb, BusyBox starts from a placeholder and reads one" \
         bash -c "[ \"\$(QUASIDOCK_HOME='$(store b)' QUASIDOCK_TEST_LAZY_GATE='$gate' bash '$QD_IMAGES_HELPER' run '$quasidock' --sandbox=$sb $APP cat '$(deploy_of b)\\small.txt' 2>&1 | tr -d '\r')\" = 'hello lazy' ]"
 done
-# What starts a program reads its image, so zigsaw fetched busybox.exe; the
+# What starts a program reads its image, so quasidock fetched busybox.exe; the
 # program, the file it read.
 check "the helper's log names what fetched each file" grep -q 'fetched small.txt: [0-9]* bytes, for busybox.exe' "$(lazy_of b)\\log"
 check "a file nothing read is still a placeholder" recall_on_access "$(deploy_of b)\\never.txt"

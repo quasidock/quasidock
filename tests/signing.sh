@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # End-to-end checks for images' signatures: what pull, update and info do with a good
-# one, a wrong one, and none, against a local registry, with keys `zigsaw trust` adds.
+# one, a wrong one, and none, against a local registry, with keys `quasidock trust` adds.
 # Signatures are made by tests/cmd/p256sign, in the form cosign's are, which
 # tests/oci.sh checks with the real thing. `upgrade`'s are in tests/install.sh.
 #
@@ -76,7 +76,7 @@ fingerprint() { QUASIDOCK_HOME="$work\\fp" "$quasidock" trust add "example.test/
 one_fp=$(fingerprint one)
 
 # Copies a manifest, and what it refers to, to another repository and tag, with curl,
-# as nothing in zigsaw would write one where it doesn't belong.
+# as nothing in quasidock would write one where it doesn't belong.
 copy_manifest() { # <from repo> <from reference> <to repo> <to tag>
     local m="$work\\manifest-$RANDOM" d f loc
     curl -sf -H 'Accept: application/vnd.oci.image.manifest.v1+json' "http://$registry/v2/$1/manifests/$2" -o "$(cygpath -m "$m")" || return 1

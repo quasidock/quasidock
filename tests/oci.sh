@@ -3,11 +3,11 @@
 # source with Go's image), end to end against tests/zot.sh's two local
 # registries, at the default sandbox (low), then a few runs in an
 # AppContainer: ORAS pushes a file from the working directory and pulls it
-# back; skopeo lists, inspects and copies an image zigsaw pushed, to the
+# back; skopeo lists, inspects and copies an image quasidock pushed, to the
 # registry that wants a login and into an OCI layout; cosign makes a key
 # pair, signs the image with it without the internet (a signing config with
 # no services, and a proxy that goes nowhere), and verifies it, but not with
-# another key; and zigsaw still pulls the signed image. Each tool logs in
+# another key; and quasidock still pulls the signed image. Each tool logs in
 # with its own login, kept in its own data, and logs out again. In an
 # AppContainer, what writes to a path (oras pull, skopeo's oci: and dir:)
 # fails, a known gap.
@@ -39,7 +39,7 @@ COSIGN=cosign
 registry=localhost:5000
 
 failures=0
-# The output's last line, but not zigsaw's notes on what it granted.
+# The output's last line, but not quasidock's notes on what it granted.
 last_line() { grep -v -e '^\s*$' -e '^granted ' -e '^revoked ' -e '^labelled ' <<<"$1" | tail -1 | cut -c1-110; }
 check() {
     local label=$1
@@ -91,7 +91,7 @@ trap 'for app in $ORAS $SKOPEO $COSIGN; do z volume rm "oci-$app-$$" >/dev/null 
 # Runs from the work directory, never the repository: the three have the
 # cwd permission, which low runs label and AppContainer runs grant.
 mkdir -p "$work\\cwd" && cd "$work\\cwd" || exit 1
-printf 'hello from zigsaw\n' >hello.txt
+printf 'hello from quasidock\n' >hello.txt
 image=$registry/oci/busybox
 digest=$(qd_push z busybox "$image:1" 2>&1 | grep -o 'manifest sha256:[0-9a-f]*' | cut -d' ' -f2)
 [ -n "$digest" ] || echo "pushing BusyBox's image to $image:1 failed"
@@ -123,9 +123,9 @@ check "  and logged out, it's refused there" oras_logout
 # --- skopeo ---------------------------------------------------------------------
 
 check "skopeo --version says 1.24.1" sh -c "bash '$QD_IMAGES_HELPER' run \"\$0\" $SKOPEO --version | grep -q 'version 1.24.1'" "$quasidock"
-check "skopeo lists the tags of zigsaw's image" sh -c "bash '$QD_IMAGES_HELPER' run \"\$0\" $SKOPEO list-tags --tls-verify=false docker://$image | grep -q '\"1\"'" "$quasidock"
-# Not plain `inspect`: skopeo takes zigsaw's images, whose config is
-# zigsaw's own, for artifacts, and inspects only images.
+check "skopeo lists the tags of quasidock's image" sh -c "bash '$QD_IMAGES_HELPER' run \"\$0\" $SKOPEO list-tags --tls-verify=false docker://$image | grep -q '\"1\"'" "$quasidock"
+# Not plain `inspect`: skopeo takes quasidock's images, whose config is
+# quasidock's own, for artifacts, and inspects only images.
 check "  shows its manifest" sh -c "bash '$QD_IMAGES_HELPER' run \"\$0\" $SKOPEO inspect --raw --tls-verify=false docker://$image:1 | grep -q '\"org.opencontainers.image.title\": *\"busybox\"'" "$quasidock"
 skopeo_copy() {
     printf '%s' "$AUTH_PASSWORD" | r $SKOPEO -- login --tls-verify=false -u "$AUTH_USER" --password-stdin "$AUTH_REGISTRY" || return 1
@@ -143,7 +143,7 @@ check "  and into one with a tag, by its full path" sh -c "bash '$QD_IMAGES_HELP
 
 # No internet for cosign: a proxy that goes nowhere, but the local registry
 # directly.
-offline=(--env=COSIGN_PASSWORD=zigsaw-test --env=HTTPS_PROXY=http://127.0.0.1:9 --env=HTTP_PROXY=http://127.0.0.1:9 --env=NO_PROXY=localhost,127.0.0.1)
+offline=(--env=COSIGN_PASSWORD=quasidock-test --env=HTTPS_PROXY=http://127.0.0.1:9 --env=HTTP_PROXY=http://127.0.0.1:9 --env=NO_PROXY=localhost,127.0.0.1)
 check "cosign version says v3.1.4" sh -c "bash '$QD_IMAGES_HELPER' run \"\$0\" $COSIGN version 2>&1 | grep -q '^GitVersion: *v3.1.4'" "$quasidock"
 key_pair() {
     r $COSIGN "${offline[@]}" -- generate-key-pair >/dev/null || return 1
@@ -154,34 +154,34 @@ cosign_sign() {
     r $COSIGN "${offline[@]}" -- signing-config create --out signing-config.json || return 1
     r $COSIGN "${offline[@]}" -- sign --key cosign.key --signing-config signing-config.json --allow-http-registry --yes "$image@$digest"
 }
-check "  signs zigsaw's image with it, without the internet" cosign_sign
+check "  signs quasidock's image with it, without the internet" cosign_sign
 check "  verifies it with the public key" r $COSIGN "${offline[@]}" -- verify --key cosign.pub --insecure-ignore-tlog --allow-http-registry "$image:1"
 other_key() {
     mkdir -p other && (cd other && r $COSIGN "${offline[@]}" -- generate-key-pair >/dev/null) || return 1
     ! r $COSIGN "${offline[@]}" -- verify --key other/cosign.pub --insecure-ignore-tlog --allow-http-registry "$image:1"
 }
 check "  but not with another key" other_key
-check "zigsaw still pulls the signed image" env QUASIDOCK_HOME="$work\\pulled" "$quasidock" pull --yes "$image:1"
+check "quasidock still pulls the signed image" env QUASIDOCK_HOME="$work\\pulled" "$quasidock" pull --yes "$image:1"
 
-# zigsaw's signatures are cosign's: made by the real thing, and read by it.
+# quasidock's signatures are cosign's: made by the real thing, and read by it.
 signed="$registry/oci/signed"
 cosign_program=$(find "$(cygpath -u "$QUASIDOCK_HOME\\deploy")" -maxdepth 2 -iname cosign.exe | head -1)
-signing_env=(env COSIGN_KEY="$work\\cwd\\cosign.key" COSIGN_PASSWORD=zigsaw-test COSIGN="$cosign_program" QUASIDOCK_REGISTRY="$registry/oci" QUASIDOCK="$quasidock")
+signing_env=(env COSIGN_KEY="$work\\cwd\\cosign.key" COSIGN_PASSWORD=quasidock-test COSIGN="$cosign_program" QUASIDOCK_REGISTRY="$registry/oci" QUASIDOCK="$quasidock")
 printf '{ "id": "signed", "version": "1" }\n' >signed-recipe.json
 signs_blob() {
     qd_push z busybox "$signed:1" >/dev/null 2>&1 && qd_push z busybox "$signed:latest" >/dev/null 2>&1 || return 1
     "${signing_env[@]}" bash "$root\\scripts\\sign-images.sh" "$(cygpath -w "$work\\cwd\\signed-recipe.json")"
 }
-check "scripts/sign-images.sh signs with the real cosign, and pushes with zigsaw" signs_blob
+check "scripts/sign-images.sh signs with the real cosign, and pushes with quasidock" signs_blob
 cosign_reads() { r $COSIGN "${offline[@]}" -- verify --key cosign.pub --insecure-ignore-tlog --allow-http-registry "$signed:1"; }
-check "  stock cosign verify reads what zigsaw pushed" cosign_reads
-zigsaw_reads() {
+check "  stock cosign verify reads what quasidock pushed" cosign_reads
+quasidock_reads() {
     local out
     QUASIDOCK_HOME="$work\\checks" "$quasidock" trust add "$registry/oci" cosign.pub >/dev/null 2>&1 || return 1
     out=$(QUASIDOCK_HOME="$work\\checks" "$quasidock" pull --yes "$signed:1" 2>&1) || { echo "$out"; return 1; }
     grep -q 'signed, by key' <<<"$out" || { echo "$out"; return 1; }
 }
-check "  and zigsaw's own check passes it" zigsaw_reads
+check "  and quasidock's own check passes it" quasidock_reads
 other_refused() {
     local out
     QUASIDOCK_HOME="$work\\checks2" "$quasidock" trust add "$registry/oci" other/cosign.pub >/dev/null 2>&1 || return 1
@@ -215,7 +215,7 @@ fake_release() { # <dir> <what the programs hold>
     printf '%s  quasidock-x86_64-windows.zip\n' "$(sha256sum <"$1/quasidock-x86_64-windows.zip" | cut -d' ' -f1)" >"$1/SHA256SUMS"
 }
 # The key as Git Bash writes it, which cosign can't read by itself.
-sign_release() { env COSIGN_KEY="$(cygpath -u "$work\\cwd\\cosign.key")" COSIGN_PASSWORD=zigsaw-test COSIGN="$cosign_program" SIGN_RELEASE_FROM="$1" SIGN_RELEASE_REBUILT="$2" bash "$root\\scripts\\sign-release.sh" v9.9.9; }
+sign_release() { env COSIGN_KEY="$(cygpath -u "$work\\cwd\\cosign.key")" COSIGN_PASSWORD=quasidock-test COSIGN="$cosign_program" SIGN_RELEASE_FROM="$1" SIGN_RELEASE_REBUILT="$2" bash "$root\\scripts\\sign-release.sh" v9.9.9; }
 fake_release rel same && fake_release rebuilt same && fake_release other-build different
 release_signed() {
     sign_release rel rebuilt >/dev/null 2>&1 || return 1

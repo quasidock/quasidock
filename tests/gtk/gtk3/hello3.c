@@ -33,7 +33,7 @@ int main(int argc, char **argv) {
     }
 
     GtkWidget *window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
-    gtk_window_set_title(GTK_WINDOW(window), "zigsaw GTK 3");
+    gtk_window_set_title(GTK_WINDOW(window), "quasidock GTK 3");
     gtk_container_add(GTK_CONTAINER(window), gtk_label_new("hello from GTK 3"));
     g_signal_connect_after(window, "draw", G_CALLBACK(drawn), NULL);
     gtk_widget_show_all(window);

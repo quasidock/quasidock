@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # End-to-end checks for what the enforcing sandboxes change on the host, how
-# long it lasts, and what `zigsaw rm` undoes: low integrity labels on the
+# long it lasts, and what `quasidock rm` undoes: low integrity labels on the
 # paths a low run (the default) may write, access granted to an app's
 # AppContainer, and what each lets a run write; which sandbox a run gets
 # (the image's, the overrides', the command line's). What a run's command
@@ -129,15 +129,15 @@ refuses_profile() {
 check "low: won't label the user profile" refuses_profile
 check "low: --rm writes its own data directory" qd_run z --sandbox=low --rm $BB sh -c 'echo x > "$APPDATA/f"'
 # BusyBox's sh waits for the last command of sh -c only if it can see its
-# parent, zigsaw, which a low-integrity process could not read.
-check "low: sh sees zigsaw as its parent" sh -c '[ "$(bash "$QD_IMAGES_HELPER" run "$0" --sandbox=low '$BB' sh -c "echo \$PPID" </dev/null | tr -d "\r")" != 1 ]' "$quasidock"
+# parent, quasidock, which a low-integrity process could not read.
+check "low: sh sees quasidock as its parent" sh -c '[ "$(bash "$QD_IMAGES_HELPER" run "$0" --sandbox=low '$BB' sh -c "echo \$PPID" </dev/null | tr -d "\r")" != 1 ]' "$quasidock"
 check "low: sh -c's last command runs to the end, and its exit code comes through" sh -c '
     out=$(bash "$QD_IMAGES_HELPER" run "$0" --sandbox=low '$BB' sh -c "busybox.exe sh -c \"sleep 1; echo late; exit 7\"" </dev/null | tr -d "\r"; echo "code ${PIPESTATUS[0]}")
     [ "$out" = "late
 code 7" ]' "$quasidock"
 
 # A directory that gives its owner Modify, not WRITE_OWNER, which labelling
-# needs, as a fresh drive's root does (D:\ on Windows 11). zigsaw grants it
+# needs, as a fresh drive's root does (D:\ on Windows 11). quasidock grants it
 # for the change, and puts the ACL back.
 mkdir -p "$work\\modify\\rw"
 icacls "$work\\modify" /inheritance:r /grant:r "$USERNAME:(OI)(CI)M" >/dev/null
@@ -163,7 +163,7 @@ sed -e "s/\"busybox\"/\"$SOFT\"/" \
 soft_built=$("$quasidock" build "$work\\soft.json" 2>&1 </dev/null) || { echo "building the soft app failed: $soft_built"; exit 1; }
 mkdir -p "$work\\global"
 # from <dir> <run options and app...>: a run that may write its working
-# directory tries to, from <dir>; prints what zigsaw said.
+# directory tries to, from <dir>; prints what quasidock said.
 from() {
     local d=$1
     shift
@@ -244,9 +244,9 @@ check "cwd: one a command-line --filesystem=cwd grants goes after its run" cmdli
 
 # --- The user's folders (--filesystem=documents) -------------------------------
 #
-# Fake folders: QUASIDOCK_USER_FOLDERS has zigsaw take <dir>\Documents and so on
+# Fake folders: QUASIDOCK_USER_FOLDERS has quasidock take <dir>\Documents and so on
 # for the user's. A fourth app declares documents, and a permission of a later
-# zigsaw's.
+# quasidock's.
 
 FOLD=test.sandbox.folders
 sed -e "s/\"busybox\"/\"$FOLD\"/" \
@@ -342,7 +342,7 @@ rm_settles() {
 
 check "registry: a container reads what it sets, in each sandbox" in_order
 check "  in a hive in the container's data" test -f "$(qd_container_data "$quasidock" reg-soft)\\registry\\user.dat"
-check "  and HKCU has neither the key nor zigsaw's record of it between runs" not_in_hkcu
+check "  and HKCU has neither the key nor quasidock's record of it between runs" not_in_hkcu
 check "--rm: runs with its own keys and leaves nothing behind" rm_leaves_nothing
 check "a key of the same name that was there is moved aside for the run, and back after" moved_aside
 check "a run that didn't end leaves the key in HKCU, and the next one settles it" killed_run
@@ -374,7 +374,7 @@ qd_remove_app "$quasidock" $REG3 >/dev/null 2>&1 </dev/null
 reg delete "HKCU\\$deep" /f >/dev/null 2>&1
 
 
-# --- Labels two apps share, labels zigsaw didn't make, and rm ---------------------
+# --- Labels two apps share, labels quasidock didn't make, and rm ---------------------
 #
 # Both apps' overrides choose low and name the same path, so its label
 # stands for both.
@@ -387,10 +387,10 @@ qd_remove_app "$quasidock" $BB >/dev/null 2>&1 </dev/null
 check "rm leaves a label it didn't make" low_label "$work\\mine"
 qd_remove_app "$quasidock" $OTHER >/dev/null 2>&1 </dev/null
 
-# --- Programs a run writes, and zigsaw's own folders ---------------------------
+# --- Programs a run writes, and quasidock's own folders ---------------------------
 #
 # Windows starts a program whose file is labelled low at low integrity, and
-# what a run writes comes out labelled low: zigsaw takes the label off the
+# what a run writes comes out labelled low: quasidock takes the label off the
 # programs once the app's runs end (src/written.zig). tests/cmd/hostprobe is
 # the program: it prints its integrity level.
 
@@ -515,7 +515,7 @@ check "a concurrent soft container has separate data and does not inherit a low 
 check "soft: an app's first run says nothing of its data folder" data_first_soft
 check "rm forgets the programs, which stay medium" rm_forgets
 
-# --- What's changed outside the stores: `zigsaw grants` -------------------------
+# --- What's changed outside the stores: `quasidock grants` -------------------------
 
 store_a="$work\\store-a"
 store_b="$work\\store-b"

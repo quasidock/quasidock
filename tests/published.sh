@@ -73,7 +73,7 @@ check() {
 }
 last_line() { grep -v '^\s*$' "$1" | tail -1 | cut -c1-110; }
 # slowest <build log>: its five slowest commands, slowest first, as
-# "<took>\t[<module> <n>/<count>]\t<command, cut short>". zigsaw logs each
+# "<took>\t[<module> <n>/<count>]\t<command, cut short>". quasidock logs each
 # command as "[<module> <n>/<count>] <command>", and when it took a second
 # or more, "[...] took 4m 07s" (or "12.3 s", "1h 03m") after it.
 slowest() {
@@ -115,8 +115,8 @@ stays_up() {
 }
 # Apps whose command is a web server, which they open in the browser unless
 # told --no-browser: it must serve its login page at the address --listen
-# gives. zigsaw itself in the background, not a function running it, so
-# that `kill` ends zigsaw, and the run's job the server.
+# gives. quasidock itself in the background, not a function running it, so
+# that `kill` ends quasidock, and the run's job the server.
 serves_ids=" kanboard "
 serves() {
     local port=$((9100 + RANDOM % 800)) out="$logs\\$1.serve.log" server page=""
@@ -347,7 +347,7 @@ if [ $pulled -gt 0 ]; then
 fi
 
 # The registry's catalog (scripts/publish.sh pushes it) lists the apps
-# published at these versions, as `zigsaw search` shows it.
+# published at these versions, as `quasidock search` shows it.
 if [ ${#published_versions[@]} -gt 0 ]; then
     in_catalog() {
         local out entry missing=()
@@ -377,7 +377,7 @@ fi
 
 check "no run labelled or granted the repository" sh -c "! icacls '$root' | grep -q -e 'Mandatory Label' -e 'S-1-15-'"
 
-# Installed apps are protected against deletion, so remove them through zigsaw.
+# Installed apps are protected against deletion, so remove them through quasidock.
 for id in "${ids[@]}"; do qd_remove_app zp "$id" >/dev/null 2>&1; done
 zp prune --downloads >/dev/null 2>&1
 if [ -z "${BUILD_HOME:-}" ]; then

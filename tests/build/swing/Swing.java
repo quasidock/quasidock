@@ -10,14 +10,14 @@ public class Swing {
         CountDownLatch drawn = new CountDownLatch(1);
         JFrame[] frame = new JFrame[1];
         SwingUtilities.invokeAndWait(() -> {
-            JFrame f = new JFrame("zigsaw swing fixture");
+            JFrame f = new JFrame("quasidock swing fixture");
             f.add(new JComponent() {
                 @Override protected void paintComponent(Graphics g) {
                     Graphics2D g2 = (Graphics2D) g;
                     g2.setColor(Color.WHITE);
                     g2.fillRect(0, 0, getWidth(), getHeight());
                     g2.setColor(Color.BLACK);
-                    new TextLayout("hello from zigsaw", getFont(), g2.getFontRenderContext()).draw(g2, 10, 30);
+                    new TextLayout("hello from quasidock", getFont(), g2.getFontRenderContext()).draw(g2, 10, 30);
                     drawn.countDown();
                 }
             });

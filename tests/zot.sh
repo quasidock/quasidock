@@ -8,13 +8,13 @@
 #   tests/zot.sh <command> [args...]
 #   e.g. tests/zot.sh bash tests/registry.sh
 #
-# zot is the zigsaw app recipes/zot.json builds, run by the zigsaw under test
+# zot is the quasidock app recipes/zot.json builds, run by the quasidock under test
 # (QUASIDOCK, default out\bin\quasidock.exe), from the store in ZOT_HOME, or
 # else BUILD_HOME (where tests/published.sh builds it), or else a temporary
 # one. If zot isn't installed there at the recipe's version, it's built
 # there first: minutes with its vendored modules in the store's downloads
 # (or SEED_DOWNLOADS, for a temporary store), and some 15 minutes without.
-# A zigsaw whose `run` is broken breaks this too: zot doesn't start, and its
+# A quasidock whose `run` is broken breaks this too: zot doesn't start, and its
 # logs are shown.
 #
 # Needs Git Bash, curl, and zig, for the password's bcrypt hash.
@@ -61,8 +61,8 @@ config() {
 }
 config 5000 ""
 config 5001 ', "auth": { "htpasswd": { "path": "htpasswd" } }'
-# zigsaw itself in the background, not a function or subshell running it, so
-# that `kill` below ends zigsaw.
+# quasidock itself in the background, not a function or subshell running it, so
+# that `kill` below ends quasidock.
 cd "$dir"
 QUASIDOCK_HOME="$store" bash "$QD_IMAGES_HELPER" run "$quasidock" $ZOT serve zot-5000.json >zot-5000.log 2>&1 &
 plain=$!
@@ -88,7 +88,7 @@ else
     cat "$dir"/zot-*.log
     code=1
 fi
-# Ending zigsaw ends zot with it: the run's job object. For a moment, zot
+# Ending quasidock ends zot with it: the run's job object. For a moment, zot
 # may still be exiting, in $dir.
 kill $plain $login 2>/dev/null
 wait 2>/dev/null

@@ -1,6 +1,6 @@
 {
-  "name": "zigsaw-saver",
-  "publisher": "zigsaw",
+  "name": "quasidock-saver",
+  "publisher": "quasidock",
   "version": "1.0.0",
   "description": "For tests/chromium.sh: edits and saves a file through VS Code's API, with no keystrokes.",
   "engines": { "vscode": "^1.60.0" },

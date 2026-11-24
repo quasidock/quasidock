@@ -48,7 +48,7 @@
       "name": "mariadb",
       "sources": [
         {
-          "image": "mariadb-sdk:12.3.4@sha256:bd99143686d1f128a49e3c3588b6ec8dcdb37e22915523fbae9b966ae770b107"
+          "image": "mariadb-sdk:12.3.4@sha256:a7f4d429ddbe504e85cc6462bd79ba90b2b4bc0db4c7973b3b518790be6c3fe0"
         }
       ]
     }

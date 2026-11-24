@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Checks scripts/rebuild.sh with made-up recipes and a stand-in for zigsaw, so it needs
+# Checks scripts/rebuild.sh with made-up recipes and a stand-in for quasidock, so it needs
 # no network and takes seconds; and that it can order the real recipes. Runs on Linux
 # too, as CI's pins job does.
 #

@@ -102,7 +102,7 @@ def main():
 
     table = f_bytes(1, b"".join(f_bytes(1, s) for s in strings))
     block = table + f_bytes(2, nodes) + f_bytes(2, ways) + f_bytes(2, relations)
-    header = f_bytes(4, b"OsmSchema-V0.6") + f_bytes(16, b"zigsaw tests")
+    header = f_bytes(4, b"OsmSchema-V0.6") + f_bytes(16, b"quasidock tests")
 
     with open(os.path.join(here, "tiny.osm.pbf"), "wb") as out:
         out.write(blob("OSMHeader", header) + blob("OSMData", block))

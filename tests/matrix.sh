@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Compatibility matrix: runs real tools through the three sandboxes and
-# reports where behaviour differs from what zigsaw intends.
+# reports where behaviour differs from what quasidock intends.
 #
 #   tests/matrix.sh [path\to\quasidock.exe]
 #
@@ -11,7 +11,7 @@
 # Each check states the intended outcome per sandbox: "ok" (exits 0) or
 # "fails" (exits non-zero). The soft sandbox doesn't enforce permissions, so
 # its intended outcome for a denied action is "ok"; the low sandbox enforces
-# only where the app may write. "gap" means "ok" is intended, but zigsaw
+# only where the app may write. "gap" means "ok" is intended, but quasidock
 # doesn't manage it yet (see docs/gaps.md and docs/findings.md): a
 # failure is reported, but isn't a mismatch, so the matrix fails only for
 # results that changed.
@@ -93,7 +93,7 @@ limit=${MATRIX_TIMEOUT:-120}
 started=$SECONDS
 
 # Runs an installed app in the current sandbox ($sb), for at most $limit
-# seconds. Ending zigsaw ends the app's whole process tree (its job object).
+# seconds. Ending quasidock ends the app's whole process tree (its job object).
 # Its stdin is empty, whatever the matrix's is: given a pipe, as in CI,
 # ripgrep would search that instead of its working directory.
 run() {
@@ -250,7 +250,7 @@ expect ok ok ok "runs a script file" run $PY a.py
 expect ok "$(ac_if final-path-dos)" ok "realpath resolves cwd" run $PY -c 'import os, sys; sys.exit(os.path.realpath(".") != os.getcwd())'
 # Python trusts the roots in Windows' store, which Windows fetches as its own
 # programs need them: a host whose root it hasn't yet fails (example.com, on
-# 2026-10-28). ghcr.io's is there wherever zigsaw pulls, as zig's std reads
+# 2026-10-28). ghcr.io's is there wherever quasidock pulls, as zig's std reads
 # the same store.
 ghcr_token='https://ghcr.io/token?scope=repository:quasidock/quasidock/python:pull'
 expect ok ok ok "https with system certs" run $PY -c "import urllib.request as u; u.urlopen('$ghcr_token', timeout=20)"
@@ -275,7 +275,7 @@ expect ok "$(ac_if self-path-dos final-path-dos nul)" ok "init, build and run a 
 
 tool go
 for sb in $sandboxes; do
-    printf 'module zigsaw.test/hi\n\ngo 1.27\n' >"$work\\go\\$sb\\go.mod"
+    printf 'module quasidock.test/hi\n\ngo 1.27\n' >"$work\\go\\$sb\\go.mod"
     printf 'package main\n\nimport "fmt"\n\nfunc main() { fmt.Println("hi from go") }\n' >"$work\\go\\$sb\\main.go"
 done
 expect ok ok ok "runs" run $GO version
@@ -319,8 +319,8 @@ expect ok fails ok "read ungranted host file" zstd_reads_outside
 # HarfBuzz binding needed it; the images turn that binding off
 # (sun.font.layout.ffm=false).
 tool pdfbox
-in_each in.txt 'hello from zigsaw'
-pdf_round_trip() { run $PDFBOX fromtext -i in.txt -o out.pdf >/dev/null && run $PDFBOX export:text -console -i out.pdf | grep -q '^hello from zigsaw'; }
+in_each in.txt 'hello from quasidock'
+pdf_round_trip() { run $PDFBOX fromtext -i in.txt -o out.pdf >/dev/null && run $PDFBOX export:text -console -i out.pdf | grep -q '^hello from quasidock'; }
 expect ok ok ok "makes a PDF from text, reads it back" pdf_round_trip
 expect ok ok ok "renders it to PNG, fonts cached in data" run $PDFBOX render -i out.pdf -format png -dpi 40
 # PDFBox exits 0 even when it can't read its input, so whether it made the

@@ -10,7 +10,7 @@
 # this machine has none. An app that lists PHP, APCu and Xdebug as runtimes
 # loads those through their .ini files, the installed others too, and
 # Xdebug's step debugger connects to a DBGp client from it, in every sandbox,
-# and in an AppContainer without the loopback exemption, through zigsaw.
+# and in an AppContainer without the loopback exemption, through quasidock.
 # Composer's image
 # (recipes/composer.json) installs a project offline; Kanboard
 # (recipes/kanboard.json), whose dependencies a build installed with it,
@@ -101,7 +101,7 @@ check "HTTPS works through curl (Windows' roots, in the file \${roots} names) an
 # php.net's (a self-signed certificate of Git Bash's openssl), it refuses.
 curl_roots() {
     local out
-    openssl req -x509 -newkey rsa:2048 -nodes -keyout "$work\\other.key" -out "$work\\cwd\\other.pem" -days 1 -subj "/CN=zigsaw php.sh" >/dev/null 2>&1 ||
+    openssl req -x509 -newkey rsa:2048 -nodes -keyout "$work\\other.key" -out "$work\\cwd\\other.pem" -days 1 -subj "/CN=quasidock php.sh" >/dev/null 2>&1 ||
         { echo "openssl (Git Bash's) made no certificate"; return 1; }
     out=$(cd "$work\\cwd" && qd_run z "--env=SSL_CERT_FILE=$work\\cwd\\other.pem" $PHP -r '$c = curl_init("https://www.php.net/"); curl_setopt($c, CURLOPT_RETURNTRANSFER, true); echo curl_exec($c) === false ? curl_error($c) : "curl ok", "\n";' 2>&1 | tr -d '\r')
     grep -q 'SSL certificate' <<<"$out" || { echo "got: $out"; return 1; }
@@ -149,7 +149,7 @@ check "curl's roots are the ones SSL_CERT_FILE names" curl_roots
 # takes the connection and tells it to run.
     # Xdebug's image uses port 9003, dbgp, which --port moves.
 # The consumer has the network: its container is exempt from loopback
-# isolation while it runs. Without the exemption, zigsaw forwards the port.
+# isolation while it runs. Without the exemption, quasidock forwards the port.
 
 # --- Composer and Kanboard ----------------------------------------------------
 
@@ -162,7 +162,7 @@ composer_installs() {
     grep -q 'Installing quasidock/hello (1.0.0)' <<<"$out" || { echo "$sb: $(tail -1 <<<"$out")"; return 1; }
     out=$(cd "$work\\composer" && qd_run z --sandbox=$sb --rm $COMPOSER run-script which --no-ansi 2>&1 | tr -d '\r')
     grep -q '^Composer version 2\.10\.3' <<<"$out" || { echo "$sb, its script: $(tail -1 <<<"$out")"; return 1; }
-    # Without what zigsaw says about grants: the run's grant of the working
+    # Without what quasidock says about grants: the run's grant of the working
     # directory under low goes when it ends.
     out=$(cd "$work\\composer" && qd_run z --sandbox=$sb $PHP -r 'require "vendor/autoload.php"; echo Zigsaw\Hello\Hello::hi(), "\n";' 2>&1 | tr -d '\r' |
         grep -v -e '^labelled ' -e '^removed the low integrity label ')
@@ -187,9 +187,9 @@ kanboard_serves() {
     [ -n "$csrf" ] || { echo "no login form"; return 1; }
     out=$(kb -o /dev/null -w '%{http_code} %{redirect_url}' --data-urlencode "csrf_token=$csrf" -d username=admin -d password=admin "$url/?controller=AuthController&action=check")
     [ "$out" = "302 $url/?controller=DashboardController&action=show" ] || { echo "logging in: $out"; return 1; }
-    out=$(kb -u admin:admin -d '{"jsonrpc":"2.0","method":"createProject","id":1,"params":{"name":"zigsaw"}}' "$url/jsonrpc.php")
+    out=$(kb -u admin:admin -d '{"jsonrpc":"2.0","method":"createProject","id":1,"params":{"name":"quasidock"}}' "$url/jsonrpc.php")
     [ "$out" = '{"jsonrpc":"2.0","result":1,"id":1}' ] || { echo "createProject: $out"; return 1; }
-    kb -u admin:admin -d '{"jsonrpc":"2.0","method":"getAllProjects","id":2}' "$url/jsonrpc.php" | grep -q '"name":"zigsaw"' || { echo "no project"; return 1; }
+    kb -u admin:admin -d '{"jsonrpc":"2.0","method":"getAllProjects","id":2}' "$url/jsonrpc.php" | grep -q '"name":"quasidock"' || { echo "no project"; return 1; }
     for p in /app/common.php /vendor/autoload.php /libs/picodb/lib/PicoDb/Database.php /cli; do
         out=$(kb -o /dev/null -w '%{http_code}' "$url$p")
         [ "$out" = 403 ] || { echo "$p: $out"; return 1; }
@@ -199,14 +199,14 @@ kanboard_serves() {
 kanboard_start soft
 check "Kanboard logs in, creates a project through its API, and keeps its code from the web, under soft" kanboard_serves
 kanboard_stop
-# In an AppContainer, Kanboard listens on an internal port, and zigsaw's
+# In an AppContainer, Kanboard listens on an internal port, and quasidock's
 # relay publishes it; the address it gives is the published one.
 kanboard_published() {
     grep -q "Kanboard is at http://127.0.0.1:$kanboard_port/ " "$work\\kanboard.out" || { cat "$work\\kanboard.out"; return 1; }
     kanboard_serves
 }
 kanboard_start appcontainer
-check "and under appcontainer, through the service zigsaw publishes" kanboard_published
+check "and under appcontainer, through the service quasidock publishes" kanboard_published
 kanboard_stop
 kanboard_data() {
     local out

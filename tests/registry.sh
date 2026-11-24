@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# End-to-end checks for `zigsaw push` and `zigsaw pull` against a real
+# End-to-end checks for `quasidock push` and `quasidock pull` against a real
 # registry: apps round-trip between two stores through it, byte for byte,
 # builds take sources that are gone from their URLs from next to images, and
 # `search` and `info` find apps through the registry's catalog.
@@ -679,7 +679,7 @@ fi
 check "no run labelled or granted the repository" sh -c "! icacls '$root' | grep -q -e 'Mandatory Label' -e 'S-1-15-'"
 
 # Installed apps are protected against deletion, so remove them through
-# zigsaw, and the images builds use with prune --downloads.
+# quasidock, and the images builds use with prune --downloads.
 for store in "$work\a" "$work\b" "$work\c" "$work\d" "$work\idx" "$work\chunks" "$work\plain" "$work\fresh1" "$work\fresh2" "$work\fresh3" "$work\fresh-none" "$work\fresh-vendor" "$work\consent" "$work\par1" "$work\par2" "$work\sgz" "$work\sgzbad" "$work\reset-layer" "$work\resume"; do
     for id in busybox node prettier test.registry.vendored test.registry.catalog test.registry.parallel $SGZ; do QUASIDOCK_HOME="$store" qd_remove_app "$quasidock" "$id" >/dev/null 2>&1; done
     QUASIDOCK_HOME="$store" "$quasidock" prune --downloads >/dev/null 2>&1

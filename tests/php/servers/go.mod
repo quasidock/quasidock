@@ -1,4 +1,4 @@
-module zigsaw.test/servers
+module quasidock.test/servers
 
 go 1.27
 

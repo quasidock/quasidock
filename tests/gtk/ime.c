@@ -40,7 +40,7 @@ static gboolean focus_view(gpointer app) {
 
 static void activate(GtkApplication *app, gpointer data) {
     GtkWidget *window = gtk_application_window_new(app);
-    gtk_window_set_title(GTK_WINDOW(window), "zigsaw");
+    gtk_window_set_title(GTK_WINDOW(window), "quasidock");
     gtk_window_set_default_size(GTK_WINDOW(window), 320, 200);
     box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     view = gtk_text_view_new();
@@ -51,7 +51,7 @@ static void activate(GtkApplication *app, gpointer data) {
 }
 
 int main(int argc, char **argv) {
-    GtkApplication *app = gtk_application_new("io.zigsaw.test.Ime", G_APPLICATION_NON_UNIQUE);
+    GtkApplication *app = gtk_application_new("io.quasidock.test.Ime", G_APPLICATION_NON_UNIQUE);
     g_signal_connect(app, "activate", G_CALLBACK(activate), NULL);
     int status = g_application_run(G_APPLICATION(app), argc, argv);
     g_object_unref(app);

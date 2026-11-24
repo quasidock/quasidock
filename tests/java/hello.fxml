@@ -7,7 +7,7 @@
 
 <VBox spacing="8.0" xmlns="http://javafx.com/javafx/26" xmlns:fx="http://javafx.com/fxml/1">
    <children>
-      <Label text="Hello from zigsaw" />
+      <Label text="Hello from quasidock" />
       <Button text="Press" />
    </children>
 </VBox>

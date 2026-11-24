@@ -13,7 +13,7 @@
 # AppContainer: a cluster made there, with the server's default settings,
 # and the procedural languages (plperl.on_init too). Every run gets the
 # test's port with --port: the server's service is published there, so a
-# client outside an AppContainer reaches the server in it, through zigsaw's
+# client outside an AppContainer reaches the server in it, through quasidock's
 # relay. Under each, the installed extension images join: pgvector's
 # HNSW index answers a nearest-neighbour query, pg_cron, which the server
 # preloads, runs a job every second, and PostGIS transforms a point with
@@ -101,7 +101,7 @@ is() {
 }
 
 # start [postgres options]: a fresh cluster, made and served by `postgresql`,
-# with zigsaw's run options in RUN_OPTIONS. check runs it in a subshell, so
+# with quasidock's run options in RUN_OPTIONS. check runs it in a subshell, so
 # the server's run leaves its exit code in a file, for stop.
 start() {
     local log="$work\\server-${SANDBOX:-low}${RUN_OPTIONS:+-options}.out" i
@@ -219,7 +219,7 @@ check "lz4 compresses a column" is "lz4" \
     "create table big (v text compression lz4)" "insert into big select string_agg(md5(i::text), '') from generate_series(1, 2000) i" \
     "select pg_column_compression(v) from big"
 check "zstd compresses WAL" is "zstd" "set wal_compression = zstd" "show wal_compression"
-check "XML is parsed with libxml2" is "{zigsaw}" "select xpath('/a/b/text()', '<a><b>zigsaw</b></a>')::text"
+check "XML is parsed with libxml2" is "{quasidock}" "select xpath('/a/b/text()', '<a><b>quasidock</b></a>')::text"
 check "a PL/Perl function runs on Perl's image" is "perl 5.42.3" \
     "create extension plperl" "create function perlv() returns text as \$\$ return sprintf('perl %vd', \$^V); \$\$ language plperl" "select perlv()"
 check "a PL/Python function runs on Python's image" is "python 3.14.10" \

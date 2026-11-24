@@ -4,7 +4,7 @@
 # with PostGIS, whose server runs under soft on a port of its own. From a work
 # directory the app may use (its cwd permission), under soft and at low
 # integrity: the pgsql output with its default style (beside the program, by
-# zigsaw's patch), from tests/osm2pgsql/tiny.osm, updated with change.osc
+# quasidock's patch), from tests/osm2pgsql/tiny.osm, updated with change.osc
 # (--append, with the tiles it expires); the flex output with a Lua style
 # that `require`s a module from the working directory, from tiny.osm.pbf,
 # with a flat node file and an area table in UTM zone 32N (PROJ's proj.db);
@@ -225,7 +225,7 @@ check "appcontainer: osm2pgsql-expire lists the map's tiles" has '^14/8529/5974$
 check "appcontainer: a database with PostGIS and hstore" database osm_appcontainer
 check "appcontainer: osm2pgsql reaches the server on 127.0.0.1" import osm_appcontainer -O pgsql --slim tiny.osm
 # Without the exemption, it reaches the port it uses, postgresql, through
-# zigsaw: PGPORT is ${uses:postgresql}, which --port moves to the server's.
+# quasidock: PGPORT is ${uses:postgresql}, which --port moves to the server's.
 forwarded() {
     local out
     out=$(QUASIDOCK_LOOPBACK_EXEMPTION=0 timeout 120 bash "$QD_IMAGES_HELPER" run "$quasidock" --sandbox=appcontainer --env="PGPASSWORD=$password" --env=PGCONNECT_TIMEOUT=5 \
@@ -233,7 +233,7 @@ forwarded() {
         { echo "$out" | tail -5; return 1; }
 }
 check "appcontainer: a database for the forwarded run" database osm_forwarded
-check "appcontainer, without the loopback exemption: osm2pgsql reaches the server through zigsaw" forwarded
+check "appcontainer, without the loopback exemption: osm2pgsql reaches the server through quasidock" forwarded
 unset SANDBOX
 
 check "the server stops" stop

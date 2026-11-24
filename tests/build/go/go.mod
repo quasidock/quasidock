@@ -1,3 +1,3 @@
-module zigsaw.test/hello
+module quasidock.test/hello
 
 go 1.27

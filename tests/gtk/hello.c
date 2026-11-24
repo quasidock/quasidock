@@ -15,7 +15,7 @@ static gboolean drawn(GtkWidget *window, GdkFrameClock *clock, gpointer app) {
 
 static void activate(GtkApplication *app, gpointer data) {
     GtkWidget *window = gtk_application_window_new(app);
-    gtk_window_set_title(GTK_WINDOW(window), "zigsaw");
+    gtk_window_set_title(GTK_WINDOW(window), "quasidock");
     gtk_window_set_child(GTK_WINDOW(window), gtk_label_new("hello from GTK"));
     gtk_widget_add_tick_callback(window, drawn, app, NULL);
     gtk_window_present(GTK_WINDOW(window));
@@ -27,7 +27,7 @@ static void activate(GtkApplication *app, gpointer data) {
 int main(int argc, char **argv) {
     g_print("config in %s\n", g_get_user_config_dir());
     g_print("settings in %s\n", G_OBJECT_TYPE_NAME(g_settings_backend_get_default()));
-    GtkApplication *app = gtk_application_new("io.zigsaw.test.Hello", G_APPLICATION_NON_UNIQUE);
+    GtkApplication *app = gtk_application_new("io.quasidock.test.Hello", G_APPLICATION_NON_UNIQUE);
     g_signal_connect(app, "activate", G_CALLBACK(activate), NULL);
     int status = g_application_run(G_APPLICATION(app), argc, argv);
     g_object_unref(app);

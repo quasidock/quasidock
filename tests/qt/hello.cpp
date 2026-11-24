@@ -38,7 +38,7 @@ private:
 
 int main(int argc, char **argv) {
     QApplication app(argc, argv);
-    app.setOrganizationName(QStringLiteral("zigsaw"));
+    app.setOrganizationName(QStringLiteral("quasidock"));
     app.setApplicationName(QStringLiteral("hello-qt"));
     say(QStringLiteral("Qt %1").arg(QString::fromLatin1(qVersion())));
     say(QStringLiteral("prefix %1").arg(QLibraryInfo::path(QLibraryInfo::PrefixPath)));
@@ -62,7 +62,7 @@ int main(int argc, char **argv) {
     if (app.arguments().contains(QStringLiteral("--no-window")))
         return 0;
     Window window(QStringLiteral("hello from Qt"));
-    window.setWindowTitle(QStringLiteral("zigsaw"));
+    window.setWindowTitle(QStringLiteral("quasidock"));
     window.resize(240, 80);
     window.show();
     return app.exec();

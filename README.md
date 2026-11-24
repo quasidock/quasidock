@@ -13,9 +13,11 @@ API and general Docker images are not supported.
 
 ## Build and try it
 
-On Windows, with the Go toolchain specified by `go.mod`:
+On Windows, select the Go toolchain specified by `go.mod` so image digests
+match CI. Go versions can produce different compressed bytes for the same files.
 
 ```powershell
+$env:GOTOOLCHAIN = "go$(go list -m -f '{{.GoVersion}}')"
 go run ./scripts/build.go
 .\out\bin\quasidock.exe pull node
 .\out\bin\quasidock.exe run --rm node node.exe --version

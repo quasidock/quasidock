@@ -183,7 +183,7 @@ loose_cmake() {
 check "the SDK's cmake builds a Qt program, which runs on the runtime" loose_cmake
 
 
-# stays_up <seconds> <zigsaw run arguments...>: the app is still running
+# stays_up <seconds> <quasidock run arguments...>: the app is still running
 # when the time is up, rather than having crashed.
 stays_up() {
     local seconds=$1
@@ -191,7 +191,7 @@ stays_up() {
     timeout "$seconds" bash "$QD_IMAGES_HELPER" run "$quasidock" "$@" >/dev/null 2>&1
     [ $? -eq 124 ]
 }
-# app_window <process> <title> <zigsaw run arguments...>: the program's
+# app_window <process> <title> <quasidock run arguments...>: the program's
 # main window comes up, rather than Qt's error box for a missing plugin,
 # which would keep it running too.
 app_window() {
@@ -236,7 +236,7 @@ check "Flameshot 14.0.0 is installed" sh -c "timeout 60 bash '$QD_IMAGES_HELPER'
 check "it runs, in the tray" stays_up 15 $FLAMESHOT
 check "with --sandbox=soft" stays_up 15 --sandbox=soft $FLAMESHOT
 check "with --sandbox=appcontainer" stays_up 15 --sandbox=appcontainer $FLAMESHOT
-# screenshot <zigsaw run arguments...>: `flameshot full` saves a PNG of the
+# screenshot <quasidock run arguments...>: `flameshot full` saves a PNG of the
 # whole screen in Pictures, which the app may use, and exits.
 pictures="$work\\folders\\Pictures"
 screenshot() {

@@ -88,10 +88,10 @@ cd "$work" || exit 1
 pdf_round_trip() {
     local out
     cd "$work\\$1" || return 1
-    printf 'hello from zigsaw\nsecond line\n' >in.txt
+    printf 'hello from quasidock\nsecond line\n' >in.txt
     qd_run z --sandbox=$1 $PDFBOX fromtext -i in.txt -o out.pdf >/dev/null 2>&1 || { echo "fromtext failed"; return 1; }
     out=$(qd_run z --sandbox=$1 $PDFBOX export:text -console -i out.pdf 2>/dev/null | tr -d '\r' | grep -v '^The encoding parameter is ignored')
-    [ "$out" = "hello from zigsaw
+    [ "$out" = "hello from quasidock
 second line" ] || { echo "got: $out"; return 1; }
 }
 # renders <sandbox>: a PNG of the page; PDFBox's font cache, which it keeps in
@@ -114,7 +114,7 @@ opens_window() {
     cd "$1" || return 1
     shift 2
     # Not through z: a backgrounded function is a subshell, whose pid isn't
-    # zigsaw's.
+    # quasidock's.
     bash "$QD_IMAGES_HELPER" run "$quasidock" "$@" >"$work\\run.log" 2>&1 &
     local runner=$! status i
     # Only windows of that run count (its Windows pid; $! is Git Bash's).
@@ -130,7 +130,7 @@ opens_window() {
         echo "no window ($what) closed (winwait $status); $(grep -v '^Picked' "$work\\run.log" | tail -1)"
         return 1
     fi
-    wait $runner || { echo "zigsaw run failed: $(grep -v '^Picked' "$work\\run.log" | tail -1)"; return 1; }
+    wait $runner || { echo "quasidock run failed: $(grep -v '^Picked' "$work\\run.log" | tail -1)"; return 1; }
     [ $status -eq 0 ] || { echo "winwait $status"; return 1; }
 }
 # A directory of documents that no run has been granted, unlike the work
@@ -157,12 +157,12 @@ check "its settings, recent files among them, are kept in a hive in its data" re
 # out with the dot it carries in its jar (unpacked into its data's TEMP).
 draws() {
     cd "$work\\$1" || return 1
-    printf '@startuml\nAlice -> Bob: hello\nBob --> Alice: from zigsaw\n@enduml\n' >seq.puml
+    printf '@startuml\nAlice -> Bob: hello\nBob --> Alice: from quasidock\n@enduml\n' >seq.puml
     printf '@startuml\nclass Store\nclass App\nStore "1" *-- "many" App : deploys\n@enduml\n' >cls.puml
     rm -f seq.svg cls.svg
     qd_run z --sandbox=$1 $PLANTUML -tsvg seq.puml cls.puml >"$work\\puml.log" 2>&1 || { echo "failed: $(grep -v '^Picked' "$work\\puml.log" | head -1)"; return 1; }
     texts() { grep -o '<text[^>]*>[^<]*</text>' "$1" | sed 's/<[^>]*>//g' | tr '\n' ' '; }
-    [ "$(texts seq.svg)" = "Alice Bob Alice Bob hello from zigsaw " ] || { echo "seq.svg: $(texts seq.svg | cut -c1-80)"; return 1; }
+    [ "$(texts seq.svg)" = "Alice Bob Alice Bob hello from quasidock " ] || { echo "seq.svg: $(texts seq.svg | cut -c1-80)"; return 1; }
     [ "$(texts cls.svg)" = "Store App deploys 1 many " ] || { echo "cls.svg: $(texts cls.svg | cut -c1-80)"; return 1; }
 }
 for sb in soft low appcontainer; do

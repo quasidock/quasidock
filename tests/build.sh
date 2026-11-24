@@ -4,7 +4,7 @@
 # from source with SDK images (zig, busybox, CMake, Meson, Rust, Go with and
 # without C, .NET, and Java with Maven and Gradle), tools' caches and
 # aliases, and vendor steps; 7-Zip
-# unpacks a source zigsaw doesn't; projects with a quasidock.json, whose own
+# unpacks a source quasidock doesn't; projects with a quasidock.json, whose own
 # files are a source.
 #
 #   tests/build.sh [path\to\quasidock.exe]
@@ -74,7 +74,7 @@ work=$(cygpath -w "$(mktemp -d)")
 (cd "$root" && go run ./scripts/build.go imports) || { echo "building the import checker failed"; exit 1; }
 imports="$root\\out\\test\\quasidock-imports.exe"
 # Apps run from the work directory: a low run labels the directory of an app
-# with cwd, and the repository's programs, zigsaw too, would start at low
+# with cwd, and the repository's programs, quasidock too, would start at low
 # integrity after that.
 cd "$work" || exit 1
 
@@ -274,7 +274,7 @@ alias_app_recipe "$TOOL@$tool_digest" >"$work\\alias\\app.json"
 check "an app with it as a runtime builds" z build "$work\\alias\\app.json"
 alias_app_digest=$(manifest_of $AAPP)
 check "the runtime's variables come with it" sh -c '[ "$(bash "$QD_IMAGES_HELPER" run "$0" '$AAPP' -c "echo \$ALIAS_TOOL" | tr -d "\r" | tr / \\\\)" = "$1\\deploy\\$2" ]' "$quasidock" "$QUASIDOCK_HOME" "$(own_layer $TOOL)"
-# In an AppContainer, BusyBox's sh doesn't see zigsaw, takes itself for an
+# In an AppContainer, BusyBox's sh doesn't see quasidock, takes itself for an
 # orphan, and doesn't wait for its last command (README's known gaps).
 check "the same recipe builds the same image" same_image "$work\\alias\\app.json" "$alias_app_digest"
 
@@ -325,7 +325,7 @@ fi
 # --- projects with a quasidock.json -----------------------------------------------------
 
 if section projects; then
-# A project with a quasidock.json at its root, which `zigsaw build` builds as
+# A project with a quasidock.json at its root, which `quasidock build` builds as
 # make builds a Makefile. Its module lists the files and directories it got,
 # which should be those git would commit, less what "skip" leaves out.
 PROJ=test.project.app
@@ -498,8 +498,8 @@ hello_time=$((SECONDS - start))
 hello_digest=$(manifest_of $HELLO)
 hello_runs() {
     local out
-    out=$(qd_run z $HELLO zigsaw | tr -d '\r')
-    [ "$out" = "hello, zigsaw
+    out=$(qd_run z $HELLO quasidock | tr -d '\r')
+    [ "$out" = "hello, quasidock
 built from B:/src/app/main.c
 twice 21 is 42
 a string from its resources" ] || { echo "got: $out"; return 1; }
@@ -674,7 +674,7 @@ check "sh modules without busybox in the SDK fail, saying so" sh -c "\"\$0\" bui
 # B:, in use by something else, and left behind by a build that crashed.
 mkdir -p "$work\\other" "$work\\tmp\\quasidock-build-stale"
 subst B: "$work\\other"
-check "a B: zigsaw didn't map fails the build" sh -c "\"\$0\" build '$work\\broken.json' 2>&1 | grep -q 'B: is in use'" "$quasidock"
+check "a B: quasidock didn't map fails the build" sh -c "\"\$0\" build '$work\\broken.json' 2>&1 | grep -q 'B: is in use'" "$quasidock"
 subst B: /D
 subst B: "$work\\tmp\\quasidock-build-stale"
 sh_recipe test.build.ok '"echo ok > \"$PREFIX/x.txt\""' >"$work\\ok.json"
@@ -695,7 +695,7 @@ check "and the first finishes normally" grep -q 'installed test.build.slow' "$wo
 closed_pipe() {
     z build --rebuild "$work\\ok.json" 2>&1 | head -c 0
     local status=${PIPESTATUS[0]}
-    [ "$status" -eq 0 ] || { echo "zigsaw exited with $status"; return 1; }
+    [ "$status" -eq 0 ] || { echo "quasidock exited with $status"; return 1; }
     drive_free && no_build_root
 }
 check "a build whose output nobody reads any more still finishes, and cleans up" closed_pipe
@@ -733,8 +733,8 @@ cmake_time=$((SECONDS - start))
 cmake_app_digest=$(manifest_of $CMAKEAPP)
 cmake_runs() {
     local out
-    out=$(qd_run z $CMAKEAPP zigsaw | tr -d '\r')
-    [ "$out" = "hello, zigsaw
+    out=$(qd_run z $CMAKEAPP quasidock | tr -d '\r')
+    [ "$out" = "hello, quasidock
 built from B:/src/hello/main.c
 twice 21 is 42
 a string from its resources" ] || { echo "got: $out"; return 1; }
@@ -782,8 +782,8 @@ check "a CMake project of C, C++ and resources builds with CMake's and llvm-ming
 llvm_app_digest=$(manifest_of $LLVMAPP)
 llvm_runs() {
     local out exe
-    out=$(qd_run z $LLVMAPP zigsaw | tr -d '\r')
-    [ "$out" = "hello, zigsaw
+    out=$(qd_run z $LLVMAPP quasidock | tr -d '\r')
+    [ "$out" = "hello, quasidock
 built from B:/src/hello/main.c
 twice 21 is 42
 a string from its resources" ] || { echo "got: $out"; return 1; }
@@ -833,8 +833,8 @@ meson_time=$((SECONDS - start))
 meson_app_digest=$(manifest_of $MESONAPP)
 meson_runs() {
     local out dir="$QUASIDOCK_HOME\\deploy\\$(own_layer $MESONAPP)"
-    out=$(qd_run z $MESONAPP zigsaw | tr -d '\r')
-    [ "$out" = "hello, zigsaw
+    out=$(qd_run z $MESONAPP quasidock | tr -d '\r')
+    [ "$out" = "hello, quasidock
 built from ../main.c
 twice 21 is 42
 a string from its resources" ] || { echo "got: $out"; return 1; }
@@ -898,7 +898,7 @@ check "sqlite.json builds SQLite and zlib from source" z build "$root\\recipes\\
 check "sqlite3 runs, with zlib" sh -c "[ \"\$(bash '$QD_IMAGES_HELPER' run \"\$0\" sqlite :memory: 'select sqlite_version(), length(sqlar_uncompress(sqlar_compress(zeroblob(1000)), 1000))' | tr -d '\r')\" = '3.53.4|1000' ]" "$quasidock"
 fi
 
-# --- 7-Zip, for sources zigsaw doesn't unpack -----------------------------------------
+# --- 7-Zip, for sources quasidock doesn't unpack -----------------------------------------
 
 if section sevenzip; then
 check "7zip.json makes 7-Zip's image from its installer, which its 7zr unpacks" z build "$root\\recipes\\7zip.json"
@@ -930,9 +930,9 @@ check "a Rust program builds, its crates vendored, with GNU dlltool and zig's as
 rust_app_digest=$(manifest_of $RUST)
 rust_runs() {
     local out
-    out=$(qd_run z $RUST zigsaw | tr -d '\r')
-    [ "$out" = "hello, zigsaw, from Rust
-hello from C, zigsaw (42)
+    out=$(qd_run z $RUST quasidock | tr -d '\r')
+    [ "$out" = "hello, quasidock, from Rust
+hello from C, quasidock (42)
 Windows is up: true" ] || { echo "got: $out"; return 1; }
     # C's stderr, from zig's headers and Rust's C runtime.
     [ "$(qd_run z --env=GREET_DEBUG=1 $RUST x 2>&1 >/dev/null | tr -d '\r')" = "greet_c(x)" ]
@@ -963,9 +963,9 @@ mkdir -p "$work\\rust-llvm" && cp "$(cygpath -u "$work")"/rust/{Cargo.toml,Cargo
 check "it builds with llvm-mingw's image instead of zig's" z build "$work\\rust-llvm\\hello.json"
 rust_llvm_runs() {
     local out
-    out=$(qd_run z $RUSTLLVM zigsaw | tr -d '\r')
-    [ "$out" = "hello, zigsaw, from Rust
-hello from C, zigsaw (42)
+    out=$(qd_run z $RUSTLLVM quasidock | tr -d '\r')
+    [ "$out" = "hello, quasidock, from Rust
+hello from C, quasidock (42)
 Windows is up: true" ] || { echo "got: $out"; return 1; }
     "$imports" "$QUASIDOCK_HOME\\deploy\\$(own_layer $RUSTLLVM)\\hello.exe"
 }
@@ -987,9 +987,9 @@ check "a Go program builds with Go's image" z build "$work\\go\\hello.json"
 go_app_digest=$(manifest_of $GOAPP)
 go_runs() {
     local out
-    out=$(qd_run z $GOAPP zigsaw | tr -d '\r')
-    [ "$out" = "hello, zigsaw, from Go
-built from zigsaw.test/hello/main.go
+    out=$(qd_run z $GOAPP quasidock | tr -d '\r')
+    [ "$out" = "hello, quasidock, from Go
+built from quasidock.test/hello/main.go
 Windows is up: true" ] || { echo "got: $out"; return 1; }
 }
 check "it runs, with its paths trimmed, and calls Windows" go_runs
@@ -1007,10 +1007,10 @@ check "a Go program with C builds with Go's and zig's images, cgo on by itself" 
 cgo_app_digest=$(manifest_of $CGO)
 cgo_runs() {
     local out
-    out=$(qd_run z $CGO zigsaw | tr -d '\r')
-    [ "$out" = "hello, zigsaw, from Go and C
+    out=$(qd_run z $CGO quasidock | tr -d '\r')
+    [ "$out" = "hello, quasidock, from Go and C
 twice 21 is 42
-built from zigsaw.test/cgo/main.go
+built from quasidock.test/cgo/main.go
 C sees this process: true" ] || { echo "got: $out"; return 1; }
 }
 check "it runs, calling its C, which calls Windows" cgo_runs
@@ -1080,9 +1080,9 @@ check "built again, it's the same image" swing_again
 java_app_runs() {
     local id=$1 built=$2 sb out data
     for sb in soft low appcontainer; do
-        out=$(qd_run z --name $id-$sb --sandbox=$sb $id zigsaw 2>/dev/null | tr -d '\r')
+        out=$(qd_run z --name $id-$sb --sandbox=$sb $id quasidock 2>/dev/null | tr -d '\r')
         data=$(qd_container_data "$quasidock" $id-$sb) || return
-        [ "$(sed -E 's/from Java [0-9][^,]*/from Java (version)/' <<<"$out")" = "hello, zigsaw, from Java (version)$built
+        [ "$(sed -E 's/from Java [0-9][^,]*/from Java (version)/' <<<"$out")" = "hello, quasidock, from Java (version)$built
 Built with a vendored package
 runs on $(jre_dir)
 home is $data\\home" ] || { echo "$sb, got: $out"; return 1; }
@@ -1164,7 +1164,7 @@ check "php-ext builds it in its directory without a recipe, and PHP's runtime lo
 fi
 
 # Removing the apps also deletes their AppContainer profiles. The images
-# builds use stay until prune --downloads, and only zigsaw can delete their
+# builds use stay until prune --downloads, and only quasidock can delete their
 # protected deployments. Enumerate every cached manifest through the CLI.
 check "stopped build-test containers are removed" z container prune
 for digest in $(z images -q); do z rmi "$digest" >/dev/null 2>&1; done

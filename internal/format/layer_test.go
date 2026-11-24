@@ -56,19 +56,34 @@ func TestGzipDeterministicAndGunzip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	data := []byte("hello deterministic world")
-	gw1.Write(data)
-	gw1.Close()
+	data := bytes.Repeat([]byte("hello deterministic world\n"), 4096)
+	if _, err := gw1.Write(data); err != nil {
+		t.Fatal(err)
+	}
+	if err := gw1.Close(); err != nil {
+		t.Fatal(err)
+	}
 
 	gw2, err := GzipWriter(&buf2)
 	if err != nil {
 		t.Fatal(err)
 	}
-	gw2.Write(data)
-	gw2.Close()
+	if _, err := gw2.Write(data); err != nil {
+		t.Fatal(err)
+	}
+	if err := gw2.Close(); err != nil {
+		t.Fatal(err)
+	}
 
 	if !bytes.Equal(buf1.Bytes(), buf2.Bytes()) {
 		t.Fatal("gzip outputs differ")
+	}
+
+	// Published layer digests also depend on the compressor version. Repeated
+	// compression with one toolchain cannot detect a change between toolchains.
+	const want = "39a2c100d6c720097da4cde12e8e1081a7de9606aa280e2d2a017f8ece92a775"
+	if got := hashSha256(buf1.Bytes()); got != want {
+		t.Fatalf("gzip digest = %s, want %s; use the Go toolchain specified by go.mod", got, want)
 	}
 
 	// Verify header starts with 1f 8b 08 00 00 00 00 00

@@ -139,7 +139,7 @@ else
     soup_port=$((46000 + RANDOM % 900))
     untrusted="https://127.0.0.1:$soup_port/"
     openssl req -x509 -newkey rsa:2048 -nodes -keyout "$work\\untrusted.key" -out "$work\\untrusted.crt" -days 1 \
-        -subj "/CN=zigsaw tests gtk.sh $RANDOM$RANDOM" -addext "subjectAltName=IP:127.0.0.1" >/dev/null 2>&1 || echo "making the untrusted certificate failed"
+        -subj "/CN=quasidock tests gtk.sh $RANDOM$RANDOM" -addext "subjectAltName=IP:127.0.0.1" >/dev/null 2>&1 || echo "making the untrusted certificate failed"
     openssl s_server -accept 127.0.0.1:$soup_port -cert "$work\\untrusted.crt" -key "$work\\untrusted.key" -www -quiet </dev/null >"$work\\untrusted.out" 2>&1 &
     soup_server=$!
 fi
@@ -171,7 +171,7 @@ rsvg_convert() {
     (cd "$root" && go run ./scripts/build.go imports) >/dev/null || return 1
     "$root\\out\\test\\quasidock-imports.exe" "$sdk\\bin\\rsvg-convert.exe" || return 1
     # Piped: given a file as stdin, rsvg-convert reads only its first two
-    # bytes, run by zigsaw or not.
+    # bytes, run by quasidock or not.
     cat "$work\\t.svg" | timeout 60 bash "$QD_IMAGES_HELPER" run "$quasidock" --entrypoint=bin/rsvg-convert.exe gtk4-sdk | head -c 8 | od -A n -t x1 | tr -d ' \n' | grep -qx '89504e470d0a1a0a'
 }
 check "the SDK's rsvg-convert binds all its imports and converts an SVG to PNG" rsvg_convert
@@ -197,7 +197,7 @@ check "Pango adds a font file without warning, and pangocairo draws with it" fon
 check "with --sandbox=soft" font_file --env=G_DEBUG=fatal-warnings --sandbox=soft
 # (DirectWrite warns there about fonts installed for the user only.)
 check "with --sandbox=appcontainer, without Pango's warning" font_file --sandbox=appcontainer
-printf 'Hello, zigsaw \xd8\xa7\xd9\x84\xd8\xb9\xd8\xb1\xd8\xa8\xd9\x8a\xd8\xa9\n' >"$work\\text.txt"
+printf 'Hello, quasidock \xd8\xa7\xd9\x84\xd8\xb9\xd8\xb1\xd8\xa8\xd9\x8a\xd8\xa9\n' >"$work\\text.txt"
 pango_view() {
     rm -f "$work\\text.png"
     timeout 60 bash "$QD_IMAGES_HELPER" run "$quasidock" "$@" --entrypoint=pango-view gtk4 -q --font='Segoe UI 20' -o text.png text.txt &&
@@ -285,11 +285,11 @@ loose_msgfmt() {
 }
 check "the SDK's msgfmt compiles a translation" loose_msgfmt
 loose_windres() {
-    printf '%s\n' '1 VERSIONINFO' 'FILEVERSION 1,2,3,4' 'BEGIN' 'BLOCK "StringFileInfo"' 'BEGIN' 'BLOCK "040904b0"' 'BEGIN' 'VALUE "FileDescription", "zigsaw windres"' 'END' 'END' 'BLOCK "VarFileInfo"' 'BEGIN' 'VALUE "Translation", 0x409, 1200' 'END' 'END' >"$work\\loose\\version.rc"
+    printf '%s\n' '1 VERSIONINFO' 'FILEVERSION 1,2,3,4' 'BEGIN' 'BLOCK "StringFileInfo"' 'BEGIN' 'BLOCK "040904b0"' 'BEGIN' 'VALUE "FileDescription", "quasidock windres"' 'END' 'END' 'BLOCK "VarFileInfo"' 'BEGIN' 'VALUE "Translation", 0x409, 1200' 'END' 'END' >"$work\\loose\\version.rc"
     printf 'int main(void) { return 0; }\n' >"$work\\loose\\nothing.c"
     (cd "$work\\loose" && "$bin\\windres.exe" "-I$work\\loose" --target pe-x86-64 version.rc version.o && "$bin\\cc.exe" -s nothing.c version.o -o versioned.exe) || return 1
     # Its version strings are UTF-16 in the executable.
-    powershell -NoProfile -Command "[Text.Encoding]::Unicode.GetString([IO.File]::ReadAllBytes('$work\\loose\\versioned.exe')).Contains('zigsaw windres')" | tr -d '\r' | grep -qx 'True'
+    powershell -NoProfile -Command "[Text.Encoding]::Unicode.GetString([IO.File]::ReadAllBytes('$work\\loose\\versioned.exe')).Contains('quasidock windres')" | tr -d '\r' | grep -qx 'True'
 }
 check "the SDK's windres compiles a resource script that cc links" loose_windres
 check "a relative --entrypoint says how to name a program of yours" sh -c "bash '$QD_IMAGES_HELPER' run \"\$0\" --entrypoint=loose\\\\hello.exe gtk4 2>&1 | grep -qF 'give its absolute path'" "$quasidock"
@@ -297,7 +297,7 @@ check "a relative --entrypoint says how to name a program of yours" sh -c "bash 
 # A directory of documents that no run has been granted, unlike the work
 # directory, which runs with the cwd permission are.
 docs=$(cygpath -w "$(mktemp -d)")
-# stays_up <seconds> <zigsaw run arguments...>: the app is still running
+# stays_up <seconds> <quasidock run arguments...>: the app is still running
 # when the time is up, rather than having crashed or failed a check.
 stays_up() {
     local seconds=$1

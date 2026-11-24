@@ -1,4 +1,4 @@
-/* zigsaw's test extension: PHP's C API, as an extension that php-ext builds
+/* quasidock's test extension: PHP's C API, as an extension that php-ext builds
  * with zig uses it from PHP's official build, which MSVC builds. test.php
  * calls each function. */
 #include "php.h"

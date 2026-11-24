@@ -1,7 +1,7 @@
 // vim:ft=javascript
-// zigsaw's test extension: what php-ext's config.w32 stand-ins handle.
+// quasidock's test extension: what php-ext's config.w32 stand-ins handle.
 
-ARG_ENABLE("zprobe", "zigsaw's test extension", "no");
+ARG_ENABLE("zprobe", "quasidock's test extension", "no");
 ARG_WITH("zprobe-greeting", "the greeting zprobe_greeting() returns", "hello from config.w32");
 
 if (PHP_ZPROBE != "no") {
@@ -12,7 +12,7 @@ if (PHP_ZPROBE != "no") {
 	if (CHECK_LIB("version.lib", "zprobe")) {
 		AC_DEFINE("HAVE_ZPROBE_VERSION_LIB", 1);
 	}
-	if (CHECK_LIB("no_such_library_zigsaw.lib", "zprobe")) {
+	if (CHECK_LIB("no_such_library_quasidock.lib", "zprobe")) {
 		ERROR("found a library that doesn't exist");
 	}
 	// Libraries PHP's build links with, as extensions of its own ask for

@@ -2,7 +2,7 @@
 <!-- tests/osm2pgsql.sh's map: in Monaco, two tagged points, a street, a
      building and a park with a pond (a multipolygon with a hole). By hand;
      tests/osm2pgsql/topbf.py makes tiny.osm.pbf from it. -->
-<osm version="0.6" generator="zigsaw tests">
+<osm version="0.6" generator="quasidock tests">
   <node id="1" version="1" timestamp="2026-10-01T00:00:00Z" lat="43.7384000" lon="7.4246000">
     <tag k="amenity" v="cafe"/>
     <tag k="name" v="Café Zig"/>

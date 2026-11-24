@@ -140,7 +140,7 @@ check "GTK 3's runtime has GTK 3 and ATK only: no headers, libraries for linking
 check "and their typelibs" test -f "$runtime_dir\\lib\\girepository-1.0\\Gtk-3.0.typelib" -a -f "$runtime_dir\\lib\\girepository-1.0\\Gdk-3.0.typelib" -a -f "$runtime_dir\\lib\\girepository-1.0\\Atk-1.0.typelib"
 check "it has GTK 3's translations" test -f "$runtime_dir\\share\\locale\\de\\LC_MESSAGES\\gtk30.mo"
 
-# stays_up <seconds> <zigsaw run arguments...>: the app is still running
+# stays_up <seconds> <quasidock run arguments...>: the app is still running
 # when the time is up, rather than having crashed or failed a check; a
 # critical warning stops it.
 stays_up() {
@@ -216,7 +216,7 @@ printf '%s\n' 'import gi, cairo' 'gi.require_version("Gtk", "4.0")' 'gi.require_
     'print("libadwaita", Adw.get_major_version(), Adw.get_minor_version())' \
     'print("pycairo", cairo.version)' >"$work\\gi4.py"
 # python_says <script> <expected, lines joined by |> <run options...>:
-# what the script prints, without zigsaw's notes of what it granted and took
+# what the script prints, without quasidock's notes of what it granted and took
 # back, and GLib's warnings (in an AppContainer, Pango's that DirectWrite
 # can't open per-user fonts).
 python_says() {
@@ -260,7 +260,7 @@ meld_draws() {
 }
 meld_logs() {
     [ -n "${LOG_DIR:-}" ] || return 0
-    { echo "zigsaw run ${opts[*]} $MELD ${what[*]}"; cat "$work\\meld-run.txt"; } >"$LOG_DIR\\meld-$draws.txt"
+    { echo "quasidock run ${opts[*]} $MELD ${what[*]}"; cat "$work\\meld-run.txt"; } >"$LOG_DIR\\meld-$draws.txt"
     cp "$QUASIDOCK_HOME\\data\\$MELD\\share\\meld.log" "$LOG_DIR\\meld-$draws.log" 2>/dev/null
 }
 check "Meld compares two files and draws its window" meld_draws left.txt right.txt

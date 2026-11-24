@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Networking end to end (docs/networking.md), with tests/netprobe.zig as the
 # app, in a store of its own: a run with the network gets the proxy
-# variables zigsaw has, one without doesn't; eight first runs of an app in an
+# variables quasidock has, one without doesn't; eight first runs of an app in an
 # AppContainer start at once, and all of them make it. The app declares a
 # service, which a client on the host reaches under soft, low and
 # appcontainer, on the port the app's config says, on one --port or an
@@ -53,7 +53,7 @@ icacls "$probe_dir" /grant '*S-1-15-2-1:(OI)(CI)RX' >/dev/null || { echo "granti
 probe="$probe_dir\\quasidock-netprobe.exe"
 
 # The ports the service is on: the app's config's, and two others. Then
-# the port of a server on this machine, outside zigsaw, which the app uses,
+# the port of a server on this machine, outside quasidock, which the app uses,
 # and another.
 declared=$((47000 + RANDOM % 600))
 moved=$((declared + 700))
@@ -120,7 +120,7 @@ check "eight first runs in an AppContainer start at once" race
 answers() { "$probe" ping $1 >/dev/null 2>&1; }
 
 # serve <run options...>: a run of the app's command, which serves, in the
-# background; $server is its zigsaw.
+# background; $server is its quasidock.
 serve() {
     bash "$QD_IMAGES_HELPER" run "$quasidock" "$@" $APP >"$work\\serve.out" 2>&1 &
     server=$!
@@ -227,7 +227,7 @@ check "appcontainer: a port another program holds leaves the service unpublished
 
 # --- Reaching this machine ---------------------------------------------------
 
-# A server on this machine, outside zigsaw.
+# A server on this machine, outside quasidock.
 "$probe" serve $host_port >"$work\\host.out" 2>&1 &
 host_server=$!
 sleep 0.5
@@ -244,7 +244,7 @@ pings() {
     [ "$out" = "$expected" ] || { echo "got $out"; return 1; }
 }
 # waiting <run options...>: a run of the app that waits 3 s, in the
-# background; $waiter is its zigsaw.
+# background; $waiter is its quasidock.
 waiting() {
     bash "$QD_IMAGES_HELPER" run "$quasidock" "$@" --entrypoint=quasidock-netprobe.exe $APP wait 3000 >/dev/null 2>&1 &
     waiter=$!
@@ -286,7 +286,7 @@ switched_off() {
     ! exempt || { echo "exempt"; return 1; }
 }
 check "QUASIDOCK_LOOPBACK_EXEMPTION=0: not even with the network" switched_off
-# A zigsaw that's killed can't take the exemption back: `repair` does.
+# A quasidock that's killed can't take the exemption back: `repair` does.
 killed() {
     waiting --sandbox=appcontainer --share=network
     becomes exempt || { wait $waiter; echo "not exempt while it ran"; return 1; }
@@ -294,13 +294,13 @@ killed() {
     taskkill /F /PID "$(cat /proc/$waiter/winpid)" >/dev/null
     wait $waiter 2>/dev/null
     sleep 0.5
-    exempt || { echo "not exempt after zigsaw was killed"; return 1; }
+    exempt || { echo "not exempt after quasidock was killed"; return 1; }
     grep -qx loopback "$QUASIDOCK_HOME\\grants\\$APP.txt" || { echo "not recorded"; return 1; }
     z repair >/dev/null 2>&1
     ! exempt || { echo "still exempt after repair"; return 1; }
 }
-check "a killed run's exemption is taken back by \`zigsaw repair\`" killed
-# An exemption you made yourself, with CheckNetIsolation, isn't zigsaw's.
+check "a killed run's exemption is taken back by \`quasidock repair\`" killed
+# An exemption you made yourself, with CheckNetIsolation, isn't quasidock's.
 yours() {
     CheckNetIsolation.exe LoopbackExempt -a -n=quasidock.$APP >/dev/null || { echo "CheckNetIsolation -a failed"; return 1; }
     local ok=0
@@ -339,7 +339,7 @@ forwarded() {
     [ "$got" != $host_port ] && [ "$got" -ge 20000 ] && [ "$got" -le 48999 ] || { echo "got $got"; return 1; }
     reaches_upstream connects --sandbox=appcontainer
 }
-check "appcontainer, not exempt: it's a port of the relay's, from which zigsaw forwards it" forwarded
+check "appcontainer, not exempt: it's a port of the relay's, from which quasidock forwards it" forwarded
 check "  without the network, as the app has none, but not to the port itself" pings dropped --sandbox=appcontainer
 forwarded_switched_off() {
     (

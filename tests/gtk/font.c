@@ -21,7 +21,7 @@ int main(int argc, char **argv) {
     PangoFontDescription *font = pango_font_description_from_string(argv[2]);
     pango_font_description_set_absolute_size(font, 24 * PANGO_SCALE);
     pango_layout_set_font_description(layout, font);
-    pango_layout_set_text(layout, "Hello, zigsaw", -1);
+    pango_layout_set_text(layout, "Hello, quasidock", -1);
     pango_cairo_show_layout(cr, layout);
     PangoRectangle ink;
     pango_layout_get_pixel_extents(layout, &ink, NULL);

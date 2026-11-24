@@ -5,7 +5,7 @@ ApplicationWindow {
     width: 240
     height: 120
     visible: true
-    title: "zigsaw quick"
+    title: "quasidock quick"
     color: "#3a7bd5"
 
     Button {

@@ -11,7 +11,7 @@
 #   tests/chromium.sh [path\to\quasidock.exe]
 #
 # Like tests/guiapps.sh, each row states the intended result per sandbox: "ok",
-# "fails", or "gap" for "ok is intended, but zigsaw doesn't manage it yet"; a
+# "fails", or "gap" for "ok is intended, but quasidock doesn't manage it yet"; a
 # gap is reported and doesn't fail the suite, so only changes do.
 #
 # Never kill Chromium here: its next start then asks "Restore pages?", and each
@@ -97,7 +97,7 @@ row() {
     if [ -n "$mismatch" ]; then fail "$label: ${joined%, }" "$detail"; else pass "$label: ${joined%, }"; fi
 }
 
-# Where these apps would keep things outside zigsaw. Only what isn't there
+# Where these apps would keep things outside quasidock. Only what isn't there
 # before the suite counts, and only that is removed afterwards.
 real_dirs=("$LOCALAPPDATA\\Chromium" "$APPDATA\\VSCodium" "$USERPROFILE\\.vscode-oss" "$USERPROFILE\\AppData\\LocalLow\\Chromium")
 absent_before=()
@@ -120,21 +120,21 @@ reg query 'HKCU\Software\Classes\vscodium' >/dev/null 2>&1 && had_scheme_key=tru
 
 cd "$work" || exit 1
 
-page="$work\\zigsaw-page.html"
+page="$work\\quasidock-page.html"
 cat >"$page" <<'EOF'
-<!doctype html><title>zigsaw-page</title><canvas id=c></canvas><script>
+<!doctype html><title>quasidock-page</title><canvas id=c></canvas><script>
 let g=document.getElementById('c').getContext('webgl');
-document.title='zigsaw-page '+(g?'webgl-ok':'webgl-none');
+document.title='quasidock-page '+(g?'webgl-ok':'webgl-none');
 </script>
 EOF
-printf '<!doctype html><title>zigsaw-second</title>' >"$work\\zigsaw-second.html"
-cat >"$work\\zigsaw-download.html" <<'EOF'
-<!doctype html><title>zigsaw-download</title><a id=a download="zigsaw-downloaded.txt" href="data:text/plain,hello">x</a>
+printf '<!doctype html><title>quasidock-second</title>' >"$work\\quasidock-second.html"
+cat >"$work\\quasidock-download.html" <<'EOF'
+<!doctype html><title>quasidock-download</title><a id=a download="quasidock-downloaded.txt" href="data:text/plain,hello">x</a>
 <script>document.getElementById('a').click()</script>
 EOF
-note="$work\\zigsaw-note.txt"
-printf 'a note for zigsaw\r\n' >"$note"
-printf 'a second note\r\n' >"$work\\zigsaw-second.txt"
+note="$work\\quasidock-note.txt"
+printf 'a note for quasidock\r\n' >"$note"
+printf 'a second note\r\n' >"$work\\quasidock-second.txt"
 
 data() { echo "$QUASIDOCK_HOME\\data\\$1"; }
 
@@ -187,7 +187,7 @@ finish() {
         echo "the run didn't end after closing $title (winwait $status)"
         return 1
     fi
-    wait $runner || { echo "zigsaw run failed: $(tail -1 "$work\\run.log")"; return 1; }
+    wait $runner || { echo "quasidock run failed: $(tail -1 "$work\\run.log")"; return 1; }
 }
 
 # A window station is what's refused at low integrity and in an AppContainer:
@@ -214,11 +214,11 @@ opens() {
 row "Chromium opens a page, and draws WebGL" ok fails fails \
     opens $CHROMIUM chrome "$page" 'webgl-ok' 30 --
 row "VSCodium opens a file" ok fails fails \
-    opens $CODIUM VSCodium "$note" 'zigsaw-note.txt - ' 30 --
+    opens $CODIUM VSCodium "$note" 'quasidock-note.txt - ' 30 --
 # What docs/published-apps.md offers those who'd rather confine its extensions
 # and terminal. In an AppContainer, Node's realpath stops it first.
 row "VSCodium opens a file, told --no-sandbox" ok gap ok \
-    opens $CODIUM VSCodium "$note" 'zigsaw-note.txt - ' 30 --no-sandbox --
+    opens $CODIUM VSCodium "$note" 'quasidock-note.txt - ' 30 --no-sandbox --
 
 # confined <id> <command> <file> <title> <sandbox>: Windows says the app's
 # renderers are at untrusted integrity with restricted tokens, its GPU process
@@ -237,7 +237,7 @@ confined() {
     return $result
 }
 check "Chromium's renderers are confined under its image's sandbox" confined $CHROMIUM chrome "$page" 'webgl-ok' soft
-check "VSCodium's renderer is confined under its image's sandbox" confined $CODIUM VSCodium "$note" 'zigsaw-note.txt - ' soft
+check "VSCodium's renderer is confined under its image's sandbox" confined $CODIUM VSCodium "$note" 'quasidock-note.txt - ' soft
 
 # hands_over <id> <command> <first file> <first title> <second file> <second title>:
 # a second run gives its file to the running instance, and ends.
@@ -262,27 +262,27 @@ hands_over() {
     window "$second" 15 || return 1
     finish "$second"
 }
-check "Chromium's second run opens a tab in the first, and ends" hands_over $CHROMIUM chrome "$page" 'webgl-ok' "$work\\zigsaw-second.html" 'zigsaw-second'
-check "VSCodium's second run opens its file in the first, and ends" hands_over $CODIUM VSCodium "$note" 'zigsaw-note.txt - ' "$work\\zigsaw-second.txt" 'zigsaw-second.txt - '
+check "Chromium's second run opens a tab in the first, and ends" hands_over $CHROMIUM chrome "$page" 'webgl-ok' "$work\\quasidock-second.html" 'quasidock-second'
+check "VSCodium's second run opens its file in the first, and ends" hands_over $CODIUM VSCodium "$note" 'quasidock-note.txt - ' "$work\\quasidock-second.txt" 'quasidock-second.txt - '
 
 # plays: Chromium decodes H.264, whose decoder is in its build's ffmpeg. The
 # clip is a few frames made by ffmpeg, if this machine has it. The first frame
 # is what's waited for, and it's told not to hold back in a covered window, as
 # it may not be at the front.
-printf '<!doctype html><title>video-page</title><video id=v src="zigsaw-clip.mp4" muted autoplay></video><script>
+printf '<!doctype html><title>video-page</title><video id=v src="quasidock-clip.mp4" muted autoplay></video><script>
 let v=document.getElementById("v");
 v.onloadeddata=()=>{document.title="video-result decoded "+v.videoWidth+"x"+v.videoHeight};
 v.onerror=()=>{document.title="video-result error "+v.error.code};
-</script>\n' >"$work\\zigsaw-video.html"
+</script>\n' >"$work\\quasidock-video.html"
 plays() {
-    start $CHROMIUM chrome soft "$work\\zigsaw-video.html" --disable-backgrounding-occluded-windows
+    start $CHROMIUM chrome soft "$work\\quasidock-video.html" --disable-backgrounding-occluded-windows
     window 'video-result' 30 || return 1
     local title
     title=$("$winwait" "$winpid" 'video-result' 1)
     finish 'video-result' || return 1
     grep -q 'video-result decoded 320x240' <<<"$title" || { echo "$title"; return 1; }
 }
-if ffmpeg -hide_banner -loglevel error -y -f lavfi -i testsrc=duration=2:size=320x240:rate=25 -c:v libx264 -pix_fmt yuv420p "$work\\zigsaw-clip.mp4" 2>/dev/null; then
+if ffmpeg -hide_banner -loglevel error -y -f lavfi -i testsrc=duration=2:size=320x240:rate=25 -c:v libx264 -pix_fmt yuv420p "$work\\quasidock-clip.mp4" 2>/dev/null; then
     check "Chromium decodes an H.264 clip" plays
 else
     echo "skip  Chromium decodes an H.264 clip: no ffmpeg with x264 here"
@@ -313,8 +313,8 @@ save_as() {
     local result=0 downloads
     downloads=$(cygpath -u "$folders\\Downloads")
     rm -f "$downloads"/*.tmp
-    start $CHROMIUM chrome soft "$work\\zigsaw-download.html"
-    window 'zigsaw-download' 30 || return 1
+    start $CHROMIUM chrome soft "$work\\quasidock-download.html"
+    window 'quasidock-download' 30 || return 1
     window 'Save As' 15 || return 1
     sleep 2
     if "$winwait" "$winpid" 'Location is not available' 1 >/dev/null 2>&1; then
@@ -416,7 +416,7 @@ no_update_check() {
     log=$(ls -td "$(cygpath -u "$(data $CODIUM)")"/home/AppData/Roaming/VSCodium/logs/*/main.log 2>/dev/null | head -1)
     grep -q 'no update URL' "$log" || { echo "its log doesn't say updates are off: $log"; return 1; }
 }
-check "VSCodium doesn't look for updates: zigsaw's its way of getting them" no_update_check
+check "VSCodium doesn't look for updates: quasidock's its way of getting them" no_update_check
 
 says_why() {
     local out sb

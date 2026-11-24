@@ -1,5 +1,5 @@
 <?php
-// zigsaw's test extension, built with zig, in PHP's official build: prints
+// quasidock's test extension, built with zig, in PHP's official build: prints
 // one line per check, "ok" or "FAIL", and the fatal-error check last, which
 // ends the script through a bailout (exit code 255).
 function check($name, $got, $want) {

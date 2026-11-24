@@ -13,7 +13,7 @@
 # and the JRE, MinGit's ls-remote, CMake's file(DOWNLOAD), zig fetch, psql
 # with sslrootcert=system, PHP's streams and curl, Composer, and Perl's
 # HTTP::Tiny. The last four, and psql, read the file of Windows' roots
-# zigsaw writes (${roots}), which each sandbox's runs must be able to read.
+# quasidock writes (${roots}), which each sandbox's runs must be able to read.
 #
 #   CERTS_HOME=path\to\store bash tests/certs.sh [path\to\quasidock.exe]
 #
@@ -228,7 +228,7 @@ acprobe_run "$quasidock" "$root" "$work"
 # --- The CA, and the servers -------------------------------------------------
 
 openssl req -x509 -newkey rsa:2048 -nodes -keyout ca.key -out ca.crt -days 1 \
-    -subj "/CN=zigsaw tests certs.sh $RANDOM$RANDOM" \
+    -subj "/CN=quasidock tests certs.sh $RANDOM$RANDOM" \
     -addext "basicConstraints=critical,CA:TRUE,pathlen:0" -addext "keyUsage=critical,keyCertSign,cRLSign" \
     -addext "nameConstraints=critical,permitted;DNS:localhost,permitted;IP:127.0.0.0/255.0.0.0,permitted;IP:::1/ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff" \
     >/dev/null 2>&1 || { echo "making the test CA failed"; exit 1; }
