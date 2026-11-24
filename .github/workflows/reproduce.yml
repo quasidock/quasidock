@@ -49,7 +49,7 @@ jobs:
         with:
           go-version: '1.26'
       - name: Local images, containers, mounts, and sandbox integration
-        run: go test -count=1 ./internal/store ./internal/cli ./internal/environment ./internal/mounts ./internal/grants ./internal/hkcu ./internal/run ./internal/process ./internal/win32 ./internal/publishing ./cmd/quasidock-publish
+        run: go test -count=1 ./internal/store ./internal/cli ./internal/commit ./internal/oci ./internal/environment ./internal/mounts ./internal/grants ./internal/hkcu ./internal/run ./internal/process ./internal/win32 ./internal/publishing ./cmd/quasidock-publish
 
       - name: Candidate publishing contract, offline
         shell: bash

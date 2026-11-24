@@ -31,15 +31,18 @@ type inspectedImage struct {
 	Architecture string
 	Size         int64
 	Config       struct {
+		Labels     map[string]string
+		UnsetEnv   []string `json:",omitempty"`
 		WorkingDir string
 		Entrypoint []string
 		Cmd        []string
 		Env        []string
 	}
-	Quasidock oci.AppConfig
-	Source    string
-	Default   bool
-	Lazy      *string `json:"Lazy,omitempty"`
+	Quasidock   oci.AppConfig
+	Annotations map[string]string `json:",omitempty"`
+	Source      string
+	Default     bool
+	Lazy        *string `json:"Lazy,omitempty"`
 }
 
 func inspectImage(ctx *context.Context, idx *store.ImageIndex, ref store.Ref) (inspectedImage, error) {
@@ -49,6 +52,9 @@ func inspectImage(ctx *context.Context, idx *store.ImageIndex, ref store.Ref) (i
 		return out, err
 	}
 	out.Quasidock = img.Config
+	out.Annotations = img.Manifest.Annotations
+	out.Config.Labels = img.Config.Labels
+	out.Config.UnsetEnv = img.Config.UnsetEnv
 	out.Source = ref.Source
 	out.Default = idx.Defaults[strings.ToLower(ref.ID)] == ref.Manifest
 	out.Config.Entrypoint = append([]string(nil), img.Config.Entrypoint...)

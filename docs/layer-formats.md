@@ -8,6 +8,22 @@ formats work across [`internal/format`](../internal/format),
 and [`internal/lazy`](../internal/lazy), and records the decisions behind the
 design.
 
+## Committed private-data layers
+
+Committed images use `application/vnd.quasidock.app.config.v4+json`. Its
+`dataLayer` digest identifies a gzip tar immediately before the app layer:
+base layers, data layer, app layer. The app layer remains last and keeps its
+original digest. Recommitting replaces the full data layer instead of stacking
+filesystem deltas or whiteouts.
+
+Data archives contain sorted files and directories with canonical tar/gzip
+metadata. Registry hive internals and commit creation metadata can still vary.
+The data layer is downloaded eagerly, retained by normal manifest-based garbage
+collection, and copied into fresh writable container files at creation. It is
+excluded from runtime directories, executable lookup, and app file inspection.
+The immutable seed also supplies the baseline for `diff`. Older binaries reject
+the v4 media type, preventing silent loss of seeded state.
+
 ## What eStargz is
 
 An eStargz blob (from containerd's

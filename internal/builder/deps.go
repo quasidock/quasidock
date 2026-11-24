@@ -86,6 +86,9 @@ func ResolveDependency(ctx *context.Context, recipePath string, kind DependencyK
 	if target.AppID != nil && !strings.EqualFold(*target.AppID, config.ID) {
 		return nil, fmt.Errorf("%s: %s %s: %s is %s, not %s", recipePath, kind, alias, digest, config.ID, *target.AppID)
 	}
+	if config.DataLayer != "" {
+		return nil, fmt.Errorf("%s: %s %s: committed images with private data are not supported as recipe dependencies", recipePath, kind, alias)
+	}
 	if kind == DependencyRuntime && len(config.From) > 0 {
 		return nil, fmt.Errorf("%s: %s %s is %s, which has base images of its own; quasidock doesn't support that", recipePath, kind, alias, config.ID)
 	}

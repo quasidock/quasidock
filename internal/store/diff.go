@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -10,14 +11,23 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/quasidock/quasidock/internal/mounts"
 	"github.com/quasidock/quasidock/internal/win32"
 )
 
-// ContainerDiff lists additions to a container's initially empty private data.
+type DiffEntry struct {
+	Kind byte
+	Path string
+}
+
+// ContainerDiff compares private data with the pinned image's initial seed.
 // Paths are slash-prefixed and relative to data; mounted storage is excluded.
 // A live container may keep writing while its data is enumerated.
-func (s *Store) ContainerDiff(target string) ([]string, error) {
+func (s *Store) ContainerDiff(target string) ([]DiffEntry, error) {
+	lock, err := s.Lock(false)
+	if err != nil {
+		return nil, err
+	}
+	defer lock.Release()
 	c, err := s.ResolveContainer(target)
 	if err != nil {
 		return nil, err
@@ -32,14 +42,39 @@ func (s *Store) ContainerDiff(target string) ([]string, error) {
 		return nil, err
 	}
 
-	excluded := make(map[string]bool, len(c.HostConfig.Mounts))
-	for _, m := range c.HostConfig.Mounts {
-		target, err := mounts.NormalizeTarget(m.Target)
+	excluded, err := DataExclusions(c)
+	if err != nil {
+		return nil, err
+	}
+	seed, err := s.DataSeed(c.Image)
+	if err != nil {
+		return nil, err
+	}
+	if seed != "" {
+		base, err := dataFingerprints(context.Background(), seed, excluded)
 		if err != nil {
 			return nil, err
 		}
-		rel := strings.TrimPrefix(strings.TrimPrefix(target, "${data}"), "/")
-		excluded[strings.ToLower(rel)] = true
+		current, err := dataFingerprints(context.Background(), c.DataDir, excluded)
+		if err != nil {
+			return nil, err
+		}
+		changes := []DiffEntry{}
+		for key, entry := range current {
+			previous, exists := base[key]
+			if !exists {
+				changes = append(changes, DiffEntry{'A', entry.path})
+			} else if previous.kind != entry.kind || previous.hash != entry.hash {
+				changes = append(changes, DiffEntry{'C', entry.path})
+			}
+		}
+		for key, entry := range base {
+			if _, exists := current[key]; !exists {
+				changes = append(changes, DiffEntry{'D', entry.path})
+			}
+		}
+		sort.Slice(changes, func(i, j int) bool { return changes[i].Path < changes[j].Path })
+		return changes, nil
 	}
 	paths := []string{}
 	if !excluded[""] {
@@ -48,7 +83,11 @@ func (s *Store) ContainerDiff(target string) ([]string, error) {
 		}
 	}
 	sort.Strings(paths)
-	return paths, nil
+	changes := make([]DiffEntry, len(paths))
+	for i, path := range paths {
+		changes[i] = DiffEntry{'A', path}
+	}
+	return changes, nil
 }
 
 func diffReparse(info os.FileInfo) bool {

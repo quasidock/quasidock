@@ -212,6 +212,9 @@ func (r *execRuntime) control(ctx *context.Context, rec *store.ContainerRecord, 
 	if r.closing || win32.WaitForSingleObject(r.primary, 0) != win32.WAIT_TIMEOUT {
 		return errors.New("container is not running")
 	}
+	if r.capturing {
+		return errors.New("container commit capture is in progress")
+	}
 	if request.Action != "" {
 		if request.Signal != "" {
 			return errors.New("control action cannot include a signal")

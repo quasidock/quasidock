@@ -30,7 +30,7 @@ func diffFixture(t *testing.T, specs ...mounts.Spec) (*Store, *ContainerRecord) 
 
 func TestContainerDiffBaselineAndResolution(t *testing.T) {
 	st, c := diffFixture(t)
-	if paths, err := st.ContainerDiff(c.ID); err != nil || len(paths) != 0 {
+	if paths, err := diffPaths(st, c.ID); err != nil || len(paths) != 0 {
 		t.Fatalf("empty data: %v %v", paths, err)
 	}
 	for _, dir := range []string{"home/nested", "empty", "Mixed Case"} {
@@ -46,7 +46,7 @@ func TestContainerDiffBaselineAndResolution(t *testing.T) {
 	}
 	want := []string{"/Mixed Case", "/Mixed Case/日本語.txt", "/empty", "/home", "/home/nested", "/home/nested/example.txt"}
 	for _, target := range []string{c.ID, c.ShortID(), c.BareName(), "/DIFF-EXAMPLE"} {
-		if paths, err := st.ContainerDiff(target); err != nil || !reflect.DeepEqual(paths, want) {
+		if paths, err := diffPaths(st, target); err != nil || !reflect.DeepEqual(paths, want) {
 			t.Fatalf("diff %s: %v %v, want %v", target, paths, err, want)
 		}
 	}
@@ -59,7 +59,7 @@ func TestContainerDiffBaselineAndResolution(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	paths, diffErr := st.ContainerDiff(c.ID)
+	paths, diffErr := diffPaths(st, c.ID)
 	win32.CloseHandle(h)
 	if diffErr != nil || !reflect.DeepEqual(paths, want) {
 		t.Fatalf("edited and locked file: %v %v", paths, diffErr)
@@ -67,10 +67,10 @@ func TestContainerDiffBaselineAndResolution(t *testing.T) {
 	if err := os.Remove(file); err != nil {
 		t.Fatal(err)
 	}
-	if paths, err := st.ContainerDiff(c.ID); err != nil || !reflect.DeepEqual(paths, want[:len(want)-1]) {
+	if paths, err := diffPaths(st, c.ID); err != nil || !reflect.DeepEqual(paths, want[:len(want)-1]) {
 		t.Fatalf("deleted addition: %v %v", paths, err)
 	}
-	if _, err := st.ContainerDiff("missing"); !errors.Is(err, ErrContainerNotFound) {
+	if _, err := diffPaths(st, "missing"); !errors.Is(err, ErrContainerNotFound) {
 		t.Fatalf("unknown container: %v", err)
 	}
 	// Create a second stored record with a deliberately shared ID prefix.
@@ -86,7 +86,7 @@ func TestContainerDiffBaselineAndResolution(t *testing.T) {
 	if err := st.writeContainerStateNoLock(&other); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.ContainerDiff(c.ShortID()); err == nil || !strings.Contains(err.Error(), "multiple containers") {
+	if _, err := diffPaths(st, c.ShortID()); err == nil || !strings.Contains(err.Error(), "multiple containers") {
 		t.Fatalf("ambiguous prefix: %v", err)
 	}
 }
@@ -124,7 +124,7 @@ func TestContainerDiffMounts(t *testing.T) {
 					if err := os.MkdirAll(m.Destination, 0o755); err != nil {
 						t.Fatal(err)
 					}
-					if paths, err := st.ContainerDiff(c.ID); err != nil || !reflect.DeepEqual(paths, want) {
+					if paths, err := diffPaths(st, c.ID); err != nil || !reflect.DeepEqual(paths, want) {
 						t.Fatalf("attached=%t: %v %v, want %v", attached, paths, err, want)
 					}
 				}
@@ -146,7 +146,7 @@ func TestContainerDiffReparseAndMissingRoot(t *testing.T) {
 	if err := mounts.Attach(c.DataDir, link); err != nil {
 		t.Fatal(err)
 	}
-	if paths, err := st.ContainerDiff(c.ID); err != nil || !reflect.DeepEqual(paths, []string{"/link"}) {
+	if paths, err := diffPaths(st, c.ID); err != nil || !reflect.DeepEqual(paths, []string{"/link"}) {
 		t.Fatalf("junction target enumerated: %v %v", paths, err)
 	}
 	if err := mounts.Detach(c.DataDir, link); err != nil {
@@ -156,19 +156,19 @@ func TestContainerDiffReparseAndMissingRoot(t *testing.T) {
 	if err := mounts.Attach(c.DataDir, link); err != nil {
 		t.Fatal(err)
 	}
-	if paths, err := st.ContainerDiff(c.ID); err == nil || !strings.Contains(err.Error(), "reparse point") || paths != nil {
+	if paths, err := diffPaths(st, c.ID); err == nil || !strings.Contains(err.Error(), "reparse point") || paths != nil {
 		t.Fatalf("unexpected root junction accepted: %v %v", paths, err)
 	}
 	if err := mounts.Detach(c.DataDir, link); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.ContainerDiff(c.ID); !errors.Is(err, os.ErrNotExist) {
+	if _, err := diffPaths(st, c.ID); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("missing root: %v", err)
 	}
 	if err := os.WriteFile(c.DataDir, nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.ContainerDiff(c.ID); err == nil || !strings.Contains(err.Error(), "not a directory") {
+	if _, err := diffPaths(st, c.ID); err == nil || !strings.Contains(err.Error(), "not a directory") {
 		t.Fatalf("regular file data root accepted: %v", err)
 	}
 }
@@ -196,7 +196,7 @@ func TestContainerDiffStates(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if paths, err := st.ContainerDiff(c.ID); err != nil || len(paths) != 0 {
+			if paths, err := diffPaths(st, c.ID); err != nil || len(paths) != 0 {
 				t.Fatalf("%s: %v %v", status, paths, err)
 			}
 			after, err := os.ReadFile(st.ContainerStatePath(c.ID))
@@ -229,7 +229,7 @@ func TestContainerDiffConcurrentWrites(t *testing.T) {
 	}()
 	defer func() { close(done); wg.Wait() }()
 	for i := 0; i < 30; i++ {
-		if _, err := st.ContainerDiff(c.ID); err != nil {
+		if _, err := diffPaths(st, c.ID); err != nil {
 			t.Fatalf("disappearing descendant failed diff: %v", err)
 		}
 	}
@@ -243,7 +243,7 @@ func TestContainerDiffOperationLock(t *testing.T) {
 	}
 	defer op.Release()
 	done := make(chan error, 1)
-	go func() { _, err := st.ContainerDiff(c.ID); done <- err }()
+	go func() { _, err := diffPaths(st, c.ID); done <- err }()
 	select {
 	case err := <-done:
 		t.Fatalf("diff bypassed operation lock: %v", err)
@@ -262,4 +262,21 @@ func TestContainerDiffOperationLock(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("diff did not release operation lock")
 	}
+}
+
+// Preserve the addition-only contract of ordinary-image fixtures while the API
+// now returns typed changes for seeded images.
+func diffPaths(st *Store, target string) ([]string, error) {
+	changes, err := st.ContainerDiff(target)
+	if err != nil {
+		return nil, err
+	}
+	paths := make([]string, len(changes))
+	for i, change := range changes {
+		if change.Kind != 'A' {
+			return nil, fmt.Errorf("unexpected change kind %c", change.Kind)
+		}
+		paths[i] = change.Path
+	}
+	return paths, nil
 }

@@ -107,5 +107,5 @@ func createContainer(ctx *context.Context, opts Options, selected *store.Ref, cf
 		rec.Config.Entrypoint = []string{*opts.Entrypoint}
 	}
 	snapshotInheritedEnv(ctx.Env, &rec.RunSpec)
-	return ctx.Store.CreateContainer(opts.Name, rec)
+	return ctx.Store.CreateContainer(opts.Name, rec, ctx.Store.SeedContainerData)
 }

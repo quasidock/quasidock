@@ -17,6 +17,7 @@ import (
 	"github.com/quasidock/quasidock/internal/environment"
 	"github.com/quasidock/quasidock/internal/oci"
 	"github.com/quasidock/quasidock/internal/process"
+	"github.com/quasidock/quasidock/internal/store"
 	"github.com/quasidock/quasidock/internal/win32"
 )
 
@@ -34,6 +35,10 @@ const (
 	execError
 	execCancel
 	execInputAck
+	commitAcquire
+	commitAcquired
+	commitRelease
+	commitReleased
 )
 
 type ExecOptions struct {
@@ -226,6 +231,9 @@ func Exec(ctx *context.Context, opts ExecOptions) (uint32, error) {
 // execRuntime borrows launchContainer's resources. Close joins all workers before
 // their tokens, mounts, registry, relays, and write watcher can be released.
 type execRuntime struct {
+	commitContext       *context.Context
+	commitRecord        *store.ContainerRecord
+	capturing           bool
 	mu                  sync.Mutex
 	wg                  sync.WaitGroup
 	listener            *win32.PipeListener
@@ -425,6 +433,10 @@ func (r *execRuntime) serve(c *execStream) {
 	_ = c.SetDeadline(time.Now().Add(execStartupTimeout))
 	kind, data, err := c.receive()
 	if err != nil {
+		return
+	}
+	if kind == commitAcquire {
+		r.serveCapture(c, data)
 		return
 	}
 	var req execRequest

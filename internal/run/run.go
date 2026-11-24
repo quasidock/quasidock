@@ -559,7 +559,7 @@ func launchContainer(
 		cwd = hostCwd
 	}
 	if cfg.Workdir != "" {
-		cwd = filepath.Join(img.DeployDir, filepath.FromSlash(cfg.Workdir))
+		cwd = imageWorkdir(oci.Placeholders{App: img.DeployDir, Data: dataDir, Cache: filepath.Join(dataDir, "cache")}, cfg.Workdir)
 		info, err := os.Stat(cwd)
 		if err != nil {
 			return 1, false, fmt.Errorf("image workdir: %w", err)
@@ -667,6 +667,7 @@ func launchContainer(
 
 	sharedPathDirs := sharedPath(ctx, cfg, settings, sandbox)
 	envVars, err := environment.Build(containerHostEnv(ctx.Env, created.RunSpec), environment.Spec{
+		Unset:      cfg.UnsetEnv,
 		ID:         cfg.ID,
 		Profile:    profile,
 		Path:       appPath,
@@ -1022,6 +1023,7 @@ func launchContainer(
 		primary: hProcess, job: job, token: token, security: security,
 		env: envVars, cwd: cwd, systemRoot: systemRoot, placeholders: placeholders,
 	}
+	live.commitContext, live.commitRecord = ctx, created
 	if err := live.start(created.ID, created.State.RunID); err != nil {
 		process.EndJob(job)
 		startPumps()
@@ -1043,6 +1045,7 @@ func launchContainer(
 		c.Args = append([]string(nil), allArgs...)
 		c.Config.WorkingDir = cwd
 		c.State = store.ContainerState{
+			CommitProtocol:  commitProtocol,
 			ControlProtocol: controlProtocol,
 			ExecProtocol:    execProtocol,
 			RunID:           created.State.RunID,
@@ -1742,6 +1745,25 @@ func commandForRun(p oci.Placeholders, cfg oci.AppConfig, opts Options, path []s
 
 func resolveCommand(placeholders oci.Placeholders, config oci.AppConfig, requested *string, explicitEntrypoint bool, appPath []string, systemRoot string) (Command, error) {
 	if requested == nil {
+		if config.FormatVersion == 4 {
+			command := config.Entrypoint
+			args := config.Cmd
+			if len(command) == 0 {
+				command, args = config.Cmd, nil
+			}
+			if len(command) == 0 {
+				return Command{}, errors.New("image has no command")
+			}
+			name := placeholders.Expand(command[0])
+			cwd := imageWorkdir(placeholders, config.Workdir)
+			search := append([]string{placeholders.App}, appPath...)
+			exe, ok := findCommand(cwd, name, search, systemRoot)
+			if !ok {
+				return Command{}, fmt.Errorf("image command %q is not an executable in the app, data, PATH or System32", command[0])
+			}
+			arguments := append(expandAll(placeholders, command[1:]), expandAll(placeholders, args)...)
+			return newCommand(exe, arguments), nil
+		}
 		if len(config.Entrypoint) == 0 {
 			return Command{}, errors.New("image has no entrypoint")
 		}
@@ -1751,7 +1773,16 @@ func resolveCommand(placeholders oci.Placeholders, config oci.AppConfig, request
 		return newCommand(cmdPath, args), nil
 	}
 	name := *requested
+	if config.FormatVersion == 4 && strings.EqualFold(name, config.ID) && len(config.Entrypoint) == 0 && len(config.Cmd) > 0 {
+		config.Entrypoint = []string{config.Cmd[0]}
+		config.Cmd = nil
+		return resolveCommand(placeholders, config, nil, false, appPath, systemRoot)
+	}
 	if len(config.Entrypoint) > 0 && (strings.EqualFold(name, config.ID) || (!explicitEntrypoint && len(config.Entrypoint) > 1 && strings.EqualFold(name, oci.CommandStem(config.Entrypoint[0])))) {
+		if config.FormatVersion == 4 {
+			config.Cmd = nil
+			return resolveCommand(placeholders, config, nil, false, appPath, systemRoot)
+		}
 		cmdPath := placeholders.CommandPath(config.Entrypoint[0])
 		args := expandAll(placeholders, config.Entrypoint[1:])
 		return newCommand(cmdPath, args), nil
@@ -1763,7 +1794,7 @@ func resolveCommand(placeholders oci.Placeholders, config oci.AppConfig, request
 	var ok bool
 	if config.Workdir != "" {
 		searchPath := append([]string{placeholders.App}, appPath...)
-		resolved, ok = findCommand(filepath.Join(placeholders.App, filepath.FromSlash(config.Workdir)), name, searchPath, systemRoot)
+		resolved, ok = findCommand(imageWorkdir(placeholders, config.Workdir), name, searchPath, systemRoot)
 	}
 	if !ok {
 		resolved, ok = findCommand(placeholders.App, name, appPath, systemRoot)
@@ -1775,6 +1806,13 @@ func resolveCommand(placeholders oci.Placeholders, config oci.AppConfig, request
 		return Command{}, fmt.Errorf("command %q is not an executable or batch file in the app or in System32", name)
 	}
 	return newCommand(resolved, nil), nil
+}
+
+func imageWorkdir(p oci.Placeholders, workdir string) string {
+	if oci.IsPlaceholderPath(workdir) {
+		return p.Expand(workdir)
+	}
+	return filepath.Join(p.App, filepath.FromSlash(workdir))
 }
 
 func expandAll(p oci.Placeholders, templates []string) []string {

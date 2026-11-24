@@ -47,6 +47,7 @@ type Var struct {
 }
 
 type Spec struct {
+	Unset      []string
 	ID         string
 	Profile    Profile
 	Path       []string
@@ -110,6 +111,15 @@ func Build(host map[string]string, spec Spec) ([]Var, error) {
 		Set(&env, kv.Name, kv.Value)
 	}
 
+	for _, name := range spec.Unset {
+		kept := env[:0]
+		for _, kv := range env {
+			if !strings.EqualFold(kv.Name, name) {
+				kept = append(kept, kv)
+			}
+		}
+		env = kept
+	}
 	for _, extra := range spec.Extra {
 		eq := strings.IndexByte(extra, '=')
 		if eq == -1 {

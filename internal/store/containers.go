@@ -24,6 +24,7 @@ var (
 )
 
 type ContainerState struct {
+	CommitProtocol  int    `json:"CommitProtocol,omitempty"`
 	ControlProtocol int    `json:"ControlProtocol,omitempty"`
 	AttachProtocol  int    `json:"AttachProtocol,omitempty"`
 	ExecProtocol    int    `json:"ExecProtocol,omitempty"`
@@ -302,7 +303,7 @@ func (s *Store) listContainersNoLock(all bool) ([]ContainerRecord, error) {
 	return out, nil
 }
 
-func (s *Store) CreateContainer(explicitName string, rec ContainerRecord) (*ContainerRecord, error) {
+func (s *Store) CreateContainer(explicitName string, rec ContainerRecord, initialize ...func(*ContainerRecord) error) (*ContainerRecord, error) {
 	lk, err := s.containersLock(true)
 	if err != nil {
 		return nil, err
@@ -379,6 +380,12 @@ func (s *Store) CreateContainer(explicitName string, rec ContainerRecord) (*Cont
 	if err := s.resolveContainerMountsNoLock(&rec); err != nil {
 		_ = mounts.RemoveTree(s.ContainerDir(id))
 		return nil, err
+	}
+	for _, init := range initialize {
+		if err := init(&rec); err != nil {
+			_ = mounts.RemoveTree(s.ContainerDir(id))
+			return nil, fmt.Errorf("initializing container data: %w", err)
+		}
 	}
 	if rec.Args == nil {
 		rec.Args = []string{}

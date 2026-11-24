@@ -1307,6 +1307,9 @@ func Push(ctx *context.Context, imageText string, opts PushOptions) error {
 	if err != nil || image == nil {
 		return fmt.Errorf("reading image for %s: %w", id, err)
 	}
+	if opts.Sources && image.Config.DataLayer != "" {
+		return errors.New("push --sources is unsupported for committed images: private state has no reproducible recipe")
+	}
 
 	for _, l := range image.Manifest.Layers {
 		hex := oci.DigestHex(l.Digest)

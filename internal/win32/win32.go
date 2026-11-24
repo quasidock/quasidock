@@ -592,6 +592,7 @@ var (
 	procRegCreateKeyExW           = modAdvapi32.NewProc("RegCreateKeyExW")
 	procRegOpenKeyExW             = modAdvapi32.NewProc("RegOpenKeyExW")
 	procRegCloseKey               = modAdvapi32.NewProc("RegCloseKey")
+	procRegFlushKey               = modAdvapi32.NewProc("RegFlushKey")
 	procRegSetValueExW            = modAdvapi32.NewProc("RegSetValueExW")
 	procRegQueryValueExW          = modAdvapi32.NewProc("RegQueryValueExW")
 	procRegEnumKeyExW             = modAdvapi32.NewProc("RegEnumKeyExW")
@@ -1321,6 +1322,11 @@ func RegOpenKeyEx(key HKEY, subKey string, access DWORD) (HKEY, int32) {
 
 func RegCloseKey(key HKEY) int32 {
 	r, _, _ := procRegCloseKey.Call(key)
+	return int32(r)
+}
+
+func RegFlushKey(key HKEY) int32 {
+	r, _, _ := procRegFlushKey.Call(uintptr(key))
 	return int32(r)
 }
 

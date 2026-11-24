@@ -22,7 +22,7 @@ type LayerInfo struct {
 }
 
 func getLayers(app remote.Info) []LayerInfo {
-	layers := app.Manifest.Layers
+	layers := oci.AppLayers(app.Manifest, app.Config)
 	result := make([]LayerInfo, len(layers))
 	from := make([]oci.Runtime, 0, len(app.Config.From))
 	for _, r := range app.Config.From {

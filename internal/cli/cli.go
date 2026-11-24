@@ -25,6 +25,7 @@ import (
 	"github.com/quasidock/quasidock/internal/services"
 	"github.com/quasidock/quasidock/internal/store"
 	"github.com/quasidock/quasidock/internal/trust"
+	"github.com/quasidock/quasidock/internal/version"
 )
 
 const usage = `usage: quasidock [--verbose] <command> [options]
@@ -37,6 +38,8 @@ Docker-style container commands:
   container inspect | inspect [-f TEMPLATE] NAME|ID [NAME|ID...]
                                        inspect containers or images (JSON by default)
   container diff | diff CONTAINER      list additions to private data; exclude mounts
+  container commit | commit [options] CONTAINER [REPOSITORY[:TAG]]
+                                       capture private data and configuration as an image
   container logs | logs [-f|--follow] [-n|--tail LINES] CONTAINER
                                        fetch the logs of a container
   container exec | exec [options] CONTAINER COMMAND [ARG...]
@@ -134,7 +137,9 @@ select local manifests. Explicit names and tags select exactly that reference.
 Image IDs are manifest digests. images -q prints full IDs; inspect is local-only.
 Each run or create allocates isolated data under containers/<id>/data.
 create saves configuration without launching; start defaults to background.
-diff lists A /PATH relative to initially empty private data; mounts are excluded.
+diff lists A/C/D /PATH relative to image data; mounts are excluded.
+commit supports --pause=false, -a/--author, -m/--message and -c/--change.
+--change supports CMD/ENTRYPOINT JSON arrays, ENV, WORKDIR and LABEL.
 attach and start -a/-i use pipes; Ctrl+C forwards TERM, --sig-proxy=false detaches.
 Interactive -t console sessions detach with Ctrl+P, Ctrl+Q (override --detach-keys).
 Use an explicit command after IMAGE to replace the image's entrypoint and default cmd.
@@ -719,7 +724,7 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 		return 0, nil
 	}
 	if cmd == "version" || isFlag(cmd, "version") || cmd == "-V" {
-		fmt.Printf("quasidock %s\n", "0.10.0")
+		fmt.Printf("quasidock %s\n", version.Version)
 		return 0, nil
 	}
 	if replacement := map[string]string{"list": "images", "info": "image info", "ls": "image files", "cat": "image cat", "-v": "--verbose"}[cmd]; replacement != "" {
@@ -767,7 +772,7 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 		return 0, nil
 	}
 	switch cmd {
-	case "convert", "build", "volume", "container", "create", "ps", "diff", "exec", "attach", "start", "restart", "pause", "unpause", "kill", "stop", "rm", "logs", "image", "images", "inspect", "tag", "pull", "push", "rmi", "run", "search", "trust", "signature", "prune", "repair", "grants":
+	case "convert", "build", "volume", "container", "create", "commit", "ps", "diff", "exec", "attach", "start", "restart", "pause", "unpause", "kill", "stop", "rm", "logs", "image", "images", "inspect", "tag", "pull", "push", "rmi", "run", "search", "trust", "signature", "prune", "repair", "grants":
 	default:
 		return usageError()
 	}
@@ -790,7 +795,7 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 		return execCommand(ctx, rest)
 	case "ps":
 		return containerCommand(ctx, append([]string{"ls"}, rest...))
-	case "create", "diff", "attach", "start", "restart", "pause", "unpause", "kill", "stop", "rm", "logs":
+	case "create", "commit", "diff", "attach", "start", "restart", "pause", "unpause", "kill", "stop", "rm", "logs":
 		return containerCommand(ctx, append([]string{cmd}, rest...))
 	case "inspect":
 		return inspectAny(ctx, rest)

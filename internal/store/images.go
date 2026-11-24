@@ -232,7 +232,7 @@ func (s *Store) RegisterImage(ref Ref, name string, makeDefault bool) error {
 	if !oci.IsValidID(ref.ID) || oci.DigestHex(ref.Manifest) == "" {
 		return errors.New("invalid image record")
 	}
-	if _, err := registry.ParseReference(name); err != nil {
+	if _, err := registry.ParseReference(name); name != "" && err != nil {
 		return err
 	}
 	return s.changeImages(func(idx *ImageIndex) error {
@@ -240,8 +240,10 @@ func (s *Store) RegisterImage(ref Ref, name string, makeDefault bool) error {
 			ref.Repositories = previous.Repositories
 		}
 		idx.Images[ref.Manifest] = ref
-		rememberRepository(idx, ref.Manifest, name)
-		idx.Names[name] = ref.Manifest
+		if name != "" {
+			rememberRepository(idx, ref.Manifest, name)
+			idx.Names[name] = ref.Manifest
+		}
 		if makeDefault {
 			idx.Defaults[strings.ToLower(ref.ID)] = ref.Manifest
 		}

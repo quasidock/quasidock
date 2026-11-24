@@ -17,7 +17,7 @@ func diffCommand(ctx *context.Context, args []string) (uint32, error) {
 		return 1, err
 	}
 	for _, path := range paths {
-		if _, err := fmt.Fprintf(ctx.Stdout, "A %s\n", path); err != nil {
+		if _, err := fmt.Fprintf(ctx.Stdout, "%c %s\n", path.Kind, path.Path); err != nil {
 			return 1, err
 		}
 	}

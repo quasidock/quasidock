@@ -15,6 +15,7 @@ const (
 	MediaTypeManifest            = "application/vnd.oci.image.manifest.v1+json"
 	MediaTypeConfig              = "application/vnd.quasidock.app.config.v2+json"
 	MediaTypeConfigV3            = "application/vnd.quasidock.app.config.v3+json"
+	MediaTypeConfigV4            = "application/vnd.quasidock.app.config.v4+json"
 	MediaTypeConfigV1            = "application/vnd.quasidock.app.config.v1+json"
 	LegacyMediaTypeConfig        = "application/vnd.zigsaw.app.config.v2+json"
 	LegacyMediaTypeConfigV1      = "application/vnd.zigsaw.app.config.v1+json"
@@ -135,21 +136,25 @@ type Build struct {
 }
 
 type AppConfig struct {
-	Workdir     string             `json:"workdir,omitempty"`
-	ID          string             `json:"id"`
-	Version     string             `json:"version"`
-	Name        *string            `json:"name,omitempty"`
-	Summary     *string            `json:"summary,omitempty"`
-	Homepage    *string            `json:"homepage,omitempty"`
-	License     *string            `json:"license,omitempty"`
-	Entrypoint  []string           `json:"entrypoint"`
-	Cmd         []string           `json:"cmd,omitempty"`
-	Path        []string           `json:"path,omitempty"`
-	Env         map[string]string  `json:"env,omitempty"`
-	Permissions Permissions        `json:"permissions,omitempty"`
-	Registry    []string           `json:"registry,omitempty"`
-	From        map[string]Runtime `json:"from,omitempty"`
-	Build       *Build             `json:"build,omitempty"`
+	FormatVersion int                `json:"-"`
+	DataLayer     string             `json:"dataLayer,omitempty"`
+	Labels        map[string]string  `json:"labels,omitempty"`
+	UnsetEnv      []string           `json:"unsetEnv,omitempty"`
+	Workdir       string             `json:"workdir,omitempty"`
+	ID            string             `json:"id"`
+	Version       string             `json:"version"`
+	Name          *string            `json:"name,omitempty"`
+	Summary       *string            `json:"summary,omitempty"`
+	Homepage      *string            `json:"homepage,omitempty"`
+	License       *string            `json:"license,omitempty"`
+	Entrypoint    []string           `json:"entrypoint"`
+	Cmd           []string           `json:"cmd,omitempty"`
+	Path          []string           `json:"path,omitempty"`
+	Env           map[string]string  `json:"env,omitempty"`
+	Permissions   Permissions        `json:"permissions,omitempty"`
+	Registry      []string           `json:"registry,omitempty"`
+	From          map[string]Runtime `json:"from,omitempty"`
+	Build         *Build             `json:"build,omitempty"`
 }
 
 func ToJSON(v any) ([]byte, error) {
@@ -165,7 +170,7 @@ func ToJSON(v any) ([]byte, error) {
 }
 
 func IsConfigType(t string) bool {
-	return t == MediaTypeConfigV3 || t == MediaTypeConfig || t == MediaTypeConfigV1 ||
+	return t == MediaTypeConfigV4 || t == MediaTypeConfigV3 || t == MediaTypeConfig || t == MediaTypeConfigV1 ||
 		t == LegacyMediaTypeConfig || t == LegacyMediaTypeConfigV1
 }
 
@@ -177,7 +182,12 @@ func ParseConfig(what, configType string, data []byte) (*AppConfig, error) {
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("%s: its app config can't be read: %w", what, err)
 	}
-	if cfg.Workdir != "" && configType != MediaTypeConfigV3 {
+	if configType == MediaTypeConfigV4 {
+		cfg.FormatVersion = 4
+	} else if cfg.DataLayer != "" || len(cfg.Labels) != 0 || len(cfg.UnsetEnv) != 0 {
+		return nil, fmt.Errorf("%s: dataLayer, labels and unsetEnv require a v4 app config", what)
+	}
+	if cfg.Workdir != "" && configType != MediaTypeConfigV3 && configType != MediaTypeConfigV4 {
 		return nil, fmt.Errorf("%s: workdir requires a v3 app config", what)
 	}
 	if (configType == MediaTypeConfigV1 || configType == LegacyMediaTypeConfigV1) && len(cfg.From) > 0 {
@@ -196,11 +206,17 @@ func ValidateLayers(what string, m *Manifest, c *AppConfig) error {
 		}
 	}
 	expectedLayers := len(c.From) + 1
+	if c.DataLayer != "" {
+		expectedLayers++
+	}
 	if len(m.Layers) != expectedLayers {
 		return fmt.Errorf("%s has %d layer(s), but its config accounts for %d: one per base image, and the app's own", what, len(m.Layers), expectedLayers)
 	}
+	if c.DataLayer != "" && (m.Layers[len(m.Layers)-2].Digest != c.DataLayer || m.Layers[len(m.Layers)-2].MediaType != MediaTypeLayerTarGzip) {
+		return fmt.Errorf("%s: data layer must be a gzip layer immediately before the app layer", what)
+	}
 	available := map[string]int{}
-	for _, layer := range m.Layers[:len(m.Layers)-1] {
+	for _, layer := range AppLayers(m, c)[:len(c.From)] {
 		available[layer.Digest]++
 	}
 	for alias, r := range c.From {
@@ -234,6 +250,22 @@ func RuntimeDirectories(from map[string]Runtime, dirs []string) []DirPlaceholder
 
 func OwnLayer(m *Manifest) Descriptor {
 	return m.Layers[len(m.Layers)-1]
+}
+
+// AppLayers excludes the private-data seed while preserving base/app ordering.
+func AppLayers(m *Manifest, c *AppConfig) []Descriptor {
+	if c.DataLayer == "" {
+		return m.Layers
+	}
+	layers := append([]Descriptor(nil), m.Layers[:len(m.Layers)-2]...)
+	return append(layers, OwnLayer(m))
+}
+
+func DataDescriptor(m *Manifest, c *AppConfig) Descriptor {
+	if c.DataLayer == "" {
+		return Descriptor{}
+	}
+	return m.Layers[len(m.Layers)-2]
 }
 
 func DigestHex(digest string) string {
@@ -562,6 +594,31 @@ func UsesRoots(env map[string]string, args []string) bool {
 }
 
 func ValidateConfig(what string, c *AppConfig) error {
+	if c.DataLayer != "" && (c.FormatVersion != 4 || DigestHex(c.DataLayer) == "") {
+		return fmt.Errorf("%s: dataLayer requires a v4 config and a sha256 digest", what)
+	}
+	for _, name := range c.UnsetEnv {
+		if name == "" || strings.ContainsAny(name, "=\x00") {
+			return fmt.Errorf("%s: invalid unset environment name %q", what, name)
+		}
+	}
+	for _, args := range [][]string{c.Entrypoint, c.Cmd} {
+		for _, arg := range args {
+			if strings.ContainsRune(arg, 0) {
+				return fmt.Errorf("%s: command argument contains NUL", what)
+			}
+		}
+	}
+	for name, value := range c.Labels {
+		if name == "" || strings.ContainsRune(name, 0) || strings.ContainsRune(value, 0) {
+			return fmt.Errorf("%s: invalid label %q", what, name)
+		}
+	}
+	for name, value := range c.Env {
+		if name == "" || strings.ContainsAny(name, "=\x00") || strings.ContainsRune(value, 0) {
+			return fmt.Errorf("%s: invalid environment setting %q", what, name)
+		}
+	}
 	if err := validateFrom(what, c.From); err != nil {
 		return err
 	}
@@ -598,7 +655,8 @@ func ValidateConfig(what string, c *AppConfig) error {
 }
 
 func ValidateEntryPoints(what string, c *AppConfig, aliases []string) error {
-	if c.Workdir != "" && (!IsSafeRelPath(c.Workdir) || strings.ContainsAny(c.Workdir, "$\\\x00")) {
+	dataWorkdir := c.FormatVersion == 4 && isValidAnchoredPath(c.Workdir, Anchors{App: true, Data: true}, true) && !strings.ContainsRune(c.Workdir, 0)
+	if c.Workdir != "" && !dataWorkdir && (!IsSafeRelPath(c.Workdir) || strings.ContainsAny(c.Workdir, "$\\\x00")) {
 		return fmt.Errorf("%s: workdir must be a '/'-separated relative directory inside the app", what)
 	}
 	if !IsValidID(c.ID) {
@@ -622,11 +680,19 @@ func ValidateEntryPoints(what string, c *AppConfig, aliases []string) error {
 	if c.License != nil && !isValidLicense(*c.License) {
 		return fmt.Errorf("%s: license %q must be an SPDX expression, such as \"GPL-2.0-or-later\" or \"MIT OR Apache-2.0\"", what, *c.License)
 	}
-	if len(c.Entrypoint) == 0 {
+	if len(c.Entrypoint) == 0 && (c.FormatVersion != 4 || len(c.Cmd) == 0) {
 		return fmt.Errorf("%s: entrypoint must not be empty", what)
 	}
-	if !IsValidCommand(c.Entrypoint[0], aliases) {
-		return fmt.Errorf("%s: entrypoint %q must be a relative path inside the app, or start with a base image's ${alias}\\", what, c.Entrypoint[0])
+	command := c.Entrypoint
+	if len(command) == 0 {
+		command = c.Cmd
+	}
+	validCommand := IsValidCommand(command[0], aliases)
+	if c.FormatVersion == 4 {
+		validCommand = isValidAnchoredPath(command[0], Anchors{App: true, Data: true, Aliases: aliases}, false)
+	}
+	if !validCommand {
+		return fmt.Errorf("%s: entrypoint %q must be a relative app command or an allowed placeholder path", what, command[0])
 	}
 	for _, p := range c.Path {
 		if !IsValidPathEntry(p, aliases) {

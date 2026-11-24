@@ -4,7 +4,7 @@ Quasidock runs sandboxed Windows programs from OCI-distributed images using a
 Docker-style CLI.
 
 Version **0.10** supports Docker-style container lifecycle management (`create`, `run`, `ps`,
-`logs`, `exec`, `attach`, `start`, `restart`, `pause`, `unpause`, `kill`, `stop`, `rm`, `inspect`, `diff`, `prune`), per-container isolated data, image
+`logs`, `exec`, `attach`, `start`, `restart`, `pause`, `unpause`, `kill`, `stop`, `rm`, `inspect`, `diff`, `commit`, `prune`), per-container isolated data, image
 management, named volumes, local directory bind mounts, and Quasidock images for
 `windows/amd64`. Supported Node.js, Go, Python, PHP CLI, Composer, and Ubuntu/Debian Dockerfiles, including
 multi-stage builds with `COPY --from`, can be
@@ -100,7 +100,8 @@ removes leftover legacy app data once unused.
 | `container create` | `create` | Save a new container without starting it; print its full ID |
 | `container ls` | `ps` | List running containers (`-a` includes created and exited; `-q` prints IDs) |
 | `container inspect` | `inspect` | Container JSON metadata or `-f TEMPLATE` (`inspect` falls back to images) |
-| `container diff` | `diff` | List additions to private `${data}`; exclude mounted storage |
+| `container diff` | `diff` | Compare private `${data}` with image data; exclude mounted storage |
+| `container commit` | `commit` | Save private data and launch configuration as a new image |
 | `container logs` | `logs` | Fetch captured output (`-f`/`--follow`, `-n`/`--tail LINES`) |
 | `container exec` | `exec` | Run another command in a running container (`-d`, `-i`, `-t`, `-e`, `-w`) |
 | `container attach` | `attach` | Attach to a background container's live output and optional stdin |
@@ -214,15 +215,35 @@ including different versions of the same app—can run concurrently without shar
 state unless mounted storage is explicitly shared. Containers persist after exit
 unless `--rm` is set. Docker-style `-p` port publishing remains deferred.
 
-`diff CONTAINER` (also `container diff`) lists files and directories added to the
-container's initially empty private data, sorted as `A /home/example.txt`. Here
-`/` means `${data}`. Runtime-created profile, cache, and registry files count as
-additions. Editing an added file keeps it `A`; deleting it removes its entry.
+`diff CONTAINER` (also `container diff`) compares files and directories with the
+image's initial data, sorted as `A /home/example.txt`, `C /changed.txt`, or
+`D /deleted.txt`. Here `/` means `${data}`. Ordinary images have an empty baseline,
+so every surviving entry is an addition. Committed images use their saved data
+as the baseline; file content and type changes count, timestamps and ACLs do not.
 Mounted storage, image files, host filesystem grants, and container metadata/logs
 outside `${data}` are excluded. A mount covering `${data}` produces empty output.
 Diff supports created, running, paused, and exited containers; a live scan is
 best effort and does not pause the application. See
 [persistent storage](docs/persistent-storage.md).
+
+`commit [OPTIONS] CONTAINER [REPOSITORY[:TAG]]` saves a runnable image with an
+independent copy of private data and declared HKCU state. Running containers
+pause during capture and resume afterward; manually paused containers stay
+paused. Use `--pause=false` for a best-effort live capture. Mounts and their
+contents are excluded. Without a target, commit prints an unnamed image digest
+that can be run or tagged. A target supplies the new app ID (final repository
+component) and version (tag, default `latest`).
+
+```powershell
+quasidock commit -a 'Your Name' -m 'Configured environment' worker my-app:saved
+quasidock run --rm my-app:saved
+quasidock commit -c 'ENTRYPOINT ["cmd.exe"]' -c 'CMD ["/c","echo hello"]' worker demo
+```
+
+Repeatable `-c` / `--change` accepts `CMD` and `ENTRYPOINT` JSON arrays, `ENV`,
+`WORKDIR`, and `LABEL`. New containers receive writable data copies at creation;
+restarting a container preserves its existing data. See
+[commit details and limits](docs/persistent-storage.md#commit-private-data).
 
 `start` and `restart` reuse the same container ID, saved command, image digest,
 working directory, private data, mounts, and registry state. They append to the

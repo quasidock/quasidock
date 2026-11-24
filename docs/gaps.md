@@ -202,6 +202,12 @@ Known limitations, platform constraints, and incomplete features in Quasidock
 
 ## Builds and toolchains
 
+- **Committed images.** Private-data snapshots support running and publishing,
+  but are rejected as recipe dependencies and by `push --sources`. Command
+  changes require JSON arrays, WORKDIR must exist, and arbitrary embedded source
+  container paths are not rewritten. Unconfigured reparse points and locked or
+  unreadable files fail capture. The data layer uses eager gzip downloads.
+
 - **Determinism and deflate pinning.** Layer digests depend on Go's
   `compress/flate` level-6 deflate output (`internal/format/layer.go`, pinned
   by `TestGzipDeterministicAndGunzip` in `internal/format/layer_test.go`).

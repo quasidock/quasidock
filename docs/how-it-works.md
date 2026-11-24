@@ -10,9 +10,10 @@ in [Quasidock 0.3](iteration-3.md).
 ## Images
 
 Each image is an OCI manifest (`application/vnd.oci.image.manifest.v1+json`)
-pointing to an app config blob (`application/vnd.quasidock.app.config.v2+json`;
-`v1+json` and `N + 1` filesystem layers ordered as
-the image's `from` base runtime layers followed by the app's own layer
+pointing to a versioned app config blob and `N + 1` filesystem layers ordered as
+the image's `from` base runtime layers followed by the app's own layer. v3 adds
+image working directories; committed images use v4 and insert one private-data
+seed immediately before the app layer
 ([`oci.go`](../internal/oci/oci.go)).
 
 Layers use deterministic tar, gzip
@@ -38,7 +39,7 @@ app coexist ([`images.go`](../internal/store/images.go)):
   ID).
 - `Names` maps normalized `<host>/<repository>[:tag|@digest]` names to
   manifest digests.
-- `Defaults` maps lowercased bare app IDs to the most recently pulled or built
+- `Defaults` maps lowercased bare app IDs to the most recently pulled, built, or named committed
   manifest digest.
 
 Legacy `refs\<id>.json` metadata from older stores is migrated once into
@@ -155,6 +156,14 @@ quasidock rm $cid
   this reservation across shutdown and launch. Exit cleanup checks the run ID
   under the same lock before automatic removal, so the outgoing supervisor cannot
   remove a replacement run.
+- **Commit**: the shared store lock protects inherited layers from GC, and the
+  container operation lock reserves the source during capture. Running owners
+  advertise `State.CommitProtocol` and serve capture leases over their existing
+  current-user-only exec pipe. A lease freezes the job, serializes control and
+  exec admission, and restores the previous pause state on release/disconnect.
+  Private files and declared HKCU keys are staged while frozen; compression and
+  catalog registration follow after resuming. A v4 data seed initializes new
+  container data before its record is visible; starts never copy it again.
 - **Attachment**: background supervisors serve a separate current-user-only local
   named pipe scoped to container ID and RunID. `State.AttachProtocol` advertises
   support. Subscribers receive live stdout/stderr and the primary exit status;

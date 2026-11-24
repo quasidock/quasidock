@@ -482,7 +482,7 @@ func (s *Store) LoadImageRef(ref Ref) (*Image, error) {
 	if len(img.Manifest.Layers) == 0 {
 		return nil, fmt.Errorf("image %s has no layers", id)
 	}
-	dirs, locks, err := s.UseLayers(img.Manifest.Layers)
+	dirs, locks, err := s.UseLayers(oci.AppLayers(&img.Manifest, &img.Config))
 	if err != nil {
 		return nil, err
 	}
