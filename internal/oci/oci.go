@@ -12,19 +12,15 @@ import (
 
 // Media types
 const (
-	MediaTypeManifest            = "application/vnd.oci.image.manifest.v1+json"
-	MediaTypeConfig              = "application/vnd.quasidock.app.config.v2+json"
-	MediaTypeConfigV3            = "application/vnd.quasidock.app.config.v3+json"
-	MediaTypeConfigV4            = "application/vnd.quasidock.app.config.v4+json"
-	MediaTypeConfigV1            = "application/vnd.quasidock.app.config.v1+json"
-	LegacyMediaTypeConfig        = "application/vnd.zigsaw.app.config.v2+json"
-	LegacyMediaTypeConfigV1      = "application/vnd.zigsaw.app.config.v1+json"
-	MediaTypeLayerTar            = "application/vnd.oci.image.layer.v1.tar"
-	MediaTypeLayerTarGzip        = "application/vnd.oci.image.layer.v1.tar+gzip"
-	MediaTypeSourcesConfig       = "application/vnd.quasidock.sources.v1+json"
-	MediaTypeSource              = "application/vnd.quasidock.source.v1"
-	LegacyMediaTypeSourcesConfig = "application/vnd.zigsaw.sources.v1+json"
-	LegacyMediaTypeSource        = "application/vnd.zigsaw.source.v1"
+	MediaTypeManifest      = "application/vnd.oci.image.manifest.v1+json"
+	MediaTypeConfig        = "application/vnd.quasidock.app.config.v2+json"
+	MediaTypeConfigV3      = "application/vnd.quasidock.app.config.v3+json"
+	MediaTypeConfigV4      = "application/vnd.quasidock.app.config.v4+json"
+	MediaTypeConfigV1      = "application/vnd.quasidock.app.config.v1+json"
+	MediaTypeLayerTar      = "application/vnd.oci.image.layer.v1.tar"
+	MediaTypeLayerTarGzip  = "application/vnd.oci.image.layer.v1.tar+gzip"
+	MediaTypeSourcesConfig = "application/vnd.quasidock.sources.v1+json"
+	MediaTypeSource        = "application/vnd.quasidock.source.v1"
 )
 
 type SourcesConfig struct {
@@ -170,8 +166,7 @@ func ToJSON(v any) ([]byte, error) {
 }
 
 func IsConfigType(t string) bool {
-	return t == MediaTypeConfigV4 || t == MediaTypeConfigV3 || t == MediaTypeConfig || t == MediaTypeConfigV1 ||
-		t == LegacyMediaTypeConfig || t == LegacyMediaTypeConfigV1
+	return t == MediaTypeConfigV4 || t == MediaTypeConfigV3 || t == MediaTypeConfig || t == MediaTypeConfigV1
 }
 
 func ParseConfig(what, configType string, data []byte) (*AppConfig, error) {
@@ -190,7 +185,7 @@ func ParseConfig(what, configType string, data []byte) (*AppConfig, error) {
 	if cfg.Workdir != "" && configType != MediaTypeConfigV3 && configType != MediaTypeConfigV4 {
 		return nil, fmt.Errorf("%s: workdir requires a v3 app config", what)
 	}
-	if (configType == MediaTypeConfigV1 || configType == LegacyMediaTypeConfigV1) && len(cfg.From) > 0 {
+	if configType == MediaTypeConfigV1 && len(cfg.From) > 0 {
 		return nil, fmt.Errorf("%s: a v1 config can't have base images", what)
 	}
 	if err := ValidateConfig(what, &cfg); err != nil {

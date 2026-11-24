@@ -78,7 +78,10 @@ func (s *Store) ContainerDiff(target string) ([]DiffEntry, error) {
 	}
 	paths := []string{}
 	if !excluded[""] {
-		if err := walkContainerDiff(s.ContainerDataDir(c.ID), "", excluded, &paths); err != nil {
+		if err := walkContainerMetadata(s.ContainerDataDir(c.ID), "", excluded, func(rel string, _ os.FileInfo) error {
+			paths = append(paths, "/"+rel)
+			return nil
+		}); err != nil {
 			return nil, fmt.Errorf("diff container %s: %w", c.BareName(), err)
 		}
 	}
@@ -95,7 +98,9 @@ func diffReparse(info os.FileInfo) bool {
 	return ok && attrs.FileAttributes&syscall.FILE_ATTRIBUTE_REPARSE_POINT != 0
 }
 
-func walkContainerDiff(path, rel string, excluded map[string]bool, paths *[]string) error {
+// walkContainerMetadata enumerates private data without opening file contents
+// or following reparse points. Disappearing descendants are skipped.
+func walkContainerMetadata(path, rel string, excluded map[string]bool, visit func(string, os.FileInfo) error) error {
 	// Open the directory itself, never a reparse target. Keeping ancestor
 	// handles open without delete sharing prevents replacement during descent.
 	var h win32.HANDLE
@@ -126,7 +131,9 @@ func walkContainerDiff(path, rel string, excluded map[string]bool, paths *[]stri
 		return err
 	}
 	if rel != "" {
-		*paths = append(*paths, "/"+rel)
+		if err := visit(rel, info); err != nil {
+			return err
+		}
 	}
 	if diffReparse(info) {
 		if rel == "" {
@@ -163,11 +170,13 @@ func walkContainerDiff(path, rel string, excluded map[string]bool, paths *[]stri
 			return err
 		}
 		if info.IsDir() && !diffReparse(info) {
-			if err := walkContainerDiff(child, name, excluded, paths); err != nil {
+			if err := walkContainerMetadata(child, name, excluded, visit); err != nil {
 				return err
 			}
 		} else {
-			*paths = append(*paths, "/"+name)
+			if err := visit(name, info); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

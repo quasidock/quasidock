@@ -135,14 +135,14 @@ func FetchSource(st *store.Store, envRegistry, image, hash string, verbose bool)
 	if err := json.Unmarshal(found.Bytes, &manifest); err != nil {
 		return "", err
 	}
-	if manifest.SchemaVersion != 2 || (manifest.Config.MediaType != oci.MediaTypeSourcesConfig && manifest.Config.MediaType != oci.LegacyMediaTypeSourcesConfig) {
+	if manifest.SchemaVersion != 2 || manifest.Config.MediaType != oci.MediaTypeSourcesConfig {
 		return "", fmt.Errorf("%s is not a source artifact", tag)
 	}
 	for _, desc := range manifest.Layers {
 		if desc.Digest != "sha256:"+hash {
 			continue
 		}
-		if desc.Size < 0 || (desc.MediaType != oci.MediaTypeSource && desc.MediaType != oci.LegacyMediaTypeSource) {
+		if desc.Size < 0 || desc.MediaType != oci.MediaTypeSource {
 			return "", fmt.Errorf("invalid source descriptor for %s", hash)
 		}
 		tmp := st.TmpPath("source")

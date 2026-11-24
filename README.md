@@ -98,7 +98,7 @@ removes leftover legacy app data once unused.
 | Command | Alias | Purpose |
 |---|---|---|
 | `container create` | `create` | Save a new container without starting it; print its full ID |
-| `container ls` | `ps` | List running containers (`-a` includes created and exited; `-q` prints IDs) |
+| `container ls` | `ps` | List containers (`-a`, `-q`, `--filter`, `--last`, `--size`, `--no-trunc`) |
 | `container inspect` | `inspect` | Container JSON metadata or `-f TEMPLATE` (`inspect` falls back to images) |
 | `container diff` | `diff` | Compare private `${data}` with image data; exclude mounted storage |
 | `container commit` | `commit` | Save private data and launch configuration as a new image |
@@ -115,8 +115,37 @@ removes leftover legacy app data once unused.
 | `container prune` | — | Remove all stopped containers |
 
 ```text
+quasidock ps [OPTIONS]
 quasidock create [OPTIONS] IMAGE [COMMAND] [ARG...]
 quasidock run [OPTIONS] IMAGE [COMMAND] [ARG...]
+```
+
+`ps` (also `container ls` and `container list`) shows running and paused
+containers, newest first. `-a` / `--all` includes created and exited containers;
+`-q` / `--quiet` prints IDs only. `--no-trunc` shows full IDs, including with
+`-q`, and full recorded executable paths and arguments.
+
+`-f` / `--filter KEY=VALUE` supports `id` (full ID or prefix), `name`
+(case-sensitive regular expression, matching with or without the leading `/`),
+`status` (`created`, `running`, `paused`, or `exited`), `exited` (integer exit
+code), and `before` / `since` (a container name, full ID, or unique ID prefix).
+Repeated values for the same key use OR; different keys use AND. Reference
+containers are excluded from their own `before` / `since` range. A `status`
+filter includes stopped containers without `-a`; `exited` alone requires `-a`
+or a positive `--last` and matches only containers that actually started.
+
+`-n` / `--last N` returns the newest N matches, including all states, after
+filtering. Zero and negative values leave the results unlimited and retain the
+normal visibility rules. `-s` / `--size` adds a `SIZE` column counting current
+private-data file bytes, including copied image seed files. Mounted storage,
+reparse points, logs, metadata, and shared image files are excluded. There is
+no virtual image total. Quiet mode skips size scans. Live applications may
+change files during a scan; a scan error fails the command before printing rows.
+
+```text
+quasidock ps --filter status=exited --last 5
+quasidock ps -a --filter "name=^web-" --filter exited=0 --size
+quasidock ps -aq --no-trunc
 ```
 
 `create` saves the image digest and launch configuration, allocates private data,

@@ -294,9 +294,20 @@ func (s *Store) listContainersNoLock(all bool) ([]ContainerRecord, error) {
 		}
 		out = append(out, *rec)
 	}
+	created := make(map[string]time.Time, len(out))
+	for _, c := range out {
+		if ts, err := time.Parse(time.RFC3339Nano, c.Created); err == nil {
+			created[c.ID] = ts
+		}
+	}
 	sort.Slice(out, func(i, j int) bool {
-		if out[i].Created != out[j].Created {
-			return out[i].Created > out[j].Created
+		a, aValid := created[out[i].ID]
+		b, bValid := created[out[j].ID]
+		if aValid != bValid {
+			return aValid
+		}
+		if aValid && !a.Equal(b) {
+			return a.After(b)
 		}
 		return out[i].ID < out[j].ID
 	})

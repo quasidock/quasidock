@@ -30,8 +30,8 @@ func TestSourceMirrorPreservesPinnedBytes(t *testing.T) {
 		t.Fatal(err)
 	}
 	sources, _ := json.Marshal(oci.Manifest{SchemaVersion: 2, MediaType: oci.MediaTypeManifest,
-		Config: oci.Descriptor{MediaType: oci.LegacyMediaTypeSourcesConfig},
-		Layers: []oci.Descriptor{{Digest: digest, Size: int64(len(payload)), MediaType: oci.LegacyMediaTypeSource}}})
+		Config: oci.Descriptor{MediaType: oci.MediaTypeSourcesConfig},
+		Layers: []oci.Descriptor{{Digest: digest, Size: int64(len(payload)), MediaType: oci.MediaTypeSource}}})
 	reg.PutManifest("old/app", sourceTag, sources)
 	var corrupt atomic.Bool
 	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

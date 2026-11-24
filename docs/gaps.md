@@ -5,6 +5,14 @@ Known limitations, platform constraints, and incomplete features in Quasidock
 
 ## Runs, sandboxes, and grants
 
+- **Container listing compatibility.** `ps --filter` supports `id`, `name`,
+  `status`, `exited`, `before`, and `since`; other filter keys are rejected.
+  Status values are limited to `created`, `running`, `paused`, and `exited`.
+  `ps --size` reports private-data file bytes, including copied image seed
+  files, without Docker's virtual image total. It excludes mounted storage,
+  reparse points, logs, and record metadata. Scans do not pause applications,
+  and a scan error fails the listing before output. `--latest` and `--format`
+  remain unsupported.
 - **Lifecycle signals and attachment.** `start` defaults to background and
   supports `-a`/`-i`; `restart` launches in the background. Attachment supports
   `run -d` and `start` containers only, with one stdin writer and multiple output

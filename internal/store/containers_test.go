@@ -7,6 +7,38 @@ import (
 	"time"
 )
 
+func TestListContainersCreationOrder(t *testing.T) {
+	st, err := Open(t.TempDir(), false, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var records []*ContainerRecord
+	for i, created := range []string{
+		"2026-01-01T00:00:00Z", "2026-01-01T00:00:00.1Z",
+		"2026-01-01T07:00:00.1+07:00", "2026-01-01T00:00:01Z", "invalid",
+	} {
+		c, err := st.CreateContainer("order-"+string(rune('a'+i)), ContainerRecord{Created: created})
+		if err != nil {
+			t.Fatal(err)
+		}
+		records = append(records, c)
+	}
+	first, second := records[1], records[2]
+	if first.ID > second.ID {
+		first, second = second, first
+	}
+	want := []*ContainerRecord{records[3], first, second, records[0], records[4]}
+	got, err := st.ListContainers(true)
+	if err != nil || len(got) != len(want) {
+		t.Fatalf("list: %+v %v", got, err)
+	}
+	for i, c := range got {
+		if c.ID != want[i].ID {
+			t.Errorf("position %d: %s, want %s", i, c.Name, want[i].Name)
+		}
+	}
+}
+
 func TestPausedContainerReconciliation(t *testing.T) {
 	for _, autoRemove := range []bool{false, true} {
 		st, err := Open(t.TempDir(), false, "")

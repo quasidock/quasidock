@@ -33,7 +33,7 @@ const usage = `usage: quasidock [--verbose] <command> [options]
 Docker-style container commands:
   container create | create [options] IMAGE [COMMAND] [ARG...]
                                        create a container without starting it; print its ID
-  container ls | ps [-a|--all] [-q|--quiet]
+  container ls | ps [options]
                                        list running containers (or all with -a)
   container inspect | inspect [-f TEMPLATE] NAME|ID [NAME|ID...]
                                        inspect containers or images (JSON by default)
@@ -102,6 +102,14 @@ Quasidock extensions:
   repair                              settle obsolete host grants
   version                             print quasidock's version
 
+ps/container ls options:
+  -a, --all                          include created and exited containers
+  -q, --quiet                        print container IDs only
+  -f, --filter KEY=VALUE              id, name (regexp), status, exited, before, or since
+  -n, --last N                       newest N matches, including all states (default: -1)
+  -s, --size                         private-data file bytes, excluding mounted storage
+  --no-trunc                         show full IDs and recorded commands
+
 exec options (before CONTAINER):
   -d, --detach                        return after launch; discard command output
   -i, --interactive                   forward STDIN and EOF
@@ -137,6 +145,9 @@ select local manifests. Explicit names and tags select exactly that reference.
 Image IDs are manifest digests. images -q prints full IDs; inspect is local-only.
 Each run or create allocates isolated data under containers/<id>/data.
 create saves configuration without launching; start defaults to background.
+ps filters repeat (same key: OR; different keys: AND); status includes all states.
+ps --last values <= 0 leave results unlimited with normal visibility rules.
+ps --size includes copied image seed files, excludes logs, and has no virtual total.
 diff lists A/C/D /PATH relative to image data; mounts are excluded.
 commit supports --pause=false, -a/--author, -m/--message and -c/--change.
 --change supports CMD/ENTRYPOINT JSON arrays, ENV, WORKDIR and LABEL.

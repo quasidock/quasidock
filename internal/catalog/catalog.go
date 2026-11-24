@@ -17,9 +17,8 @@ import (
 )
 
 const (
-	MediaType       = "application/vnd.quasidock.catalog.v1+json"
-	LegacyMediaType = "application/vnd.zigsaw.catalog.v1+json"
-	Name            = "catalog"
+	MediaType = "application/vnd.quasidock.catalog.v1+json"
+	Name      = "catalog"
 )
 
 type Catalog struct {
@@ -285,7 +284,7 @@ func fetchCatalog(st *store.Store, target remote.Target, cachedDigest string, ca
 	if cls.IsIndex || cls.Image == nil {
 		return nil, fmt.Errorf("%s is not a single image", target.Ref)
 	}
-	if cls.Image.Config.MediaType != MediaType && cls.Image.Config.MediaType != LegacyMediaType {
+	if cls.Image.Config.MediaType != MediaType {
 		return nil, fmt.Errorf("%s isn't a quasidock catalog (its config type is %s)", target.Ref, cls.Image.Config.MediaType)
 	}
 

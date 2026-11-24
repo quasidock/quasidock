@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"text/tabwriter"
 	"text/template"
 	"time"
 
@@ -76,55 +75,6 @@ func createCommand(ctx *context.Context, args []string) (uint32, error) {
 	}
 	_, err = fmt.Fprintln(ctx.Stdout, rec.ID)
 	return 0, err
-}
-
-func containerList(ctx *context.Context, args []string) error {
-	all := false
-	quiet := false
-	for _, arg := range args {
-		switch arg {
-		case "-a", "--all":
-			all = true
-		case "-q", "--quiet":
-			quiet = true
-		case "-aq", "-qa":
-			all = true
-			quiet = true
-		default:
-			if strings.HasPrefix(arg, "-") {
-				return fmt.Errorf("unknown ps option %q", arg)
-			}
-			return errors.New("usage: quasidock ps [-a|--all] [-q|--quiet]")
-		}
-	}
-	containers, err := ctx.Store.ListContainers(all)
-	if err != nil {
-		return err
-	}
-	if quiet {
-		for _, c := range containers {
-			fmt.Fprintln(ctx.Stdout, c.ShortID())
-		}
-		return nil
-	}
-	tw := tabwriter.NewWriter(ctx.Stdout, 0, 0, 3, ' ', 0)
-	fmt.Fprintln(tw, "CONTAINER ID\tIMAGE\tCOMMAND\tCREATED\tSTATUS\tNAMES")
-	now := time.Now()
-	for _, c := range containers {
-		img := c.ImageRef
-		if img == "" {
-			img = c.AppID
-		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n",
-			c.ShortID(),
-			img,
-			formatContainerCommand(c),
-			formatRelativeTime(c.Created, now),
-			formatContainerStatus(c, now),
-			c.BareName(),
-		)
-	}
-	return tw.Flush()
 }
 
 func parseInspectFlags(args []string, usageText string) (string, []string, error) {
@@ -464,21 +414,29 @@ func tailLines(data []byte, n int) []byte {
 	return data
 }
 
-func formatContainerCommand(c store.ContainerRecord) string {
+func formatContainerCommand(c store.ContainerRecord, noTrunc bool) string {
 	var parts []string
 	if c.Path != "" {
-		parts = append(parts, filepath.Base(c.Path))
-	}
-	parts = append(parts, c.Args...)
-	if len(parts) == 0 && len(c.Config.Entrypoint) > 0 {
+		path := c.Path
+		if !noTrunc {
+			path = filepath.Base(path)
+		}
+		parts = append(parts, path)
+		parts = append(parts, c.Args...)
+	} else {
 		parts = append(parts, c.Config.Entrypoint...)
-	}
-	if len(parts) == 0 {
-		parts = append(parts, c.Config.Cmd...)
+		if len(c.Args) > 0 {
+			parts = append(parts, c.Args...)
+		} else {
+			parts = append(parts, c.Config.Cmd...)
+		}
 	}
 	text := strings.Join(parts, " ")
-	if len(text) > 28 {
-		text = text[:25] + "..."
+	if !noTrunc {
+		runes := []rune(text)
+		if len(runes) > 28 {
+			text = string(runes[:25]) + "..."
+		}
 	}
 	return `"` + text + `"`
 }
