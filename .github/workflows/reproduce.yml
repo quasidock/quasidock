@@ -219,6 +219,55 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
+  # MariaDB stays local until its first publication, like Apache above.
+  mariadb:
+    runs-on: windows-2025
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.26'
+      - name: Build quasidock
+        run: go run ./scripts/build.go
+      - name: Build MariaDB SDK and runtime in two independent stores
+        shell: bash
+        env:
+          QUASIDOCK_REGISTRY_USERNAME: ${{ github.actor }}
+          QUASIDOCK_REGISTRY_PASSWORD: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          export MSYS_NO_PATHCONV=1
+          mkdir -p "$RUNNER_TEMP/mariadb-logs"
+          for store in mariadb-one mariadb-two; do
+            export QUASIDOCK_HOME="$RUNNER_TEMP/$store"
+            for image in mariadb-sdk mariadb; do
+              ./out/bin/quasidock.exe build "recipes/$image.json" 2>&1 | tee "$RUNNER_TEMP/mariadb-logs/$store-$image.log"
+              ./out/bin/quasidock.exe inspect -f '{{.Id}}' "$image" | tr -d '\r' >"$RUNNER_TEMP/mariadb-logs/$store-$image.digest"
+            done
+          done
+          for image in mariadb-sdk mariadb; do
+            cmp "$RUNNER_TEMP/mariadb-logs/mariadb-one-$image.digest" "$RUNNER_TEMP/mariadb-logs/mariadb-two-$image.digest"
+          done
+      - name: SQL, persistence, TLS, and SDK plugins in every sandbox
+        shell: bash
+        env:
+          MARIADB_HOME: ${{ runner.temp }}/mariadb-two
+          LOG_DIR: ${{ runner.temp }}/mariadb-logs
+        run: |
+          set -euo pipefail
+          bash tests/mariadb.sh 2>&1 | tee "$RUNNER_TEMP/mariadb-logs/tests.log"
+      - name: Upload MariaDB logs
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: logs-mariadb
+          path: ${{ runner.temp }}/mariadb-logs
+          if-no-files-found: ignore
+          retention-days: 14
+
   suites:
     needs: pins
     runs-on: windows-2025

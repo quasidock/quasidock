@@ -1435,6 +1435,72 @@ The default entrypoint is `bin/windows/latexmk.exe`; invoke engines such as
 its own long path under AppContainers on Windows builds with `self-long-name`
 (see [gaps.md](gaps.md)).
 
+### MariaDB
+
+`recipes/mariadb-sdk.json` builds MariaDB 12.3.4 and its bundled Connector/C
+3.4.12 from the complete upstream source archive with LLVM-MinGW. It uses
+pinned OpenSSL, zlib, PCRE2 and fmt sources, plus ICU headers for Windows'
+system `icu.dll`. All stages run without network access. The compatibility
+patches and startup helper live under `recipes/mariadb/`.
+Galera, RocksDB, ColumnStore, Spider, and the embedded server are excluded.
+CONNECT is also disabled, following upstream's Windows Clang restriction.
+
+`recipes/mariadb.json` takes its files from the digest-pinned SDK image and
+removes development files and test programs. The images are available as local
+recipes; they have not been added to the published catalog.
+
+```powershell
+quasidock build recipes/mariadb-sdk.json
+quasidock build recipes/mariadb.json
+quasidock run -d --name database -v 'mariadb-data:${data}' mariadb
+quasidock exec database mariadb.exe --execute 'SELECT VERSION()'
+quasidock stop -t 30 database
+quasidock start database
+```
+
+The native `mariadb-server.exe` entrypoint initializes an empty database under
+`${data}\data`, creates a random 24-character root password, and saves client
+credentials in `${data}\my.ini`. Root uses password authentication. Bundled
+clients find that file through `MARIADB_HOME`; `MYSQL_TCP_PORT` supplies the
+current port. The port is not saved in the credentials, so
+`--port=mariadb=3307` also works after a restart.
+The `mariadb` TCP service defaults to port 3306 and binds to loopback, including
+Quasidock's AppContainer relay mapping. Other programs on the host connect to
+the published host port with the saved credentials:
+
+```powershell
+$mariadbData = quasidock volume inspect -f '{{.Mountpoint}}' mariadb-data
+Get-Content "$mariadbData\my.ini"
+quasidock exec database mariadb-dump.exe --databases example
+```
+
+Data, initialization metadata, and credentials belong on the same persistent
+volume. The helper locks the database for the lifetime of the server, preserves
+existing credentials, and refuses to initialize a nonempty directory without
+completed initialization. Failed bootstrap files are retained for inspection.
+An incompatible database requires an explicit upgrade procedure. No Windows
+service is registered. `--help` and `--version` do not initialize a database.
+
+Pass server options through the configured entrypoint. For example, put a PEM
+certificate and private key in the mounted data directory, then append
+`--ssl-cert=... --ssl-key=...` after the image name. Clients can use
+`--ssl-ca=... --ssl-verify-server-cert` to verify that certificate. The image
+ships no private keys or database credentials.
+
+The SDK includes client headers under `include/mysql`, Connector/C import and
+static libraries, `libmariadb.pc`, server headers, `mysqlservices`, and the server
+import library. CMake consumers can use `pkg_check_modules(... libmariadb)` for
+C clients and `find_package(mariadb-plugin CONFIG REQUIRED)` for plugins.
+Use the matching SDK and runtime version for server plugins. The SDK itself
+defaults to `mariadb.exe --version`; it does not start a server.
+
+`MARIADB_HOME=path/to/store bash tests/mariadb.sh` builds dynamic and static C
+clients and a server plugin using only installed SDK files, then exercises SQL,
+TLS, dump/restore, storage, ports and lifecycle behavior in all three sandboxes.
+It needs Git Bash and its OpenSSL command for temporary test certificates. CI
+also builds the SDK and runtime in two independent stores and compares their
+manifest digests.
+
 ### PostgreSQL
 
 - **[recipes/postgresql-sdk.json](../recipes/postgresql-sdk.json)** (18.6) builds

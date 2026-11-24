@@ -1,0 +1,56 @@
+{
+  "id": "mariadb",
+  "version": "12.3.4",
+  "name": "MariaDB",
+  "summary": "MariaDB server and clients built with LLVM-MinGW, with private persistent initialization and TLS",
+  "homepage": "https://mariadb.org/",
+  "license": "GPL-2.0-only AND LGPL-2.1-or-later",
+  "entrypoint": "bin/mariadb-server.exe",
+  "path": [
+    "bin"
+  ],
+  "env": {
+    "MARIADB_HOME": "${data}",
+    "MARIADB_DATADIR": "${data}\\data",
+    "MYSQL_TCP_PORT": "${listen:mariadb}",
+    "MARIADB_PLUGIN_DIR": "${app}\\lib\\plugin",
+    "SSL_CERT_FILE": "${roots}"
+  },
+  "permissions": {
+    "network": true,
+    "services": [
+      {
+        "name": "mariadb",
+        "port": 3306,
+        "command": "bin/mariadb-server.exe"
+      }
+    ]
+  },
+  "cleanup": [
+    "/include",
+    "/lib/cmake",
+    "/lib/pkgconfig",
+    "/share/cmake",
+    "/share/aclocal",
+    "/share/doc",
+    "/docs",
+    "/man",
+    "/mariadb-test",
+    "*.a",
+    "*.pdb",
+    "/bin/mariadb-test.exe",
+    "/bin/mariadb-client-test.exe",
+    "/bin/pcre2-config",
+    "/bin/mysql_config.pl"
+  ],
+  "stages": [
+    {
+      "name": "mariadb",
+      "sources": [
+        {
+          "image": "mariadb-sdk:12.3.4@sha256:bd99143686d1f128a49e3c3588b6ec8dcdb37e22915523fbae9b966ae770b107"
+        }
+      ]
+    }
+  ]
+}

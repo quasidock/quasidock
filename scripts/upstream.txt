@@ -288,6 +288,10 @@ qt git https://github.com/qt/qtbase v{version} osv-thin
 
 postgresql page https://ftp.postgresql.org/pub/source/ href="v{version}/" series=1 osv=https://github.com/postgres/postgres,REL_{version_} osv-thin
   https://ftp.postgresql.org/pub/source/v{version}/postgresql-*.tar.gz
+mariadb git https://github.com/MariaDB/server mariadb-{version}
+  https://archive.mariadb.org/mariadb-{version}/source/mariadb-*.tar.gz
+fmt git https://github.com/fmtlib/fmt {version} series=1
+  https://github.com/fmtlib/fmt/releases/download/{version}/fmt-*.zip
 gdal git https://github.com/OSGeo/gdal v{version}
   https://download.osgeo.org/gdal/{version}/gdal-*.tar.gz
 proj page https://download.osgeo.org/proj/ proj-{version}.tar.gz

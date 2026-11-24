@@ -1,0 +1,10 @@
+prefix=${pcfiledir}/../..
+includedir=${prefix}/include/mysql
+libdir=${prefix}/lib
+
+Name: libmariadb
+Description: MariaDB Connector/C
+Version: 3.4.12
+Cflags: -I${includedir}
+Libs: -L${libdir} -lmariadb
+Libs.private: -lssl -lcrypto -lz -lws2_32 -ladvapi32 -lkernel32 -lshlwapi -lcrypt32 -lbcrypt -lsecur32 -lgdi32

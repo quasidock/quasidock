@@ -1,0 +1,165 @@
+--- a/sql/mysql_install_db.cc
++++ b/sql/mysql_install_db.cc
+@@ -34,6 +34,8 @@
+ #include <winservice.h>
+ 
+ #include <string>
++#include <io.h>
++#include <fcntl.h>
+ 
+ #define USAGETEXT \
+ "mysql_install_db.exe  Ver 1.00 for Windows\n" \
+@@ -330,16 +332,65 @@
+ static char *init_bootstrap_command_line(char *cmdline, size_t size)
+ {
+   snprintf(cmdline, size - 1,
+-    "\"\"%s\""
++    "\"%s\""
+     " --defaults-file=my.ini"
+     " %s"
+     " --bootstrap"
+     " --datadir=."
+     " --tmpdir=."
+     " --loose-innodb-buffer-pool-size=21M"
+-    "\""
+-    , mysqld_path, opt_verbose_bootstrap ? "--console" : "");
++    , mysqld_path, "--console");
+   return cmdline;
++}
++
++/* Launch bootstrap directly: AppContainers cannot use cmd.exe or its NUL
++   redirections. Only the child's stdin pipe and existing output are inherited. */
++static FILE *bootstrap_open(char *cmdline, HANDLE *process)
++{
++  SECURITY_ATTRIBUTES security = {sizeof(security), NULL, TRUE};
++  HANDLE input = NULL, output = NULL;
++  if (!CreatePipe(&input, &output, &security, 0))
++    return NULL;
++  SetHandleInformation(output, HANDLE_FLAG_INHERIT, 0);
++  STARTUPINFOA startup = {};
++  PROCESS_INFORMATION child = {};
++  startup.cb = sizeof(startup);
++  startup.dwFlags = STARTF_USESTDHANDLES;
++  startup.hStdInput = input;
++  startup.hStdOutput = GetStdHandle(STD_OUTPUT_HANDLE);
++  startup.hStdError = GetStdHandle(STD_ERROR_HANDLE);
++  SetHandleInformation(startup.hStdOutput, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT);
++  SetHandleInformation(startup.hStdError, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT);
++  BOOL started = CreateProcessA(mysqld_path, cmdline, NULL, NULL, TRUE,
++                               0, NULL, NULL, &startup, &child);
++  CloseHandle(input);
++  if (!started)
++  {
++    CloseHandle(output);
++    return NULL;
++  }
++  CloseHandle(child.hThread);
++  int fd = _open_osfhandle((intptr_t)output, _O_WRONLY | _O_TEXT);
++  FILE *stream = fd < 0 ? NULL : _fdopen(fd, "w");
++  if (!stream)
++  {
++    if (fd < 0) CloseHandle(output); else _close(fd);
++    WaitForSingleObject(child.hProcess, INFINITE);
++    CloseHandle(child.hProcess);
++    return NULL;
++  }
++  *process = child.hProcess;
++  return stream;
++}
++
++static int bootstrap_close(FILE *stream, HANDLE process)
++{
++  int failed = fclose(stream);
++  DWORD code = 1;
++  if (WaitForSingleObject(process, INFINITE) == WAIT_OBJECT_0)
++    GetExitCodeProcess(process, &code);
++  CloseHandle(process);
++  return failed ? 1 : (int)code;
+ }
+ 
+ static char my_ini_path[MAX_PATH];
+@@ -459,7 +510,7 @@
+   "'$.password_last_changed', UNIX_TIMESTAMP(),"
+   "'$.plugin','mysql_native_password',"
+   "'$.authentication_string','%s',"
+-  "'$.auth_or', json_array(json_object(), json_object('plugin', 'gssapi','authentication_string','SID:BA'))"
++  "'$.auth_or', json_array(json_object())"
+   ") where User= 'root';\n ";
+ 
+ static constexpr char remove_default_user_cmd[]=
+@@ -784,7 +835,8 @@
+   char cwd[MAX_PATH];
+   DWORD cwd_len= MAX_PATH;
+   char cmdline[3*MAX_PATH];
+-  FILE *in;
++  FILE *in = NULL;
++  HANDLE bootstrap_process = NULL;
+   bool created_datadir= false;
+   DWORD last_error;
+   bool service_created= false;
+@@ -856,7 +908,10 @@
+     service_created = true;
+   }
+ 
+-  set_permissions(datadir, service_user.c_str());
++  /* Quasidock grants inherited data ACLs; standalone initialization needs no
++     service-account permissions or WRITE_DAC access. */
++  if (opt_service && opt_service[0])
++    set_permissions(datadir, service_user.c_str());
+ 
+   if (opt_large_pages)
+   {
+@@ -893,9 +948,13 @@
+   if(opt_verbose_bootstrap)
+     printf("Executing %s\n", cmdline);
+ 
+-  in= popen(cmdline, "wt");
++  in= bootstrap_open(cmdline, &bootstrap_process);
+   if (!in)
++  {
++    fprintf(stderr, "Could not launch bootstrap, Windows error %lu\n", GetLastError());
++    ret= 1;
+     goto end;
++  }
+ 
+   if (setvbuf(in, NULL, _IONBF, 0))
+   {
+@@ -958,19 +1017,23 @@
+   fflush(in);
+ 
+   /* Check if bootstrap has completed successfully. */
+-  ret= pclose(in);
++  ret= bootstrap_close(in, bootstrap_process);
++  in= NULL;
+   if (ret)
+   {
+-    verbose("mysqld returned error %d in pclose",ret);
++    verbose("mysqld bootstrap returned error %d",ret);
+     goto end;
+   }
+ 
+ end:
++  if (in)
++    bootstrap_close(in, bootstrap_process);
+   if (!ret)
+     return ret;
+ 
+   /* Cleanup after error.*/
+-  if (created_datadir)
++  /* Preserve failed standalone initialization for inspection. */
++  if (created_datadir && service_created)
+   {
+     SetCurrentDirectory(cwd);
+     clean_directory(datadir);
+--- a/mysys/my_default.c
++++ b/mysys/my_default.c
+@@ -1061,6 +1061,9 @@
+ 
+ #ifdef _WIN32
+ 
++  /* A container-provided home is the complete default configuration scope.
++     Do not inspect host Windows/root directories or image parent paths. */
++  if (!getenv("MARIADB_HOME"))
+   {
+     char fname_buffer[FN_REFLEN];
+     if (GetSystemWindowsDirectory(fname_buffer, sizeof(fname_buffer)))

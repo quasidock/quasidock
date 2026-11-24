@@ -1,0 +1,204 @@
+{
+  "id": "mariadb-sdk",
+  "version": "12.3.4",
+  "name": "MariaDB SDK",
+  "summary": "MariaDB server and Connector/C built with LLVM-MinGW, with headers and libraries for C clients and server plugins",
+  "homepage": "https://mariadb.org/",
+  "license": "GPL-2.0-only AND LGPL-2.1-or-later",
+  "entrypoint": "bin/mariadb.exe",
+  "cmd": [
+    "--version"
+  ],
+  "path": [
+    "bin"
+  ],
+  "env": {
+    "MARIADB_PLUGIN_DIR": "${app}\\lib\\plugin",
+    "SSL_CERT_FILE": "${roots}"
+  },
+  "sdk": {
+    "cmake": "cmake:4.4.4@sha256:b96b30bb57b5147726b7deef2607917b43972bb896d9f5d3e3082e31368dbeae",
+    "llvm": "llvm-mingw:20261020@sha256:65425754b958693accc5dc8d8e8ca0dfa6235669c286cc8875105171b3e299b9",
+    "busybox": "busybox:FRP-6075-g169694ebd@sha256:baca1ecd27b7b5ffe54402d4f8b6e36802d9db5e0e4cb2b7ab13104031045c50",
+    "perl": "perl:5.42.3.1@sha256:2854c34722b812ef3173f5d4ab6fb091ac45dc16d6079865a5024d6a6527dfd6",
+    "meson": "meson:1.12.1@sha256:9b656a460928dbde77dc31f5827e9b99ad4b53e007de87b19b6fbec26785bbc3"
+  },
+  "cleanup": [
+    "/mysql-test",
+    "/sql-bench",
+    "/man",
+    "/share/man",
+    "*.pdb",
+    "/share/doc",
+    "/docs",
+    "/mariadb-test",
+    "/bin/mariadb-test.exe",
+    "/bin/mariadb-client-test.exe",
+    "/lib/cmake/OpenSSL",
+    "/bin/mysqltest.exe",
+    "/bin/mysql_client_test.exe",
+    "/bin/*.a"
+  ],
+  "stages": [
+    {
+      "name": "flex-bison",
+      "sources": [
+        {
+          "url": "https://github.com/lexxmark/winflexbison/releases/download/v2.5.25/win_flex_bison-2.5.25.zip",
+          "sha256": "8d324b62be33604b2c45ad1dd34ab93d722534448f55a16ca7292de32b6ac135"
+        }
+      ],
+      "build": [
+        "./win_flex.exe --version && ./win_bison.exe --version"
+      ]
+    },
+    {
+      "name": "zlib",
+      "sources": [
+        {
+          "url": "https://github.com/madler/zlib/releases/download/v1.4/zlib-1.4.tar.xz",
+          "sha256": "4f11c512053d7bab8d9e9b89bde3575add3e4c50a383b42ef6cb837035fc5a7c",
+          "strip": 1
+        }
+      ],
+      "build": [
+        "mkdir -p \"$PREFIX/licenses\"",
+        "cmake -S . -B out -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_INSTALL_PREFIX=\"$PREFIX\" -DZLIB_BUILD_TESTING=OFF -DZLIB_BUILD_SHARED=OFF",
+        "cmake --build out",
+        "cmake --install out",
+        "mv \"$PREFIX/lib/libzs.a\" \"$PREFIX/lib/libz.a\"",
+        "cp LICENSE \"$PREFIX/licenses/zlib.txt\""
+      ]
+    },
+    {
+      "name": "pcre2",
+      "sources": [
+        {
+          "url": "https://github.com/PCRE2Project/pcre2/releases/download/pcre2-10.49/pcre2-10.49.tar.gz",
+          "sha256": "929f0b20e62879252a15886b06c89f1edef61a363cbd5826fb041080a5e557ae",
+          "strip": 1
+        }
+      ],
+      "build": [
+        "cmake -S . -B out -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_INSTALL_PREFIX=\"$PREFIX\" -DBUILD_SHARED_LIBS=OFF -DBUILD_STATIC_LIBS=ON -DPCRE2_BUILD_TESTS=OFF -DPCRE2_BUILD_PCRE2GREP=OFF -DPCRE2_SUPPORT_JIT=ON",
+        "cmake --build out",
+        "cmake --install out",
+        "cp LICENCE.md \"$PREFIX/licenses/pcre2.txt\""
+      ]
+    },
+    {
+      "name": "openssl",
+      "env": {
+        "CFLAGS": "-O2",
+        "PREFIX": "B:/prefix",
+        "PERL": "perl",
+        "PERL5OPT": "-IB:/src/openssl/quasidock -Munixspec"
+      },
+      "sources": [
+        {
+          "url": "https://github.com/openssl/openssl/releases/download/openssl-3.5.9/openssl-3.5.9.tar.gz",
+          "sha256": "603f5602e2eef00d77fbd429d34dcd5822bb301757a1bc9cdb24c670f1eb859a",
+          "strip": 1
+        },
+        {
+          "path": "gtk4-sdk/openssl-unixspec.pm",
+          "dest": "quasidock/unixspec.pm"
+        }
+      ],
+      "build": [
+        "perl Configure mingw64 no-shared no-asm no-tests no-docs no-apps no-module --prefix=\"$PREFIX\" --libdir=lib",
+        "make build_generated $(sed -n '/^GENERATED=/,/[^\\\\]$/p' Makefile | tr ' ' '\\n' | grep '[.][ch]$')",
+        "make -n build_libs | grep -e ' -c -o ' | tr '\\n' '\\0' | xargs -0 -P \"$(nproc)\" -n 1 sh -c",
+        "make build_sw",
+        "make install_dev",
+        "sed -i 's/^Libs: .* -lcrypto$/& -lws2_32 -lgdi32 -lcrypt32/' \"$PREFIX/lib/pkgconfig/libcrypto.pc\"",
+        "grep -q '^Libs: .* -lcrypt32$' \"$PREFIX/lib/pkgconfig/libcrypto.pc\"",
+        "cp LICENSE.txt \"$PREFIX/LICENSE.openssl\""
+      ]
+    },
+    {
+      "name": "fmt",
+      "sources": [
+        {
+          "url": "https://github.com/fmtlib/fmt/releases/download/12.2.0/fmt-12.2.0.zip",
+          "sha256": "a2f4a8d51178f954e4c339007f77edd76ba0cb2e36f87a48e5a5403d9be5878f",
+          "strip": 1
+        }
+      ],
+      "build": [
+        "mkdir -p \"$PREFIX/include\"",
+        "cp -R include/fmt \"$PREFIX/include/\"",
+        "cp LICENSE \"$PREFIX/licenses/fmt.txt\""
+      ]
+    },
+    {
+      "name": "icu-headers",
+      "sources": [
+        {
+          "url": "https://github.com/unicode-org/icu/releases/download/release-72-1/icu4c-72_1-src.tgz",
+          "sha256": "a2d2d38217092a7ed56635e34467f92f976b370e20182ad325edea6681a71d68",
+          "strip": 1
+        }
+      ],
+      "build": [
+        "mkdir -p \"$PREFIX/include/unicode\"",
+        "cp source/common/unicode/*.h source/i18n/unicode/*.h \"$PREFIX/include/unicode/\"",
+        "cp LICENSE \"$PREFIX/licenses/icu.txt\""
+      ]
+    },
+    {
+      "name": "mariadb",
+      "sources": [
+        {
+          "url": "https://archive.mariadb.org/mariadb-12.3.4/source/mariadb-12.3.4.tar.gz",
+          "sha256": "75aae4d48df905734e24a85b955bbcdc43f4b122b450bc4ad2bc92f5d1ac578d",
+          "strip": 1
+        },
+        {
+          "path": "mariadb/build-mariadb.sh",
+          "dest": "quasidock/build-mariadb.sh"
+        },
+        {
+          "path": "mariadb/mingw.patch",
+          "dest": "quasidock/mingw.patch"
+        },
+        {
+          "path": "mariadb/bootstrap.patch",
+          "dest": "quasidock/bootstrap.patch"
+        }
+      ],
+      "build": [
+        "patch -p1 < quasidock/mingw.patch",
+        "patch -p1 < quasidock/bootstrap.patch",
+        "sh quasidock/build-mariadb.sh"
+      ]
+    },
+    {
+      "name": "server-helper",
+      "sources": [
+        {
+          "path": "mariadb/mariadb-server.c"
+        }
+      ],
+      "build": [
+        "windres B:/src/mariadb/out/win_compatibility.rc -O coff -o manifest.o",
+        "cc -O2 -Wall -Wextra -Werror -municode -s -Wl,--no-insert-timestamp mariadb-server.c manifest.o -o \"$PREFIX/bin/mariadb-server.exe\" -lbcrypt",
+        "\"$PREFIX/bin/mariadb-server.exe\" --version"
+      ]
+    },
+    {
+      "name": "sdk",
+      "sources": [
+        {
+          "path": "mariadb/sdk.sh"
+        },
+        {
+          "path": "mariadb/libmariadb.pc"
+        }
+      ],
+      "build": [
+        "sh sdk.sh"
+      ]
+    }
+  ]
+}

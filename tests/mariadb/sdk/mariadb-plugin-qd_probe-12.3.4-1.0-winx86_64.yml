@@ -1,0 +1,8 @@
+- name: qd_probe
+  filename: mariadb-plugin-qd_probe-12.3.4-1.0-winx86_64
+  version: 1.0
+  server: 12.3.4
+  platform: winx86_64
+  author: Quasidock
+  description: Installed SDK integration test
+  license: GPLv2

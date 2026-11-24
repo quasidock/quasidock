@@ -1,0 +1,31 @@
+{
+  "id": "mariadb-sdk-probe",
+  "version": "1",
+  "entrypoint": "bin/qd-client.exe",
+  "path": ["bin"],
+  "from": { "mariadb": "@RUNTIME@" },
+  "sdk": {
+    "mariadbdev": "@SDK@",
+    "cmake": "@CMAKE@",
+    "llvm": "@LLVM@",
+    "meson": "@MESON@",
+    "busybox": "@BUSYBOX@"
+  },
+  "env": {
+    "MARIADB_HOME": "${data}",
+    "MYSQL_TCP_PORT": "${uses:mariadb}"
+  },
+  "permissions": {
+    "network": true,
+    "uses": [{"name": "mariadb", "port": 3306}]
+  },
+  "stages": [{
+    "name": "probe",
+    "sources": [{"path": "@SOURCE@"}],
+    "build": [
+      "cmake -S . -B out -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=\"$PREFIX\" -DCMAKE_CXX_FLAGS='-fms-extensions -fno-exceptions'",
+      "cmake --build out",
+      "cmake --install out"
+    ]
+  }]
+}

@@ -1,0 +1,378 @@
+--- a/cmake/os/Windows.cmake
++++ b/cmake/os/Windows.cmake
+@@ -15,6 +15,10 @@
+ 
+ # This file includes Windows specific hacks, mostly around compiler flags
+ 
++
++if(MINGW)
++  add_compile_definitions(_GNU_SOURCE WIN32_LEAN_AND_MEAN NOSERVICE NOMINMAX _WIN32_WINNT=0x0A00)
++endif()
+ 
+ if(MSVC)
+   if(CMAKE_CXX_COMPILER_ARCHITECTURE_ID STREQUAL ARM64)
+--- a/support-files/mariadb-plugin-config.cmake.in
++++ b/support-files/mariadb-plugin-config.cmake.in
+@@ -32,6 +32,9 @@
+ ENDMACRO()
+ 
+ ADD_LIBRARY(mariadb_private INTERFACE)
++IF(MINGW)
++  TARGET_COMPILE_DEFINITIONS(mariadb_private INTERFACE _GNU_SOURCE WIN32_LEAN_AND_MEAN NOSERVICE NOMINMAX _WIN32_WINNT=0x0A00)
++ENDIF()
+ TARGET_INCLUDE_DIRECTORIES(mariadb_private INTERFACE ${basedir}/@INSTALL_INCLUDEDIR@/server/private)
+ 
+ INCLUDE(FeatureSummary)
+@@ -77,7 +80,7 @@
+   SET(CPACK_PACKAGE_RELOCATABLE FALSE)
+ 
+   FOREACH(p ${INSTALL_PLUGINDIRABS} ${INSTALL_MYSQLTESTDIRABS}/plugin ${INSTALL_SYSCONF2DIR})
+-    WHILE(NOT prev STREQUAL ${p})
++    WHILE(NOT "${prev}" STREQUAL "${p}")
+       LIST(APPEND CPACK_RPM_EXCLUDE_FROM_AUTO_FILELIST_ADDITION "${p}")
+       SET(prev ${p})
+       GET_FILENAME_COMPONENT(p "${p}" DIRECTORY)
+--- a/cmake/mysql_add_executable.cmake
++++ b/cmake/mysql_add_executable.cmake
+@@ -40,7 +40,13 @@
+   SET(sources ${ARG_UNPARSED_ARGUMENTS})
+   ADD_VERSION_INFO(${target} EXECUTABLE sources)
+ 
+-  IF(MSVC)
++  IF(MINGW)
++    # GNU CMake does not embed .manifest sources automatically. Keep the
++    # upstream UTF-8 code page and Windows compatibility settings.
++    SET(manifest_resource "${CMAKE_BINARY_DIR}/win_compatibility.rc")
++    FILE(WRITE "${manifest_resource}" "1 24 \"${CMAKE_SOURCE_DIR}/cmake/win_compatibility.manifest\"\n")
++    LIST(APPEND sources "${manifest_resource}")
++  ELSEIF(MSVC)
+     # Add compatibility manifest, to fix GetVersionEx on Windows 8.1 and later
+     SET(sources ${sources} ${PROJECT_SOURCE_DIR}/cmake/win_compatibility.manifest)
+   ENDIF()
+--- a/config.h.cmake
++++ b/config.h.cmake
+@@ -410,14 +410,18 @@
+ #define SIGQUIT SIGTERM
+ #define SIGPIPE SIGINT
+ #define sigset_t int
++#ifndef __MINGW32__
+ #define mode_t int
++#endif
+ #define popen _popen
+ #define pclose _pclose
+ #define ssize_t SSIZE_T
+ #define strcasecmp _stricmp
+ #define strncasecmp _strnicmp
+ #define strtok_r strtok_s
++#ifndef __MINGW32__
+ #define tzname _tzname
++#endif
+ #define P_tmpdir "C:\\TEMP"
+ #define setenv(a,b,c) _putenv_s(a,b)
+ 
+--- a/configure.cmake
++++ b/configure.cmake
+@@ -269,6 +269,10 @@
+ # Figure out threading library
+ #
+ FIND_PACKAGE (Threads)
++IF(WIN32)
++  # MariaDB supplies its own, incompatible Windows pthread emulation.
++  SET(CMAKE_THREAD_LIBS_INIT "")
++ENDIF()
+ 
+ FUNCTION(MY_CHECK_PTHREAD_ONCE_INIT)
+   MY_CHECK_C_COMPILER_FLAG("-Werror")
+--- a/include/my_global.h
++++ b/include/my_global.h
+@@ -277,13 +277,11 @@
+ 
+ /* gcc/egcs issues */
+ 
+-#if defined(__GNUC) && defined(__EXCEPTIONS)
++#if defined(__GNUC) && defined(__EXCEPTIONS) && !defined(_WIN32)
+ #error "Please add -fno-exceptions to CXXFLAGS and reconfigure/recompile"
+ #endif
+ 
+-#ifndef stdin
+ #include <stdio.h>
+-#endif
+ #include <stdarg.h>
+ #ifdef HAVE_STDLIB_H
+ #include <stdlib.h>
+--- a/include/my_dir.h
++++ b/include/my_dir.h
+@@ -76,7 +76,7 @@
+ 
+ #else
+ 
+-#if defined(_MSC_VER)
++#if defined(_WIN32)
+ #define MY_STAT struct _stati64 /* 64 bit file size */
+ #else
+ #define MY_STAT struct stat	/* Original struct has what we need */
+--- a/include/mysql/plugin.h
++++ b/include/mysql/plugin.h
+@@ -30,8 +30,8 @@
+   for functions.
+ */
+ #ifdef MYSQL_DYNAMIC_PLUGIN
+-  #ifdef _MSC_VER
+-    #define MYSQL_DLLEXPORT _declspec(dllexport)
++  #ifdef _WIN32
++    #define MYSQL_DLLEXPORT __declspec(dllexport)
+   #else
+     #define MYSQL_DLLEXPORT
+   #endif
+--- a/mysys/my_init.c
++++ b/mysys/my_init.c
+@@ -27,8 +27,8 @@
+ #include <unistd.h>
+ #endif
+ #ifdef _WIN32
++#include <locale.h>
+ #ifdef _MSC_VER
+-#include <locale.h>
+ #include <crtdbg.h>
+ /* WSAStartup needs winsock library*/
+ #pragma comment(lib, "ws2_32")
+--- a/mysys/my_pthread.c
++++ b/mysys/my_pthread.c
+@@ -55,7 +55,7 @@
+ }
+ #endif
+ 
+-#if !defined(HAVE_GMTIME_R)
++#if !defined(HAVE_GMTIME_R) && !defined(_WIN32)
+ /* 
+   Reentrant version of standard gmtime() function. 
+   Needed on some systems which don't implement it.
+--- a/include/my_stack_alloc.h
++++ b/include/my_stack_alloc.h
+@@ -19,7 +19,7 @@
+ 
+ #ifdef _MSC_VER
+ #include <intrin.h> // For MSVC-specific intrinsics
+-#else
++#elif !defined(_WIN32)
+ #include <sys/resource.h>
+ #endif
+ 
+--- a/mysys/my_win_popen.cc
++++ b/mysys/my_win_popen.cc
+@@ -22,6 +22,8 @@
+ #include <mutex>
+ #include <stdlib.h>
+ #include <unordered_map>
++#include <stdio.h>
++#include <string>
+ 
+ enum
+ {
+--- a/mysys/my_timezone.cc
++++ b/mysys/my_timezone.cc
+@@ -23,7 +23,14 @@
+ #include <time.h>
+ 
+ #ifdef _WIN32
++#ifdef __MINGW32__
++#define U_DISABLE_RENAMING 1
++#include <unicode/ucal.h>
++#include <unicode/uenum.h>
++#include <unicode/ustring.h>
++#else
+ #include <icu.h>
++#endif
+ #include <objbase.h>
+ #define MAX_TZ_ABBR 64
+ 
+--- a/mysys/CMakeLists.txt
++++ b/mysys/CMakeLists.txt
+@@ -76,7 +76,7 @@
+       COMPILE_FLAGS "-march=armv8-a+crc+crypto"
+   )
+   ENDIF()
+-ELSEIF(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|amd64|i386|i686")
++ELSEIF(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|amd64|AMD64|i386|i686")
+   SET(MYSYS_SOURCES ${MYSYS_SOURCES} crc32/crc32_x86.c crc32/crc32c_x86.cc)
+   IF(CMAKE_C_COMPILER_ID STREQUAL "GNU" AND CMAKE_C_COMPILER_VERSION VERSION_LESS "5")
+     SET_SOURCE_FILES_PROPERTIES(crc32/crc32_x86.c PROPERTIES
+@@ -174,7 +174,9 @@
+ TARGET_LINK_LIBRARIES(mysys dbug strings ${ZLIB_LIBRARIES}
+  ${LIBNSL} ${LIBM} ${LIBRT} ${CMAKE_DL_LIBS} ${LIBSOCKET} ${LIBEXECINFO})
+ DTRACE_INSTRUMENT(mysys)
+-IF(WIN32)
++IF(MINGW)
++  TARGET_LINK_LIBRARIES(mysys icu ole32)
++ELSEIF(WIN32)
+   TARGET_LINK_LIBRARIES(mysys icuuc icuin)
+ ENDIF()
+ IF (HAVE_GCC_C11_ATOMICS_WITH_LIBATOMIC)
+--- a/mysys/my_getsystime.c
++++ b/mysys/my_getsystime.c
+@@ -131,7 +131,17 @@
+ 
+ ulonglong my_getcputime()
+ {
+-#ifdef CLOCK_THREAD_CPUTIME_ID
++#ifdef _WIN32
++  FILETIME created, exited, kernel, user;
++  ULARGE_INTEGER kernel_time, user_time;
++  if (!GetThreadTimes(GetCurrentThread(), &created, &exited, &kernel, &user))
++    return 0;
++  kernel_time.LowPart= kernel.dwLowDateTime;
++  kernel_time.HighPart= kernel.dwHighDateTime;
++  user_time.LowPart= user.dwLowDateTime;
++  user_time.HighPart= user.dwHighDateTime;
++  return kernel_time.QuadPart + user_time.QuadPart;
++#elif defined(CLOCK_THREAD_CPUTIME_ID)
+   struct timespec tp;
+   if (clock_gettime(CLOCK_THREAD_CPUTIME_ID, &tp))
+     return 0;
+--- a/storage/mroonga/vendor/groonga/lib/grn.h
++++ b/storage/mroonga/vendor/groonga/lib/grn.h
+@@ -101,6 +101,9 @@
+ # include <float.h>
+ # include <time.h>
+ # include <sys/types.h>
++# ifdef __MINGW32__
++typedef unsigned int uint;
++# endif
+ 
+ # ifndef __GNUC__
+ #  define PATH_MAX (MAX_PATH - 1)
+--- a/storage/innobase/include/mtr0types.h
++++ b/storage/innobase/include/mtr0types.h
+@@ -300,6 +300,9 @@
+ enum mfile_type_t
+ {
+   /** Create a file. Followed by tablespace ID and the file name. */
++#ifdef FILE_CREATE
++# undef FILE_CREATE
++#endif
+   FILE_CREATE = 0x80,
+   /** Delete a file. Followed by tablespace ID and the file name.  */
+   FILE_DELETE = 0x90,
+--- a/storage/innobase/row/row0log.cc
++++ b/storage/innobase/row/row0log.cc
+@@ -2536,7 +2536,7 @@
+ 	if (index->online_log->head.blocks
+ 	    == index->online_log->tail.blocks) {
+ 		if (index->online_log->head.blocks) {
+-#ifdef HAVE_FTRUNCATE
++#if defined(HAVE_FTRUNCATE) && !defined(_WIN32)
+ 			/* Truncate the file in order to save space. */
+ 			if (index->online_log->fd > 0
+ 			    && ftruncate(index->online_log->fd, 0) == -1) {
+@@ -3461,7 +3461,7 @@
+ 	if (index->online_log->head.blocks
+ 	    == index->online_log->tail.blocks) {
+ 		if (index->online_log->head.blocks) {
+-#ifdef HAVE_FTRUNCATE
++#if defined(HAVE_FTRUNCATE) && !defined(_WIN32)
+ 			/* Truncate the file in order to save space. */
+ 			if (index->online_log->fd > 0
+ 			    && ftruncate(index->online_log->fd, 0) == -1) {
+--- a/libmariadb/libmariadb/CMakeLists.txt
++++ b/libmariadb/libmariadb/CMakeLists.txt
+@@ -448,7 +448,7 @@
+ SET_TARGET_PROPERTIES(mariadbclient PROPERTIES IMPORTED_INTERFACE_LINK_LIBRARIES "${SYSTEM_LIBS}")
+ SET_TARGET_PROPERTIES(libmariadb PROPERTIES IMPORTED_INTERFACE_LINK_LIBRARIES "${SYSTEM_LIBS}")
+ 
+-SET_TARGET_PROPERTIES(libmariadb PROPERTIES PREFIX "")
++SET_TARGET_PROPERTIES(libmariadb PROPERTIES PREFIX "" IMPORT_PREFIX "")
+ 
+ #
+ # Installation
+--- a/cmake/pcre.cmake
++++ b/cmake/pcre.cmake
+@@ -112,5 +112,8 @@
+       ENDIF()
+     ENDIF()
+   ENDIF()
++  IF(PCRE_FOUND)
++    LINK_DIRECTORIES(${PCRE_LIBRARY_DIRS})
++  ENDIF()
+ ENDMACRO()
+ 
+--- a/cmake/ssl.cmake
++++ b/cmake/ssl.cmake
+@@ -109,7 +109,7 @@
+     IF(OPENSSL_FOUND)
+       SET(OPENSSL_LIBRARY ${OPENSSL_SSL_LIBRARY})
+       SET(SSL_SOURCES "")
+-      SET(SSL_LIBRARIES ${OPENSSL_LIBRARIES})
++      SET(SSL_LIBRARIES OpenSSL::SSL OpenSSL::Crypto)
+ 
+       MESSAGE_ONCE(OPENSSL_INCLUDE_DIR "OPENSSL_INCLUDE_DIR = ${OPENSSL_INCLUDE_DIR}")
+       MESSAGE_ONCE(OPENSSL_SSL_LIBRARY "OPENSSL_SSL_LIBRARY = ${OPENSSL_SSL_LIBRARY}")
+--- a/libmariadb/CMakeLists.txt
++++ b/libmariadb/CMakeLists.txt
+@@ -391,7 +391,7 @@
+     add_compile_definitions(HAVE_OPENSSL HAVE_TLS)
+     SET(SSL_SOURCES "${CC_SOURCE_DIR}/libmariadb/secure/openssl.c"
+                     "${CC_SOURCE_DIR}/libmariadb/secure/openssl_crypt.c")
+-    SET(SSL_LIBRARIES ${OPENSSL_SSL_LIBRARY} ${OPENSSL_CRYPTO_LIBRARY})
++    SET(SSL_LIBRARIES OpenSSL::SSL OpenSSL::Crypto)
+     IF(WIN32 AND EXISTS ${OPENSSL_INCLUDE_DIR}/openssl/applink.c)
+      SET(HAVE_OPENSSL_APPLINK_C 1)
+     ENDIF()
+--- a/sql/CMakeLists.txt
++++ b/sql/CMakeLists.txt
+@@ -282,7 +282,7 @@
+   SET(MYSQLD_SOURCE main.cc ${DTRACE_PROBES_ALL})
+ ENDIF()
+ 
+-IF(MSVC OR CMAKE_SYSTEM_NAME MATCHES AIX)
++IF(WIN32 OR CMAKE_SYSTEM_NAME MATCHES AIX)
+   SET(libs_to_export_symbols sql mysys dbug strings)
+   # Create shared library of already compiled object
+   # Export all symbols from selected libraries, to be used
+@@ -318,17 +318,23 @@
+    ${all_deps}
+    sql_builtins
+   )
+-  IF(MSVC)
+-    TARGET_LINK_LIBRARIES(server PRIVATE icuuc icuin)
++  IF(WIN32)
++    IF(MSVC)
++      TARGET_LINK_LIBRARIES(server PRIVATE icuuc icuin)
++    ENDIF()
+     IF(NOT WITHOUT_DYNAMIC_PLUGINS)
+      SET_TARGET_PROPERTIES(server PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS TRUE)
+     ENDIF()
+   ELSE()
+     SET_TARGET_PROPERTIES(server PROPERTIES AIX_EXPORT_ALL_SYMBOLS TRUE)
+   ENDIF()
++  IF(MINGW)
++    SET_TARGET_PROPERTIES(server PROPERTIES PREFIX "")
++    TARGET_LINK_OPTIONS(server PRIVATE "-Wl,--export-all-symbols")
++  ENDIF()
+   MYSQL_INSTALL_TARGETS(server DESTINATION  ${INSTALL_BINDIR} COMPONENT Server)
+-    IF(MSVC)
+-      # ARCHIVE = server.lib only, not server.dll, enough for linking plugins
++    IF(WIN32)
++      # ARCHIVE = the server import library only, not server.dll, enough for linking plugins
+       INSTALL(TARGETS server EXPORT mariadb-plugin-targets ARCHIVE
+               DESTINATION ${INSTALL_LIBDIR} COMPONENT Development)
+     ENDIF()
+@@ -357,7 +363,7 @@
+   ENDIF()
+ ENDIF(NOT WITHOUT_DYNAMIC_PLUGINS)
+ 
+-IF(MSVC OR CMAKE_SYSTEM_NAME MATCHES AIX)
++IF(WIN32 OR CMAKE_SYSTEM_NAME MATCHES AIX)
+   TARGET_LINK_LIBRARIES(mariadbd server)
+ ELSE()
+   TARGET_LINK_LIBRARIES(mariadbd LINK_PRIVATE sql sql_builtins)
+--- a/cmake/plugin.cmake
++++ b/cmake/plugin.cmake
+@@ -298,7 +298,7 @@
+     # Thus we skip TARGET_LINK_LIBRARIES on Linux, as it would only generate
+     # an additional dependency.
+     IF(ARG_RECOMPILE_FOR_EMBEDDED OR ARG_STORAGE_ENGINE)
+-      IF(MSVC OR CMAKE_SYSTEM_NAME MATCHES AIX)
++      IF(WIN32 OR CMAKE_SYSTEM_NAME MATCHES AIX)
+         TARGET_LINK_LIBRARIES(${target} server)
+       ELSEIF(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
+         TARGET_LINK_LIBRARIES (${target} mariadbd)
