@@ -45,11 +45,30 @@ task run -- help          # Build and run Quasidock with the supplied arguments
 task test                 # Run all Go tests without cached results
 task fmt                  # Format Go source files
 task vet                  # Run Go static analysis
+task lint:build           # Build the golangci-lint image from source
+task lint                 # Lint Go code and save out/golangci-lint.json
 task check                # Run vet, then tests
 ```
 
 Pass extra build options or test flags after `--`, for example
 `task build -- --prefix out/custom` or `task test -- -run TestName`.
+
+`task lint` builds the pinned golangci-lint image, then runs its bundled Go
+toolchain against the root module, including tests. The first run downloads
+dependencies; the `quasidock-lint-cache` named volume preserves module, build,
+and analysis caches across runs. It enables the standard linters plus `gosec`,
+`bodyclose`, and `errorlint`, prints findings,
+and writes `out/golangci-lint.json`. Findings return a nonzero exit status for
+review; lint is separate from `task check`. Pass linter options after `--`, for
+example `task lint -- --verbose`.
+
+Without Task, use:
+
+```powershell
+go run ./scripts/build.go
+.\out\bin\quasidock.exe build recipes/golangci-lint.json
+.\out\bin\quasidock.exe run --rm --pull=never --entrypoint=golangci-lint.exe -v 'quasidock-lint-cache:${data}/cache' golangci-lint run --config .golangci.yml ./...
+```
 
 ## Images
 

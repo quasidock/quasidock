@@ -1,0 +1,24 @@
+version: "2"
+
+run:
+  timeout: 10m
+  tests: true
+  modules-download-mode: readonly
+
+linters:
+  default: standard
+  enable:
+    - gosec
+    - bodyclose
+    - errorlint
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+output:
+  formats:
+    text:
+      path: stdout
+    json:
+      path: out/golangci-lint.json

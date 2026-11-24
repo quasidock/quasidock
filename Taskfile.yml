@@ -40,6 +40,23 @@ tasks:
     cmds:
       - go vet ./...
 
+  lint:build:
+    desc: Build the golangci-lint image from pinned sources
+    cmds:
+      - task: build
+        vars:
+          CLI_ARGS: ''
+      - ./out/bin/quasidock.exe build recipes/golangci-lint.json
+
+  lint:
+    desc: Lint Go code and save out/golangci-lint.json (task lint -- --verbose)
+    deps:
+      - task: lint:build
+        vars:
+          CLI_ARGS: ''
+    cmds:
+      - ./out/bin/quasidock.exe run --rm --pull=never --entrypoint=golangci-lint.exe -v 'quasidock-lint-cache:${data}/cache' golangci-lint run --config .golangci.yml {{.CLI_ARGS}} ./...
+
   check:
     desc: Run static analysis and tests
     cmds:

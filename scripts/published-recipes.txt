@@ -13,6 +13,7 @@ rust.json
 ripgrep.json
 bat.json
 go.json
+golangci-lint.json
 fzf.json
 zot.json
 oras.json

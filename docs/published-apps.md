@@ -1,6 +1,6 @@
 # Published apps
 
-Sixty-seven recipes in [recipes/](../recipes) build into published OCI images in
+Sixty-eight recipes in [recipes/](../recipes) build into published OCI images in
 `ghcr.io/quasidock/quasidock`, listed in dependency order in
 [published-recipes.txt](../scripts/published-recipes.txt). `quasidock search`
 queries the published catalog, and `quasidock run --rm <id>` pulls an image on
@@ -24,6 +24,7 @@ catalog are published, and [recipes.md](recipes.md) for the recipe format.
 | [`ripgrep`](../recipes/ripgrep.json) | `15.2.0` | `rg.exe` | Fast regex file search |
 | [`bat`](../recipes/bat.json) | `0.26.1` | `bat.exe` | Syntax-highlighted file viewer |
 | [`go`](../recipes/go.json) | `1.27.3` | `bin/go.exe` (`${data}\go\bin` in `path`) | Go compiler and toolchain (`soft` sandbox) |
+| [`golangci-lint`](../recipes/golangci-lint.json) | `2.15.0` | `golangci-lint.exe` | Go linters built from source (`from: go`, persistent caches, `soft` sandbox); registered for publication |
 | [`fzf`](../recipes/fzf.json) | `0.74.5` | `fzf.exe` | Command-line fuzzy finder |
 | [`zot`](../recipes/zot.json) | `2.1.23` | `zot.exe` | OCI image registry server (minimal build) |
 | [`oras`](../recipes/oras.json) | `1.3.6` | `oras.exe` | Push and pull files in OCI registries |

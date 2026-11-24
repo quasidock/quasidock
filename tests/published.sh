@@ -100,7 +100,7 @@ smoke_args() {
     busybox) printf '%s\n' true ;;
     node) printf '%s\n' '-e 0' ;;
     python | python-sdk) printf '%s\n' '-c pass' ;;
-    zig | go | pdfbox | oras | cosign) printf '%s\n' version ;;
+    zig | go | golangci-lint | pdfbox | oras | cosign) printf '%s\n' version ;;
     7zip) printf '%s\n' i ;;
     vlc) printf '%s\n' '-I dummy vlc://quit' ;;
     *) printf '%s\n' --version ;;

@@ -311,6 +311,8 @@ ripgrep page https://index.crates.io/ri/pg/ripgrep "vers":"{version}" series=1 o
   https://static.crates.io/crates/ripgrep/ripgrep-{version}.crate
 fzf git https://github.com/junegunn/fzf v{version} osv=Go:github.com/junegunn/fzf osv=https://github.com/junegunn/fzf,v{version}
   https://proxy.golang.org/github.com/junegunn/fzf/@v/v{version}.zip
+golangci-lint git https://github.com/golangci/golangci-lint v{version} osv=Go:github.com/golangci/golangci-lint/v2 osv=https://github.com/golangci/golangci-lint,v{version}
+  https://proxy.golang.org/github.com/golangci/golangci-lint/v2/@v/v{version}.zip
 cosign git https://github.com/sigstore/cosign v{version} osv=Go:github.com/sigstore/cosign/v3 osv=https://github.com/sigstore/cosign,v{version}
   https://proxy.golang.org/github.com/sigstore/cosign/v3/@v/v{version}.zip
 oras git https://github.com/oras-project/oras v{version} osv=Go:oras.land/oras osv=https://github.com/oras-project/oras,v{version}

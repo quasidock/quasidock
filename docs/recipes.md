@@ -1222,6 +1222,16 @@ version probes.
 Go recipes (`vendor` stage running `go mod vendor` / `go mod download`, offline
 `build` stage) include:
 
+- **[recipes/golangci-lint.json](../recipes/golangci-lint.json)** (2.15.0),
+  built with Go 1.27.3 and the same pinned Go image as a runtime dependency,
+  so analysis uses the packaged toolchain. It runs in the `soft` sandbox with
+  network access for module downloads and writable module, build, and linter
+  caches under `${cache}`. `task lint` persists these in the
+  `quasidock-lint-cache` named volume and analyzes the root module, including tests,
+  with standard rules plus `gosec`, `bodyclose`, and `errorlint`; findings are
+  printed and saved to `out/golangci-lint.json`. See the root
+  [.golangci.yml](../.golangci.yml) for the repository policy. The image is
+  registered for the normal publishing workflow; publication is a separate step.
 - **[recipes/fzf.json](../recipes/fzf.json)** (0.74.5) and
   **[recipes/zot.json](../recipes/zot.json)** (2.1.23, built with
   `GOEXPERIMENT=jsonv2` and a pruned vendor cache).

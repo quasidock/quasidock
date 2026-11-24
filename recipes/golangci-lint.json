@@ -1,0 +1,44 @@
+{
+  "id": "golangci-lint",
+  "version": "2.15.0",
+  "name": "golangci-lint",
+  "summary": "Runs Go linters with a pinned Go toolchain and persistent analysis caches",
+  "homepage": "https://golangci-lint.run/",
+  "license": "GPL-3.0",
+  "entrypoint": "golangci-lint.exe",
+  "permissions": {
+    "sandbox": "soft",
+    "network": true,
+    "filesystem": ["cwd"]
+  },
+  "from": {
+    "go": "go:1.27.3@sha256:7ce8afd12dc7371e8f546f455036b941fdfdcbbaa81cefb3c320ea693d951ccc"
+  },
+  "sdk": {
+    "busybox": "busybox:FRP-6075-g169694ebd@sha256:baca1ecd27b7b5ffe54402d4f8b6e36802d9db5e0e4cb2b7ab13104031045c50"
+  },
+  "env": {
+    "GOROOT": "${go}",
+    "GOCACHE": "${cache}\\go-build",
+    "GOMODCACHE": "${cache}\\go-mod",
+    "GOLANGCI_LINT_CACHE": "${cache}\\golangci-lint"
+  },
+  "stages": [
+    {
+      "name": "golangci-lint",
+      "sources": [
+        { "url": "https://proxy.golang.org/github.com/golangci/golangci-lint/v2/@v/v2.15.0.zip", "sha256": "762af212897f3cd1462baf267cbd104a3e7d0ab136e240e0686a275031d6b316", "strip": 4 }
+      ],
+      "env": { "CGO_ENABLED": "0" },
+      "vendor": {
+        "commands": ["go mod vendor"],
+        "dir": "vendor",
+        "sha256": "d50c71d823bf8e01c5b83c87c2afe1ad36fb10ff31a9fca6798ea677d29eda4a"
+      },
+      "build": [
+        "go build -mod=vendor -buildvcs=false -ldflags '-s -w -X main.version=2.15.0 -X main.commit=25c5369a93aacb8cccea0d46e1569ca4a194564d -X main.date=2026-10-16T10:59:49Z' -o \"$PREFIX/golangci-lint.exe\" ./cmd/golangci-lint",
+        "cp LICENSE README.md \"$PREFIX/\""
+      ]
+    }
+  ]
+}
