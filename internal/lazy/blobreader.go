@@ -65,7 +65,6 @@ type BlobReader struct {
 	demand     []Piece
 	background []Piece
 
-	backgroundOut  int
 	backgroundBusy int
 	demandBusy     int
 	demandDoneAt   time.Time
@@ -380,7 +379,7 @@ func (b *BlobReader) readDone(offset uint64, buf []byte) bool {
 	if err != nil {
 		return false
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	n, err := f.ReadAt(buf, int64(offset))
 	return err == nil && n == len(buf)

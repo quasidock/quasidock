@@ -228,7 +228,7 @@ func (t *Tree) WriteTar(w io.Writer) error {
 		}
 		addErr := lw.AddFile(node.Path, size, r)
 		if closer != nil {
-			closer.Close()
+			_ = closer.Close()
 		}
 		if addErr != nil {
 			return fmt.Errorf("adding %s to layer: %w", node.Path, addErr)
@@ -325,7 +325,7 @@ func (t *Tree) WriteFiles(destPath string) error {
 		out, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
 		if err != nil {
 			if closer != nil {
-				closer.Close()
+				_ = closer.Close()
 			}
 			return err
 		}
@@ -333,7 +333,7 @@ func (t *Tree) WriteFiles(destPath string) error {
 		_, copyErr := io.Copy(out, r)
 		closeErr := out.Close()
 		if closer != nil {
-			closer.Close()
+			_ = closer.Close()
 		}
 		if copyErr != nil {
 			return copyErr
@@ -385,7 +385,7 @@ func (t *Tree) SyncFiles(destPath string, previous []string) (*Synced, error) {
 		out, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
 		if err != nil {
 			if closer != nil {
-				closer.Close()
+				_ = closer.Close()
 			}
 			return nil, err
 		}
@@ -393,7 +393,7 @@ func (t *Tree) SyncFiles(destPath string, previous []string) (*Synced, error) {
 		_, copyErr := io.Copy(out, r)
 		closeErr := out.Close()
 		if closer != nil {
-			closer.Close()
+			_ = closer.Close()
 		}
 		if copyErr != nil {
 			return nil, copyErr
@@ -433,7 +433,7 @@ func sameContents(diskPath string, content Content) (bool, error) {
 		return false, err
 	}
 	if closer != nil {
-		defer closer.Close()
+		defer func() { _ = closer.Close() }()
 	}
 	if fi.Size() != size {
 		return false, nil
@@ -443,7 +443,7 @@ func sameContents(diskPath string, content Content) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	buf1 := make([]byte, 4096)
 	buf2 := make([]byte, 4096)

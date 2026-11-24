@@ -110,27 +110,27 @@ func issue(w *Watch) bool {
 	return err == nil
 }
 
-func (self *Watcher) collect() {
-	defer close(self.done)
+func (watcher *Watcher) collect() {
+	defer close(watcher.done)
 	for {
 		var bytesTransferred win32.DWORD
 		var key uintptr
 		var overlapped *win32.OVERLAPPED
-		ok := win32.GetQueuedCompletionStatus(self.Port, &bytesTransferred, &key, &overlapped, win32.INFINITE)
+		ok := win32.GetQueuedCompletionStatus(watcher.Port, &bytesTransferred, &key, &overlapped, win32.INFINITE)
 		if key == 0 {
 			return
 		}
-		if int(key) > len(self.Watches) {
+		if int(key) > len(watcher.Watches) {
 			continue
 		}
-		w := self.Watches[key-1]
+		w := watcher.Watches[key-1]
 		if !ok {
 			continue
 		}
 		if bytesTransferred == 0 {
 			w.Missed = true
 		} else {
-			self.gather(w, bytesTransferred)
+			watcher.gather(w, bytesTransferred)
 		}
 		if !issue(w) {
 			w.Missed = true
@@ -138,9 +138,9 @@ func (self *Watcher) collect() {
 	}
 }
 
-func (self *Watcher) gather(w *Watch, bytes win32.DWORD) {
-	self.mu.Lock()
-	defer self.mu.Unlock()
+func (watcher *Watcher) gather(w *Watch, bytes win32.DWORD) {
+	watcher.mu.Lock()
+	defer watcher.mu.Unlock()
 
 	var offset win32.DWORD = 0
 	for offset+12 <= bytes {
@@ -160,7 +160,7 @@ func (self *Watcher) gather(w *Watch, bytes win32.DWORD) {
 		switch action {
 		case win32.FILE_ACTION_ADDED, win32.FILE_ACTION_MODIFIED, win32.FILE_ACTION_RENAMED_NEW_NAME:
 			if IsProgram(name) {
-				self.Found = append(self.Found, filepath.Join(w.Path, name))
+				watcher.Found = append(watcher.Found, filepath.Join(w.Path, name))
 			}
 		}
 
@@ -171,23 +171,23 @@ func (self *Watcher) gather(w *Watch, bytes win32.DWORD) {
 	}
 }
 
-func (self *Watcher) Stop() ([]string, error) {
-	win32.PostQueuedCompletionStatus(self.Port, 0, 0, nil)
-	<-self.done
+func (watcher *Watcher) Stop() ([]string, error) {
+	win32.PostQueuedCompletionStatus(watcher.Port, 0, 0, nil)
+	<-watcher.done
 
-	for _, w := range self.Watches {
+	for _, w := range watcher.Watches {
 		win32.CancelIoEx(w.Handle, nil)
 		win32.CloseHandle(w.Handle)
 	}
-	win32.CloseHandle(self.Port)
+	win32.CloseHandle(watcher.Port)
 
-	self.mu.Lock()
-	candidates := append([]string(nil), self.Found...)
-	self.mu.Unlock()
+	watcher.mu.Lock()
+	candidates := append([]string(nil), watcher.Found...)
+	watcher.mu.Unlock()
 
-	for _, w := range self.Watches {
+	for _, w := range watcher.Watches {
 		if w.Missed {
-			walkDir(w.Path, self.Since, &candidates)
+			walkDir(w.Path, watcher.Since, &candidates)
 		}
 	}
 

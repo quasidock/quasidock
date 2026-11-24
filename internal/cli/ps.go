@@ -107,10 +107,11 @@ func parseContainerListOptions(args []string) (containerListOptions, error) {
 		opts.last = n
 		return nil
 	}
-	for i := 0; i < len(args); i++ {
-		arg := args[i]
+	for len(args) > 0 {
+		arg := args[0]
+		args = args[1:]
 		if arg == "--" {
-			if i != len(args)-1 {
+			if len(args) != 0 {
 				return opts, errors.New(psUsage)
 			}
 			break
@@ -132,11 +133,11 @@ func parseContainerListOptions(args []string) (containerListOptions, error) {
 				continue
 			}
 			if !hasValue {
-				i++
-				if i == len(args) {
+				if len(args) == 0 {
 					return opts, fmt.Errorf("ps --%s needs a value", name)
 				}
-				raw = args[i]
+				raw = args[0]
+				args = args[1:]
 			}
 			if err := setValue(name, raw); err != nil {
 				return opts, err
@@ -164,11 +165,11 @@ func parseContainerListOptions(args []string) (containerListOptions, error) {
 			}
 			raw := strings.TrimPrefix(short, "=")
 			if short == "" {
-				i++
-				if i == len(args) {
+				if len(args) == 0 {
 					return opts, fmt.Errorf("ps -%s needs a value", name)
 				}
-				raw = args[i]
+				raw = args[0]
+				args = args[1:]
 			}
 			if err := setValue(name, raw); err != nil {
 				return opts, err

@@ -65,8 +65,8 @@ func Convert(tarReader io.Reader, out io.Writer, prefetch []string) (map[string]
 			return nil, err
 		}
 		defer func() {
-			tmpFile.Close()
-			os.Remove(tmpFile.Name())
+			_ = tmpFile.Close()
+			_ = os.Remove(tmpFile.Name())
 		}()
 
 		n, err := io.Copy(tmpFile, tarReader)
@@ -95,7 +95,7 @@ func Convert(tarReader io.Reader, out io.Writer, prefetch []string) (map[string]
 	if err != nil {
 		return nil, err
 	}
-	defer blob.Close()
+	defer func() { _ = blob.Close() }()
 
 	if _, err := io.Copy(out, blob); err != nil {
 		return nil, err
@@ -232,13 +232,14 @@ func (r *Reader) Extract(destPath string, numWorkers int) error {
 			return fmt.Errorf("unsafe path in layer: %s", cleanName)
 		}
 
-		if e.Type == "dir" {
+		switch e.Type {
+		case "dir":
 			targetDir := filepath.Join(destPath, filepath.FromSlash(cleanName))
 			if err := os.MkdirAll(targetDir, 0o755); err != nil {
 				return err
 			}
 			createdDirs[cleanName] = struct{}{}
-		} else if e.Type == "reg" {
+		case "reg":
 			parent := filepath.ToSlash(filepath.Dir(cleanName))
 			if parent != "" && parent != "." {
 				if _, ok := createdDirs[parent]; !ok {

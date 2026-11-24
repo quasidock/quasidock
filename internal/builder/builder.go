@@ -519,9 +519,13 @@ func computeToolVars(tools []Tool, rootsFile string) ([]environment.Var, error) 
 	for i < len(tools) {
 		t := tools[i]
 		for _, rt := range tools[i+1 : i+1+t.Brings] {
-			environment.Expand(&vars, rt.Placeholders(rootsFile), rt.Env)
+			if err := environment.Expand(&vars, rt.Placeholders(rootsFile), rt.Env); err != nil {
+				return nil, err
+			}
 		}
-		environment.Expand(&vars, t.Placeholders(rootsFile), t.Env)
+		if err := environment.Expand(&vars, t.Placeholders(rootsFile), t.Env); err != nil {
+			return nil, err
+		}
 		i += 1 + t.Brings
 	}
 	return vars, nil
@@ -694,7 +698,7 @@ func (b *BuildRoot) vendor(ctx *context.Context, m recipe.Stage, recipePath stri
 			var fallbackErr error
 			cached, fallbackErr = remote.FetchSource(ctx.Store, ctx.Env[remote.RegistryVar], image, *v.Sha256, ctx.Verbose)
 			if fallbackErr != nil {
-				return "", fmt.Errorf("%w; vendor source fallback: %v", err, fallbackErr)
+				return "", fmt.Errorf("%w; vendor source fallback: %w", err, fallbackErr)
 			}
 			// A failed command can leave modified inputs behind. Restore the
 			// original stage before applying the recovered vendor archive.
@@ -719,7 +723,7 @@ func (b *BuildRoot) vendor(ctx *context.Context, m recipe.Stage, recipePath stri
 	if err != nil {
 		return "", fmt.Errorf("module %s: reading its vendored files (%s): %w", m.Name, cached, err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	fi, _ := f.Stat()
 	entries, err := tree.ListTar(f, fi.Size())
 	if err != nil {
@@ -793,7 +797,9 @@ func (b *BuildRoot) runCommands(ctx *context.Context, m recipe.Stage, step strin
 		environment.Set(&vars, "NO_PROXY", "")
 	}
 
-	environment.Expand(&vars, oci.Placeholders{App: DriveLetter + `\prefix`, Data: ""}, m.Env)
+	if err := environment.Expand(&vars, oci.Placeholders{App: DriveLetter + `\prefix`, Data: ""}, m.Env); err != nil {
+		return err
+	}
 	envBuilt, err := environment.Build(ctx.Env, environment.Spec{
 		ID:         b.id,
 		Profile:    b.profile,
@@ -868,7 +874,7 @@ func (s Shell) CommandLine(command string) string {
 	default:
 		var out strings.Builder
 		process.AppendQuoted(&out, s.exe)
-		out.WriteString(fmt.Sprintf(` /d /s /c "%s"`, command))
+		fmt.Fprintf(&out, ` /d /s /c "%s"`, command)
 		return out.String()
 	}
 }
@@ -999,7 +1005,7 @@ func (w *Work) take(ctx *context.Context, root string, t *tree.Tree, m recipe.St
 	}
 
 	var out strings.Builder
-	out.WriteString(fmt.Sprintf("%s%s\n", stateHeader, w.stamp))
+	fmt.Fprintf(&out, "%s%s\n", stateHeader, w.stamp)
 	for _, f := range synced.Files {
 		out.WriteString(f)
 		out.WriteString("\n")

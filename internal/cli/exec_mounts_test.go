@@ -70,7 +70,9 @@ func TestExecSharesMountsRegistryAndSandbox(t *testing.T) {
 			}
 			must(t, "exec", "-d", name, "fixture.exe", "tree-hold", `$HOME\..\workspace\exec-pid`, "ignore")
 			var pid uint32
-			fmt.Sscan(waitFile(filepath.Join(source, "exec-pid.child")), &pid)
+			if _, err := fmt.Sscan(waitFile(filepath.Join(source, "exec-pid.child")), &pid); err != nil {
+				t.Fatal(err)
+			}
 			child, err := win32.OpenProcess(win32.SYNCHRONIZE, false, win32.DWORD(pid))
 			if err != nil {
 				t.Fatal(err)
@@ -88,11 +90,13 @@ func TestExecSharesMountsRegistryAndSandbox(t *testing.T) {
 				t.Fatalf("invalid replacement: %+v %v", after, err)
 			}
 			if pipe, err := win32.DialPipe(fmt.Sprintf(`\\.\pipe\quasidock-exec-%s-%s`, rec.ID, rec.State.RunID), time.Now().Add(100*time.Millisecond)); err == nil {
-				pipe.Close()
+				_ = pipe.Close()
 				t.Fatal("outgoing exec endpoint survived restart")
 			}
 			must(t, "exec", "-d", name, "fixture.exe", "tree-hold", `$HOME\..\workspace\last-pid`, "ignore")
-			fmt.Sscan(waitFile(filepath.Join(source, "last-pid.child")), &pid)
+			if _, err := fmt.Sscan(waitFile(filepath.Join(source, "last-pid.child")), &pid); err != nil {
+				t.Fatal(err)
+			}
 			last, err := win32.OpenProcess(win32.SYNCHRONIZE, false, win32.DWORD(pid))
 			if err != nil {
 				t.Fatal(err)

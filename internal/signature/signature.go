@@ -136,41 +136,21 @@ func ParsePayload(data []byte) (*Payload, error) {
 }
 
 func checkNoDuplicateKeys(data []byte) error {
-	dec := json.NewDecoder(bytes.NewReader(data))
-	var stack []map[string]bool
-
-	for {
-		tok, err := dec.Token()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return err
-		}
-
-		switch t := tok.(type) {
-		case json.Delim:
-			if t == '{' {
-				stack = append(stack, make(map[string]bool))
-			} else if t == '}' {
-				if len(stack) > 0 {
-					stack = stack[:len(stack)-1]
-				}
-			}
-		case string:
-			if len(stack) > 0 && dec.More() {
-				// In an object, token is a key if stack is non-empty and there's a following value
-				// Actually, dec.Token() returns alternating keys and values in an object.
-				// But simpler: track key counts at current depth.
-			}
-		}
-	}
+	// In an object, token is a key if stack is non-empty and there's a following value
+	// Actually, dec.Token() returns alternating keys and values in an object.
+	// But simpler: track key counts at current depth.
 	return checkObjectDuplicates(data)
 }
 
 func checkObjectDuplicates(data []byte) error {
 	dec := json.NewDecoder(bytes.NewReader(data))
-	return scanJSONValue(dec)
+	if err := scanJSONValue(dec); err != nil {
+		return err
+	}
+	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
+		return ErrNotAPayload
+	}
+	return nil
 }
 
 func scanJSONValue(dec *json.Decoder) error {

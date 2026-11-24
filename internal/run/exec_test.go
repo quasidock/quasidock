@@ -30,8 +30,12 @@ func TestExecEnvironmentAndCommand(t *testing.T) {
 	}
 	dir := t.TempDir()
 	bin := filepath.Join(dir, "custom")
-	os.Mkdir(bin, 0o755)
-	os.WriteFile(filepath.Join(bin, "custom.exe"), []byte("fixture"), 0o644)
+	if err := os.Mkdir(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bin, "custom.exe"), []byte("fixture"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	r := &execRuntime{runID: "attempt", cwd: dir, placeholders: oci.Placeholders{App: dir, Data: dir}, env: []environment.Var{{Name: "BASE", Value: "original"}}, systemRoot: os.Getenv("SystemRoot")}
 	req := execRequest{Protocol: execProtocol, RunID: r.runID, Args: []string{"custom", "literal ${data}"}, Workdir: "${data}"}
 	value := bin
@@ -66,7 +70,7 @@ func TestExecFrameAcknowledgement(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer l.Close()
+	defer func() { _ = l.Close() }()
 	// A detached client disconnects as soon as it has the complete frame.
 	// Repeat to exercise disconnects racing the sender's write completion.
 	const attempts = 4096
@@ -81,7 +85,7 @@ func TestExecFrameAcknowledgement(t *testing.T) {
 			c := &execStream{File: f}
 			_ = c.SetDeadline(time.Now().Add(5 * time.Second))
 			err = c.send(execStarted, nil)
-			c.Close()
+			_ = c.Close()
 			sent <- err
 		}
 	}()
@@ -93,7 +97,7 @@ func TestExecFrameAcknowledgement(t *testing.T) {
 		c := &execStream{File: f}
 		_ = c.SetDeadline(time.Now().Add(5 * time.Second))
 		kind, data, err := c.receive()
-		c.Close()
+		_ = c.Close()
 		if err != nil || kind != execStarted || len(data) != 0 {
 			t.Fatalf("receive %d: %d %q %v", i, kind, data, err)
 		}
@@ -154,9 +158,11 @@ func TestExecProtocolAndShutdown(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		f.SetDeadline(time.Now().Add(5 * time.Second))
+		if err := f.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
+			t.Fatal(err)
+		}
 		c := &execStream{File: f}
-		t.Cleanup(func() { c.Close() })
+		t.Cleanup(func() { _ = c.Close() })
 		return c
 	}
 	exe, err := os.Executable()
@@ -178,7 +184,9 @@ func TestExecProtocolAndShutdown(t *testing.T) {
 	}
 	t.Run("malformed and oversized launch", func(t *testing.T) {
 		c := dial()
-		c.send(execLaunch, []byte("invalid json"))
+		if err := c.send(execLaunch, []byte("invalid json")); err != nil {
+			t.Fatal(err)
+		}
 		if kind, _, err := c.receive(); err != nil || kind != execError {
 			t.Fatalf("malformed: %d %v", kind, err)
 		}
@@ -186,7 +194,9 @@ func TestExecProtocolAndShutdown(t *testing.T) {
 		var header [5]byte
 		header[0] = execLaunch
 		binary.LittleEndian.PutUint32(header[1:], maxExecFrame+1)
-		c.Write(header[:])
+		if _, err := c.Write(header[:]); err != nil {
+			t.Fatal(err)
+		}
 		if _, _, err := c.receive(); err == nil {
 			t.Fatal("accepted oversized frame")
 		}
@@ -225,7 +235,9 @@ func TestExecProtocolAndShutdown(t *testing.T) {
 		if err := input.send(execStdin, bytes.Repeat([]byte("x"), 64*1024)); err != nil {
 			t.Fatal(err)
 		}
-		input.SetReadDeadline(time.Now().Add(50 * time.Millisecond))
+		if err := input.SetReadDeadline(time.Now().Add(50 * time.Millisecond)); err != nil {
+			t.Fatal(err)
+		}
 		if _, _, err := input.receive(); !os.IsTimeout(err) {
 			t.Fatalf("stdin did not block as expected: %v", err)
 		}

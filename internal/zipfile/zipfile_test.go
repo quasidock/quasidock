@@ -50,7 +50,7 @@ func TestListAndReadSampleZip(t *testing.T) {
 			t.Fatalf("Open %s failed: %v", e.Name, err)
 		}
 		got, err := io.ReadAll(rc)
-		rc.Close()
+		_ = rc.Close()
 		if err != nil {
 			t.Fatalf("ReadAll %s failed: %v", e.Name, err)
 		}
@@ -64,8 +64,12 @@ func TestZipBadPathAndDirectorySize(t *testing.T) {
 	// Traversal
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
-	zw.Create("../escape.txt")
-	zw.Close()
+	if _, err := zw.Create("../escape.txt"); err != nil {
+		t.Fatal(err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
 
 	r := bytes.NewReader(buf.Bytes())
 	_, err := List(r, int64(buf.Len()))
@@ -76,8 +80,12 @@ func TestZipBadPathAndDirectorySize(t *testing.T) {
 	// Bad directory with non-zero size
 	var buf2 bytes.Buffer
 	zw2 := zip.NewWriter(&buf2)
-	zw2.Create("dir/")
-	zw2.Close()
+	if _, err := zw2.Create("dir/"); err != nil {
+		t.Fatal(err)
+	}
+	if err := zw2.Close(); err != nil {
+		t.Fatal(err)
+	}
 
 	// Patch central directory uncompressed size to non-zero
 	b2 := buf2.Bytes()

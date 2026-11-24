@@ -177,28 +177,30 @@ func parseLifecycleArgs(command string, args []string) (int, run.KillSignal, []s
 		}
 		return nil
 	}
-	for i := 0; i < len(args); i++ {
-		arg := args[i]
-		var parse func(string) error
-		var option string
-		if command == "stop" || command == "restart" {
-			parse, option = parseTime, "--time"
-		} else if command == "kill" {
-			parse, option = parseSignal, "--signal"
-		}
+	var parse func(string) error
+	var option string
+	switch command {
+	case "stop", "restart":
+		parse, option = parseTime, "--time"
+	case "kill":
+		parse, option = parseSignal, "--signal"
+	}
+	for len(args) > 0 {
+		arg := args[0]
+		args = args[1:]
 		switch {
 		case arg == "--":
-			targets = append(targets, args[i+1:]...)
-			i = len(args)
+			targets = append(targets, args...)
+			args = nil
 		case (command == "stop" || command == "restart") && (arg == "-t" || arg == "--time"),
 			command == "kill" && (arg == "-s" || arg == "--signal"):
-			i++
-			if i == len(args) {
+			if len(args) == 0 {
 				return 0, "", nil, fmt.Errorf("%s %s needs a value", command, option)
 			}
-			if err := parse(args[i]); err != nil {
+			if err := parse(args[0]); err != nil {
 				return 0, "", nil, err
 			}
+			args = args[1:]
 		case (command == "stop" || command == "restart") && (strings.HasPrefix(arg, "--time=") || strings.HasPrefix(arg, "-t=")),
 			command == "kill" && (strings.HasPrefix(arg, "--signal=") || strings.HasPrefix(arg, "-s=")):
 			if err := parse(arg[strings.IndexByte(arg, '=')+1:]); err != nil {
@@ -289,19 +291,20 @@ func containerLogs(ctx *context.Context, args []string) error {
 		tail = n
 		return nil
 	}
-	for i := 0; i < len(args); i++ {
-		arg := args[i]
+	for len(args) > 0 {
+		arg := args[0]
+		args = args[1:]
 		switch {
 		case arg == "-f" || arg == "--follow":
 			follow = true
 		case arg == "-n" || arg == "--tail":
-			i++
-			if i == len(args) {
+			if len(args) == 0 {
 				return errors.New("logs --tail needs a number of lines")
 			}
-			if err := parseTail(args[i]); err != nil {
+			if err := parseTail(args[0]); err != nil {
 				return err
 			}
+			args = args[1:]
 		case strings.HasPrefix(arg, "--tail="):
 			if err := parseTail(strings.TrimPrefix(arg, "--tail=")); err != nil {
 				return err

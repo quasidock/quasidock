@@ -36,8 +36,8 @@ func GzipWriter(w io.Writer) (*gzip.Writer, error) {
 	if err != nil {
 		return nil, err
 	}
-	gw.Header.ModTime = time.Unix(0, 0).UTC()
-	gw.Header.OS = 255
+	gw.ModTime = time.Unix(0, 0).UTC()
+	gw.OS = 255
 	return gw, nil
 }
 
@@ -52,7 +52,7 @@ func Gunzip(in io.Reader, out io.Writer) error {
 
 	for {
 		zr.Multistream(false)
-		if _, err := io.Copy(out, zr); err != nil {
+		if _, err := io.Copy(out, zr); err != nil { //nolint:gosec // G110: decompresses digest-verified image layer
 			return err
 		}
 
@@ -105,19 +105,22 @@ func Inflate(gzPath, tarPath string) error {
 	if err != nil {
 		return err
 	}
-	defer in.Close()
+	defer func() { _ = in.Close() }()
 
 	out, err := os.OpenFile(tarPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
 	if err != nil {
 		return err
 	}
-	defer out.Close()
+	defer func() { _ = out.Close() }()
 
 	bw := bufio.NewWriterSize(out, 64*1024)
 	if err := Gunzip(in, bw); err != nil {
 		return err
 	}
-	return bw.Flush()
+	if err := bw.Flush(); err != nil {
+		return err
+	}
+	return out.Close()
 }
 
 // LayerWriter writes layer entries with canonical metadata.
@@ -223,7 +226,7 @@ func Extract(tarPath, destPath string) error {
 				setErr(err)
 				return
 			}
-			defer f.Close()
+			defer func() { _ = f.Close() }()
 
 			buf := make([]byte, 64*1024)
 			for {
@@ -279,7 +282,7 @@ func indexAndCreateDirs(tarPath, destPath string) ([]fileEntry, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	cr := &countingReader{r: bufio.NewReaderSize(f, 64*1024)}
 	tr := tar.NewReader(cr)
@@ -306,7 +309,7 @@ func indexAndCreateDirs(tarPath, destPath string) ([]fileEntry, error) {
 			if err := createDirOnce(destPath, createdDirs, cleanName); err != nil {
 				return nil, err
 			}
-		case tar.TypeReg, tar.TypeRegA:
+		case tar.TypeReg:
 			parent := filepath.ToSlash(filepath.Dir(cleanName))
 			if parent != "" && parent != "." {
 				if err := createDirOnce(destPath, createdDirs, parent); err != nil {

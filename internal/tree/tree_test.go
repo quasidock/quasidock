@@ -96,10 +96,14 @@ func TestTreeAddOverlayAndCaseInsensitivity(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	f1 := filepath.Join(tmpDir, "file1.txt")
-	os.WriteFile(f1, []byte("version1"), 0o644)
+	if err := os.WriteFile(f1, []byte("version1"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	f2 := filepath.Join(tmpDir, "file2.txt")
-	os.WriteFile(f2, []byte("version2"), 0o644)
+	if err := os.WriteFile(f2, []byte("version2"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	// Add file under "Bin/App.exe"
 	if err := tr.AddFile("Bin/App.exe", Content{Kind: ContentFile, FilePath: f1, FileSize: 8}); err != nil {
@@ -135,28 +139,38 @@ func TestTarSymlinkResolution(t *testing.T) {
 	tw := tar.NewWriter(&buf)
 
 	// Add target file
-	tw.WriteHeader(&tar.Header{
+	if err := tw.WriteHeader(&tar.Header{
 		Name:     "bin/zstd.exe",
 		Typeflag: tar.TypeReg,
 		Mode:     0o755,
 		Size:     10,
-	})
-	tw.Write([]byte("zstd-bytes"))
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tw.Write([]byte("zstd-bytes")); err != nil {
+		t.Fatal(err)
+	}
 
 	// Add symlink to file
-	tw.WriteHeader(&tar.Header{
+	if err := tw.WriteHeader(&tar.Header{
 		Name:     "bin/unzstd.exe",
 		Typeflag: tar.TypeSymlink,
 		Linkname: "zstd.exe",
-	})
+	}); err != nil {
+		t.Fatal(err)
+	}
 
 	// Add symlink to symlink
-	tw.WriteHeader(&tar.Header{
+	if err := tw.WriteHeader(&tar.Header{
 		Name:     "bin/zcat.exe",
 		Typeflag: tar.TypeSymlink,
 		Linkname: "unzstd.exe",
-	})
-	tw.Close()
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
 
 	reader := bytes.NewReader(buf.Bytes())
 	entries, err := ListTar(reader, int64(buf.Len()))
@@ -181,14 +195,18 @@ func TestTarSymlinkResolution(t *testing.T) {
 func TestTreeWriteFilesAndSync(t *testing.T) {
 	tmpDir := t.TempDir()
 	srcFile := filepath.Join(tmpDir, "source.txt")
-	os.WriteFile(srcFile, []byte("hello tree"), 0o644)
+	if err := os.WriteFile(srcFile, []byte("hello tree"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	tr := New()
-	tr.AddFile("dir/sub/test.txt", Content{
+	if err := tr.AddFile("dir/sub/test.txt", Content{
 		Kind:     ContentFile,
 		FilePath: srcFile,
 		FileSize: 10,
-	})
+	}); err != nil {
+		t.Fatal(err)
+	}
 
 	destDir := filepath.Join(tmpDir, "dest")
 	if err := tr.WriteFiles(destDir); err != nil {

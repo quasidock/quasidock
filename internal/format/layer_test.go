@@ -34,7 +34,9 @@ func TestLayerRoundTrip(t *testing.T) {
 	if err := w.Finish(); err != nil {
 		t.Fatalf("Finish failed: %v", err)
 	}
-	f.Close()
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
 
 	if err := Extract(tarPath, destPath); err != nil {
 		t.Fatalf("Extract failed: %v", err)
@@ -107,8 +109,12 @@ func TestGunzipMultiMemberAndPadding(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		gw.Write(chunk)
-		gw.Close()
+		if _, err := gw.Write(chunk); err != nil {
+			t.Fatal(err)
+		}
+		if err := gw.Close(); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	want := append(first, second...)
@@ -165,7 +171,9 @@ func TestGzipLayerInflateExtract(t *testing.T) {
 	if err := gw.Close(); err != nil {
 		t.Fatal(err)
 	}
-	gzFile.Close()
+	if err := gzFile.Close(); err != nil {
+		t.Fatal(err)
+	}
 
 	// Inflate
 	if err := Inflate(gzPath, tarPath); err != nil {
@@ -198,9 +206,15 @@ func TestTarBadPathsAndSymlinks(t *testing.T) {
 		Typeflag: tar.TypeSymlink,
 		Linkname: "target",
 	}
-	tw.tw.WriteHeader(hdr)
-	tw.Finish()
-	f.Close()
+	if err := tw.tw.WriteHeader(hdr); err != nil {
+		t.Fatal(err)
+	}
+	if err := tw.Finish(); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
 
 	err := Extract(tarPath, filepath.Join(tmpDir, "out1"))
 	if !errors.Is(err, ErrTarSymlinkUnsupported) {
@@ -216,10 +230,18 @@ func TestTarBadPathsAndSymlinks(t *testing.T) {
 		Typeflag: tar.TypeReg,
 		Size:     4,
 	}
-	tw2.tw.WriteHeader(hdr2)
-	tw2.tw.Write([]byte("test"))
-	tw2.Finish()
-	f2.Close()
+	if err := tw2.tw.WriteHeader(hdr2); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tw2.tw.Write([]byte("test")); err != nil {
+		t.Fatal(err)
+	}
+	if err := tw2.Finish(); err != nil {
+		t.Fatal(err)
+	}
+	if err := f2.Close(); err != nil {
+		t.Fatal(err)
+	}
 
 	err2 := Extract(tarPath2, filepath.Join(tmpDir, "out2"))
 	if !errors.Is(err2, ErrTarBadPath) {

@@ -214,7 +214,10 @@ func EncodeBlock(vars []Var) ([]uint16, error) {
 	var block []uint16
 	for _, kv := range sorted {
 		line := kv.Name + "=" + kv.Value
-		u16 := syscall.StringToUTF16(line)
+		u16, err := syscall.UTF16FromString(line)
+		if err != nil {
+			return nil, err
+		}
 		block = append(block, u16...)
 	}
 	block = append(block, 0)

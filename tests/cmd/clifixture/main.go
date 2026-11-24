@@ -3,6 +3,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -38,7 +39,7 @@ func main() {
 			}
 			return
 		case "close-stdin":
-			os.Stdin.Close()
+			_ = os.Stdin.Close()
 			time.Sleep(100 * time.Millisecond)
 			fmt.Fprintln(os.Stdout, "closed-input-output")
 			fmt.Fprintln(os.Stderr, "closed-input-error")
@@ -67,12 +68,12 @@ func main() {
 				if err != nil {
 					panic(err)
 				}
-				defer input.Close()
+				defer func() { _ = input.Close() }()
 				output, err := os.OpenFile("CONOUT$", os.O_WRONLY, 0)
 				if err != nil {
 					panic(err)
 				}
-				defer output.Close()
+				defer func() { _ = output.Close() }()
 				cmd.Stdin, cmd.Stdout, cmd.Stderr = input, output, output
 				inputHandle = win32.HANDLE(input.Fd())
 			}
@@ -86,7 +87,8 @@ func main() {
 				}
 			}
 			if err := commandErr; err != nil {
-				if exit, ok := err.(*exec.ExitError); ok {
+				var exit *exec.ExitError
+				if errors.As(err, &exit) {
 					win32.ExitProcess(uint32(exit.ExitCode()))
 				}
 				panic(err)
@@ -176,7 +178,7 @@ func main() {
 				if err != nil {
 					panic(err)
 				}
-				defer ticks.Close()
+				defer func() { _ = ticks.Close() }()
 				wait = 20
 			}
 			for {
@@ -308,5 +310,5 @@ func main() {
 			return
 		}
 	}
-	json.NewEncoder(os.Stdout).Encode(args)
+	_ = json.NewEncoder(os.Stdout).Encode(args)
 }

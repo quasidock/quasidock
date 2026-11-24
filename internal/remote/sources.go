@@ -146,7 +146,7 @@ func FetchSource(st *store.Store, envRegistry, image, hash string, verbose bool)
 			return "", fmt.Errorf("invalid source descriptor for %s", hash)
 		}
 		tmp := st.TmpPath("source")
-		defer os.Remove(tmp)
+		defer func() { _ = os.Remove(tmp) }()
 		got, err := reg.DownloadBlob(desc, tmp)
 		if err != nil {
 			return "", err

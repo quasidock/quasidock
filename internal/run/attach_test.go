@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"strings"
@@ -60,8 +61,10 @@ func attachTestDial(t *testing.T, id, runID string, stdin bool) (*framedStream, 
 		t.Fatal(err)
 	}
 	c := &framedStream{File: f}
-	t.Cleanup(func() { c.Close() })
-	c.SetDeadline(time.Now().Add(5 * time.Second))
+	t.Cleanup(func() { _ = c.Close() })
+	if err := c.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
 	data, _ := json.Marshal(attachRequest{Protocol: attachProtocol, RunID: runID, Stdin: stdin})
 	if err := c.send(attachHello, data); err != nil {
 		t.Fatal(err)
@@ -88,7 +91,7 @@ func TestAttachStreamsWriterLeaseAndEOF(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer input.Close()
+	defer func() { _ = input.Close() }()
 	r.setInput(writer)
 	c, kind, _ := attachTestDial(t, id, runID, true)
 	if kind != attachReady {
@@ -113,7 +116,7 @@ func TestAttachStreamsWriterLeaseAndEOF(t *testing.T) {
 		t.Fatalf("stdin: %s %v", buf, err)
 	}
 	expectAttachFrame(t, c, attachInputAck)
-	c.Close()
+	_ = c.Close()
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		r.mu.Lock()
@@ -132,9 +135,11 @@ func TestAttachStreamsWriterLeaseAndEOF(t *testing.T) {
 		t.Fatal(kind)
 	}
 	expectAttachFrame(t, c, attachStarted)
-	c.send(attachEOF, nil)
+	if err := c.send(attachEOF, nil); err != nil {
+		t.Fatal(err)
+	}
 	expectAttachFrame(t, c, attachInputAck)
-	if n, err := input.Read(buf); n != 0 || err != io.EOF {
+	if n, err := input.Read(buf); n != 0 || !errors.Is(err, io.EOF) {
 		t.Fatalf("EOF: %d %v", n, err)
 	}
 	readOnly, kind, data := attachTestDial(t, id, runID, true)
@@ -143,8 +148,12 @@ func TestAttachStreamsWriterLeaseAndEOF(t *testing.T) {
 		t.Fatalf("closed stdin: %d %s", kind, data)
 	}
 	expectAttachFrame(t, readOnly, attachStarted)
-	attachWriter{r, attachStdout}.Write([]byte("out"))
-	attachWriter{r, attachStderr}.Write([]byte("err"))
+	if _, err := (attachWriter{r, attachStdout}).Write([]byte("out")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := (attachWriter{r, attachStderr}).Write([]byte("err")); err != nil {
+		t.Fatal(err)
+	}
 	for _, conn := range []*framedStream{c, viewer, readOnly} {
 		if string(expectAttachFrame(t, conn, attachStdout)) != "out" || string(expectAttachFrame(t, conn, attachStderr)) != "err" {
 			t.Fatal("stream contents")
@@ -170,7 +179,7 @@ func TestAttachMalformedFramesAndBlockedIO(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer input.Close()
+	defer func() { _ = input.Close() }()
 	r.setInput(writer)
 	r.markStarted(func() error { return nil })
 	dial := func() *framedStream {
@@ -179,19 +188,25 @@ func TestAttachMalformedFramesAndBlockedIO(t *testing.T) {
 			t.Fatal(err)
 		}
 		c := &framedStream{File: f}
-		t.Cleanup(func() { c.Close() })
-		c.SetDeadline(time.Now().Add(5 * time.Second))
+		t.Cleanup(func() { _ = c.Close() })
+		if err := c.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
+			t.Fatal(err)
+		}
 		return c
 	}
 	for _, request := range [][]byte{[]byte("invalid"), []byte(`{"Protocol":1,"RunID":"stale"}`)} {
 		c := dial()
-		c.send(attachHello, request)
+		if err := c.send(attachHello, request); err != nil {
+			t.Fatal(err)
+		}
 		expectAttachFrame(t, c, attachError)
 	}
 	oversized := dial()
 	var header [5]byte
 	binary.LittleEndian.PutUint32(header[1:], maxExecFrame+1)
-	oversized.Write(header[:])
+	if _, err := oversized.Write(header[:]); err != nil {
+		t.Fatal(err)
+	}
 	if _, _, err := oversized.receive(); err == nil {
 		t.Fatal("accepted oversized frame")
 	}
@@ -200,12 +215,16 @@ func TestAttachMalformedFramesAndBlockedIO(t *testing.T) {
 		t.Fatal(kind)
 	}
 	expectAttachFrame(t, c, attachStarted)
-	c.send(attachStdin, bytes.Repeat([]byte("x"), 64*1024))
-	c.SetReadDeadline(time.Now().Add(50 * time.Millisecond))
+	if err := c.send(attachStdin, bytes.Repeat([]byte("x"), 64*1024)); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.SetReadDeadline(time.Now().Add(50 * time.Millisecond)); err != nil {
+		t.Fatal(err)
+	}
 	if _, _, err := c.receive(); !os.IsTimeout(err) {
 		t.Fatalf("input did not block: %v", err)
 	}
-	c.Close()
+	_ = c.Close()
 	_ = dial() // Client that never completes its handshake.
 	done := make(chan struct{})
 	go func() { r.finish(0, nil); close(done) }()
@@ -227,7 +246,7 @@ func TestAttachSlowSubscriberDoesNotBlockPublisher(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		for i := 0; i < 100; i++ {
-			attachWriter{r, attachStdout}.Write(bytes.Repeat([]byte("x"), 32*1024))
+			_, _ = attachWriter{r, attachStdout}.Write(bytes.Repeat([]byte("x"), 32*1024))
 		}
 		close(done)
 	}()
@@ -247,9 +266,11 @@ func TestAttachSlowSubscriberDoesNotBlockPublisher(t *testing.T) {
 		t.Fatal(kind)
 	}
 	expectAttachFrame(t, viewer, attachStarted)
-	attachWriter{r, attachStdout}.Write([]byte("still running"))
+	if _, err := (attachWriter{r, attachStdout}).Write([]byte("still running")); err != nil {
+		t.Fatal(err)
+	}
 	if string(expectAttachFrame(t, viewer, attachStdout)) != "still running" {
 		t.Fatal("new viewer missed output")
 	}
-	viewer.Close()
+	_ = viewer.Close()
 }

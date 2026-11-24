@@ -134,7 +134,9 @@ func TestContainerExec(t *testing.T) {
 	t.Run("environment and workdir", func(t *testing.T) {
 		t.Setenv("EXEC_INHERIT", "caller")
 		t.Setenv("REMOVE_ME", "")
-		os.Unsetenv("REMOVE_ME")
+		if err := os.Unsetenv("REMOVE_ME"); err != nil {
+			t.Fatal(err)
+		}
 		out := must("exec", "-e", "EXEC_BASE=override", "-e", "exec_base=last", "-e", "EXEC_INHERIT", "-e", "REMOVE_ME", "exec-main", "fixture.exe", "env", "EXEC_BASE", "EXEC_INHERIT", "REMOVE_ME")
 		for _, want := range []string{"EXEC_BASE=last:true", "EXEC_INHERIT=caller:true", "REMOVE_ME=:false"} {
 			if !strings.Contains(out, want) {
@@ -230,7 +232,7 @@ func TestContainerExec(t *testing.T) {
 		if err := cmd.Start(); err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(func() { cmd.Process.Kill() })
+		t.Cleanup(func() { _ = cmd.Process.Kill() })
 		waitFile(ready)
 		if out := must("exec", "exec-foreground", "fixture.exe", "lines", "foreground-exec"); strings.TrimSpace(out) != "foreground-exec" {
 			t.Fatal(out)
@@ -238,7 +240,9 @@ func TestContainerExec(t *testing.T) {
 		execReady := ready + "-child"
 		must("exec", "-d", "exec-foreground", "fixture.exe", "tree-hold", execReady, "ignore")
 		var pid uint32
-		fmt.Sscan(waitFile(execReady+".child"), &pid)
+		if _, err := fmt.Sscan(waitFile(execReady+".child"), &pid); err != nil {
+			t.Fatal(err)
+		}
 		child, err := win32.OpenProcess(win32.SYNCHRONIZE, false, win32.DWORD(pid))
 		if err != nil {
 			t.Fatal(err)
@@ -271,17 +275,19 @@ func TestContainerExec(t *testing.T) {
 		if err := cmd.Start(); err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(func() { cmd.Process.Kill() })
+		t.Cleanup(func() { _ = cmd.Process.Kill() })
 		pid := waitFile(execReady)
 		waitFile(execReady + ".child")
 		var childPID uint32
-		fmt.Sscan(pid, &childPID)
+		if _, err := fmt.Sscan(pid, &childPID); err != nil {
+			t.Fatal(err)
+		}
 		child, err := win32.OpenProcess(win32.SYNCHRONIZE, false, win32.DWORD(childPID))
 		if err != nil {
 			t.Fatal(err)
 		}
 		defer win32.CloseHandle(child)
-		cmd.Process.Kill()
+		_ = cmd.Process.Kill()
 		_ = cmd.Wait()
 		if win32.WaitForSingleObject(child, 5000) != win32.WAIT_OBJECT_0 {
 			t.Fatal("disconnect left exec running")
@@ -291,7 +297,9 @@ func TestContainerExec(t *testing.T) {
 		}
 		must("exec", "-d", "exec-main", "fixture.exe", "tree-hold", execReady+"-detached", "ignore")
 		pid = waitFile(execReady + "-detached")
-		fmt.Sscan(pid, &childPID)
+		if _, err := fmt.Sscan(pid, &childPID); err != nil {
+			t.Fatal(err)
+		}
 		detached, err := win32.OpenProcess(win32.SYNCHRONIZE, false, win32.DWORD(childPID))
 		if err != nil {
 			t.Fatal(err)

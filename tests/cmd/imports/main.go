@@ -14,9 +14,9 @@ type Counts struct {
 }
 
 type Section struct {
-	VA       uint32
-	Size     uint32
-	Offset   uint32
+	VA     uint32
+	Size   uint32
+	Offset uint32
 }
 
 func count(data []byte) (Counts, error) {
@@ -38,13 +38,14 @@ func count(data []byte) (Counts, error) {
 	magic := binary.LittleEndian.Uint16(data[optional : optional+2])
 	var directories uint32
 	var thunk uint32
-	if magic == 0x20b {
+	switch magic {
+	case 0x20b:
 		directories = optional + 112
 		thunk = 8
-	} else if magic == 0x10b {
+	case 0x10b:
 		directories = optional + 96
 		thunk = 4
-	} else {
+	default:
 		return Counts{}, fmt.Errorf("not PE")
 	}
 
@@ -108,10 +109,7 @@ func count(data []byte) (Counts, error) {
 		return Counts{}, err
 	}
 
-	for {
-		if int(d)+20 > len(data) {
-			break
-		}
+	for int(d)+20 <= len(data) {
 		desc := data[d : d+20]
 		firstThunk := binary.LittleEndian.Uint32(desc[16:20])
 		name := binary.LittleEndian.Uint32(desc[12:16])

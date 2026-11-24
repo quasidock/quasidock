@@ -181,7 +181,7 @@ func askParent(index uint8) win32.SOCKET {
 }
 
 func relay(client win32.SOCKET, upstream Upstream) {
-	defer win32.Closesocket(client)
+	defer func() { _, _ = win32.Closesocket(client) }()
 	var other win32.SOCKET
 	switch upstream.Kind {
 	case UpstreamApp:
@@ -192,7 +192,7 @@ func relay(client win32.SOCKET, upstream Upstream) {
 	if other == win32.INVALID_SOCKET {
 		return
 	}
-	defer win32.Closesocket(other)
+	defer func() { _, _ = win32.Closesocket(other) }()
 
 	var wg sync.WaitGroup
 	wg.Add(1)

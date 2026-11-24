@@ -80,7 +80,7 @@ func List(st *store.Store, envRegistry, imageText string, verbose bool, w io.Wri
 		if err != nil {
 			return err
 		}
-		defer blob.Close()
+		defer func() { _ = blob.Close() }()
 
 		sr := io.NewSectionReader(blob, 0, l.Desc.Size)
 		reader, err := estargz.Open(sr)
@@ -143,7 +143,7 @@ func Cat(st *store.Store, envRegistry, imageText, path string, verbose bool, w i
 		if err != nil {
 			return err
 		}
-		defer blob.Close()
+		defer func() { _ = blob.Close() }()
 
 		sr := io.NewSectionReader(blob, 0, l.Desc.Size)
 		reader, err := estargz.Open(sr)

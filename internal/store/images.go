@@ -94,7 +94,7 @@ func (s *Store) writeImageIndex(idx *ImageIndex) error {
 		return err
 	}
 	tmp := s.TmpPath("image-index")
-	defer os.Remove(tmp)
+	defer func() { _ = os.Remove(tmp) }()
 	if err := os.WriteFile(tmp, data, 0o644); err != nil {
 		return err
 	}

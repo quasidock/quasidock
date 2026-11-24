@@ -20,7 +20,7 @@ func TestSnapshotJunctionMustBeSkipped(t *testing.T) {
 	if out, err := exec.Command("cmd", "/c", "mklink", "/J", junction, target).CombinedOutput(); err != nil {
 		t.Fatalf("creating junction: %v: %s", err, out)
 	}
-	t.Cleanup(func() { os.Remove(junction) })
+	t.Cleanup(func() { _ = os.Remove(junction) })
 	if _, err := TakeSnapshot(dir, nil); err == nil || !strings.Contains(err.Error(), "to-src is a link") {
 		t.Fatalf("junction was not reported as a link: %v", err)
 	}

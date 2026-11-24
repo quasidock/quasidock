@@ -26,10 +26,7 @@ func (p GitignorePattern) Matches(rel string, isDir bool) bool {
 }
 
 func ParseGitignore(bytes []byte) []GitignorePattern {
-	text := string(bytes)
-	if strings.HasPrefix(text, "\xEF\xBB\xBF") {
-		text = text[3:]
-	}
+	text := strings.TrimPrefix(string(bytes), "\xEF\xBB\xBF")
 	var patterns []GitignorePattern
 	lines := strings.Split(text, "\n")
 	for _, raw := range lines {

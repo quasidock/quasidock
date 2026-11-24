@@ -1,6 +1,7 @@
 package builder
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"syscall"
@@ -88,7 +89,7 @@ func AcquireDrive(ctx *context.Context, dir string) (*Drive, error) {
 func queryDosDevice(device string) (string, error) {
 	target, err := win32.QueryDosDevice(device)
 	if err != nil {
-		if err == syscall.ERROR_FILE_NOT_FOUND {
+		if errors.Is(err, syscall.ERROR_FILE_NOT_FOUND) {
 			return "", nil
 		}
 		return "", err

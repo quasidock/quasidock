@@ -49,7 +49,9 @@ func TestCommitRoundTripAndDiff(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("REMOVE_ME", "")
-	os.Unsetenv("REMOVE_ME")
+	if err := os.Unsetenv("REMOVE_ME"); err != nil {
+		t.Fatal(err)
+	}
 	must(st.Root, "create", "--name", "source", "-e", "SAVED=original", "-e", "REMOVE_ME", "--mount", "type=bind,source="+bind+",target=${data}/hidden", app)
 	source, err := st.ResolveContainer("source")
 	if err != nil {
@@ -229,9 +231,11 @@ func TestCommitLiveFailureAndPause(t *testing.T) {
 		t.Fatal(err)
 	}
 	blockedFile := os.NewFile(uintptr(h), blocked)
-	defer blockedFile.Close()
+	defer func() { _ = blockedFile.Close() }()
 	fail(reg.Host() + "/failed:locked")
-	blockedFile.Close()
+	if err := blockedFile.Close(); err != nil {
+		t.Fatal(err)
+	}
 	before, _ := os.Stat(ticks)
 	must("commit", "live", reg.Host()+"/live-copy:running")
 	awaitPauseCondition(t, "heartbeat did not resume", func() bool { after, _ := os.Stat(ticks); return after.Size() > before.Size() })

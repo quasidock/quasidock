@@ -74,7 +74,7 @@ func SamePath(a, b string) bool {
 		if (c == '/' || c == '\\') && (d == '/' || d == '\\') {
 			continue
 		}
-		if strings.ToLower(string(c)) != strings.ToLower(string(d)) {
+		if !strings.EqualFold(string(c), string(d)) {
 			return false
 		}
 	}

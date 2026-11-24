@@ -694,7 +694,7 @@ func (r *Registry) putWhole(location string, desc oci.Descriptor, filePath strin
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	u, err := r.withDigest(location, desc.Digest)
 	if err != nil {
@@ -736,7 +736,7 @@ func (r *Registry) putChunks(location string, desc oci.Descriptor, filePath stri
 	if err != nil {
 		return 0, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	for {
 		for offset < descSize {
@@ -1171,7 +1171,7 @@ func (r *Registry) exchangeUnchecked(req request, auth string) (response, error)
 	if err != nil {
 		return response{}, err
 	}
-	defer hres.Body.Close()
+	defer func() { _ = hres.Body.Close() }()
 
 	res := response{
 		Status:          hres.StatusCode,

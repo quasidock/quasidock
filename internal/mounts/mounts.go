@@ -43,7 +43,7 @@ func validComponent(s string) bool {
 	case "CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$":
 		return false
 	}
-	return !(len(stem) == 4 && (strings.HasPrefix(stem, "COM") || strings.HasPrefix(stem, "LPT")) && stem[3] >= '1' && stem[3] <= '9')
+	return len(stem) != 4 || (!strings.HasPrefix(stem, "COM") && !strings.HasPrefix(stem, "LPT")) || stem[3] < '1' || stem[3] > '9'
 }
 
 func ValidateName(name string) error {
@@ -83,9 +83,7 @@ func Parse(value string, short bool) (Spec, error) {
 			return s, errors.New("volume syntax is SOURCE:${data}[/PATH][:rw]")
 		}
 		s.Source, s.Target = value[:i], value[i+1:]
-		if strings.HasSuffix(s.Target, ":rw") {
-			s.Target = strings.TrimSuffix(s.Target, ":rw")
-		}
+		s.Target = strings.TrimSuffix(s.Target, ":rw")
 		if strings.HasSuffix(s.Target, ":ro") {
 			return s, errors.New("read-only mounts are not supported yet")
 		}
@@ -276,9 +274,18 @@ func Attach(data string, m Mount) error {
 		return err
 	}
 	defer win32.CloseHandle(h)
-	sub := syscall.StringToUTF16(`\??\` + m.Source)
-	print := syscall.StringToUTF16(m.Source)
+	sub, err := syscall.UTF16FromString(`\??\` + m.Source)
+	if err != nil {
+		return err
+	}
+	print, err := syscall.UTF16FromString(m.Source)
+	if err != nil {
+		return err
+	}
 	size := 16 + 2*(len(sub)+len(print))
+	if size > 0xFFFF {
+		return fmt.Errorf("mount source path too long: %s", m.Source)
+	}
 	buf := make([]byte, size)
 	binary.LittleEndian.PutUint32(buf[0:4], win32.IO_REPARSE_TAG_MOUNT_POINT)
 	binary.LittleEndian.PutUint16(buf[4:6], uint16(size-8))

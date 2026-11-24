@@ -25,9 +25,9 @@ func SHGetKnownFolderPath(rfid *GUID, flags DWORD, token HANDLE) (string, error)
 }
 
 func CoTaskMemFree(p uintptr) {
-	procCoTaskMemFree.Call(p)
+	_, _, _ = procCoTaskMemFree.Call(p)
 }
 
 func SHChangeNotify(eventId int32, flags uint32, item1, item2 uintptr) {
-	procSHChangeNotify.Call(uintptr(eventId), uintptr(flags), item1, item2)
+	_, _, _ = procSHChangeNotify.Call(uintptr(eventId), uintptr(flags), item1, item2)
 }

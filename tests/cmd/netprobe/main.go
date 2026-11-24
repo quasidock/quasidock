@@ -18,7 +18,7 @@ func serve(port string) {
 		fmt.Fprintf(os.Stderr, "serve listen error: %v\n", err)
 		win32.ExitProcess(1)
 	}
-	defer ln.Close()
+	defer func() { _ = ln.Close() }()
 
 	for {
 		conn, err := ln.Accept()
@@ -26,7 +26,7 @@ func serve(port string) {
 			continue
 		}
 		go func(c net.Conn) {
-			defer c.Close()
+			defer func() { _ = c.Close() }()
 			buf := make([]byte, 4)
 			n, err := io.ReadFull(c, buf)
 			if err == nil && n == 4 && string(buf) == "ping" {
@@ -42,7 +42,7 @@ func ping(port string) {
 		fmt.Println("dropped")
 		win32.ExitProcess(1)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	_ = conn.SetDeadline(time.Now().Add(3 * time.Second))
 
 	_, err = conn.Write([]byte("ping"))

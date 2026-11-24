@@ -203,8 +203,6 @@ type settingsParser struct {
 	ports        []string
 }
 
-var settingsFlags []string
-
 func (p *settingsParser) apply(opt Option) error {
 	name := opt.Name
 	if name == "ephemeral" {
@@ -621,7 +619,9 @@ func signatureCommand(ctx *context.Context, rest []string) (uint32, error) {
 		if err != nil {
 			return 1, err
 		}
-		os.Stdout.Write(payload)
+		if _, err := os.Stdout.Write(payload); err != nil {
+			return 1, err
+		}
 		return 0, nil
 	case "push":
 		if len(rest) != 4 {

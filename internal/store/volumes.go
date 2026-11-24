@@ -74,7 +74,7 @@ func (s *Store) createVolumeNoLock(name string) (*Volume, error) {
 	v := Volume{Name: name, Driver: "local", Mountpoint: filepath.Join(s.FullRoot(), "volumes", strings.ToLower(name), "data"), CreatedAt: time.Now().UTC().Format(time.RFC3339Nano)}
 	b, _ := json.MarshalIndent(v, "", "  ")
 	tmp := s.TmpPath("volume")
-	defer os.Remove(tmp)
+	defer func() { _ = os.Remove(tmp) }()
 	if err := os.WriteFile(tmp, b, 0o644); err != nil {
 		return nil, err
 	}

@@ -123,7 +123,7 @@ func NewEmptyAcl() (ACL, error) {
 }
 
 func FreeSid(sid PSID) {
-	procFreeSid.Call(sid)
+	_, _, _ = procFreeSid.Call(sid)
 }
 
 func EqualSid(a, b PSID) bool {

@@ -345,8 +345,8 @@ func TestContainerStartRestartKill(t *testing.T) {
 		if err := cmd.Start(); err != nil {
 			t.Fatal(err)
 		}
-		done := make(chan error, 1)
-		go func() { done <- cmd.Wait() }()
+		done := make(chan struct{})
+		go func() { _ = cmd.Wait(); close(done) }()
 		t.Cleanup(func() { _ = cmd.Process.Kill() })
 		waitPID(t, ready, 0)
 		if out, code := call("kill", "-s", "TERM", "foreground"); code == 0 || !strings.Contains(out, "foreground") {
@@ -436,7 +436,7 @@ func startLifecycleConsole(t *testing.T, exe string, args []string, capture ...i
 	defer win32.CloseHandle(outWrite)
 	output := os.NewFile(uintptr(outRead), "console-output")
 	t.Cleanup(func() { _ = output.Close() })
-	var dst io.Writer = io.Discard
+	dst := io.Discard
 	if len(capture) != 0 {
 		dst = capture[0]
 	}

@@ -32,7 +32,7 @@ func BeginCapture(ctx *context.Context, rec *store.ContainerRecord) (*CaptureLea
 		return nil, err
 	}
 	c := &execStream{File: f}
-	fail := func(err error) (*CaptureLease, error) { c.Close(); return nil, err }
+	fail := func(err error) (*CaptureLease, error) { _ = c.Close(); return nil, err }
 	if err := c.SetDeadline(deadline); err != nil {
 		return fail(err)
 	}
@@ -62,7 +62,7 @@ func (l *CaptureLease) Close() error {
 	}
 	c := l.stream
 	l.stream = nil
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 	_ = c.SetDeadline(time.Now().Add(5 * time.Second))
 	if err := c.send(commitRelease, nil); err != nil {
 		return err
@@ -122,7 +122,7 @@ func (r *execRuntime) serveCapture(c *execStream, data []byte) {
 		}
 		return nil
 	}
-	defer release()
+	defer func() { _ = release() }()
 	if err := c.send(commitAcquired, nil); err != nil {
 		return
 	}

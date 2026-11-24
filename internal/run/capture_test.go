@@ -42,7 +42,7 @@ func TestCaptureLeaseRestoresState(t *testing.T) {
 					t.Fatal("accepted concurrent capture")
 				}
 				if disconnect {
-					lease.stream.Close()
+					_ = lease.stream.Close()
 				} else if err := lease.Close(); err != nil {
 					t.Fatal(err)
 				}
@@ -89,7 +89,7 @@ func TestCaptureLeaseClient(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer lease.Close()
+	defer func() { _ = lease.Close() }()
 	if err := os.WriteFile(os.Getenv("QUASIDOCK_CAPTURE_TEST_READY"), nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -165,9 +165,13 @@ func TestCaptureCapabilityAndRunID(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := &execStream{File: f}
-	defer c.Close()
-	c.SetDeadline(time.Now().Add(time.Second))
-	c.send(commitAcquire, []byte(`{"Protocol":1,"RunID":"wrong"}`))
+	defer func() { _ = c.Close() }()
+	if err := c.SetDeadline(time.Now().Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.send(commitAcquire, []byte(`{"Protocol":1,"RunID":"wrong"}`)); err != nil {
+		t.Fatal(err)
+	}
 	if kind, _, err := c.receive(); err != nil || kind != execError {
 		t.Fatalf("stale request: %d %v", kind, err)
 	}

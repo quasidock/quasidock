@@ -33,12 +33,6 @@ type TextBuffer struct {
 	mu  sync.Mutex
 }
 
-func newTextBuffer() *TextBuffer {
-	return &TextBuffer{
-		buf: make([]byte, 64*1024),
-	}
-}
-
 func (t *TextBuffer) Get() string {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -74,83 +68,12 @@ type Console struct {
 	input   win32.HANDLE
 	output  win32.HANDLE
 	process win32.HANDLE
-	pid     uint32
 	text    *TextBuffer
 	closed  bool
 }
 
-func startConsole(commandLine string) (*Console, error) {
-	inRead, inWrite, err := win32.CreatePipe(nil, 0)
-	if err != nil {
-		return nil, err
-	}
-	outRead, outWrite, err := win32.CreatePipe(nil, 0)
-	if err != nil {
-		win32.CloseHandle(inRead)
-		win32.CloseHandle(inWrite)
-		return nil, err
-	}
-
-	var pc uintptr
-	hr := win32.CreatePseudoConsole(win32.COORD{X: 120, Y: 30}, inRead, outWrite, 0, &pc)
-	win32.CloseHandle(inRead)
-	win32.CloseHandle(outWrite)
-	if hr < 0 {
-		win32.CloseHandle(inWrite)
-		win32.CloseHandle(outRead)
-		return nil, fmt.Errorf("CreatePseudoConsole failed: 0x%x", hr)
-	}
-
-	attrs, err := win32.NewProcThreadAttributeList(1)
-	if err != nil {
-		win32.ClosePseudoConsole(pc)
-		return nil, err
-	}
-	defer attrs.Delete()
-
-	if !attrs.SetPseudoConsole(pc) {
-		win32.ClosePseudoConsole(pc)
-		return nil, fmt.Errorf("UpdateProcThreadAttribute failed")
-	}
-
-	var startup win32.STARTUPINFOEXW
-	startup.StartupInfo.DwFlags = win32.STARTF_USESTDHANDLES
-
-	var info win32.PROCESS_INFORMATION
-	err = win32.CreateProcessEx(
-		"",
-		commandLine,
-		nil,
-		nil,
-		false,
-		win32.EXTENDED_STARTUPINFO_PRESENT,
-		nil,
-		"",
-		&startup,
-		attrs,
-		&info,
-	)
-	if err != nil {
-		win32.ClosePseudoConsole(pc)
-		return nil, err
-	}
-	win32.CloseHandle(info.HThread)
-
-	tb := newTextBuffer()
-	go tb.Drain(outRead)
-
-	return &Console{
-		pc:      pc,
-		input:   inWrite,
-		output:  outRead,
-		process: info.HProcess,
-		pid:     uint32(info.DwProcessId),
-		text:    tb,
-	}, nil
-}
-
-func (c *Console) WaitFor(needle string, timeoutMs time.Duration) (string, bool) {
-	deadline := time.Now().Add(timeoutMs)
+func (c *Console) WaitFor(needle string, timeout time.Duration) (string, bool) {
+	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		txt := c.text.Get()
 		if idx := strings.Index(txt, needle); idx != -1 {

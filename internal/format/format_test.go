@@ -3,8 +3,6 @@ package format
 import (
 	"archive/tar"
 	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
 	"os"
 	"path/filepath"
 	"strings"
@@ -54,7 +52,9 @@ func TestFormatOfDescriptor(t *testing.T) {
 func TestDeployTarGzipEstargz(t *testing.T) {
 	tmpDir := t.TempDir()
 	workDir := filepath.Join(tmpDir, "work")
-	os.MkdirAll(workDir, 0o755)
+	if err := os.MkdirAll(workDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
 
 	content := "tool binary data"
 
@@ -65,10 +65,18 @@ func TestDeployTarGzipEstargz(t *testing.T) {
 		t.Fatal(err)
 	}
 	tw := NewLayerWriter(tf)
-	tw.AddDir("bin")
-	tw.AddFile("bin/tool.exe", int64(len(content)), strings.NewReader(content))
-	tw.Finish()
-	tf.Close()
+	if err := tw.AddDir("bin"); err != nil {
+		t.Fatal(err)
+	}
+	if err := tw.AddFile("bin/tool.exe", int64(len(content)), strings.NewReader(content)); err != nil {
+		t.Fatal(err)
+	}
+	if err := tw.Finish(); err != nil {
+		t.Fatal(err)
+	}
+	if err := tf.Close(); err != nil {
+		t.Fatal(err)
+	}
 
 	destTar := filepath.Join(tmpDir, "dest_tar")
 	tarDesc := oci.Descriptor{MediaType: oci.MediaTypeLayerTar, Digest: "sha256:1111", Size: 100}
@@ -88,11 +96,21 @@ func TestDeployTarGzipEstargz(t *testing.T) {
 	}
 	gw, _ := GzipWriter(gf)
 	gtw := NewLayerWriter(gw)
-	gtw.AddDir("bin")
-	gtw.AddFile("bin/tool.exe", int64(len(content)), strings.NewReader(content))
-	gtw.Finish()
-	gw.Close()
-	gf.Close()
+	if err := gtw.AddDir("bin"); err != nil {
+		t.Fatal(err)
+	}
+	if err := gtw.AddFile("bin/tool.exe", int64(len(content)), strings.NewReader(content)); err != nil {
+		t.Fatal(err)
+	}
+	if err := gtw.Finish(); err != nil {
+		t.Fatal(err)
+	}
+	if err := gw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := gf.Close(); err != nil {
+		t.Fatal(err)
+	}
 
 	destGz := filepath.Join(tmpDir, "dest_gz")
 	gzDesc := oci.Descriptor{MediaType: oci.MediaTypeLayerTarGzip, Digest: "sha256:2222", Size: 100}
@@ -107,10 +125,18 @@ func TestDeployTarGzipEstargz(t *testing.T) {
 	// 3. eStargz
 	var tarBuf bytes.Buffer
 	st := tar.NewWriter(&tarBuf)
-	st.WriteHeader(&tar.Header{Name: "bin/", Typeflag: tar.TypeDir, Mode: 0o755})
-	st.WriteHeader(&tar.Header{Name: "bin/tool.exe", Typeflag: tar.TypeReg, Mode: 0o644, Size: int64(len(content))})
-	st.Write([]byte(content))
-	st.Close()
+	if err := st.WriteHeader(&tar.Header{Name: "bin/", Typeflag: tar.TypeDir, Mode: 0o755}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.WriteHeader(&tar.Header{Name: "bin/tool.exe", Typeflag: tar.TypeReg, Mode: 0o644, Size: int64(len(content))}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.Write([]byte(content)); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Close(); err != nil {
+		t.Fatal(err)
+	}
 
 	esBlobPath := filepath.Join(workDir, "blob.estargz")
 	ef, err := os.Create(esBlobPath)
@@ -121,7 +147,9 @@ func TestDeployTarGzipEstargz(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ef.Close()
+	if err := ef.Close(); err != nil {
+		t.Fatal(err)
+	}
 
 	destEs := filepath.Join(tmpDir, "dest_estargz")
 	esDesc := oci.Descriptor{
@@ -137,9 +165,4 @@ func TestDeployTarGzipEstargz(t *testing.T) {
 	if string(gotEs) != content {
 		t.Fatalf("content mismatch for estargz deploy: got %q, want %q", gotEs, content)
 	}
-}
-
-func calcSha256(b []byte) string {
-	h := sha256.Sum256(b)
-	return hex.EncodeToString(h[:])
 }

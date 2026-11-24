@@ -183,7 +183,7 @@ func TestPauseAttachAdmission(t *testing.T) {
 		t.Fatalf("owner rejected attachment after unpause: %d %q", kind, data)
 	}
 	expectAttachFrame(t, c, attachStarted)
-	c.Close()
+	_ = c.Close()
 }
 
 func TestPauseRequiresAcknowledgementAndCapability(t *testing.T) {

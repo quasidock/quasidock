@@ -25,10 +25,13 @@ func deriveKey(word string) *ecdsa.PrivateKey {
 	d.Mod(d, new(big.Int).Sub(order, big.NewInt(1)))
 	d.Add(d, big.NewInt(1))
 
-	priv := new(ecdsa.PrivateKey)
-	priv.PublicKey.Curve = c
-	priv.D = d
-	priv.PublicKey.X, priv.PublicKey.Y = c.ScalarBaseMult(d.Bytes())
+	var raw [32]byte
+	d.FillBytes(raw[:])
+	priv, err := ecdsa.ParseRawPrivateKey(elliptic.P256(), raw[:])
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "ParseRawPrivateKey: %v\n", err)
+		win32.ExitProcess(1)
+	}
 	return priv
 }
 

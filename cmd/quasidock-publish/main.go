@@ -4,6 +4,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -38,7 +39,7 @@ func command(args ...string) ([]byte, error) {
 	if exe == "" {
 		exe = "out/bin/quasidock.exe"
 	}
-	c := exec.Command(exe, args...)
+	c := exec.Command(exe, args...) //nolint:gosec // G204: executes local build/publish tool
 	c.Stderr = os.Stderr
 	return c.Output()
 }
@@ -392,7 +393,7 @@ func verify(ctx *context.Context, r publishing.Report, release bool) error {
 		return fmt.Errorf("invalid source artifact for %s", r.ID)
 	}
 	tmp := ctx.Store.TmpPath("source-config")
-	defer os.Remove(tmp)
+	defer func() { _ = os.Remove(tmp) }()
 	if _, err = reg.DownloadBlob(m.Config, tmp); err != nil {
 		return err
 	}
@@ -437,22 +438,23 @@ func verify(ctx *context.Context, r publishing.Report, release bool) error {
 	return nil
 }
 func copyTree(src, dest string) error {
-	return filepath.WalkDir(src, func(path string, d os.DirEntry, err error) error {
+	root, err := os.OpenRoot(src)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = root.Close() }()
+	return fs.WalkDir(root.FS(), ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		rel, err := filepath.Rel(src, path)
-		if err != nil {
-			return err
-		}
-		out := filepath.Join(dest, rel)
+		out := filepath.Join(dest, path)
 		if d.IsDir() {
 			return os.MkdirAll(out, 0755)
 		}
 		if d.Type()&os.ModeSymlink != 0 {
-			return fmt.Errorf("recipe tree contains symlink %s", path)
+			return fmt.Errorf("recipe tree contains symlink %s", filepath.Join(src, path))
 		}
-		b, err := os.ReadFile(path)
+		b, err := root.ReadFile(path)
 		if err != nil {
 			return err
 		}

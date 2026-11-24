@@ -394,6 +394,7 @@ func CurrentUserSid() (win32.PSID, error) {
 
 		userSidData, cachedUserSid, cachedUserSidErr = win32.GetTokenUserSid(token)
 	})
+	runtime.KeepAlive(userSidData)
 	return cachedUserSid, cachedUserSidErr
 }
 

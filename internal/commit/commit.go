@@ -107,7 +107,7 @@ func Commit(cancel stdcontext.Context, ctx *context.Context, opts Options) (dige
 	if err != nil {
 		return "", err
 	}
-	defer mounts.RemoveTree(stage)
+	defer func() { _ = mounts.RemoveTree(stage) }()
 	var lease *run.CaptureLease
 	if c.State.Running && opts.Pause {
 		lease, err = run.BeginCapture(ctx, c)
@@ -130,7 +130,7 @@ func Commit(cancel stdcontext.Context, ctx *context.Context, opts Options) (dige
 		if err != nil {
 			return "", err
 		}
-		defer rootGuard.Close()
+		defer func() { _ = rootGuard.Close() }()
 	}
 	if err := store.CopyData(cancel, c.DataDir, stage, excluded); err != nil {
 		return "", fmt.Errorf("capturing private data: %w", err)

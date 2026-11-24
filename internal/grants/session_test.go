@@ -34,12 +34,12 @@ func TestLastSessionSettlesWrittenPrograms(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer first.End(st)
+	defer func() { _ = first.End(st) }()
 	second, err := Begin(st, id)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer second.End(st)
+	defer func() { _ = second.End(st) }()
 	if err := first.End(st); err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +67,7 @@ func TestLastSessionTakesBackRecordedLoopbackExemption(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer appcontainer.DeleteProfile(id)
+	defer func() { _ = appcontainer.DeleteProfile(id) }()
 	defer win32.FreeSid(profile.Sid)
 	defer win32.LocalFree(profile.Capability)
 	result, err := appcontainer.Exempt(profile.Sid)
@@ -77,7 +77,7 @@ func TestLastSessionTakesBackRecordedLoopbackExemption(t *testing.T) {
 	if result.Status == appcontainer.ExemptRefused {
 		t.Skipf("Windows refused loopback exemption: %d", result.Refused)
 	}
-	defer appcontainer.Unexempt(profile.Sid)
+	defer func() { _, _ = appcontainer.Unexempt(profile.Sid) }()
 	// A user-created exemption has no record and must survive settlement.
 	if err := Settle(st, id); err != nil {
 		t.Fatal(err)
@@ -92,12 +92,12 @@ func TestLastSessionTakesBackRecordedLoopbackExemption(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer first.End(st)
+	defer func() { _ = first.End(st) }()
 	second, err := Begin(st, id)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer second.End(st)
+	defer func() { _ = second.End(st) }()
 	if err := first.End(st); err != nil {
 		t.Fatal(err)
 	}

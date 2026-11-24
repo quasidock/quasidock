@@ -60,7 +60,7 @@ func writeControlJSON(st *store.Store, path string, value any) error {
 		return err
 	}
 	tmp := st.TmpPath("container-control")
-	defer os.Remove(tmp)
+	defer func() { _ = os.Remove(tmp) }()
 	if err := os.WriteFile(tmp, data, 0o600); err != nil {
 		return err
 	}
@@ -111,8 +111,8 @@ func sendControlRequest(ctx *context.Context, rec *store.ContainerRecord, reques
 	defer win32.CloseHandle(event)
 	requestPath := controlPath(ctx.Store, rec.ID, rec.State.RunID)
 	resultPath := controlResultPath(ctx.Store, rec.ID, requestID)
-	defer os.Remove(requestPath)
-	defer os.Remove(resultPath)
+	defer func() { _ = os.Remove(requestPath) }()
+	defer func() { _ = os.Remove(resultPath) }()
 	request.RunID, request.RequestID = rec.State.RunID, requestID
 	if err := writeControlJSON(ctx.Store, requestPath, request); err != nil {
 		return err
@@ -308,7 +308,7 @@ func validRunID(id string) bool {
 		return false
 	}
 	for _, c := range id {
-		if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f') {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
 			return false
 		}
 	}

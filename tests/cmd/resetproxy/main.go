@@ -52,7 +52,7 @@ func contentLength(head []byte) *int64 {
 }
 
 func serve(client net.Conn, upstreamPort string, part string, targetBytes int64, resetDone bool) bool {
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	reqHead, err := readHead(client)
 	if err != nil {
@@ -74,7 +74,7 @@ func serve(client net.Conn, upstreamPort string, part string, targetBytes int64,
 	if err != nil {
 		return resetDone
 	}
-	defer upstream.Close()
+	defer func() { _ = upstream.Close() }()
 
 	_, _ = upstream.Write(reqHead)
 
@@ -137,7 +137,7 @@ func serve(client net.Conn, upstreamPort string, part string, targetBytes int64,
 
 func main() {
 	args := os.Args[1:]
-	if len(args) != 4 && !(len(args) == 5 && args[4] == "--answer-500") {
+	if len(args) != 4 && (len(args) != 5 || args[4] != "--answer-500") {
 		fmt.Fprintln(os.Stderr, "usage: resetproxy <port> <upstream port> <path part> <bytes> [--answer-500]")
 		win32.ExitProcess(2)
 	}
@@ -153,7 +153,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "listen error: %v\n", err)
 		win32.ExitProcess(1)
 	}
-	defer ln.Close()
+	defer func() { _ = ln.Close() }()
 
 	resetDone := false
 	for {

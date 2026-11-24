@@ -520,8 +520,6 @@ var (
 	procGetFileType                       = modKernel32.NewProc("GetFileType")
 	procGetModuleFileNameW                = modKernel32.NewProc("GetModuleFileNameW")
 	procGetSystemDirectoryW               = modKernel32.NewProc("GetSystemDirectoryW")
-	procLoadLibraryExW                    = modKernel32.NewProc("LoadLibraryExW")
-	procGetProcAddress                    = modKernel32.NewProc("GetProcAddress")
 	procGetSystemTimeAsFileTime           = modKernel32.NewProc("GetSystemTimeAsFileTime")
 	procCreateProcessW                    = modKernel32.NewProc("CreateProcessW")
 	procInitializeProcThreadAttributeList = modKernel32.NewProc("InitializeProcThreadAttributeList")
@@ -556,8 +554,6 @@ var (
 	procSetConsoleMode                    = modKernel32.NewProc("SetConsoleMode")
 	procSetConsoleCtrlHandler             = modKernel32.NewProc("SetConsoleCtrlHandler")
 	procReadConsoleW                      = modKernel32.NewProc("ReadConsoleW")
-	procGetConsoleOutputCP                = modKernel32.NewProc("GetConsoleOutputCP")
-	procSetConsoleOutputCP                = modKernel32.NewProc("SetConsoleOutputCP")
 	procLocalFree                         = modKernel32.NewProc("LocalFree")
 	procReadDirectoryChangesW             = modKernel32.NewProc("ReadDirectoryChangesW")
 	procCreateIoCompletionPort            = modKernel32.NewProc("CreateIoCompletionPort")
@@ -568,44 +564,41 @@ var (
 	procUnlockFileEx                      = modKernel32.NewProc("UnlockFileEx")
 
 	// advapi32
-	procOpenProcessToken          = modAdvapi32.NewProc("OpenProcessToken")
-	procDuplicateTokenEx          = modAdvapi32.NewProc("DuplicateTokenEx")
-	procSetTokenInformation       = modAdvapi32.NewProc("SetTokenInformation")
-	procGetTokenInformation       = modAdvapi32.NewProc("GetTokenInformation")
-	procCreateProcessAsUserW      = modAdvapi32.NewProc("CreateProcessAsUserW")
-	procInitializeAcl             = modAdvapi32.NewProc("InitializeAcl")
-	procAddMandatoryAce           = modAdvapi32.NewProc("AddMandatoryAce")
-	procDeleteAce                 = modAdvapi32.NewProc("DeleteAce")
-	procGetAce                    = modAdvapi32.NewProc("GetAce")
-	procFreeSid                   = modAdvapi32.NewProc("FreeSid")
-	procEqualSid                  = modAdvapi32.NewProc("EqualSid")
-	procGetLengthSid              = modAdvapi32.NewProc("GetLengthSid")
-	procGetSidIdentifierAuthority = modAdvapi32.NewProc("GetSidIdentifierAuthority")
-	procGetSidSubAuthorityCount   = modAdvapi32.NewProc("GetSidSubAuthorityCount")
-	procGetSidSubAuthority        = modAdvapi32.NewProc("GetSidSubAuthority")
-	procConvertStringSidToSidW    = modAdvapi32.NewProc("ConvertStringSidToSidW")
-	procConvertSidToStringSidW    = modAdvapi32.NewProc("ConvertSidToStringSidW")
-	procGetNamedSecurityInfoW     = modAdvapi32.NewProc("GetNamedSecurityInfoW")
-	procSetNamedSecurityInfoW     = modAdvapi32.NewProc("SetNamedSecurityInfoW")
-	procSetSecurityInfo           = modAdvapi32.NewProc("SetSecurityInfo")
-	procSetEntriesInAclW          = modAdvapi32.NewProc("SetEntriesInAclW")
-	procRegCreateKeyExW           = modAdvapi32.NewProc("RegCreateKeyExW")
-	procRegOpenKeyExW             = modAdvapi32.NewProc("RegOpenKeyExW")
-	procRegCloseKey               = modAdvapi32.NewProc("RegCloseKey")
-	procRegFlushKey               = modAdvapi32.NewProc("RegFlushKey")
-	procRegSetValueExW            = modAdvapi32.NewProc("RegSetValueExW")
-	procRegQueryValueExW          = modAdvapi32.NewProc("RegQueryValueExW")
-	procRegEnumKeyExW             = modAdvapi32.NewProc("RegEnumKeyExW")
-	procRegQueryInfoKeyW          = modAdvapi32.NewProc("RegQueryInfoKeyW")
-	procRegDeleteTreeW            = modAdvapi32.NewProc("RegDeleteTreeW")
-	procRegDeleteKeyW             = modAdvapi32.NewProc("RegDeleteKeyW")
-	procRegDeleteValueW           = modAdvapi32.NewProc("RegDeleteValueW")
-	procRegEnumValueW             = modAdvapi32.NewProc("RegEnumValueW")
-	procRegLoadAppKeyW            = modAdvapi32.NewProc("RegLoadAppKeyW")
-	procCredReadW                 = modAdvapi32.NewProc("CredReadW")
-	procCredWriteW                = modAdvapi32.NewProc("CredWriteW")
-	procCredDeleteW               = modAdvapi32.NewProc("CredDeleteW")
-	procCredFree                  = modAdvapi32.NewProc("CredFree")
+	procOpenProcessToken       = modAdvapi32.NewProc("OpenProcessToken")
+	procDuplicateTokenEx       = modAdvapi32.NewProc("DuplicateTokenEx")
+	procSetTokenInformation    = modAdvapi32.NewProc("SetTokenInformation")
+	procGetTokenInformation    = modAdvapi32.NewProc("GetTokenInformation")
+	procCreateProcessAsUserW   = modAdvapi32.NewProc("CreateProcessAsUserW")
+	procInitializeAcl          = modAdvapi32.NewProc("InitializeAcl")
+	procAddMandatoryAce        = modAdvapi32.NewProc("AddMandatoryAce")
+	procDeleteAce              = modAdvapi32.NewProc("DeleteAce")
+	procGetAce                 = modAdvapi32.NewProc("GetAce")
+	procFreeSid                = modAdvapi32.NewProc("FreeSid")
+	procEqualSid               = modAdvapi32.NewProc("EqualSid")
+	procGetLengthSid           = modAdvapi32.NewProc("GetLengthSid")
+	procConvertStringSidToSidW = modAdvapi32.NewProc("ConvertStringSidToSidW")
+	procConvertSidToStringSidW = modAdvapi32.NewProc("ConvertSidToStringSidW")
+	procGetNamedSecurityInfoW  = modAdvapi32.NewProc("GetNamedSecurityInfoW")
+	procSetNamedSecurityInfoW  = modAdvapi32.NewProc("SetNamedSecurityInfoW")
+	procSetSecurityInfo        = modAdvapi32.NewProc("SetSecurityInfo")
+	procSetEntriesInAclW       = modAdvapi32.NewProc("SetEntriesInAclW")
+	procRegCreateKeyExW        = modAdvapi32.NewProc("RegCreateKeyExW")
+	procRegOpenKeyExW          = modAdvapi32.NewProc("RegOpenKeyExW")
+	procRegCloseKey            = modAdvapi32.NewProc("RegCloseKey")
+	procRegFlushKey            = modAdvapi32.NewProc("RegFlushKey")
+	procRegSetValueExW         = modAdvapi32.NewProc("RegSetValueExW")
+	procRegQueryValueExW       = modAdvapi32.NewProc("RegQueryValueExW")
+	procRegEnumKeyExW          = modAdvapi32.NewProc("RegEnumKeyExW")
+	procRegQueryInfoKeyW       = modAdvapi32.NewProc("RegQueryInfoKeyW")
+	procRegDeleteTreeW         = modAdvapi32.NewProc("RegDeleteTreeW")
+	procRegDeleteKeyW          = modAdvapi32.NewProc("RegDeleteKeyW")
+	procRegDeleteValueW        = modAdvapi32.NewProc("RegDeleteValueW")
+	procRegEnumValueW          = modAdvapi32.NewProc("RegEnumValueW")
+	procRegLoadAppKeyW         = modAdvapi32.NewProc("RegLoadAppKeyW")
+	procCredReadW              = modAdvapi32.NewProc("CredReadW")
+	procCredWriteW             = modAdvapi32.NewProc("CredWriteW")
+	procCredDeleteW            = modAdvapi32.NewProc("CredDeleteW")
+	procCredFree               = modAdvapi32.NewProc("CredFree")
 
 	// userenv
 	procCreateAppContainerProfile                 = modUserenv.NewProc("CreateAppContainerProfile")
@@ -785,7 +778,7 @@ func SetHandleInformation(h HANDLE, mask, flags DWORD) bool {
 }
 
 func GetSystemTimeAsFileTime(ft *int64) {
-	procGetSystemTimeAsFileTime.Call(uintptr(unsafe.Pointer(ft)))
+	_, _, _ = procGetSystemTimeAsFileTime.Call(uintptr(unsafe.Pointer(ft)))
 }
 
 func CreateFile(name string, access, share DWORD, sec *SECURITY_ATTRIBUTES, disposition, flags DWORD, template HANDLE) (HANDLE, error) {
@@ -1096,7 +1089,7 @@ func QueryDosDevice(device string) (string, error) {
 }
 
 func Sleep(ms DWORD) {
-	procSleep.Call(uintptr(ms))
+	_, _, _ = procSleep.Call(uintptr(ms))
 }
 
 // SynchronousIo checks if I/O on handle is synchronous. Returns true, false, or error.
@@ -1559,7 +1552,8 @@ func CertGetEnhancedKeyUsage(certContext uintptr, flags DWORD, usage uintptr, si
 		usage,
 		uintptr(unsafe.Pointer(size)),
 	)
-	lastError, _ := err.(syscall.Errno)
+	var lastError syscall.Errno
+	_ = errors.As(err, &lastError)
 	return r1 != 0, lastError
 }
 
@@ -1571,7 +1565,8 @@ func CertEnhancedKeyUsageOIDs(ctx *syscall.CertContext, flags DWORD) (oids []str
 		0,
 		uintptr(unsafe.Pointer(&size)),
 	)
-	lastError, _ := callErr.(syscall.Errno)
+	var lastError syscall.Errno
+	_ = errors.As(callErr, &lastError)
 	if r1 == 0 {
 		if lastError == syscall.Errno(CRYPT_E_NOT_FOUND) {
 			return nil, true, nil
@@ -1588,7 +1583,8 @@ func CertEnhancedKeyUsageOIDs(ctx *syscall.CertContext, flags DWORD) (oids []str
 		uintptr(unsafe.Pointer(&buf[0])),
 		uintptr(unsafe.Pointer(&size)),
 	)
-	lastError, _ = callErr.(syscall.Errno)
+	lastError = 0
+	_ = errors.As(callErr, &lastError)
 	if r1 == 0 {
 		if lastError == syscall.Errno(CRYPT_E_NOT_FOUND) {
 			return nil, true, nil

@@ -47,9 +47,9 @@ func seedBusybox(ctx *context.Context, r publishing.Recipe, local string) (strin
 	if err != nil {
 		return "", err
 	}
-	defer in.Close()
+	defer func() { _ = in.Close() }()
 	tmp := ctx.Store.TmpPath("busybox-seed")
-	defer os.Remove(tmp)
+	defer func() { _ = os.Remove(tmp) }()
 	out, err := os.Create(tmp)
 	if err != nil {
 		return "", err

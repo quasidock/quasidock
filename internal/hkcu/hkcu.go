@@ -178,10 +178,7 @@ func readRecord(key string) (*Record, error) {
 	if appStr != nil {
 		appVal = *appStr
 	}
-	asideVal := false
-	if asideStr != nil && *asideStr == "yes" {
-		asideVal = true
-	}
+	asideVal := asideStr != nil && *asideStr == "yes"
 	madeVal := ""
 	if madeStr != nil {
 		madeVal = *madeStr

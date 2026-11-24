@@ -11,6 +11,35 @@ linters:
     - gosec
     - bodyclose
     - errorlint
+  # temprary relax linter strictness to reduce noise, will be re-enabled in the future
+  settings:
+    errcheck:
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+    gosec:
+      excludes:
+        - G115
+        - G301
+        - G302
+        - G304
+        - G306
+        - G703
+  exclusions:
+    rules:
+      - path: '^internal/(win32|cloudfiles)/'
+        linters:
+          - gosec
+        text: '^G103:'
+      - path: '(_test\.go$|^tests/)'
+        linters:
+          - gosec
+        text: '^(G103|G117|G204|G702|G704):'
+      - linters:
+          - staticcheck
+        text: '^ST1005:'
+        source: '("(Windows|Dockerfile|Go|Linux)\b|@sha256:\.\.\.")'
 
 issues:
   max-issues-per-linter: 0

@@ -173,9 +173,10 @@ func (s *state) compileStmt(stmt *syntax.Stmt, wd string, runtime bool) (string,
 			return "", flow, err
 		}
 		next := x.success
-		if command.Op == syntax.OrStmt {
+		switch command.Op {
+		case syntax.OrStmt:
 			next = x.failure
-		} else if command.Op == syntax.Pipe {
+		case syntax.Pipe:
 			next = wd
 		}
 		if command.Op == syntax.AndStmt && !s.aptSetupOnly(command.X) {

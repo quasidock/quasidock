@@ -43,7 +43,7 @@ func copyProbe(t *testing.T, dest string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer in.Close()
+	defer func() { _ = in.Close() }()
 	out, err := os.Create(dest)
 	if err != nil {
 		t.Fatal(err)

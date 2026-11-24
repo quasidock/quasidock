@@ -135,13 +135,27 @@ func TestStoreGrants(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	st.RecordGrant("a.app", Grant{Kind: GrantLow, Path: "D:\\proj"})
-	st.RecordGrant("a.app", Grant{Kind: GrantAppContainer, Path: "D:\\proj"})
-	st.RecordGrant("a.app", Grant{Kind: GrantLow, Path: "d:\\PROJ"}) // Case insensitive duplicate
-	st.RecordGrant("a.app", Grant{Kind: GrantAppContainer, Path: "D:\\other"})
-	st.RecordGrant("b.app", Grant{Kind: GrantLow, Path: "d:\\Proj"})
-	st.RecordGrant("b.app", Grant{Kind: GrantLoopback})
-	st.RecordGrant("b.app", Grant{Kind: GrantLoopback})
+	if err := st.RecordGrant("a.app", Grant{Kind: GrantLow, Path: "D:\\proj"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.RecordGrant("a.app", Grant{Kind: GrantAppContainer, Path: "D:\\proj"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.RecordGrant("a.app", Grant{Kind: GrantLow, Path: "d:\\PROJ"}); err != nil { // Case insensitive duplicate
+		t.Fatal(err)
+	}
+	if err := st.RecordGrant("a.app", Grant{Kind: GrantAppContainer, Path: "D:\\other"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.RecordGrant("b.app", Grant{Kind: GrantLow, Path: "d:\\Proj"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.RecordGrant("b.app", Grant{Kind: GrantLoopback}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.RecordGrant("b.app", Grant{Kind: GrantLoopback}); err != nil {
+		t.Fatal(err)
+	}
 
 	a, err := st.ReadGrants("a.app")
 	if err != nil {
@@ -156,15 +170,23 @@ func TestStoreGrants(t *testing.T) {
 		t.Fatalf("expected true for grantedToOthers on D:\\PROJ")
 	}
 
-	st.RecordCwdGrant("a.app", "D:\\proj")
-	st.RecordCwdGrant("a.app", "d:\\PROJ")
-	st.RecordCwdGrant("a.app", "D:\\cwd")
+	if err := st.RecordCwdGrant("a.app", "D:\\proj"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.RecordCwdGrant("a.app", "d:\\PROJ"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.RecordCwdGrant("a.app", "D:\\cwd"); err != nil {
+		t.Fatal(err)
+	}
 	cwds, _ := st.ReadCwdGrants("a.app")
 	if len(cwds) != 2 {
 		t.Fatalf("expected 2 cwd grants, got %d: %v", len(cwds), cwds)
 	}
 
-	st.DeleteGrants("a.app")
+	if err := st.DeleteGrants("a.app"); err != nil {
+		t.Fatal(err)
+	}
 	a, _ = st.ReadGrants("a.app")
 	if len(a) != 0 {
 		t.Fatalf("expected 0 grants after delete, got %d", len(a))

@@ -328,7 +328,7 @@ func TestForegroundImages(t *testing.T) {
 	if err := hold.Start(); err != nil {
 		t.Fatal(err)
 	}
-	defer func() { hold.Process.Kill(); hold.Wait() }()
+	defer func() { _ = hold.Process.Kill(); _ = hold.Wait() }()
 	deadline := time.Now().Add(10 * time.Second)
 	for !store.Exists(ready) && time.Now().Before(deadline) {
 		time.Sleep(20 * time.Millisecond)
@@ -345,7 +345,7 @@ func TestForegroundImages(t *testing.T) {
 	if err := hold.Process.Kill(); err != nil {
 		t.Fatal(err)
 	}
-	hold.Wait()
+	_ = hold.Wait()
 	// Exited containers continue pinning their image until removed or pruned.
 	if out, code := call("rmi", a); code == 0 || !strings.Contains(out, "in use") {
 		t.Fatalf("stopped container should pin image: %s %d", out, code)

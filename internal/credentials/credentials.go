@@ -18,7 +18,7 @@ import (
 
 const (
 	UsernameVar     = "QUASIDOCK_REGISTRY_USERNAME"
-	PasswordVar     = "QUASIDOCK_REGISTRY_PASSWORD"
+	PasswordVar     = "QUASIDOCK_REGISTRY_PASSWORD" //nolint:gosec // G101: environment variable name, not a credential
 	DefaultRegistry = "ghcr.io"
 )
 
@@ -302,7 +302,7 @@ func fromHelper(helper, serverURL string) (*Credential, error) {
 		return nil, nil
 	}
 
-	cmd := exec.Command(path, "get")
+	cmd := exec.Command(path, "get") //nolint:gosec // G204: invokes configured docker-credential-* helper from PATH
 	cmd.Stdin = strings.NewReader(serverURL)
 	var out bytes.Buffer
 	cmd.Stdout = &out

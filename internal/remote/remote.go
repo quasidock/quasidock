@@ -592,8 +592,10 @@ func fetchInfo(st *store.Store, envRegistry, imageText string, verbose, verify b
 			return Info{}, err
 		}
 		tmpPath := tmp.Name()
-		tmp.Close()
-		defer os.Remove(tmpPath)
+		defer func() { _ = os.Remove(tmpPath) }()
+		if err := tmp.Close(); err != nil {
+			return Info{}, err
+		}
 		h, err := reg.DownloadBlob(resolved.Manifest.Config, tmpPath)
 		if err != nil {
 			return Info{}, err
@@ -831,7 +833,7 @@ func downloadByPlan(st *store.Store, reg *registry.Registry, desc oci.Descriptor
 	if err != nil {
 		return false, err
 	}
-	defer newBlob.Close()
+	defer func() { _ = newBlob.Close() }()
 
 	newSR := io.NewSectionReader(newBlob, 0, desc.Size)
 	newReader, err := estargz.Open(newSR)
@@ -871,7 +873,7 @@ func downloadByPlan(st *store.Store, reg *registry.Registry, desc oci.Descriptor
 	if err != nil {
 		return false, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	hasher := sha256.New()
 	mw := io.MultiWriter(f, hasher)
@@ -889,7 +891,7 @@ func downloadByPlan(st *store.Store, reg *registry.Registry, desc oci.Descriptor
 					toRead = piece.Length - done
 				}
 				n, err := src.ReadAt(copyBuf[:toRead], piece.SourceOffset+done)
-				if err != nil && err != io.EOF {
+				if err != nil && !errors.Is(err, io.EOF) {
 					return false, err
 				}
 				if n == 0 {
@@ -906,6 +908,10 @@ func downloadByPlan(st *store.Store, reg *registry.Registry, desc oci.Descriptor
 			}
 		}
 		at += uint64(piece.Length)
+	}
+
+	if err := f.Close(); err != nil {
+		return false, err
 	}
 
 	hashHex := hex.EncodeToString(hasher.Sum(nil))
@@ -1061,7 +1067,7 @@ func WriteName(w io.Writer, cfg oci.AppConfig) {
 }
 
 func WriteContents(st *store.Store, w io.Writer, manifest oci.Manifest, cfg oci.AppConfig) {
-	var total uint64 = uint64(manifest.Config.Size)
+	total := uint64(manifest.Config.Size)
 	var missing uint64 = 0
 
 	for _, l := range manifest.Layers {
@@ -1073,11 +1079,12 @@ func WriteContents(st *store.Store, w io.Writer, manifest oci.Manifest, cfg oci.
 
 	cfgSize := uint64(manifest.Config.Size)
 	var dlStr string
-	if missing == total-cfgSize {
+	switch missing {
+	case total - cfgSize:
 		dlStr = formatBytes(total)
-	} else if missing == 0 {
+	case 0:
 		dlStr = fmt.Sprintf("%s, all in the store already", formatBytes(total))
-	} else {
+	default:
 		dlStr = fmt.Sprintf("%s, of which %s isn't in the store yet", formatBytes(total), formatBytes(missing))
 	}
 	WriteLine(w, "download", dlStr)

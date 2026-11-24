@@ -37,13 +37,13 @@ func Snapshot(keys []string, dataDir, dest string, running bool) error {
 	if err != nil {
 		return err
 	}
-	defer dirGuard.Close()
+	defer func() { _ = dirGuard.Close() }()
 	fileGuard, err := guardHivePath(filepath.Join(sourceDir, "user.dat"), false)
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
 	if fileGuard != nil {
-		defer fileGuard.Close()
+		defer func() { _ = fileGuard.Close() }()
 	}
 	sourceDir, err = mounts.CanonicalPath(sourceDir)
 	if err != nil {
@@ -125,7 +125,7 @@ func guardHivePath(path string, directory bool) (*os.File, error) {
 		}
 	}
 	if err != nil {
-		f.Close()
+		_ = f.Close()
 		return nil, err
 	}
 	return f, nil

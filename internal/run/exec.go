@@ -122,7 +122,7 @@ func Exec(ctx *context.Context, opts ExecOptions) (uint32, error) {
 		return 1, fmt.Errorf("connecting to container exec: %w", err)
 	}
 	c := &execStream{File: file}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 	if err := c.SetDeadline(deadline); err != nil {
 		return 1, err
 	}
@@ -159,7 +159,7 @@ func Exec(ctx *context.Context, opts ExecOptions) (uint32, error) {
 		select {
 		case <-interrupts:
 			interrupted.Store(true)
-			c.Close()
+			_ = c.Close()
 		case <-done:
 		}
 	}()
@@ -269,7 +269,7 @@ func (r *execRuntime) start(id, runID string) error {
 			r.mu.Lock()
 			if r.closing {
 				r.mu.Unlock()
-				c.Close()
+				_ = c.Close()
 				return
 			}
 			r.connections[c] = struct{}{}
@@ -295,10 +295,10 @@ func (r *execRuntime) stopLocked() {
 	}
 	r.closing = true
 	if r.listener != nil {
-		r.listener.Close()
+		_ = r.listener.Close()
 	}
 	for c := range r.connections {
-		c.Close()
+		_ = c.Close()
 	}
 	for child := range r.children {
 		win32.TerminateJobObject(child.Job, 1)
@@ -425,7 +425,7 @@ func findExecCommand(cwd, name string, search []string) (string, bool) {
 
 func (r *execRuntime) serve(c *execStream) {
 	defer func() {
-		c.Close()
+		_ = c.Close()
 		r.mu.Lock()
 		delete(r.connections, c)
 		r.mu.Unlock()
@@ -452,7 +452,7 @@ func (r *execRuntime) serve(c *execStream) {
 	var files []*os.File
 	defer func() {
 		for _, f := range files {
-			f.Close()
+			_ = f.Close()
 		}
 	}()
 	var stdio [3]win32.HANDLE
@@ -478,10 +478,13 @@ func (r *execRuntime) serve(c *execStream) {
 				return
 			}
 			files = append(files, read, write)
-			if i == 0 {
-				stdio[i], input = win32.HANDLE(read.Fd()), write
-			} else {
-				stdio[i], outputs[i-1] = win32.HANDLE(write.Fd()), read
+			switch i {
+			case 0:
+				stdio[0], input = win32.HANDLE(read.Fd()), write
+			case 1:
+				stdio[1], outputs[0] = win32.HANDLE(write.Fd()), read
+			case 2:
+				stdio[2], outputs[1] = win32.HANDLE(write.Fd()), read
 			}
 		}
 	}
@@ -517,7 +520,7 @@ func (r *execRuntime) serve(c *execStream) {
 	for _, f := range files {
 		for _, h := range stdio {
 			if win32.HANDLE(f.Fd()) == h {
-				f.Close()
+				_ = f.Close()
 				break
 			}
 		}
@@ -529,7 +532,7 @@ func (r *execRuntime) serve(c *execStream) {
 		return
 	}
 	if req.Detach {
-		c.Close()
+		_ = c.Close()
 		win32.WaitForSingleObject(child.Process, win32.INFINITE)
 		return
 	}
@@ -560,7 +563,7 @@ func (r *execRuntime) serve(c *execStream) {
 		inputWG.Add(1)
 		go func() {
 			defer inputWG.Done()
-			defer input.Close()
+			defer func() { _ = input.Close() }()
 			for chunk := range queue {
 				if _, err := input.Write(chunk); err != nil {
 					return
@@ -597,7 +600,7 @@ func (r *execRuntime) serve(c *execStream) {
 					return
 				}
 				eof = true
-				input.Close()
+				_ = input.Close()
 			case execCancel:
 				cancel()
 				return
@@ -618,6 +621,6 @@ func (r *execRuntime) serve(c *execStream) {
 	} else {
 		_ = c.send(execError, []byte(waitErr.Error()))
 	}
-	c.Close()
+	_ = c.Close()
 	inputWG.Wait()
 }

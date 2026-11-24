@@ -180,11 +180,11 @@ func (f *Fetcher) FetchAll(srcs []recipe.Source) error {
 }
 
 func downloadFile(url, dest string) error {
-	resp, err := http.Get(url)
+	resp, err := http.Get(url) //nolint:gosec // G107: fetches recipe source URL verified against pinned SHA-256
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("HTTP %s", resp.Status)
@@ -194,13 +194,13 @@ func downloadFile(url, dest string) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
 
 	hasher := sha256.New()
 	mw := io.MultiWriter(f, hasher)
 	if _, err := io.Copy(mw, resp.Body); err != nil {
+		_ = f.Close()
 		return err
 	}
 	_ = hex.EncodeToString(hasher.Sum(nil))
-	return nil
+	return f.Close()
 }

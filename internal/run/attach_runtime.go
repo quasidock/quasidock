@@ -117,7 +117,7 @@ func (r *attachRuntime) accept() {
 		r.mu.Lock()
 		if r.ending {
 			r.mu.Unlock()
-			c.Close()
+			_ = c.Close()
 			continue
 		}
 		r.connections[c] = struct{}{}
@@ -130,7 +130,7 @@ func (r *attachRuntime) accept() {
 func (s *attachSession) close() {
 	s.once.Do(func() {
 		close(s.done)
-		s.c.Close()
+		_ = s.c.Close()
 		s.r.mu.Lock()
 		delete(s.r.sessions, s)
 		if s.r.writer == s {
@@ -155,7 +155,7 @@ func (s *attachSession) enqueue(kind byte, data []byte) {
 
 func (r *attachRuntime) serve(c *framedStream) {
 	defer func() {
-		c.Close()
+		_ = c.Close()
 		r.mu.Lock()
 		delete(r.connections, c)
 		r.mu.Unlock()
@@ -331,7 +331,7 @@ func (r *attachRuntime) pumpInput() {
 				}
 				r.mu.Unlock()
 				if input != nil {
-					input.Close()
+					_ = input.Close()
 				}
 				req.session.enqueue(attachInputClosed, nil)
 			} else {
@@ -384,7 +384,7 @@ func (r *attachRuntime) stopAccepting() {
 	r.mu.Lock()
 	r.ending = true
 	r.mu.Unlock()
-	r.listener.Close()
+	_ = r.listener.Close()
 }
 
 func (r *attachRuntime) finish(code uint32, runErr error) {
@@ -406,13 +406,13 @@ func (r *attachRuntime) finish(code uint32, runErr error) {
 				}
 			}
 			if !found {
-				c.Close()
+				_ = c.Close()
 			}
 		}
 		r.mu.Unlock()
 		close(r.done)
 		if input != nil {
-			input.Close()
+			_ = input.Close()
 		}
 		var status [4]byte
 		binary.LittleEndian.PutUint32(status[:], code)

@@ -203,7 +203,7 @@ func (s *Store) writeContainerStateNoLock(rec *ContainerRecord) error {
 		return err
 	}
 	tmp := s.TmpPath("container-state")
-	defer os.Remove(tmp)
+	defer func() { _ = os.Remove(tmp) }()
 	if err := os.WriteFile(tmp, data, 0o644); err != nil {
 		return err
 	}
@@ -513,7 +513,7 @@ func (s *Store) ResolveContainer(text string) (*ContainerRecord, error) {
 func isHexPrefix(s string) bool {
 	for i := 0; i < len(s); i++ {
 		c := s[i]
-		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
 			return false
 		}
 	}

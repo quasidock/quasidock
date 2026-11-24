@@ -183,7 +183,7 @@ func Prepare(st *store.Store, reg *registry.Registry, desc oci.Descriptor, verbo
 	if err != nil {
 		return PreparedWhole, err
 	}
-	defer blob.Close()
+	defer func() { _ = blob.Close() }()
 
 	sr := io.NewSectionReader(blob, 0, desc.Size)
 	reader, err := estargz.Open(sr)
@@ -341,10 +341,10 @@ func StartHelper(st *store.Store, hexDig string, verbose bool) (Started, error) 
 	if err == nil {
 		logFile = os.NewFile(logHandle, logPath)
 		_, _ = logFile.Seek(0, io.SeekEnd)
-		defer logFile.Close()
+		defer func() { _ = logFile.Close() }()
 	}
 	newCommand := func(breakaway bool) *exec.Cmd {
-		cmd := exec.Command(exe, "lazy-helper", st.Root, hexDig)
+		cmd := exec.Command(exe, "lazy-helper", st.Root, hexDig) //nolint:gosec // G204: spawns current executable as lazy-helper
 		flags := win32.CREATE_NEW_PROCESS_GROUP | win32.DETACHED_PROCESS
 		if breakaway {
 			flags |= win32.CREATE_BREAKAWAY_FROM_JOB

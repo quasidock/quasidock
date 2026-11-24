@@ -761,7 +761,7 @@ func (s *Store) Deploy(desc oci.Descriptor) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer os.RemoveAll(work)
+	defer func() { _ = os.RemoveAll(work) }()
 
 	tree := filepath.Join(work, "app")
 	hexDig := oci.DigestHex(desc.Digest)
@@ -1131,7 +1131,7 @@ func Sha256File(filePath string) (FileHash, error) {
 	if err != nil {
 		return FileHash{}, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	h := sha256.New()
 	n, err := io.Copy(h, f)

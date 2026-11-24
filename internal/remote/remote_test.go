@@ -2,6 +2,7 @@ package remote
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -40,7 +41,7 @@ func TestRemoteBlobReadAcrossCachedTail(t *testing.T) {
 	if err := blob.fetchTo(7, 10, &tail); err != nil || tail.String() != "789" {
 		t.Fatalf("cached tail: %q %v", tail.String(), err)
 	}
-	if n, err := blob.ReadAt(buf, 8); n != 2 || err != io.EOF || string(buf[:n]) != "89" {
+	if n, err := blob.ReadAt(buf, 8); n != 2 || !errors.Is(err, io.EOF) || string(buf[:n]) != "89" {
 		t.Fatalf("partial EOF: %d %v %q", n, err, buf[:n])
 	}
 }

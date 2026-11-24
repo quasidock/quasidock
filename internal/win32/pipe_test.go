@@ -17,9 +17,9 @@ func TestPrivatePipeStreamsAndCancellation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer l.Close()
+	defer func() { _ = l.Close() }()
 	if other, err := win32.ListenPipe(name); err == nil {
-		other.Close()
+		_ = other.Close()
 		t.Fatal("allowed duplicate listener")
 	}
 	server := make(chan error, 1)
@@ -29,8 +29,11 @@ func TestPrivatePipeStreamsAndCancellation(t *testing.T) {
 			server <- err
 			return
 		}
-		defer c.Close()
-		c.SetDeadline(time.Now().Add(5 * time.Second))
+		defer func() { _ = c.Close() }()
+		if err := c.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
+			server <- err
+			return
+		}
 		_, err = io.Copy(c, io.LimitReader(c, 1024*1024))
 		server <- err
 	}()
@@ -38,7 +41,7 @@ func TestPrivatePipeStreamsAndCancellation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 	if err := c.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
 		t.Fatal(err)
 	}
@@ -61,11 +64,11 @@ func TestPrivatePipeStreamsAndCancellation(t *testing.T) {
 	go func() {
 		file, err := l.Accept()
 		if file != nil {
-			file.Close()
+			_ = file.Close()
 		}
 		server <- err
 	}()
-	l.Close()
+	_ = l.Close()
 	select {
 	case err := <-server:
 		if err == nil {

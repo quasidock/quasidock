@@ -393,16 +393,14 @@ func imageCommand(ctx *context.Context, args []string) (uint32, error) {
 			return 1, errors.New("usage: quasidock image info IMAGE")
 		}
 		return 0, info.PrintInfo(ctx.Store, ctx.Env["QUASIDOCK_REGISTRY"], rest[0], ctx.Verbose, ctx.Stdout)
-	case "files", "cat":
-		count := 1
-		if cmd == "cat" {
-			count = 2
+	case "files":
+		if len(rest) != 1 {
+			return 1, errors.New("usage: quasidock image files IMAGE [PATH]")
 		}
-		if len(rest) != count {
-			return 1, fmt.Errorf("usage: quasidock image %s IMAGE [PATH]", cmd)
-		}
-		if cmd == "files" {
-			return 0, peek.List(ctx.Store, ctx.Env["QUASIDOCK_REGISTRY"], rest[0], ctx.Verbose, ctx.Stdout)
+		return 0, peek.List(ctx.Store, ctx.Env["QUASIDOCK_REGISTRY"], rest[0], ctx.Verbose, ctx.Stdout)
+	case "cat":
+		if len(rest) != 2 {
+			return 1, errors.New("usage: quasidock image cat IMAGE [PATH]")
 		}
 		return 0, peek.Cat(ctx.Store, ctx.Env["QUASIDOCK_REGISTRY"], rest[0], rest[1], ctx.Verbose, ctx.Stdout)
 	default:

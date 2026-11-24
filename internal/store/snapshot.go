@@ -42,7 +42,7 @@ func OpenDataRoot(root string) (*os.File, error) {
 		err = fmt.Errorf("data root is not a plain directory: %s", root)
 	}
 	if err != nil {
-		f.Close()
+		_ = f.Close()
 		return nil, err
 	}
 	return f, nil
@@ -66,7 +66,7 @@ func WalkData(ctx context.Context, root string, excluded map[string]bool, visit 
 			return fmt.Errorf("opening %s: %w", path, err)
 		}
 		f := os.NewFile(uintptr(h), path)
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 		info, err := f.Stat()
 		if err != nil {
 			return err
@@ -163,7 +163,7 @@ func (r *cancelReader) Read(p []byte) (int, error) {
 // WriteDataLayer writes a staged snapshot with canonical ordering and metadata.
 func (s *Store) WriteDataLayer(ctx context.Context, root string) (oci.Descriptor, error) {
 	tmp := s.TmpPath("commit-layer")
-	defer os.Remove(tmp)
+	defer func() { _ = os.Remove(tmp) }()
 	blob, err := format.WriteLayer(tmp, "", format.FormatGzip, func(w io.Writer) error {
 		lw := format.NewLayerWriter(w)
 		err := WalkData(ctx, root, nil, func(rel string, info os.FileInfo, f *os.File) error {

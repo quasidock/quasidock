@@ -122,7 +122,7 @@ func (r *Registry) serve(w http.ResponseWriter, req *http.Request) {
 		}
 		w.Header().Set("Content-Type", "application/vnd.oci.image.manifest.v1+json")
 		w.Header().Set("Docker-Content-Digest", d)
-		w.Write(r.blobs[d])
+		_, _ = w.Write(r.blobs[d])
 		return
 	}
 	if i := strings.Index(path, "/blobs/uploads/"); i >= 0 {
@@ -158,7 +158,7 @@ func (r *Registry) serve(w http.ResponseWriter, req *http.Request) {
 		w.Header().Set("Content-Length", fmt.Sprint(len(data)))
 		w.Header().Set("Docker-Content-Digest", d)
 		if req.Method != http.MethodHead {
-			w.Write(data)
+			_, _ = w.Write(data)
 		}
 		return
 	}

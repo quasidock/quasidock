@@ -18,7 +18,7 @@ func TestWinres(t *testing.T) {
 	if err != nil {
 		t.Fatalf("temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	sysoPath := filepath.Join(tmpDir, "rsrc_windows_amd64.syso")
 	err = WriteSYSO(sysoPath, Params{

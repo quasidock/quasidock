@@ -125,7 +125,7 @@ func walkContainerMetadata(path, rel string, excluded map[string]bool, visit fun
 		return fmt.Errorf("opening %s: %w", path, err)
 	}
 	dir := os.NewFile(uintptr(h), path)
-	defer dir.Close()
+	defer func() { _ = dir.Close() }()
 	info, err := dir.Stat()
 	if err != nil {
 		return err

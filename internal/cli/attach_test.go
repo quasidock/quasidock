@@ -185,11 +185,13 @@ func TestContainerAttachAndAttachedStart(t *testing.T) {
 		if err := cmd.Start(); err != nil {
 			t.Fatal(err)
 		}
-		io.WriteString(input, "before-detach")
+		if _, err := io.WriteString(input, "before-detach"); err != nil {
+			t.Fatal(err)
+		}
 		waitLog(t, rec.LogPath, "before-detach")
-		cmd.Process.Kill()
-		cmd.Wait()
-		input.Close()
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		_ = input.Close()
 		if !ctx.Store.IsContainerRunning(rec.ID) {
 			t.Fatal("disconnect killed main")
 		}
@@ -235,13 +237,15 @@ func TestContainerAttachAndAttachedStart(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer input.Close()
+		defer func() { _ = input.Close() }()
 		var out, stderr bytes.Buffer
 		cmd.Stdout, cmd.Stderr = &out, &stderr
 		if err := cmd.Start(); err != nil {
 			t.Fatal(err)
 		}
-		io.WriteString(input, "old-run")
+		if _, err := io.WriteString(input, "old-run"); err != nil {
+			t.Fatal(err)
+		}
 		waitLog(t, before.LogPath, "old-run")
 		must("restart", "-t", "0", "attached-restart")
 		if err := cmd.Wait(); err == nil {
@@ -290,7 +294,7 @@ func TestContainerAttachAndAttachedStart(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			t.Cleanup(func() { capture.Close() })
+			t.Cleanup(func() { _ = capture.Close() })
 			proc, input := startLifecycleConsole(t, filepath.Join(buildDir, "fixture.exe"), args, capture)
 			t.Cleanup(func() {
 				if t.Failed() {
@@ -299,13 +303,17 @@ func TestContainerAttachAndAttachedStart(t *testing.T) {
 				}
 			})
 			probe := strings.Repeat("ready", i+1)
-			win32.WriteFile(input, []byte(probe+"\r"))
+			if _, err := win32.WriteFile(input, []byte(probe+"\r")); err != nil {
+				t.Fatal(err)
+			}
 			waitLog(t, rec.LogPath, probe)
 			keys := []byte{16, 17}
 			if i == 1 {
 				keys = []byte{24, 'x'}
 			}
-			win32.WriteFile(input, keys)
+			if _, err := win32.WriteFile(input, keys); err != nil {
+				t.Fatal(err)
+			}
 			if win32.WaitForSingleObject(proc, 5000) != win32.WAIT_OBJECT_0 {
 				t.Fatal("detach keys did not disconnect")
 			}
@@ -341,7 +349,9 @@ func TestContainerAttachAndAttachedStart(t *testing.T) {
 			if tc.paused {
 				must("pause", name)
 			}
-			win32.WriteFile(input, []byte{3})
+			if _, err := win32.WriteFile(input, []byte{3}); err != nil {
+				t.Fatal(err)
+			}
 			if win32.WaitForSingleObject(proc, 5000) != win32.WAIT_OBJECT_0 {
 				t.Fatal("Ctrl+C did not complete")
 			}
@@ -368,12 +378,16 @@ func TestContainerAttachAndAttachedStart(t *testing.T) {
 		must("create", "-it", "--name", "ignored-term", app, "fixture.exe", "signal-hold", ready, "ignore")
 		proc, input := startLifecycleConsole(t, filepath.Join(buildDir, "fixture.exe"), []string{"console-run-check-mode", binary, "start", "-ai", "ignored-term"})
 		waitLog(t, ready, "")
-		win32.WriteFile(input, []byte{3})
+		if _, err := win32.WriteFile(input, []byte{3}); err != nil {
+			t.Fatal(err)
+		}
 		waitLog(t, ready+".signal", "1")
 		if win32.WaitForSingleObject(proc, 0) != win32.WAIT_TIMEOUT {
 			t.Fatal("ignored TERM ended attachment")
 		}
-		win32.WriteFile(input, []byte{16, 17})
+		if _, err := win32.WriteFile(input, []byte{16, 17}); err != nil {
+			t.Fatal(err)
+		}
 		if win32.WaitForSingleObject(proc, 5000) != win32.WAIT_OBJECT_0 {
 			t.Fatal("could not detach after ignored TERM")
 		}

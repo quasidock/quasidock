@@ -1,6 +1,9 @@
 package win32
 
-import "syscall"
+import (
+	"errors"
+	"syscall"
+)
 
 var (
 	procGetCurrentThreadId  = modKernel32.NewProc("GetCurrentThreadId")
@@ -20,5 +23,5 @@ func OpenCurrentThreadForCancellation() (HANDLE, error) {
 
 func CancelSynchronousIo(thread HANDLE) bool {
 	r, _, err := procCancelSynchronousIo.Call(uintptr(thread))
-	return r != 0 || err == syscall.ERROR_NOT_FOUND
+	return r != 0 || errors.Is(err, syscall.ERROR_NOT_FOUND)
 }

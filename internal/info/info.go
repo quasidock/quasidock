@@ -88,7 +88,7 @@ func WriteName(w io.Writer, cfg oci.AppConfig) {
 }
 
 func WriteContents(st *store.Store, w io.Writer, manifest oci.Manifest, cfg oci.AppConfig) {
-	var total uint64 = uint64(manifest.Config.Size)
+	total := uint64(manifest.Config.Size)
 	var missing uint64 = 0
 
 	for _, l := range manifest.Layers {
@@ -100,11 +100,12 @@ func WriteContents(st *store.Store, w io.Writer, manifest oci.Manifest, cfg oci.
 
 	cfgSize := uint64(manifest.Config.Size)
 	var dlStr string
-	if missing == total-cfgSize {
+	switch missing {
+	case total - cfgSize:
 		dlStr = formatBytes(total)
-	} else if missing == 0 {
+	case 0:
 		dlStr = fmt.Sprintf("%s, all in the store already", formatBytes(total))
-	} else {
+	default:
 		dlStr = fmt.Sprintf("%s, of which %s isn't in the store yet", formatBytes(total), formatBytes(missing))
 	}
 	WriteLine(w, "download", dlStr)

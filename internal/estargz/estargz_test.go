@@ -11,7 +11,8 @@ import (
 	"testing"
 )
 
-func buildSampleTar(files map[string]string) *bytes.Buffer {
+func buildSampleTar(t *testing.T, files map[string]string) *bytes.Buffer {
+	t.Helper()
 	var buf bytes.Buffer
 	tw := tar.NewWriter(&buf)
 	names := make([]string, 0, len(files))
@@ -23,22 +24,30 @@ func buildSampleTar(files map[string]string) *bytes.Buffer {
 		content := files[name]
 		clean := strings.TrimPrefix(name, "/")
 		if strings.HasSuffix(clean, "/") {
-			tw.WriteHeader(&tar.Header{
+			if err := tw.WriteHeader(&tar.Header{
 				Name:     clean,
 				Typeflag: tar.TypeDir,
 				Mode:     0o755,
-			})
+			}); err != nil {
+				t.Fatal(err)
+			}
 			continue
 		}
-		tw.WriteHeader(&tar.Header{
+		if err := tw.WriteHeader(&tar.Header{
 			Name:     clean,
 			Typeflag: tar.TypeReg,
 			Mode:     0o644,
 			Size:     int64(len(content)),
-		})
-		tw.Write([]byte(content))
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tw.Write([]byte(content)); err != nil {
+			t.Fatal(err)
+		}
 	}
-	tw.Close()
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
 	return &buf
 }
 
@@ -49,7 +58,7 @@ func TestConvertAndReadEstargz(t *testing.T) {
 		"share/doc.txt": "Documentation content",
 	}
 
-	tarData := buildSampleTar(files)
+	tarData := buildSampleTar(t, files)
 
 	var estargzBuf bytes.Buffer
 	annotations, err := Convert(bytes.NewReader(tarData.Bytes()), &estargzBuf, nil)
@@ -128,7 +137,7 @@ func TestPlanDeltaUpdate(t *testing.T) {
 		"share/large.dat": largeContent,
 		"share/z_end.txt": "end file",
 	}
-	oldTar := buildSampleTar(oldFiles)
+	oldTar := buildSampleTar(t, oldFiles)
 	var oldEstargz bytes.Buffer
 	_, err := Convert(bytes.NewReader(oldTar.Bytes()), &oldEstargz, nil)
 	if err != nil {
@@ -147,7 +156,7 @@ func TestPlanDeltaUpdate(t *testing.T) {
 		"share/large.dat": largeContent,
 		"share/z_end.txt": "end file",
 	}
-	newTar := buildSampleTar(newFiles)
+	newTar := buildSampleTar(t, newFiles)
 	var newEstargz bytes.Buffer
 	_, err = Convert(bytes.NewReader(newTar.Bytes()), &newEstargz, nil)
 	if err != nil {
@@ -205,7 +214,7 @@ func TestPlanAddedFirstFile(t *testing.T) {
 			files["a.txt"] = "version 2"
 		}
 		var blob bytes.Buffer
-		if _, err := Convert(buildSampleTar(files), &blob, nil); err != nil {
+		if _, err := Convert(buildSampleTar(t, files), &blob, nil); err != nil {
 			t.Fatal(err)
 		}
 		blobs[i] = blob.Bytes()

@@ -1,6 +1,7 @@
 package dockerfile
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -131,12 +132,15 @@ func externalBaseName(base string) bool {
 }
 
 func (g *stageGraph) copySource(stage *dockerStage, selector string) (int, error) {
-	if index, err := strconv.Atoi(selector); err == nil {
+	index, err := strconv.Atoi(selector)
+	if err == nil {
 		if index < 0 || index >= len(g.stages) {
 			return 0, fmt.Errorf("COPY --from stage index %q is out of range", selector)
 		}
 		return index, g.referenceError(stage, index)
-	} else if number, ok := err.(*strconv.NumError); ok && number.Err == strconv.ErrRange {
+	}
+	var number *strconv.NumError
+	if errors.As(err, &number) && errors.Is(number.Err, strconv.ErrRange) {
 		return 0, fmt.Errorf("COPY --from stage index %q is out of range", selector)
 	}
 	if index, exists := g.names[strings.ToLower(selector)]; exists {

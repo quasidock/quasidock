@@ -1,6 +1,7 @@
 package dockerfile
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 	"strconv"
@@ -8,12 +9,15 @@ import (
 )
 
 func (g *stageGraph) overrideStage(selector string) (*dockerStage, error) {
-	if index, err := strconv.Atoi(selector); err == nil {
+	index, err := strconv.Atoi(selector)
+	if err == nil {
 		if index < 0 || index >= len(g.stages) {
 			return nil, fmt.Errorf("--stage-base stage index %q is out of range", selector)
 		}
 		return g.stages[index], nil
-	} else if number, ok := err.(*strconv.NumError); ok && number.Err == strconv.ErrRange {
+	}
+	var number *strconv.NumError
+	if errors.As(err, &number) && errors.Is(number.Err, strconv.ErrRange) {
 		return nil, fmt.Errorf("--stage-base stage index %q is out of range", selector)
 	}
 	if index, exists := g.names[strings.ToLower(selector)]; exists {

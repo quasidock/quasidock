@@ -100,7 +100,7 @@ func TestContainerPauseUnpause(t *testing.T) {
 		t.Helper()
 		awaitPauseCondition(t, "heartbeat did not start: "+path, func() bool { return ticks(path) > 0 })
 	}
-	startSession := func(t *testing.T, args ...string) (*exec.Cmd, <-chan error, *pauseOutput) {
+	startSession := func(t *testing.T, args ...string) (*exec.Cmd, <-chan struct{}, *pauseOutput) {
 		t.Helper()
 		cmd := command(args...)
 		out := &pauseOutput{}
@@ -108,11 +108,11 @@ func TestContainerPauseUnpause(t *testing.T) {
 		if err := cmd.Start(); err != nil {
 			t.Fatal(err)
 		}
-		done := make(chan error, 1)
-		go func() { done <- cmd.Wait() }()
+		done := make(chan struct{})
+		go func() { _ = cmd.Wait(); close(done) }()
 		return cmd, done, out
 	}
-	waitSession := func(t *testing.T, done <-chan error) {
+	waitSession := func(t *testing.T, done <-chan struct{}) {
 		t.Helper()
 		select {
 		case <-done:

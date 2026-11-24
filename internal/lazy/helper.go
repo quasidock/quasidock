@@ -35,9 +35,8 @@ type Helper struct {
 	complete atomic.Bool
 	stopping atomic.Bool
 
-	errMu    sync.Mutex
-	lastErr  string
-	unpacked string
+	errMu   sync.Mutex
+	lastErr string
 }
 
 func RunHelper(st *store.Store, hexDig string, verbose bool) error {
@@ -273,7 +272,7 @@ func (h *Helper) finish() error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	hasher := sha256.New()
 	if _, err := io.Copy(hasher, f); err != nil {

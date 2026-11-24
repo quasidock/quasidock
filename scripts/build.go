@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -111,12 +112,13 @@ func main() {
 				os.Exit(1)
 			}
 		}
-		cmd := exec.Command(exePath, passthru...)
+		cmd := exec.Command(exePath, passthru...) //nolint:gosec // G204: build.go intentionally executes the built binary
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		if err := cmd.Run(); err != nil {
-			if exitErr, ok := err.(*exec.ExitError); ok {
+			var exitErr *exec.ExitError
+			if errors.As(err, &exitErr) {
 				os.Exit(exitErr.ExitCode())
 			}
 			os.Exit(1)
@@ -205,7 +207,7 @@ func buildBinary(t binaryTarget, destDir string, strip bool) error {
 			ManifestXML: []byte(manifestXML),
 		})
 		if err == nil {
-			defer os.Remove(sysoPath)
+			defer func() { _ = os.Remove(sysoPath) }()
 		}
 	}
 
@@ -226,7 +228,7 @@ func buildBinary(t binaryTarget, destDir string, strip bool) error {
 	}
 	buildArgs = append(buildArgs, "-o", outPath, t.pkg)
 
-	cmd := exec.Command("go", buildArgs...)
+	cmd := exec.Command("go", buildArgs...) //nolint:gosec // G702: build.go intentionally invokes go build with target flags
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

@@ -20,8 +20,9 @@ const convertUsage = "usage: quasidock convert [CONTEXT] [-f DOCKERFILE] [-o REC
 func convertCommand(ctx *context.Context, args []string) (uint32, error) {
 	opts := dockerfile.Options{BuildArgs: map[string]string{}, StageBases: map[string]string{}, Tools: map[string]string{}, StageTools: map[string]map[string]string{}}
 	force, stdout := false, false
-	for i := 0; i < len(args); i++ {
-		arg := args[i]
+	for len(args) > 0 {
+		arg := args[0]
+		args = args[1:]
 		if arg == "--help" || arg == "-h" {
 			fmt.Fprintln(ctx.Stdout, convertUsage)
 			return 0, nil
@@ -39,11 +40,11 @@ func convertCommand(ctx *context.Context, args []string) (uint32, error) {
 		}
 		name, value, has := strings.Cut(arg, "=")
 		if !has {
-			i++
-			if i >= len(args) {
+			if len(args) == 0 {
 				return 1, fmt.Errorf("%s needs a value", name)
 			}
-			value = args[i]
+			value = args[0]
+			args = args[1:]
 		}
 		switch name {
 		case "-f", "--file":
@@ -247,9 +248,9 @@ func writeConvertedRecipe(name string, data []byte, force bool) error {
 		return err
 	}
 	tmp := f.Name()
-	defer os.Remove(tmp)
+	defer func() { _ = os.Remove(tmp) }()
 	if _, err := f.Write(data); err != nil {
-		f.Close()
+		_ = f.Close()
 		return err
 	}
 	if err := f.Close(); err != nil {

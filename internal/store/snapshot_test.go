@@ -151,7 +151,7 @@ func TestCaptureRefusesReparseAndCancellation(t *testing.T) {
 	if err := mounts.Attach(source, link); err != nil {
 		t.Fatal(err)
 	}
-	defer mounts.Detach(source, link)
+	defer func() { _ = mounts.Detach(source, link) }()
 	if err := CopyData(context.Background(), source, dest, nil); err == nil {
 		t.Fatal("followed unconfigured junction")
 	}

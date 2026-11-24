@@ -91,15 +91,19 @@ func TestVendorSourceFallbackRestoresStageInputs(t *testing.T) {
 	defer reg.Close()
 	ctx.Env[remote.RegistryVar] = reg.Host() + "/published"
 	base := []byte("original stage input\r\n")
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write(base) }))
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write(base) }))
 	defer upstream.Close()
 	var archive bytes.Buffer
 	tw := tar.NewWriter(&archive)
 	if err := tw.WriteHeader(&tar.Header{Name: "dep.txt", Mode: 0644, Size: 3}); err != nil {
 		t.Fatal(err)
 	}
-	tw.Write([]byte("dep"))
-	tw.Close()
+	if _, err := tw.Write([]byte("dep")); err != nil {
+		t.Fatal(err)
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
 	vendorHash := testregistry.Digest(archive.Bytes())[7:]
 	if err := os.WriteFile(ctx.Store.Path("cache", "downloads", vendorHash), archive.Bytes(), 0600); err != nil {
 		t.Fatal(err)
@@ -146,7 +150,7 @@ func TestSourcePublicationFallbackAndCandidateCatalog(t *testing.T) {
 			http.Error(w, "gone", 404)
 			return
 		}
-		w.Write(payload)
+		_, _ = w.Write(payload)
 	}))
 	defer upstream.Close()
 	hash := testregistry.Digest(payload)[7:]

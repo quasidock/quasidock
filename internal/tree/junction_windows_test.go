@@ -17,7 +17,7 @@ func TestAddDirFilesRejectsJunction(t *testing.T) {
 	if out, err := exec.Command("cmd", "/c", "mklink", "/J", junction, target).CombinedOutput(); err != nil {
 		t.Fatalf("creating junction: %v: %s", err, out)
 	}
-	t.Cleanup(func() { os.Remove(junction) })
+	t.Cleanup(func() { _ = os.Remove(junction) })
 	if err := New().AddDirFiles(dir, ""); err == nil || !strings.Contains(err.Error(), "can only be files and directories") {
 		t.Fatalf("junction was not rejected: %v", err)
 	}

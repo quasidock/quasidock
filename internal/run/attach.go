@@ -85,7 +85,7 @@ func Attach(ctx *context.Context, opts AttachOptions) (uint32, error) {
 	if err != nil {
 		return 1, err
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 	op.Release()
 	return consumeAttachment(ctx, c, response, opts, nil)
 }
@@ -109,7 +109,7 @@ func StartAttached(ctx *context.Context, opts AttachOptions) (uint32, error) {
 		if err != nil {
 			return 1, err
 		}
-		defer c.Close()
+		defer func() { _ = c.Close() }()
 		op.Release()
 		return consumeAttachment(ctx, c, response, opts, nil)
 	}
@@ -133,17 +133,17 @@ func StartAttached(ctx *context.Context, opts AttachOptions) (uint32, error) {
 		}
 		return 1, err
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 	startup := make(chan error, 1)
 	go func() {
 		err := awaitSupervisor(ctx, rec, det.Process, ready, 30000)
 		if err != nil {
-			c.Close()
+			_ = c.Close()
 		}
 		startup <- err
 	}()
 	code, streamErr := consumeAttachment(ctx, c, response, opts, op.Release)
-	c.Close()
+	_ = c.Close()
 	if err := <-startup; err != nil {
 		if !ctx.Store.IsContainerRunning(rec.ID) {
 			recordLaunchFailure(ctx.Store, rec.ID, rec.State.RunID, err)
@@ -177,7 +177,10 @@ func dialAttachment(ctx *context.Context, rec *store.ContainerRecord, opts Attac
 		}
 	}
 	c := &framedStream{File: f}
-	fail := func(err error) (*framedStream, attachResponse, error) { c.Close(); return nil, attachResponse{}, err }
+	fail := func(err error) (*framedStream, attachResponse, error) {
+		_ = c.Close()
+		return nil, attachResponse{}, err
+	}
 	if err := c.SetDeadline(deadline); err != nil {
 		return fail(err)
 	}
@@ -232,12 +235,12 @@ func consumeAttachment(ctx *context.Context, c *framedStream, response attachRes
 	interrupt := func() {
 		if !opts.SigProxy {
 			localExit.Store(2)
-			c.Close()
+			_ = c.Close()
 			return
 		}
 		_ = c.SetWriteDeadline(time.Now().Add(attachWriteTimeout))
 		if c.send(attachTERM, nil) != nil {
-			c.Close()
+			_ = c.Close()
 		}
 	}
 	workers.Add(1)
@@ -284,7 +287,7 @@ func consumeAttachment(ctx *context.Context, c *framedStream, response attachRes
 	}
 	defer func() {
 		close(done)
-		c.Close()
+		_ = c.Close()
 		stopInput()
 		workers.Wait()
 	}()
@@ -307,7 +310,7 @@ func consumeAttachment(ctx *context.Context, c *framedStream, response attachRes
 				case frame := <-frames:
 					_ = c.SetWriteDeadline(time.Now().Add(attachWriteTimeout))
 					if c.send(frame.kind, frame.data) != nil {
-						c.Close()
+						_ = c.Close()
 						return
 					}
 					select {
@@ -344,7 +347,7 @@ func consumeAttachment(ctx *context.Context, c *framedStream, response attachRes
 				case inputErrors <- err:
 				default:
 				}
-				c.Close()
+				_ = c.Close()
 			}
 			emit := func(kind byte, data []byte) bool {
 				frame := attachFrame{kind, append([]byte(nil), data...)}
@@ -407,7 +410,7 @@ func consumeAttachment(ctx *context.Context, c *framedStream, response attachRes
 				}
 				if detached {
 					localExit.Store(1)
-					c.Close()
+					_ = c.Close()
 					return
 				}
 				if readErr != nil {

@@ -117,7 +117,7 @@ func ValidName(name string) bool {
 		return false
 	}
 	runes := []rune(stem)
-	return !(len(runes) == 4 && (strings.HasPrefix(stem, "COM") || strings.HasPrefix(stem, "LPT")) && strings.ContainsRune("123456789¹²³", runes[3]))
+	return len(runes) != 4 || (!strings.HasPrefix(stem, "COM") && !strings.HasPrefix(stem, "LPT")) || !strings.ContainsRune("123456789¹²³", runes[3])
 }
 
 func (s *Snapshot) Recheck() error {

@@ -20,7 +20,7 @@ func CoInitializeEx(reserved uintptr, flags DWORD) HRESULT {
 }
 
 func CoUninitialize() {
-	procCoUninitialize.Call()
+	_, _, _ = procCoUninitialize.Call()
 }
 
 func CoCreateInstance(clsid *GUID, outer uintptr, context DWORD, iid *GUID, object *uintptr) HRESULT {

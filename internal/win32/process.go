@@ -229,7 +229,7 @@ func UpdateProcThreadAttribute(attrs unsafe.Pointer, flags DWORD, attribute uint
 }
 
 func DeleteProcThreadAttributeList(attrs unsafe.Pointer) {
-	procDeleteProcThreadAttributeList.Call(uintptr(attrs))
+	_, _, _ = procDeleteProcThreadAttributeList.Call(uintptr(attrs))
 }
 
 type ProcThreadAttributeList struct {
@@ -309,7 +309,10 @@ func createProcessRaw(token HANDLE, hasToken bool, app, cmd string, procSec, thr
 		appPtr = UTF16Ptr(app)
 	}
 	if cmd != "" {
-		u := syscall.StringToUTF16(cmd)
+		u, err := syscall.UTF16FromString(cmd)
+		if err != nil {
+			return err
+		}
 		cmdPtr = &u[0]
 	}
 	if cwd != "" {

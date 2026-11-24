@@ -501,7 +501,7 @@ func launchContainer(
 	}
 	defer imageLease.Release()
 	runs := &grants.Session{ID: cfg.ID, LockPath: ctx.Store.RunsLockPath(cfg.ID), Lock: appLease}
-	defer runs.End(ctx.Store)
+	defer func() { _ = runs.End(ctx.Store) }()
 
 	settings := opts.Settings
 	sandbox := SandboxOf(settings, cfg.Permissions)
@@ -895,7 +895,7 @@ func launchContainer(
 			win32.CloseHandle(errWrite)
 			return 1, false, err
 		}
-		defer pipeIn.Close()
+		defer func() { _ = pipeIn.Close() }()
 		opts.attachment.setInput(writer)
 		stdinHandle = win32.HANDLE(pipeIn.Fd())
 	} else if !detached && opts.Interactive {
@@ -964,7 +964,7 @@ func launchContainer(
 	win32.CloseHandle(outWrite)
 	win32.CloseHandle(errWrite)
 	if pipeIn != nil {
-		pipeIn.Close()
+		_ = pipeIn.Close()
 	}
 	if nulIn != 0 {
 		win32.CloseHandle(nulIn)

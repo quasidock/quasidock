@@ -7,7 +7,6 @@ import (
 )
 
 var (
-	procGetCommandLineW           = modKernel32.NewProc("GetCommandLineW")
 	procGetStartupInfoW           = modKernel32.NewProc("GetStartupInfoW")
 	procGetModuleHandleW          = modKernel32.NewProc("GetModuleHandleW")
 	procCommandLineToArgvW        = modShell32.NewProc("CommandLineToArgvW")

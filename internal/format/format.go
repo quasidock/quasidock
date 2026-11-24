@@ -30,7 +30,7 @@ func WriteLayer(tmpPath, tarTmpPath string, f Format, writeTar TarWriterFunc, pr
 	if err != nil {
 		return nil, err
 	}
-	defer out.Close()
+	defer func() { _ = out.Close() }()
 
 	hasher := sha256.New()
 	mw := io.MultiWriter(out, hasher)
@@ -52,7 +52,7 @@ func WriteLayer(tmpPath, tarTmpPath string, f Format, writeTar TarWriterFunc, pr
 			return nil, err
 		}
 		if err := writeTar(gw); err != nil {
-			gw.Close()
+			_ = gw.Close()
 			return nil, err
 		}
 		if err := gw.Close(); err != nil {
@@ -66,7 +66,7 @@ func WriteLayer(tmpPath, tarTmpPath string, f Format, writeTar TarWriterFunc, pr
 			return nil, err
 		}
 		if err := writeTar(tarFile); err != nil {
-			tarFile.Close()
+			_ = tarFile.Close()
 			_ = os.Remove(tarTmpPath)
 			return nil, err
 		}
@@ -81,7 +81,7 @@ func WriteLayer(tmpPath, tarTmpPath string, f Format, writeTar TarWriterFunc, pr
 			return nil, err
 		}
 		defer func() {
-			r.Close()
+			_ = r.Close()
 			_ = os.Remove(tarTmpPath)
 		}()
 
@@ -98,6 +98,9 @@ func WriteLayer(tmpPath, tarTmpPath string, f Format, writeTar TarWriterFunc, pr
 	}
 
 	if err := out.Sync(); err != nil {
+		return nil, err
+	}
+	if err := out.Close(); err != nil {
 		return nil, err
 	}
 
@@ -225,7 +228,7 @@ func deployEstargz(desc oci.Descriptor, blobPath, destPath string) error {
 	if err != nil {
 		return err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	fi, err := file.Stat()
 	if err != nil {
