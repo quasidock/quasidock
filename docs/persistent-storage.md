@@ -71,6 +71,77 @@ missing data roots, permission failures, and other scan errors fail the command
 without printing scan results. Success returns exit code 0, including when there
 are additions or the output is empty.
 
+## Copy files
+
+`quasidock cp SOURCE DESTINATION` and `quasidock container cp SOURCE DESTINATION`
+copy regular files and directories between one container and the host. Container
+names, full IDs, and unique ID prefixes work in `CONTAINER:PATH`. `/home/file`,
+`home/file`, and `home\file` all refer to `${data}/home/file`; `/` and `.` select
+the data root's contents. Paths do not resolve against the application's workdir
+and do not expand placeholders or environment variables.
+
+```powershell
+quasidock cp .\config.json worker:/home/config.json
+quasidock cp worker:/home/config.json .\saved.json
+quasidock cp '.\project\.' worker:/workspace
+quasidock cp worker:/workspace .\workspace-backup
+```
+
+Host relative paths resolve against the current CLI working directory. Drive
+paths (`C:\work\file`, `C:/work/file`, and `C:relative`), UNC paths, and explicitly
+relative paths remain host paths. A single-letter container name conflicts with
+drive syntax; use its container ID. Use `--` before operands beginning with `-`.
+Container paths reject `..`, drive/UNC paths, Windows device names, alternate
+streams, and names ending in spaces or dots.
+
+Files overwrite existing files or copy into an existing directory using the
+source basename. A directory copied to a missing destination creates that
+directory; copied to an existing directory, it creates/merges a child using the
+source basename. A source ending in `/.` copies only its contents. Destination
+parents must already exist. A file destination ending in `/` requires an existing
+directory, and file/directory type conflicts fail. Unrelated files are preserved.
+
+Unlike diff and commit, copies include declared volumes and bind mounts. The
+saved mount sources define the logical tree, including before first start and
+while junctions are detached. Mounted content masks private files at the same
+path. Copying never attaches/detaches mounts, creates missing backing sources, or
+changes grants. Other junctions, symlinks, and reparse points are rejected.
+
+`-` as the host endpoint means a **plain tar stream**, not raw file contents.
+Output includes the selected basename; a root or `/.` selection emits relative
+contents. Tar input extracts into an existing container directory, creates
+parents for archive entries, and merges existing contents. Standard tar metadata
+for long/Unicode paths is supported. Archives are staged on disk and fully
+validated before destination changes. Links, special files, unsafe paths,
+case-insensitive duplicate entries, conflicting entry types, truncated input, and
+nonzero trailing data are rejected. Zero block padding is allowed. Compressed tar
+input is unsupported. For binary-safe redirection from PowerShell:
+
+```powershell
+cmd /c "quasidock cp worker:/workspace - > workspace.tar"
+cmd /c "quasidock cp - worker:/workspace < workspace.tar"
+```
+
+Created, running, paused, and exited containers are supported. Copy does not
+pause processes, coordinate shared-volume writers, or snapshot live registry
+hives. Live changes, disappearing files, exclusive file locks, or permissions can
+fail a copy. Source size/modification-time changes detected during a file copy
+fail that file; this is not a consistent snapshot of a running application.
+
+Modification times are preserved; new files inherit destination permissions.
+Owners, ACLs, security labels, alternate streams, and Windows-specific attributes
+are not copied. Each file is published through a sibling temporary file and
+rename, so a failed write does not replace its destination with partial contents
+or write through an existing hardlink. Same-file copies and overlapping directory
+trees, including aliases through mounts, are rejected. Completed files and
+directories can remain after later I/O failures; there is no whole-copy rollback.
+Failed tar output may be partial and must be discarded.
+
+Success returns 0, failure returns 1, and Ctrl+C returns 130 after cleanup.
+Ordinary copies print nothing; tar output contains only archive bytes. `--help`
+and `-h` show usage. Ownership/link and progress options (`-a`, `-L`, `-q`) are
+unsupported. Container, image, and supervisor formats require no migration.
+
 ## Commit private data
 
 `quasidock commit [OPTIONS] CONTAINER [REPOSITORY[:TAG]]` (also `container commit`)

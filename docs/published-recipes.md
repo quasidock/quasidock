@@ -1,4 +1,4 @@
-# Published apps
+# Published recipes
 
 Sixty-eight recipes in [recipes/](../recipes) build into published OCI images in
 `ghcr.io/quasidock/quasidock`, listed in dependency order in
@@ -9,7 +9,7 @@ demand, verifies its `cosign` signature against
 its entrypoint. See [publishing.md](publishing.md) for how images and the
 catalog are published, and [recipes.md](recipes.md) for the recipe format.
 
-## Published images
+## List of published images
 
 | Image | Version | Entrypoint / commands | What it is |
 |---|---|---|---|

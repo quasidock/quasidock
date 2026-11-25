@@ -32,6 +32,14 @@ TERM/KILL requests; recorded exit codes retain Quasidock's Windows semantics.
 
 ### Other run limitations
 
+- **Container copy compatibility.** `cp` / `container cp` exposes `${data}` and
+  declared mounts, including stopped containers; it does not expose image/runtime
+  files or arbitrary host filesystem grants. Only regular files, directories,
+  and plain tar streams are supported. Links, special files, owner/ACL/attribute
+  preservation, compressed tar input, and progress flags are unsupported. Copies
+  keep live processes running and may fail on changed or locked files. Archives
+  are validated before application; later I/O failures can leave completed files
+  applied. See [copy files](persistent-storage.md#copy-files).
 - **Container listing compatibility.** `ps --filter` supports `id`, `name`,
   `status`, `exited`, `before`, and `since`; other filter keys are rejected.
   Status values are limited to `created`, `running`, `paused`, and `exited`.

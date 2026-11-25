@@ -46,6 +46,15 @@ func validComponent(s string) bool {
 	return len(stem) != 4 || (!strings.HasPrefix(stem, "COM") && !strings.HasPrefix(stem, "LPT")) || stem[3] < '1' || stem[3] > '9'
 }
 
+// ValidateComponent checks a single Windows file name, including device names
+// and names which Windows would normalize to a different spelling.
+func ValidateComponent(name string) error {
+	if !validComponent(name) || !filepath.IsLocal(name) {
+		return fmt.Errorf("invalid Windows file name %q", name)
+	}
+	return nil
+}
+
 func ValidateName(name string) error {
 	if len(name) > 128 || !validComponent(name) {
 		return fmt.Errorf("invalid volume name %q", name)

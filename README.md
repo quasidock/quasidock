@@ -3,10 +3,12 @@
 Quasidock runs sandboxed Windows programs from OCI-distributed images using a
 Docker-style CLI.
 
-Version **0.10** supports Docker-style container lifecycle management (`create`, `run`, `ps`,
+Currently it supports Docker-style container lifecycle management (`create`, `run`, `ps`,
 `logs`, `exec`, `attach`, `start`, `restart`, `pause`, `unpause`, `kill`, `stop`, `rm`, `inspect`, `diff`, `commit`, `prune`), per-container isolated data, image
 management, named volumes, local directory bind mounts, and Quasidock images for
-`windows/amd64`. Supported Node.js, Go, Python, PHP CLI, Composer, and Ubuntu/Debian Dockerfiles, including
+`windows/amd64`.
+
+Supported Node.js, Go, Python, PHP CLI, Composer, and Ubuntu/Debian Dockerfiles, including
 multi-stage builds with `COPY --from`, can be
 [converted to native recipes](docs/dockerfile-conversion.md). The Docker Engine
 API and general Docker images are not supported.
@@ -162,6 +164,7 @@ metadata, and compatibility details.
 | `container ls` | `ps` | List containers (`-a`, `-q`, `--filter`, `--last`, `--size`, `--no-trunc`) |
 | `container inspect` | `inspect` | Container JSON metadata or `-f TEMPLATE` (`inspect` falls back to images) |
 | `container diff` | `diff` | Compare private `${data}` with image data; exclude mounted storage |
+| `container cp` | `cp` | Copy files/folders between container data and the host; `-` streams tar |
 | `container commit` | `commit` | Save private data and launch configuration as a new image |
 | `container logs` | `logs` | Fetch captured output (`-f`/`--follow`, `-n`/`--tail LINES`) |
 | `container exec` | `exec` | Run another command in a running container (`-d`, `-i`, `-t`, `-e`, `-w`) |
@@ -349,6 +352,35 @@ outside `${data}` are excluded. A mount covering `${data}` produces empty output
 Diff supports created, running, paused, and exited containers; a live scan is
 best effort and does not pause the application. See
 [persistent storage](docs/persistent-storage.md).
+
+`cp SOURCE DESTINATION` (also `container cp`) copies regular files and directories
+between the host and a container. Use `CONTAINER:PATH` for one endpoint; `/` means
+`${data}`, and relative container paths use the same root. Declared volumes and
+bind mounts are included even before the first start or after exit. Running
+containers keep running; paused containers stay paused.
+
+```powershell
+quasidock cp .\settings.json node-demo:/home/settings.json
+quasidock container cp node-demo:/home/settings.json .\settings-copy.json
+quasidock cp '.\project\.' node-demo:/home
+```
+
+Directories copy recursively; a source ending in `/.` copies its contents into
+the destination. Existing files are replaced and directories are merged without
+deleting unrelated files. Destination parents must exist. `-` reads or writes a
+plain tar stream; tar input requires an existing destination directory and is
+fully validated before destination updates. For binary streams in Windows shells,
+use a shell that preserves native binary pipelines, or `cmd /c` redirection:
+
+```powershell
+cmd /c "quasidock cp node-demo:/home - > home.tar"
+cmd /c "quasidock cp - node-demo:/home < home.tar"
+```
+
+Copying preserves modification times and inherits destination security settings.
+Links, ownership/ACL preservation, compressed tar input, and progress flags are
+unsupported. See [copy behavior and limits](docs/persistent-storage.md#copy-files)
+for Windows paths, failure handling, and mounted storage.
 
 `commit [OPTIONS] CONTAINER [REPOSITORY[:TAG]]` saves a runnable image with an
 independent copy of private data and declared HKCU state. Running containers

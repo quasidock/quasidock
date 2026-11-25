@@ -38,6 +38,8 @@ Docker-style container commands:
   container inspect | inspect [-f TEMPLATE] NAME|ID [NAME|ID...]
                                        inspect containers or images (JSON by default)
   container diff | diff CONTAINER      list additions to private data; exclude mounts
+  container cp | cp SOURCE DESTINATION copy files/folders between container data and host
+                                       use CONTAINER:PATH; - streams a tar archive
   container commit | commit [options] CONTAINER [REPOSITORY[:TAG]]
                                        capture private data and configuration as an image
   container logs | logs [-f|--follow] [-n|--tail LINES] CONTAINER
@@ -798,7 +800,7 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 		return 0, nil
 	}
 	switch cmd {
-	case "events", "system", "convert", "build", "volume", "container", "create", "commit", "ps", "diff", "exec", "attach", "start", "restart", "pause", "unpause", "kill", "stop", "rm", "logs", "image", "images", "inspect", "tag", "pull", "push", "save", "load", "rmi", "run", "search", "trust", "signature", "prune", "repair", "grants":
+	case "events", "system", "convert", "build", "volume", "container", "create", "commit", "ps", "diff", "cp", "exec", "attach", "start", "restart", "pause", "unpause", "kill", "stop", "rm", "logs", "image", "images", "inspect", "tag", "pull", "push", "save", "load", "rmi", "run", "search", "trust", "signature", "prune", "repair", "grants":
 	default:
 		return usageError()
 	}
@@ -829,7 +831,7 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 		return execCommand(ctx, rest)
 	case "ps":
 		return containerCommand(ctx, append([]string{"ls"}, rest...))
-	case "create", "commit", "diff", "attach", "start", "restart", "pause", "unpause", "kill", "stop", "rm", "logs":
+	case "create", "commit", "diff", "cp", "attach", "start", "restart", "pause", "unpause", "kill", "stop", "rm", "logs":
 		return containerCommand(ctx, append([]string{cmd}, rest...))
 	case "inspect":
 		return inspectAny(ctx, rest)

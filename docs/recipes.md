@@ -104,8 +104,7 @@ for the schema implementation.
 `layer` sets the app layer format: `"gzip"` (the default) or `"estargz"`
 ([layer formats](layer-formats.md)), a gzip-compressed tar whose files can be
 read individually through a table of contents at the end. Quasidock unpacks
-eStargz layers without inflating a full intermediate tar on disk—in Zigsaw
-measurements, saving 323 MB of temporary disk space when pulling Qt's SDK at
+eStargz layers without inflating a full intermediate tar on disk. In initial measurements, it saves 323 MB of temporary disk space when pulling Qt's SDK at
 2–5% larger download size. The layer descriptor carries the table-of-contents
 digest expected by eStargz tools, and the layer includes `stargz.index.json`
 and `.no.prefetch.landmark`. Recipes such as
@@ -129,9 +128,9 @@ When pulling an eStargz layer (`quasidock pull`), Quasidock inspects indexed
 eStargz layers already in the local store, copies matching members locally, and
 downloads only the missing byte ranges when at least 10% of the blob can be
 reused. The assembled blob is verified against its expected sha256 digest and
-falls back to a whole-blob download on mismatch. On Zigsaw, this delta pull
-fetched 0.4% of Qt's SDK when 3 files changed and 83% for `llvm-mingw` between
-`20261006` and `20261020`. `quasidock image files` and `quasidock image cat`
+falls back to a whole-blob download on mismatch.
+
+`quasidock image files` and `quasidock image cat`
 read a remote eStargz layer's directory and files without pulling the image.
 
 ### Placeholders
@@ -718,8 +717,7 @@ never read or write it.
 and moved onto `B:` for each run—for example `"ZIG_GLOBAL_CACHE_DIR": "${cache}"`
 in [zig.json](../recipes/zig.json) keeps Zig's compiled C runtime across builds.
 Only content-addressed, reproducible tool caches belong in `${cache}`; Zig's
-per-project `.zig-cache` stays in `B:\src\<stage>\.zig-cache` because Zigsaw
-[iteration 36](../legacy/iteration-36.md) found that caching compiled objects in
+per-project `.zig-cache` stays in `B:\src\<stage>\.zig-cache` because in Zig 0.17, caching compiled objects in
 `${cache}` suppressed compiler warnings on subsequent `cc-rs` flag probes and
 broke reproducibility in `cargo-c` ([findings](findings.md)).
 
@@ -1675,29 +1673,3 @@ MSVC build (`CL="/Brepro ..."`, `LINK="/Brepro ..."`) of GLib, GTK 4, and
 `libadwaita` (`proxy-libintl`, without `librsvg`, `libsoup`, spellchecking, or
 translations), bundling `$VCTOOLSREDISTDIR` CRT DLLs into `bin/` so all imports
 bind inside the image ([tests/gtk.sh](../tests/gtk.sh)).
-
-## Legacy Zigsaw differences
-
-Quasidock breaks compatibility with legacy Zigsaw recipes, images, and CLI
-features:
-
-- Reverse-DNS IDs (`org.nodejs.node`, `net.frippery.busybox`, etc.) were replaced
-  with short Docker-style IDs (`node`, `busybox`, etc.).
-- `entrypoint` (required) and `cmd` replace `command`, `args`, `exports`, and
-  run-time `--command`. Image configs without `entrypoint` fail validation; run
-  other binaries in an image with `quasidock run --entrypoint=... IMAGE [ARGS...]`.
-- `from` (single-level alias map) replaces `runtimes`. Base images that declare
-  their own `from` are rejected, and all runtime IDs in `from` must be unique.
-- `stages` replaces `modules` (see [iteration 2](iteration-2.md) through
-  [iteration 4](iteration-4.md)), and remote image references in recipes require
-  `@sha256:...` digest pins.
-- **Extension points and extension recipes removed**: `extensions` slots,
-  automatic extension mounting, `--noextension`, and the 12 extension recipes
-  (`gtk4-hunspell-*`, `php-*`, `postgresql-*`) were removed in commit `df24cf4`.
-  Compose multi-image stacks explicitly with `from`.
-- **Desktop integration, overrides, and user-folder permissions removed**:
-  Start menu `shortcuts`, file `associations`, URL `schemes`, host `bin\` shims,
-  `--file` path translation, user-folder junctions (`desktop`, `documents`,
-  `downloads`, etc.), `--ephemeral` (replaced by `--rm`), and persistent recipe
-  `override` layers were removed. Filesystem access is granted via
-  `permissions.filesystem` (`"cwd"` / `"cwd:ro"`) or `--filesystem=cwd|<abs>`.
