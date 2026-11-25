@@ -84,7 +84,9 @@ func NtQueryInformationProcess(process HANDLE, class int32, info unsafe.Pointer,
 }
 
 func QueryProcessCommandLine(process HANDLE) (string, bool) {
-	infoBuf := make([]byte, 65536)
+	// A maximum-length UTF-16 command needs 64 KiB plus its UNICODE_STRING
+	// header. A 64 KiB buffer alone drops otherwise valid long command lines.
+	infoBuf := make([]byte, 65536+int(unsafe.Sizeof(UNICODE_STRING{})))
 	var retLen uint32
 	status := NtQueryInformationProcess(process, ProcessCommandLineInformation, unsafe.Pointer(&infoBuf[0]), uint32(len(infoBuf)), &retLen)
 	if status < 0 {

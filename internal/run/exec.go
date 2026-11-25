@@ -42,6 +42,9 @@ const (
 	commitReleased
 	statsQuery
 	statsResult
+	topQuery
+	topProcess
+	topComplete
 )
 
 type ExecOptions struct {
@@ -455,6 +458,10 @@ func (r *execRuntime) serve(c *execStream) {
 	}
 	if kind == statsQuery {
 		r.serveStats(c, data)
+		return
+	}
+	if kind == topQuery {
+		r.serveTop(c, data)
 		return
 	}
 	var req execRequest

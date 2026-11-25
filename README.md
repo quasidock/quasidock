@@ -4,7 +4,7 @@ Quasidock runs sandboxed Windows programs from OCI-distributed images using a
 Docker-style CLI.
 
 Currently it supports Docker-style container lifecycle management (`create`, `run`, `ps`,
-`logs`, `stats`, `exec`, `attach`, `start`, `restart`, `pause`, `unpause`, `kill`, `stop`, `rm`, `inspect`, `diff`, `commit`, `prune`), per-container isolated data, image
+`logs`, `stats`, `top`, `exec`, `attach`, `start`, `restart`, `pause`, `unpause`, `kill`, `stop`, `rm`, `inspect`, `diff`, `commit`, `prune`), per-container isolated data, image
 management, named volumes, local directory bind mounts, and Quasidock images for
 `windows/amd64`.
 
@@ -163,6 +163,7 @@ metadata, and compatibility details.
 | `container create` | `create` | Save a new container without starting it; print its full ID |
 | `container ls` | `ps` | List containers (`-a`, `-q`, `--filter`, `--last`, `--size`, `--no-trunc`) |
 | `container stats` | `stats` | Stream CPU, private committed memory, cumulative I/O, and process counts |
+| `container top` | `top` | List processes once, with parent PIDs, cumulative CPU time, and full commands |
 | `container inspect` | `inspect` | Container JSON metadata or `-f TEMPLATE` (`inspect` falls back to images) |
 | `container diff` | `diff` | Compare private `${data}` with image data; exclude mounted storage |
 | `container cp` | `cp` | Copy files/folders between container data and the host; `-` streams tar |
@@ -228,6 +229,34 @@ with selectors, it finishes when all selected containers have been removed.
 Ctrl+C exits with code 130 and leaves workloads running. Existing supervisors
 without `State.StatsProtocol` must be stopped and started with the current
 binary before stats is available. See [stats limits](docs/gaps.md#container-stats).
+
+`top CONTAINER` (also `container top`) takes one process snapshot of a running
+or paused container. It lists the main process, descendants, `exec` processes,
+and any relay in the container's job; host services and the supervisor are excluded.
+Rows are sorted by numeric host PID. The default columns are `PID`, `PPID`,
+`TIME`, and `COMMAND`. PPID is the native parent PID, which can refer to a process
+outside the container. TIME is cumulative user/kernel CPU time in
+`HH:MM:SS.mmm`, with hours allowed to exceed 99. Commands are not truncated;
+table output escapes control characters. If details are unavailable, COMMAND
+falls back to the executable name and PPID/TIME display `--`.
+
+```powershell
+quasidock top worker
+quasidock container top worker --format json
+quasidock top --format '{{.PID}} {{.Command}}' worker
+```
+
+`--format` accepts `table` (the default), `table TEMPLATE`, `json` (JSON Lines),
+or a Go template. String fields are `.PID`, `.PPID`, `.Time`, and `.Command`;
+`{{json .}}` also emits JSON. JSON and plain templates preserve original command
+text. Linux `ps` arguments, multiple container selectors, and stopped containers
+are unsupported. Collection is best effort while applications run; processes
+that exit during collection can be omitted. A container exit, removal, or restart
+during the request fails without printing a partial snapshot. Top leaves paused
+containers paused and does not follow replacement runs. Requests time out after
+five seconds; Ctrl+C returns 130 without affecting the container. Existing
+supervisors without `State.TopProtocol` must be stopped and started with the
+current binary before top is available.
 
 `events` (also `system events`) follows new container events. `--since` first
 replays matching history, then follows; each store retains its latest **256**

@@ -37,6 +37,8 @@ Docker-style container commands:
                                        list running containers (or all with -a)
   container stats | stats [options] [CONTAINER...]
                                        stream CPU, private memory, I/O and process counts
+  container top | top [--format table|json|TEMPLATE] CONTAINER
+                                       list processes once, including exec commands
   container inspect | inspect [-f TEMPLATE] NAME|ID [NAME|ID...]
                                        inspect containers or images (JSON by default)
   container diff | diff CONTAINER      list additions to private data; exclude mounts
@@ -125,6 +127,10 @@ stats/container stats options:
   --no-trunc                         show full container IDs
   --format table|json|TEMPLATE        table, JSON Lines, or a Go template
 
+top/container top options:
+  --format table|json|TEMPLATE        table, JSON Lines, or a Go template
+                                     fields: PID, PPID, Time, Command
+
 events/system events options:
   --since TIME                       replay retained events since TIME, then follow
   --until TIME                       stop at TIME (past values query history only)
@@ -172,6 +178,8 @@ create saves configuration without launching; start defaults to background.
 ps filters repeat (same key: OR; different keys: AND); status includes all states.
 ps --last values <= 0 leave results unlimited with normal visibility rules.
 ps --size includes copied image seed files, excludes logs, and has no virtual total.
+top accepts running or paused containers; TIME is cumulative CPU time, COMMAND is full.
+top does not accept Linux ps arguments; unavailable details display --.
 diff lists A/C/D /PATH relative to image data; mounts are excluded.
 commit supports --pause=false, -a/--author, -m/--message and -c/--change.
 --change supports CMD/ENTRYPOINT JSON arrays, ENV, WORKDIR and LABEL.
@@ -808,7 +816,7 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 		return 0, nil
 	}
 	switch cmd {
-	case "stats", "events", "system", "convert", "build", "volume", "container", "create", "commit", "ps", "diff", "cp", "exec", "attach", "start", "restart", "pause", "unpause", "kill", "stop", "rm", "logs", "image", "images", "inspect", "tag", "pull", "push", "save", "load", "rmi", "run", "search", "trust", "signature", "prune", "repair", "grants":
+	case "top", "stats", "events", "system", "convert", "build", "volume", "container", "create", "commit", "ps", "diff", "cp", "exec", "attach", "start", "restart", "pause", "unpause", "kill", "stop", "rm", "logs", "image", "images", "inspect", "tag", "pull", "push", "save", "load", "rmi", "run", "search", "trust", "signature", "prune", "repair", "grants":
 	default:
 		return usageError()
 	}
@@ -839,7 +847,7 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 		return execCommand(ctx, rest)
 	case "ps":
 		return containerCommand(ctx, append([]string{"ls"}, rest...))
-	case "stats", "create", "commit", "diff", "cp", "attach", "start", "restart", "pause", "unpause", "kill", "stop", "rm", "logs":
+	case "top", "stats", "create", "commit", "diff", "cp", "attach", "start", "restart", "pause", "unpause", "kill", "stop", "rm", "logs":
 		return containerCommand(ctx, append([]string{cmd}, rest...))
 	case "inspect":
 		return inspectAny(ctx, rest)
