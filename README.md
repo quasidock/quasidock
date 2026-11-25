@@ -5,7 +5,7 @@ Docker-style CLI.
 
 Currently it supports Docker-style container lifecycle management (`create`, `run`, `ps`,
 `logs`, `stats`, `top`, `exec`, `attach`, `start`, `restart`, `pause`, `unpause`, `kill`, `stop`, `rm`, `inspect`, `diff`, `commit`, `prune`), per-container isolated data, image
-management, named volumes, local directory bind mounts, and Quasidock images for
+management, filesystem export, named volumes, local directory bind mounts, and Quasidock images for
 `windows/amd64`.
 
 Supported Node.js, Go, Python, PHP CLI, Composer, and Ubuntu/Debian Dockerfiles, including
@@ -212,6 +212,7 @@ metadata, and compatibility details.
 | `container diff` | `diff` | Compare private `${data}` with image data; exclude mounted storage |
 | `container cp` | `cp` | Copy files/folders between container data and the host; `-` streams tar |
 | `container commit` | `commit` | Save private data and launch configuration as a new image |
+| `container export` | `export` | Export app, runtimes, and current private data as filesystem tar |
 | `container logs` | `logs` | Fetch captured output (`-f`/`--follow`, `-n`/`--tail LINES`) |
 | `container exec` | `exec` | Run another command in a running container (`-d`, `-i`, `-t`, `-e`, `-w`) |
 | `container attach` | `attach` | Attach to a background container's live output and optional stdin |
@@ -230,6 +231,21 @@ quasidock ps [OPTIONS]
 quasidock create [OPTIONS] IMAGE [COMMAND] [ARG...]
 quasidock run [OPTIONS] IMAGE [COMMAND] [ARG...]
 ```
+
+`export` (also `container export`) writes the pinned app, each runtime, and current
+private data under separate `app/`, `runtimes/runtime-<alias>/`, and `data/` trees.
+Mounts are excluded. Running apps pause during private-data and declared-HKCU
+capture, then resume before output; `--pause=false` requests best-effort capture.
+Export is offline and requires complete local app/runtime blobs.
+
+```powershell
+quasidock export -o worker.tar worker
+```
+
+Output defaults to binary stdout. File output replaces an existing archive only
+after success. This filesystem tar is for manual extraction; use `commit` and
+`save` to transfer a runnable Quasidock image. See [export format and capture
+limits](docs/container-export.md).
 
 `ps` (also `container ls` and `container list`) shows running and paused
 containers, newest first. `-a` / `--all` includes created and exited containers;

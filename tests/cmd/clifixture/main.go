@@ -69,7 +69,7 @@ func main() {
 			fmt.Fprintln(os.Stdout, "closed-input-output")
 			fmt.Fprintln(os.Stderr, "closed-input-error")
 			os.Exit(27)
-		case "console-run", "console-run-check-mode", "console-run-check-mode-pipe":
+		case "console-run", "console-run-check-mode", "console-run-check-mode-pipe", "console-run-check-mode-output-pipe":
 			// Test runners may inherit Ctrl+C-disabled state from their launcher.
 			// Establish the same state as an ordinary interactive shell, keeping
 			// this wrapper alive while the application handles the console event.
@@ -117,6 +117,16 @@ func main() {
 					panic(err)
 				}
 				cmd.Stdin = reader
+			}
+			if args[0] == "console-run-check-mode-output-pipe" {
+				// Keep an unread stdout pipe open to exercise cancellation of a
+				// synchronous write while console Ctrl+C remains available.
+				reader, writer, err := os.Pipe()
+				if err != nil {
+					panic(err)
+				}
+				defer func() { _ = reader.Close(); _ = writer.Close() }()
+				cmd.Stdout = writer
 			}
 			win32.GetConsoleMode(inputHandle, &originalMode)
 			outputHandle := win32.GetStdHandle(win32.STD_OUTPUT_HANDLE)

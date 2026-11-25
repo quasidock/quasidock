@@ -46,6 +46,8 @@ Docker-style container commands:
                                        use CONTAINER:PATH; - streams a tar archive
   container commit | commit [options] CONTAINER [REPOSITORY[:TAG]]
                                        capture private data and configuration as an image
+  container export | export [-o FILE|--output FILE] [--pause=false] CONTAINER
+                                       export app, runtimes and private data as filesystem tar
   container logs | logs [-f|--follow] [-n|--tail LINES] CONTAINER
                                        fetch the logs of a container
   container exec | exec [options] CONTAINER COMMAND [ARG...]
@@ -193,6 +195,8 @@ ps --size includes copied image seed files, excludes logs, and has no virtual to
 top accepts running or paused containers; TIME is cumulative CPU time, COMMAND is full.
 top does not accept Linux ps arguments; unavailable details display --.
 diff lists A/C/D /PATH relative to image data; mounts are excluded.
+export writes filesystem tar to stdout by default; -o FILE replaces only on success.
+export is offline, excludes mounts, and pauses running apps during private-data capture.
 commit supports --pause=false, -a/--author, -m/--message and -c/--change.
 --change supports CMD/ENTRYPOINT JSON arrays, ENV, WORKDIR and LABEL.
 attach and start -a/-i use pipes; Ctrl+C forwards TERM, --sig-proxy=false detaches.
@@ -828,7 +832,7 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 		return 0, nil
 	}
 	switch cmd {
-	case "top", "stats", "events", "system", "convert", "build", "volume", "container", "create", "commit", "ps", "diff", "cp", "exec", "attach", "start", "restart", "pause", "unpause", "kill", "stop", "rm", "logs", "image", "images", "inspect", "history", "tag", "pull", "push", "save", "load", "rmi", "run", "search", "trust", "signature", "prune", "repair", "grants":
+	case "top", "stats", "events", "system", "convert", "build", "volume", "container", "create", "commit", "export", "ps", "diff", "cp", "exec", "attach", "start", "restart", "pause", "unpause", "kill", "stop", "rm", "logs", "image", "images", "inspect", "history", "tag", "pull", "push", "save", "load", "rmi", "run", "search", "trust", "signature", "prune", "repair", "grants":
 	default:
 		return usageError()
 	}
@@ -859,7 +863,7 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 		return execCommand(ctx, rest)
 	case "ps":
 		return containerCommand(ctx, append([]string{"ls"}, rest...))
-	case "top", "stats", "create", "commit", "diff", "cp", "attach", "start", "restart", "pause", "unpause", "kill", "stop", "rm", "logs":
+	case "top", "stats", "create", "commit", "export", "diff", "cp", "attach", "start", "restart", "pause", "unpause", "kill", "stop", "rm", "logs":
 		return containerCommand(ctx, append([]string{cmd}, rest...))
 	case "inspect":
 		return inspectAny(ctx, rest)

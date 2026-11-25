@@ -118,6 +118,9 @@ func CopyData(ctx context.Context, source, dest string, excluded map[string]bool
 		if f == nil {
 			return fmt.Errorf("cannot capture reparse point %s", rel)
 		}
+		if err := mounts.ValidateComponent(filepath.Base(filepath.FromSlash(rel))); err != nil {
+			return fmt.Errorf("cannot capture path %q: %w", rel, err)
+		}
 		path := filepath.Join(dest, filepath.FromSlash(rel))
 		if info.IsDir() {
 			return os.MkdirAll(path, 0o755)

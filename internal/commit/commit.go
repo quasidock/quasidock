@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/quasidock/quasidock/internal/context"
-	"github.com/quasidock/quasidock/internal/hkcu"
 	"github.com/quasidock/quasidock/internal/mounts"
 	"github.com/quasidock/quasidock/internal/oci"
 	"github.com/quasidock/quasidock/internal/registry"
@@ -26,7 +25,7 @@ type Options struct {
 	Changes                            []string
 }
 
-func Commit(cancel stdcontext.Context, ctx *context.Context, opts Options) (digest string, retErr error) {
+func Commit(cancel stdcontext.Context, ctx *context.Context, opts Options) (string, error) {
 	lock, err := ctx.Store.Lock(false)
 	if err != nil {
 		return "", err
@@ -90,68 +89,15 @@ func Commit(cancel stdcontext.Context, ctx *context.Context, opts Options) (dige
 	if err := ApplyChanges(&cfg, opts.Changes); err != nil {
 		return "", err
 	}
-	excluded, err := store.DataExclusions(c)
-	if err != nil {
-		return "", err
-	}
-	privateRegistry := len(cfg.Registry) > 0 && !excluded[""] && !excluded["registry"]
-	if privateRegistry {
-		for rel := range excluded {
-			if strings.HasPrefix(rel, "registry/") {
-				return "", errors.New("cannot capture registry with mounts inside its hive directory")
-			}
-		}
-		excluded["registry"] = true
-	}
 	stage, err := ctx.Store.MakeTmpDir("commit")
 	if err != nil {
 		return "", err
 	}
 	defer func() { _ = mounts.RemoveTree(stage) }()
-	var lease *run.CaptureLease
-	if c.State.Running && opts.Pause {
-		lease, err = run.BeginCapture(ctx, c)
-		if err != nil {
-			return "", err
-		}
-	}
-	release := func() error {
-		if lease == nil {
-			return nil
-		}
-		err := lease.Close()
-		lease = nil
-		return err
-	}
-	defer func() { retErr = errors.Join(retErr, release()) }()
-	var rootGuard *os.File
-	if !excluded[""] {
-		rootGuard, err = store.OpenDataRoot(c.DataDir)
-		if err != nil {
-			return "", err
-		}
-		defer func() { _ = rootGuard.Close() }()
-	}
-	if err := store.CopyData(cancel, c.DataDir, stage, excluded); err != nil {
-		return "", fmt.Errorf("capturing private data: %w", err)
-	}
-	if privateRegistry {
-		if err := hkcu.Snapshot(cfg.Registry, c.DataDir, filepath.Join(stage, "registry"), c.State.Running); err != nil {
-			return "", err
-		}
-	}
-	if err := cancel.Err(); err != nil {
+	if err := run.CaptureData(cancel, ctx, c, cfg.Registry, stage, opts.Pause); err != nil {
 		return "", err
 	}
 	if err := validateWorkdir(img.DeployDir, stage, cfg.Workdir); err != nil {
-		return "", err
-	}
-	if rootGuard != nil {
-		if err := rootGuard.Close(); err != nil {
-			return "", err
-		}
-	}
-	if err := release(); err != nil {
 		return "", err
 	}
 	op.Release()

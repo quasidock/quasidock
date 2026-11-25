@@ -164,3 +164,19 @@ func TestCaptureRefusesReparseAndCancellation(t *testing.T) {
 		t.Fatalf("ignored cancellation: %v", err)
 	}
 }
+
+func TestCaptureRefusesUnsafeFilename(t *testing.T) {
+	source, dest := t.TempDir(), t.TempDir()
+	// Extended paths can create names which ordinary Windows paths normalize.
+	name := `\\?\` + filepath.Join(source, "trailing.")
+	if err := os.WriteFile(name, []byte("private data"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Remove(name) }()
+	if err := CopyData(context.Background(), source, dest, nil); err == nil {
+		t.Fatal("captured an unsafe filename through a normalized destination")
+	}
+	if entries, err := os.ReadDir(dest); err != nil || len(entries) != 0 {
+		t.Fatal("unsafe filename created destination data", entries, err)
+	}
+}

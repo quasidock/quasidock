@@ -61,6 +61,14 @@ func cpCommand(ctx *context.Context, args []string) (uint32, error) {
 		defer win32.SetConsoleMode(input, mode)
 		streams.console = true
 	}
+	return runTransfer(cancel, streams, func() error {
+		return containercopy.Copy(cancel, ctx.Store, args[0], args[1], streams, streams)
+	})
+}
+
+// runTransfer joins the I/O thread before returning, so cancellation cannot
+// target a reused thread or outlive a transfer's cleanup.
+func runTransfer(cancel stdcontext.Context, streams *copyStreams, transfer func() error) (uint32, error) {
 	// Synchronous Windows console/pipe I/O cannot always be interrupted by
 	// closing an os.File. Run the transfer on a dedicated cancellation thread,
 	// following the attachment reader's cancellation pattern.
@@ -77,7 +85,7 @@ func cpCommand(ctx *context.Context, args []string) (uint32, error) {
 			result <- err
 			return
 		}
-		result <- containercopy.Copy(cancel, ctx.Store, args[0], args[1], streams, streams)
+		result <- transfer()
 	}()
 	thread := <-ready
 	if thread != 0 {

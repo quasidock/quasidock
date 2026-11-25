@@ -24,7 +24,7 @@ type CaptureLease struct{ stream *execStream }
 
 func BeginCapture(ctx *context.Context, rec *store.ContainerRecord) (*CaptureLease, error) {
 	if rec.State.CommitProtocol != commitProtocol {
-		return nil, errors.New("container's supervisor does not support commit capture; stop and start it with this binary, or use --pause=false")
+		return nil, errors.New("container's supervisor does not support capture; stop and start it with this binary, or use --pause=false")
 	}
 	deadline := time.Now().Add(5 * time.Second)
 	f, err := win32.DialPipe(execPipeName(rec.ID, rec.State.RunID), deadline)
@@ -89,7 +89,7 @@ func (r *execRuntime) serveCapture(c *execStream, data []byte) {
 	} else if r.commitContext == nil || r.commitRecord == nil || r.closing || win32.WaitForSingleObject(r.primary, 0) != win32.WAIT_TIMEOUT {
 		err = errors.New("container is not running")
 	} else if r.capturing {
-		err = errors.New("container commit capture is already in progress")
+		err = errors.New("container capture is already in progress")
 	}
 	wasPaused := r.paused
 	if err == nil && !wasPaused {
