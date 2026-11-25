@@ -18,7 +18,7 @@
     },
     "host": true
   },
-  "from": { "git": "mingit:2.56.0.windows.1@sha256:0d95f29457f4bb30c50c62ac12c9afd45d7b2e252d9f553a16a11f8381b4d3da" },
+  "from": { "git": "mingit:2.56.0.windows.1@sha256:6e6b95104d32c2187268c01753d106cea4e7026ba026cd22d82e7460e1232a52" },
   "sdk": { "busybox": "busybox:FRP-6075-g169694ebd@sha256:baca1ecd27b7b5ffe54402d4f8b6e36802d9db5e0e4cb2b7ab13104031045c50" },
   "cleanup": ["/bin/codium-tunnel.exe"],
   "stages": [

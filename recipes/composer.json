@@ -10,7 +10,7 @@
     "network": true,
     "filesystem": ["cwd"]
   },
-  "from": { "php": "php:8.5.12-1@sha256:bce8b34a93950ba3f8813b6e7508e3309912f6f413569569ee830b4b1aefa296" },
+  "from": { "php": "php:8.5.12-1@sha256:4e8991ab09b3eb787d4fd11cfee79dfc22bb846a5da0ecc7bde1e454cffd42f3" },
   "env": { "QUASIDOCK_COMPOSER_PHP": "${php}\\php.exe" },
   "path": ["sdk-bin", "."],
   "sdk": {

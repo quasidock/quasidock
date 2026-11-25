@@ -8,8 +8,8 @@
   "entrypoint": "bin/flameshot.exe",
   "path": ["bin"],
   "cleanup": ["/bin/flameshot-cli.exe"],
-  "from": { "qt": "qt6:6.12.0@sha256:d7cffccfe57b1a2d3215b63b5f60bb075822733474a29e7ff192677cef4e47f8" },
-  "sdk": { "qtsdk": "qt6-sdk:6.12.0@sha256:9dab4d2a933dafb453af96a7c0bbc1da6705cc03e1c7f99579736059dd30c200" },
+  "from": { "qt": "qt6:6.12.0@sha256:51fc3292d69df6e7edd62ebb5fe45713b4b25983e94d6667e7b64938e504ae51" },
+  "sdk": { "qtsdk": "qt6-sdk:6.12.0@sha256:f25f8061c92f92d6633cb08e3184c35d0d37010d5fb769cba0c7586e3c23a6a3" },
   "stages": [
     {
       "name": "flameshot",

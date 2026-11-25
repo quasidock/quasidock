@@ -26,7 +26,7 @@
     {
       "name": "gtk",
       "sources": [
-        { "image": "gtk3-sdk:3.24.52@sha256:03d48cf8138d5d9b28d59a51b34b454d5ff8127abc4bd37e6407a2d15468fc37" }
+        { "image": "gtk3-sdk:3.24.52@sha256:25d75ab09e4b13d03ef459b941b2c04bda233739d2a62b5ceb9e89688d15a3b8" }
       ]
     }
   ]

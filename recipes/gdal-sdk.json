@@ -10,8 +10,8 @@
   "env": { "GDAL_DATA": "${app}\\share\\gdal", "PROJ_DATA": "${app}\\share\\proj" },
   "sdk": {
     "meson": "meson:1.12.1@sha256:9b656a460928dbde77dc31f5827e9b99ad4b53e007de87b19b6fbec26785bbc3",
-    "cmake": "cmake:4.4.4@sha256:b96b30bb57b5147726b7deef2607917b43972bb896d9f5d3e3082e31368dbeae",
-    "llvm": "llvm-mingw:20261020@sha256:65425754b958693accc5dc8d8e8ca0dfa6235669c286cc8875105171b3e299b9",
+    "cmake": "cmake:4.4.4@sha256:dbaa88e42a5efea6ccb235c2ccfb12d6d31d4fa7dc9d266cf81d24a2e3975831",
+    "llvm": "llvm-mingw:20261020@sha256:c4d0aa87912200ce510965071375618de13c4064fb433ea5b1b182b83cd79099",
     "busybox": "busybox:FRP-6075-g169694ebd@sha256:baca1ecd27b7b5ffe54402d4f8b6e36802d9db5e0e4cb2b7ab13104031045c50"
   },
   "cleanup": ["/lib/cmake", "*.la", "/share/bash-completion", "/share/doc", "/share/man"],

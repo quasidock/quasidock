@@ -11,10 +11,10 @@
   "permissions": {
     "filesystem": ["cwd"]
   },
-  "from": { "gtk": "gtk4:4.24.1@sha256:550c7eddb54fc071caae8955664a76ed418c65e727237ba8585ee6827f4e5ad1" },
+  "from": { "gtk": "gtk4:4.24.1@sha256:0b482850eec817c18cb487fe41fc18e160e7dbbf96c846035e86daed916e22ad" },
   "sdk": {
     "rust": "rust:1.99.0@sha256:62344d25e7c11b393e6094386eca31bc4f8f0bdbe45845fc61fe58700f112f8d",
-    "toolkit": "gtk4-sdk:4.24.1@sha256:7c063e56d0148fbc2ea019ddce1b4368d0aee279ff30b5417bad3e8ad78ca682"
+    "toolkit": "gtk4-sdk:4.24.1@sha256:e79afa3f16a0fcf7a6a38a2bd48a705ee1ea711c419d3e9290e4be027ab2c04c"
   },
   "cleanup": ["/share/applications", "/share/metainfo", "/share/mime", "/share/dbus-1", "/share/thumbnailers"],
   "stages": [

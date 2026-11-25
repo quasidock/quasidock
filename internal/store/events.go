@@ -13,6 +13,11 @@ import (
 
 const EventHistoryLimit = 256
 
+// Concurrent writers flush and replace the journal while holding its lock.
+// Allow for slow disk I/O without letting a stuck writer block lifecycle work
+// indefinitely.
+const eventWriteLockTimeout = 5 * time.Second
+
 // Event is the public events JSON/template value. Journal cursors are separate
 // so scripts need not depend on the local persistence format.
 type Event struct {
@@ -98,7 +103,7 @@ func (s *Store) ReadEventSnapshot(ctx context.Context) (EventSnapshot, error) {
 // bounded history. State changes and this journal are deliberately not a single
 // transaction. Call RecordContainerEvent for warning-only lifecycle recording.
 func (s *Store) AppendEvent(event Event) error {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), eventWriteLockTimeout)
 	defer cancel()
 	lock, err := s.eventLock(ctx, true)
 	if err != nil {

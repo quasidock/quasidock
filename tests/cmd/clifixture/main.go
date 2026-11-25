@@ -2,6 +2,7 @@
 package main
 
 import (
+	"archive/tar"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -68,7 +69,7 @@ func main() {
 			fmt.Fprintln(os.Stdout, "closed-input-output")
 			fmt.Fprintln(os.Stderr, "closed-input-error")
 			os.Exit(27)
-		case "console-run", "console-run-check-mode":
+		case "console-run", "console-run-check-mode", "console-run-check-mode-pipe":
 			// Test runners may inherit Ctrl+C-disabled state from their launcher.
 			// Establish the same state as an ordinary interactive shell, keeping
 			// this wrapper alive while the application handles the console event.
@@ -86,7 +87,7 @@ func main() {
 			var originalMode win32.DWORD
 			var originalOutputMode win32.DWORD
 			inputHandle := win32.GetStdHandle(win32.STD_INPUT_HANDLE)
-			if args[0] == "console-run-check-mode" {
+			if args[0] != "console-run" {
 				// CreateProcess with a pseudoconsole can leave the wrapper's
 				// standard handles unset. Open its actual console explicitly.
 				input, err := os.OpenFile("CONIN$", os.O_RDWR, 0)
@@ -102,6 +103,21 @@ func main() {
 				cmd.Stdin, cmd.Stdout, cmd.Stderr = input, output, output
 				inputHandle = win32.HANDLE(input.Fd())
 			}
+			if args[0] == "console-run-check-mode-pipe" {
+				// Leave stdin blocked on a pipe while Ctrl+C still arrives from
+				// the console. The writer stays open until the command exits.
+				reader, writer, err := os.Pipe()
+				if err != nil {
+					panic(err)
+				}
+				defer func() { _ = reader.Close(); _ = writer.Close() }()
+				// Stage one file, then stall before its payload arrives so that
+				// cancellation has an open staged file and directory to clean up.
+				if err := tar.NewWriter(writer).WriteHeader(&tar.Header{Name: "pending", Mode: 0o600, Size: 1024}); err != nil {
+					panic(err)
+				}
+				cmd.Stdin = reader
+			}
 			win32.GetConsoleMode(inputHandle, &originalMode)
 			outputHandle := win32.GetStdHandle(win32.STD_OUTPUT_HANDLE)
 			if output, ok := cmd.Stdout.(*os.File); ok {
@@ -109,7 +125,7 @@ func main() {
 			}
 			checkOutputMode := win32.GetConsoleMode(outputHandle, &originalOutputMode)
 			commandErr := cmd.Run()
-			if args[0] == "console-run-check-mode" {
+			if args[0] != "console-run" {
 				var finalMode win32.DWORD
 				if !win32.GetConsoleMode(inputHandle, &finalMode) || originalMode != finalMode {
 					fmt.Fprintf(cmd.Stderr, "console mode changed: %#x -> %#x\n", originalMode, finalMode)

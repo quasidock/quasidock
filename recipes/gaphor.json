@@ -18,13 +18,13 @@
     "filesystem": ["cwd"]
   },
   "from": {
-    "gtk": "gtk4:4.24.1@sha256:550c7eddb54fc071caae8955664a76ed418c65e727237ba8585ee6827f4e5ad1",
-    "pygobject": "pygobject:3.58.1@sha256:531997dbcd802f556ef7cfb776d64be9663edc4c55443ea978acf81397edc904"
+    "gtk": "gtk4:4.24.1@sha256:0b482850eec817c18cb487fe41fc18e160e7dbbf96c846035e86daed916e22ad",
+    "pygobject": "pygobject:3.58.1@sha256:e0326f5760c547a00115333c0ba95b53cb2ec40750ff43a3c6a183560b0d4c3f"
   },
   "sdk": {
-    "gtksdk": "gtk4-sdk:4.24.1@sha256:7c063e56d0148fbc2ea019ddce1b4368d0aee279ff30b5417bad3e8ad78ca682",
-    "pygobjectsdk": "pygobject-sdk:3.58.1@sha256:f5df4adc9e7bdc10e9e495017802a0acb80ec71f4ad995b13f523d7aecd737c7",
-    "cmake": "cmake:4.4.4@sha256:b96b30bb57b5147726b7deef2607917b43972bb896d9f5d3e3082e31368dbeae"
+    "gtksdk": "gtk4-sdk:4.24.1@sha256:e79afa3f16a0fcf7a6a38a2bd48a705ee1ea711c419d3e9290e4be027ab2c04c",
+    "pygobjectsdk": "pygobject-sdk:3.58.1@sha256:4e728524874a95224e4485371424eda1f8b9edea30314fd7f2717091b874c2d1",
+    "cmake": "cmake:4.4.4@sha256:dbaa88e42a5efea6ccb235c2ccfb12d6d31d4fa7dc9d266cf81d24a2e3975831"
   },
   "cleanup": [
     "/include",

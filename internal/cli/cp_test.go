@@ -190,17 +190,33 @@ func TestCpSandboxPermissions(t *testing.T) {
 }
 
 func TestCpInterruptBlockedInput(t *testing.T) {
-	ctx, _ := fixtureCLI(t)
 	binary, _, buildDir := buildContainerTestBinaries(t)
+	for _, mode := range []string{"console-run-check-mode", "console-run-check-mode-pipe"} {
+		t.Run(mode, func(t *testing.T) {
+			checkCpInterruptBlockedInput(t, binary, buildDir, mode)
+		})
+	}
+}
+
+func checkCpInterruptBlockedInput(t *testing.T, binary, buildDir, mode string) {
+	t.Helper()
+	ctx, _ := fixtureCLI(t)
 	c, err := ctx.Store.CreateContainer("copy-interrupt", store.ContainerRecord{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("QUASIDOCK_HOME", ctx.Store.Root)
+	var output pauseOutput
 	console, input := startLifecycleConsole(t, filepath.Join(buildDir, "fixture.exe"), []string{
-		"console-run-check-mode", binary, "cp", "-", "copy-interrupt:/",
+		mode, binary, "cp", "-", "copy-interrupt:/",
+	}, &output)
+	awaitPauseCondition(t, "copy did not begin staging stdin", func() bool {
+		staged, err := filepath.Glob(ctx.Store.Path("tmp", "container-copy-*"))
+		if err != nil || len(staged) != 1 {
+			return false
+		}
+		return mode != "console-run-check-mode-pipe" || store.Exists(filepath.Join(staged[0], "pending"))
 	})
-	awaitPauseCondition(t, "copy did not begin reading stdin", func() bool { return store.IsLocked(ctx.Store.ContainerOperationLockPath(c.ID)) })
 	if _, err := win32.WriteFile(input, []byte{3}); err != nil {
 		t.Fatal(err)
 	}
@@ -208,7 +224,9 @@ func TestCpInterruptBlockedInput(t *testing.T) {
 		t.Fatal("Ctrl+C did not interrupt stalled tar input")
 	}
 	if code, err := win32.GetExitCodeProcess(console); err != nil || code != 130 {
-		t.Fatalf("interrupted exit code: %d %v", code, err)
+		output.mu.Lock()
+		defer output.mu.Unlock()
+		t.Fatalf("interrupted exit code: %d %v; output: %s", code, err, output.b.String())
 	}
 	if store.IsLocked(ctx.Store.ContainerOperationLockPath(c.ID)) {
 		t.Fatal("interrupted copy retained its lock")

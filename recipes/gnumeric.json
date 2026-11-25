@@ -12,13 +12,13 @@
     "filesystem": ["cwd"]
   },
   "from": {
-    "gtk": "gtk4:4.24.1@sha256:550c7eddb54fc071caae8955664a76ed418c65e727237ba8585ee6827f4e5ad1",
-    "gtk3": "gtk3:3.24.52@sha256:c558346bcb30030982e187c1027238660b51d8fd7909a029ddb6c33fbc297a1c"
+    "gtk": "gtk4:4.24.1@sha256:0b482850eec817c18cb487fe41fc18e160e7dbbf96c846035e86daed916e22ad",
+    "gtk3": "gtk3:3.24.52@sha256:a33ddea1c1cfe7592a4eb1cd4fe8fc4c58bccaf5e7dbf92ee4d0c4497b239015"
   },
   "sdk": {
-    "gtksdk": "gtk4-sdk:4.24.1@sha256:7c063e56d0148fbc2ea019ddce1b4368d0aee279ff30b5417bad3e8ad78ca682",
-    "gtk3sdk": "gtk3-sdk:3.24.52@sha256:03d48cf8138d5d9b28d59a51b34b454d5ff8127abc4bd37e6407a2d15468fc37",
-    "cmake": "cmake:4.4.4@sha256:b96b30bb57b5147726b7deef2607917b43972bb896d9f5d3e3082e31368dbeae",
+    "gtksdk": "gtk4-sdk:4.24.1@sha256:e79afa3f16a0fcf7a6a38a2bd48a705ee1ea711c419d3e9290e4be027ab2c04c",
+    "gtk3sdk": "gtk3-sdk:3.24.52@sha256:25d75ab09e4b13d03ef459b941b2c04bda233739d2a62b5ceb9e89688d15a3b8",
+    "cmake": "cmake:4.4.4@sha256:dbaa88e42a5efea6ccb235c2ccfb12d6d31d4fa7dc9d266cf81d24a2e3975831",
     "perl": "perl:5.42.3.1@sha256:2854c34722b812ef3173f5d4ab6fb091ac45dc16d6079865a5024d6a6527dfd6"
   },
   "cleanup": [

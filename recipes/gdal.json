@@ -11,13 +11,13 @@
   "permissions": {
     "filesystem": ["cwd"]
   },
-  "sdk": { "gdalsdk": "gdal-sdk:3.13.3@sha256:f228291cd151bfc6b31f72922a710c5cc595b811041c8e6debe7eec5f7a8b63a" },
+  "sdk": { "gdalsdk": "gdal-sdk:3.13.3@sha256:974ff8f22b561da77ea2442b6bbcb0693eb07637be1152804af45d13fcada7da" },
   "cleanup": ["/include", "/lib", "/bin/gdal-config", "/bin/geos-config", "/bin/sqlite3.exe", "/bin/iconv.exe"],
   "stages": [
     {
       "name": "gdal",
       "sources": [
-        { "image": "gdal-sdk:3.13.3@sha256:f228291cd151bfc6b31f72922a710c5cc595b811041c8e6debe7eec5f7a8b63a" }
+        { "image": "gdal-sdk:3.13.3@sha256:974ff8f22b561da77ea2442b6bbcb0693eb07637be1152804af45d13fcada7da" }
       ]
     }
   ]

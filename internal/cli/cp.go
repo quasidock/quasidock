@@ -1,13 +1,16 @@
 package cli
 
 import (
+	"bytes"
 	stdcontext "context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/quasidock/quasidock/internal/containercopy"
@@ -42,8 +45,22 @@ func cpCommand(ctx *context.Context, args []string) (uint32, error) {
 			}
 		}
 	}
-	cancel, stop := signal.NotifyContext(stdcontext.Background(), os.Interrupt)
+	signals, stop := signal.NotifyContext(stdcontext.Background(), os.Interrupt)
 	defer stop()
+	cancel, interrupt := stdcontext.WithCancel(signals)
+	defer interrupt()
+	streams := &copyStreams{ctx: cancel, interrupt: interrupt, in: os.Stdin, out: ctx.Stdout}
+	var mode win32.DWORD
+	input := win32.HANDLE(os.Stdin.Fd())
+	if args[0] == "-" && win32.GetConsoleMode(input, &mode) {
+		// Process Ctrl+C as input. With processed input, Windows can end the
+		// read before delivering the console event, racing signal.Stop on exit.
+		if !win32.SetConsoleMode(input, mode&^(win32.ENABLE_LINE_INPUT|win32.ENABLE_ECHO_INPUT|win32.ENABLE_PROCESSED_INPUT)) {
+			return 1, errors.New("setting copy console mode failed")
+		}
+		defer win32.SetConsoleMode(input, mode)
+		streams.console = true
+	}
 	// Synchronous Windows console/pipe I/O cannot always be interrupted by
 	// closing an os.File. Run the transfer on a dedicated cancellation thread,
 	// following the attachment reader's cancellation pattern.
@@ -54,12 +71,13 @@ func cpCommand(ctx *context.Context, args []string) (uint32, error) {
 		// Retire this thread on exit; it must not be reused while cancellation
 		// can still target it. The caller closes its thread handle after joining.
 		thread, err := win32.OpenCurrentThreadForCancellation()
+		streams.thread = thread
 		ready <- thread
 		if err != nil {
 			result <- err
 			return
 		}
-		result <- containercopy.Copy(cancel, ctx.Store, args[0], args[1], os.Stdin, ctx.Stdout)
+		result <- containercopy.Copy(cancel, ctx.Store, args[0], args[1], streams, streams)
 	}()
 	thread := <-ready
 	if thread != 0 {
@@ -70,7 +88,7 @@ func cpCommand(ctx *context.Context, args []string) (uint32, error) {
 	case err = <-result:
 	case <-cancel.Done():
 		for {
-			win32.CancelSynchronousIo(thread)
+			streams.cancelIO()
 			select {
 			case <-result:
 				return 130, nil
@@ -85,4 +103,63 @@ func cpCommand(ctx *context.Context, args []string) (uint32, error) {
 		return 1, err
 	}
 	return 0, nil
+}
+
+// Only stream I/O may be aborted. Cancelling every syscall on the transfer's
+// thread can also abort the staging cleanup or lock release after a read ends.
+type copyStreams struct {
+	ctx       stdcontext.Context
+	interrupt stdcontext.CancelFunc
+	in        io.Reader
+	out       io.Writer
+	console   bool
+	thread    win32.HANDLE
+	mu        sync.Mutex
+	active    bool
+}
+
+func (s *copyStreams) begin() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.ctx.Err(); err != nil {
+		return err
+	}
+	s.active = true
+	return nil
+}
+
+func (s *copyStreams) end() {
+	s.mu.Lock()
+	s.active = false
+	s.mu.Unlock()
+}
+
+func (s *copyStreams) cancelIO() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.active {
+		win32.CancelSynchronousIo(s.thread)
+	}
+}
+
+func (s *copyStreams) Read(p []byte) (int, error) {
+	if err := s.begin(); err != nil {
+		return 0, err
+	}
+	n, err := s.in.Read(p)
+	s.end()
+	if s.console && bytes.IndexByte(p[:n], 3) >= 0 {
+		s.interrupt()
+		return 0, s.ctx.Err()
+	}
+	return n, err
+}
+
+func (s *copyStreams) Write(p []byte) (int, error) {
+	if err := s.begin(); err != nil {
+		return 0, err
+	}
+	n, err := s.out.Write(p)
+	s.end()
+	return n, err
 }

@@ -910,10 +910,7 @@ The image sets `ZIG_GLOBAL_CACHE_DIR` to `${cache}`. During builds, Quasidock
 maps `${cache}` to `B:\cache\zig` and moves it back to the store's
 `cache\tools\zig` afterward, so Zig's compiled C and POSIX runtime objects stay
 warm across builds while remaining isolated from container data (`${data}\zig`
-at runtime). Note that Zigsaw's old `"aliases"` field (which generated thin
-wrapper executables like `cc.exe`, `c++.exe`, `ar.exe`, `rc.exe`, etc.) was
-removed in Quasidock; `recipes/zig.json` still exports the compiler environment
-variables below, while current C-based recipes (such as
+at runtime). Some C-based recipes (such as
 [recipes/sqlite.json](../recipes/sqlite.json)) invoke `zig cc` and `zig ar`
 directly:
 
@@ -1428,11 +1425,9 @@ temporary test certificate. CI also compares builds from two independent stores.
 `php8.dll`: `config-w32.js` executes upstream `config.w32` scripts under Node,
 `zig-php.h` aligns MSVC macros, `__vectorcall` (`ZEND_FASTCALL`), and MinGW
 stat/time headers, and `zig-php.c` supplies `__imp_zend_string_equal_val@@16`.
-Unlike legacy Zigsaw, Quasidock removed extension points and the 7 published
-extension recipes (`php-apcu`, `php-igbinary`, `php-redis`, `php-ssh2`,
-`php-xdebug`, `php-yaml`, `php-zstd`) in commit `df24cf4`. Extensions built with
-`php-ext` (see [tests/build/php/zprobe.json.in](../tests/build/php/zprobe.json.in))
-are instead composed into an app recipe's `"from"` alongside `"php"`, using
+Extensions built with `php-ext`
+(see [tests/build/php/zprobe.json.in](../tests/build/php/zprobe.json.in))
+are composed into an app recipe's `"from"` alongside `"php"`, using
 `PHP_INI_SCAN_DIR` to load their `conf.d` directories (as in
 [tests/build/php/app.json.in](../tests/build/php/app.json.in) and
 [tests/php/consumer.json.in](../tests/php/consumer.json.in); note that

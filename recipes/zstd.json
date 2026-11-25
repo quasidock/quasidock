@@ -10,7 +10,7 @@
     "filesystem": ["cwd"]
   },
   "sdk": {
-    "cmake": "cmake:4.4.4@sha256:b96b30bb57b5147726b7deef2607917b43972bb896d9f5d3e3082e31368dbeae",
+    "cmake": "cmake:4.4.4@sha256:dbaa88e42a5efea6ccb235c2ccfb12d6d31d4fa7dc9d266cf81d24a2e3975831",
     "zig": "zig:0.17.0@sha256:56fc3e4f42c25dbf70236aedb053606311cb2d4b582ad4d1e26e76036c08eab1",
     "busybox": "busybox:FRP-6075-g169694ebd@sha256:baca1ecd27b7b5ffe54402d4f8b6e36802d9db5e0e4cb2b7ab13104031045c50"
   },

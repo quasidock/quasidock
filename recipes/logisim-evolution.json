@@ -12,7 +12,7 @@
   "registry": ["Software\\JavaSoft\\Prefs\\com\\cburch\\logisim"],
   "from": { "java": "java:25.0.5_8@sha256:cf6e3c25a745b91bd94d4aebff340702f7ef7e6935f1f91c9ef322daec09291d" },
   "sdk": {
-    "gradle": "gradle:9.8.1@sha256:89fe328f1ca201ad5bb77a16bb997e4526de01811384d88ca931cab75390232c",
+    "gradle": "gradle:9.8.1@sha256:f89d6f36641b583ac680e976fd213c17b1f3e1a3680b860a8712f63ab4536b4f",
     "busybox": "busybox:FRP-6075-g169694ebd@sha256:baca1ecd27b7b5ffe54402d4f8b6e36802d9db5e0e4cb2b7ab13104031045c50"
   },
   "stages": [

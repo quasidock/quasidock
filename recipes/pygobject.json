@@ -13,7 +13,7 @@
     {
       "name": "pygobject",
       "sources": [
-        { "image": "pygobject-sdk:3.58.1@sha256:f5df4adc9e7bdc10e9e495017802a0acb80ec71f4ad995b13f523d7aecd737c7" }
+        { "image": "pygobject-sdk:3.58.1@sha256:4e728524874a95224e4485371424eda1f8b9edea30314fd7f2717091b874c2d1" }
       ]
     }
   ]

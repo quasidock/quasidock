@@ -8,7 +8,7 @@
   "entrypoint": "python.exe",
   "path": ["."],
   "cleanup": ["__pycache__"],
-  "sdk": { "gtksdk": "gtk4-sdk:4.24.1@sha256:7c063e56d0148fbc2ea019ddce1b4368d0aee279ff30b5417bad3e8ad78ca682" },
+  "sdk": { "gtksdk": "gtk4-sdk:4.24.1@sha256:e79afa3f16a0fcf7a6a38a2bd48a705ee1ea711c419d3e9290e4be027ab2c04c" },
   "stages": [
     {
       "name": "python",

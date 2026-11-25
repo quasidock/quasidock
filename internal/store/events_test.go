@@ -127,6 +127,37 @@ func TestEventJournalRetentionAndReopen(t *testing.T) {
 	}
 }
 
+func TestEventJournalWriterWaitsForContention(t *testing.T) {
+	st, err := Open(t.TempDir(), false, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lock, err := OpenLock(st.Path("events.lock"), true, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if lock != nil {
+			lock.Release()
+		}
+	}()
+	done := make(chan error, 1)
+	go func() { done <- st.AppendEvent(Event{Type: "container", Action: "create"}) }()
+	select {
+	case err := <-done:
+		t.Fatalf("writer abandoned temporary contention: %v", err)
+	case <-time.After(1200 * time.Millisecond):
+	}
+	lock.Release()
+	lock = nil
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if got := eventActions(t, st); !reflect.DeepEqual(got, []string{"create"}) {
+		t.Fatalf("lost event after contention: %v", got)
+	}
+}
+
 func TestEventJournalFailures(t *testing.T) {
 	for _, data := range []string{"{", `{"version":2}`, `{"version":1,"lastSequence":1,"events":[]}`, `{"version":1,"lastSequence":1,"events":[{"sequence":2}]}`} {
 		t.Run(data, func(t *testing.T) {
@@ -177,7 +208,7 @@ func TestEventJournalFailures(t *testing.T) {
 			t.Fatalf("reader did not cancel: %v", err)
 		}
 		started := time.Now()
-		if err := st.AppendEvent(Event{}); !errors.Is(err, context.DeadlineExceeded) || time.Since(started) > 3*time.Second {
+		if err := st.AppendEvent(Event{}); !errors.Is(err, context.DeadlineExceeded) || time.Since(started) > eventWriteLockTimeout+2*time.Second {
 			t.Fatalf("writer did not time out: %v (%v)", err, time.Since(started))
 		}
 	})
