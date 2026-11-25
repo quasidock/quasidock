@@ -94,6 +94,7 @@ containers\<id>\              state.json, container.log, run.lock, data\
   data\home\                  USERPROFILE, AppData\Roaming, AppData\Local, Temp
   data\registry\              per-container HKCU hive (user.dat)
 volumes\<name>\               named persistent volumes (volume.json, data\)
+events.json                   latest 256 container events (events.lock)
 refs\<id>.json                legacy per-app refs (imported once into images\)
 deploy\<hex>\                 unpacked layers, read-only ACL (deploy\<hex>.lock)
 lazy\<hex>\                   sparse blob, QDBLOB01 bitmap, helper state and log
@@ -119,6 +120,30 @@ shared for normal commands, exclusive for `prune` and `image rm`; plus index,
 `use-<hex>`, `run.lock`, `deploy\<hex>.lock`, `grants.lock`, and registry
 locks). Unpacked files in `deploy\<hex>\` carry a `DENY` `FILE_MODIFY` ACL entry
 for the current user (`acl.Protect`) so containers cannot alter shared layers.
+
+## Container events
+
+Container creation/removal and persisted running, paused, and exited transitions
+record events in the store. Runtime supervisors record accepted signals and exec
+admission, launch, and completion. Exec completion is finalized before process
+handles close, including detached commands and canceled or disconnected clients.
+Crash reconciliation records an observed `die` once, before automatic removal.
+
+The versioned `events.json` snapshot contains a monotonically increasing sequence
+counter and the latest 256 event entries. Writers acquire `events.lock`, assign
+timestamps and sequence numbers, sync a sibling temporary file, then atomically
+replace the snapshot. Producer lock acquisition times out after one second;
+recording failures warn without changing lifecycle results. State and journal
+writes are separate, so a crash between them can leave an event gap.
+
+`events` reads snapshots under a shared cancellable lock and polls every 100 ms.
+It releases that lock before formatting or writing output. The initial snapshot
+defines the live subscription cursor; `--since` also replays its matching history.
+Sequence cursors connect replay and following without duplicates and advance
+through filtered entries. Falling behind retention produces a warning; a reset
+or corrupt journal fails the reader. Journal locks never acquire container or
+runtime locks, preserving the existing lifecycle lock order. Pruning containers
+does not remove their retained events.
 
 ## Runs and containers
 

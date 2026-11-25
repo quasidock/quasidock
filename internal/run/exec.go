@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -423,6 +424,17 @@ func findExecCommand(cwd, name string, search []string) (string, bool) {
 	return "", false
 }
 
+func (r *execRuntime) recordExecEvent(action, id string, attrs map[string]string) {
+	if r.commitContext == nil || r.commitRecord == nil {
+		return
+	}
+	if attrs == nil {
+		attrs = make(map[string]string)
+	}
+	attrs["execID"] = id
+	r.commitContext.Store.RecordContainerEvent(r.commitRecord, action, attrs)
+}
+
 func (r *execRuntime) serve(c *execStream) {
 	defer func() {
 		_ = c.Close()
@@ -489,6 +501,11 @@ func (r *execRuntime) serve(c *execStream) {
 		}
 	}
 	spec.Stdio = &stdio
+	execID, err := newRunID()
+	if err != nil {
+		_ = c.send(execError, []byte(err.Error()))
+		return
+	}
 	r.mu.Lock()
 	if r.closing || win32.WaitForSingleObject(r.primary, 0) != win32.WAIT_TIMEOUT {
 		r.mu.Unlock()
@@ -500,9 +517,11 @@ func (r *execRuntime) serve(c *execStream) {
 		_ = c.send(execError, []byte("container is paused; unpause it first"))
 		return
 	}
+	r.recordExecEvent("exec_create", execID, nil)
 	child, err := process.Start(spec)
 	if err == nil {
 		r.children[child] = struct{}{}
+		r.recordExecEvent("exec_start", execID, nil)
 	}
 	r.mu.Unlock()
 	if err != nil {
@@ -511,6 +530,12 @@ func (r *execRuntime) serve(c *execStream) {
 	}
 	defer func() {
 		process.EndJob(child.Job)
+		win32.WaitForSingleObject(child.Process, win32.INFINITE)
+		attrs := make(map[string]string)
+		if code, err := win32.GetExitCodeProcess(child.Process); err == nil {
+			attrs["exitCode"] = strconv.FormatUint(uint64(code), 10)
+		}
+		r.recordExecEvent("exec_die", execID, attrs)
 		r.mu.Lock()
 		delete(r.children, child)
 		child.Close()

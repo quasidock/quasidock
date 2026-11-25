@@ -173,7 +173,11 @@ func RestartContainer(ctx *context.Context, target string, timeoutSec int) (*sto
 	if _, err := stopContainerLocked(ctx, rec, op, timeoutSec, true); err != nil {
 		return nil, err
 	}
-	return startContainerLocked(ctx, rec)
+	started, err := startContainerLocked(ctx, rec)
+	if err == nil {
+		ctx.Store.RecordContainerEvent(started, "restart", nil)
+	}
+	return started, err
 }
 
 func validateStopTimeout(seconds int) error {
@@ -193,7 +197,13 @@ func StopContainer(ctx *context.Context, target string, timeoutSec int) (*store.
 		return nil, err
 	}
 	defer op.Release()
-	return stopContainerLocked(ctx, rec, op, timeoutSec, false)
+	wasRunning := ctx.Store.IsContainerRunning(rec.ID)
+	updated, err := stopContainerLocked(ctx, rec, op, timeoutSec, true)
+	if err != nil || !wasRunning {
+		return updated, err
+	}
+	ctx.Store.RecordContainerEvent(updated, "stop", nil)
+	return finishStopped(ctx, updated, op, false)
 }
 
 func stopContainerLocked(ctx *context.Context, rec *store.ContainerRecord, op *store.ContainerOperation, seconds int, preserve bool) (*store.ContainerRecord, error) {

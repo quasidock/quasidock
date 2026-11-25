@@ -232,16 +232,31 @@ func consumeAttachment(ctx *context.Context, c *framedStream, response attachRes
 	interrupts := make(chan os.Signal, 1)
 	signal.Notify(interrupts, os.Interrupt)
 	defer signal.Stop(interrupts)
+	var interruptMu sync.Mutex
+	var signalReady, pendingSignal bool
+	sendSignal := func() {
+		_ = c.SetWriteDeadline(time.Now().Add(attachWriteTimeout))
+		if c.send(attachTERM, nil) != nil {
+			_ = c.Close()
+		}
+	}
 	interrupt := func() {
 		if !opts.SigProxy {
 			localExit.Store(2)
 			_ = c.Close()
 			return
 		}
-		_ = c.SetWriteDeadline(time.Now().Add(attachWriteTimeout))
-		if c.send(attachTERM, nil) != nil {
-			_ = c.Close()
+		interruptMu.Lock()
+		if !signalReady {
+			// The child can already be running while its state and start event
+			// are being persisted. Deliver TERM after attachStarted, when the
+			// supervisor has installed its signal handler.
+			pendingSignal = true
+			interruptMu.Unlock()
+			return
 		}
+		interruptMu.Unlock()
+		sendSignal()
 	}
 	workers.Add(1)
 	go func() {
@@ -473,6 +488,14 @@ func consumeAttachment(ctx *context.Context, c *framedStream, response attachRes
 			}
 			if err := startInput(); err != nil {
 				return 1, err
+			}
+			interruptMu.Lock()
+			signalReady = true
+			pending := pendingSignal
+			pendingSignal = false
+			interruptMu.Unlock()
+			if pending {
+				sendSignal()
 			}
 		case attachStdout:
 			_, err = stdout.Write(data)

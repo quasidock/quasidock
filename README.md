@@ -174,6 +174,7 @@ metadata, and compatibility details.
 | `container stop` | `stop` | Stop running containers (`-t`/`--time SECONDS`, default 10s) |
 | `container rm` | `rm` | Remove containers (`-f`/`--force` stops running containers first) |
 | `container prune` | — | Remove all stopped containers |
+| `system events` | `events` | Follow container events; replay retained history with time filters |
 
 ```text
 quasidock ps [OPTIONS]
@@ -185,6 +186,39 @@ quasidock run [OPTIONS] IMAGE [COMMAND] [ARG...]
 containers, newest first. `-a` / `--all` includes created and exited containers;
 `-q` / `--quiet` prints IDs only. `--no-trunc` shows full IDs, including with
 `-q`, and full recorded executable paths and arguments.
+
+`events` (also `system events`) follows new container events. `--since` first
+replays matching history, then follows; each store retains its latest **256**
+events across CLI invocations. `--until` ends the stream at a deadline, or
+queries history and exits when that deadline is in the past. Ctrl+C exits with
+code 130. Use two terminals to watch events while running container commands:
+
+```powershell
+quasidock events
+quasidock events --since 1h --until 0s --filter event=die --format json
+quasidock events --since 10m --filter container=worker --format '{{.Action}} {{.Actor.ID}}'
+```
+
+Times accept Unix seconds (with optional fractional seconds), RFC3339 timestamps,
+local dates or date-times, and Go durations such as `1h30m`. Positive durations
+refer to the past, relative to command startup; offset-free dates use the local
+timezone. `--since` is inclusive and `--until` is exclusive. Without `--since`,
+only events after subscription are shown, including when `--until` is supplied.
+
+Repeatable `-f` / `--filter KEY=VALUE` accepts `event` (exact action), `container`
+(case-insensitive exact name, full ID, or hex prefix of at least two characters),
+`image` (exact recorded reference or manifest digest), and `type=container`.
+Same-key values use OR; different keys use AND. Filters also match removed
+containers. Default output includes a UTC timestamp, full container ID, and
+sorted attributes. `--format json` or `--format '{{json .}}'` prints JSON Lines;
+other `--format` values are Go templates.
+
+Recorded actions are `create`, `start`, `die`, `destroy`, `pause`, `unpause`,
+`kill`, `stop`, `restart`, `exec_create`, `exec_start`, and `exec_die`. Exit events
+include `exitCode`; kill events include signal `9` or `15`; exec events share an
+`execID`. Idempotent start/stop commands add no events. See
+[event recording limits](docs/gaps.md#container-events) for retention, crash
+recovery, and compatibility details.
 
 `-f` / `--filter KEY=VALUE` supports `id` (full ID or prefix), `name`
 (case-sensitive regular expression, matching with or without the leading `/`),

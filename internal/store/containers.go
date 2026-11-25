@@ -215,11 +215,18 @@ func (s *Store) deleteContainerDirNoLock(id string) error {
 	if !Exists(dir) {
 		return nil
 	}
+	rec, err := s.readRawContainer(id)
 	trash := s.TmpPath("trash-container")
-	if err := RenameRetrying(dir, trash, 2000); err == nil {
-		return mounts.RemoveTree(trash)
+	var removeErr error
+	if renameErr := RenameRetrying(dir, trash, 2000); renameErr == nil {
+		removeErr = mounts.RemoveTree(trash)
+	} else {
+		removeErr = mounts.RemoveTree(dir)
 	}
-	return mounts.RemoveTree(dir)
+	if removeErr == nil && err == nil {
+		s.RecordContainerEvent(rec, "destroy", nil)
+	}
+	return removeErr
 }
 
 func (s *Store) readRawContainer(id string) (*ContainerRecord, error) {
@@ -249,10 +256,7 @@ func (s *Store) reconcileContainerNoLock(rec *ContainerRecord) (*ContainerRecord
 	if (!staleRunning && !staleAutoRemove) || s.IsContainerRunning(rec.ID) {
 		return rec, nil
 	}
-	if rec.HostConfig.AutoRemove && !IsLocked(s.ContainerOperationLockPath(rec.ID)) {
-		_ = s.deleteContainerDirNoLock(rec.ID)
-		return nil, nil
-	}
+	before := rec.State
 	rec.State.Running = false
 	rec.State.Paused = false
 	rec.State.Status = "exited"
@@ -263,7 +267,16 @@ func (s *Store) reconcileContainerNoLock(rec *ContainerRecord) (*ContainerRecord
 		}
 		rec.State.FinishedAt = time.Now().UTC().Format(time.RFC3339Nano)
 	}
-	_ = s.writeContainerStateNoLock(rec)
+	if err := s.writeContainerStateNoLock(rec); err != nil {
+		return nil, err
+	}
+	s.recordContainerTransition(before, rec, true)
+	if rec.HostConfig.AutoRemove && !IsLocked(s.ContainerOperationLockPath(rec.ID)) {
+		if err := s.deleteContainerDirNoLock(rec.ID); err != nil {
+			return nil, err
+		}
+		return nil, nil
+	}
 	return rec, nil
 }
 
@@ -415,6 +428,7 @@ func (s *Store) CreateContainer(explicitName string, rec ContainerRecord, initia
 		_ = mounts.RemoveTree(s.ContainerDir(id))
 		return nil, err
 	}
+	s.RecordContainerEvent(&rec, "create", nil)
 	return &rec, nil
 }
 
@@ -450,12 +464,14 @@ func (s *Store) UpdateContainer(id string, mutate func(*ContainerRecord) error) 
 	if err != nil {
 		return nil, err
 	}
+	before := rec.State
 	if err := mutate(rec); err != nil {
 		return nil, err
 	}
 	if err := s.writeContainerStateNoLock(rec); err != nil {
 		return nil, err
 	}
+	s.recordContainerTransition(before, rec, false)
 	return rec, nil
 }
 

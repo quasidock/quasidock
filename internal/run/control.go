@@ -249,12 +249,17 @@ func (r *execRuntime) control(ctx *context.Context, rec *store.ContainerRecord, 
 				return err
 			}
 		}
-		return win32.SendConsoleBreak(win32.GetProcessId(r.primary))
+		if err := win32.SendConsoleBreak(win32.GetProcessId(r.primary)); err != nil {
+			return err
+		}
+		ctx.Store.RecordContainerEvent(rec, "kill", map[string]string{"signal": "15"})
+		return nil
 	case SignalKILL:
 		r.stopLocked()
 		if !win32.TerminateJobObject(r.job, 1) {
 			return errors.New("TerminateJobObject failed")
 		}
+		ctx.Store.RecordContainerEvent(rec, "kill", map[string]string{"signal": "9"})
 		return nil
 	default:
 		return fmt.Errorf("unsupported signal %q", request.Signal)

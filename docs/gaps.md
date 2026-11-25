@@ -5,6 +5,33 @@ Known limitations, platform constraints, and incomplete features in Quasidock
 
 ## Runs, sandboxes, and grants
 
+### Container events
+
+`events` / `system events` records container lifecycle and exec actions only.
+Image, volume, attach/detach, and commit actions are not recorded. Actual pause
+changes during commit capture and automatic shutdown resumes do produce
+`pause` / `unpause` events. Explicit successful `stop` and `restart` commands
+produce their respective actions; shutdown inside restart or forced removal does
+not add a `stop` action. An admitted exec whose process cannot start may produce
+only `exec_create`; rejected requests produce no exec events. Failed container
+launches produce neither `start` nor `die`.
+
+Each store retains its latest 256 events, regardless of filters. Older history
+is unavailable; a follower that falls behind warns and resumes from the oldest
+retained entry. Events are observational: container state and the journal are
+not updated transactionally. Event-write failures warn on stderr while preserving
+the operation's result, so history can have gaps. Corrupt or unreadable journals
+fail event readers and are not silently overwritten by producers.
+
+Supervisors started by older binaries do not emit runtime events; stop and start
+those containers with the current binary. There is no historical backfill. Crash
+exits are recorded when existing container reconciliation next discovers them,
+with `reconciled=true` and the discovery timestamp; `events` does not itself scan
+container records for crashed supervisors. Signal attributes describe Windows
+TERM/KILL requests; recorded exit codes retain Quasidock's Windows semantics.
+
+### Other run limitations
+
 - **Container listing compatibility.** `ps --filter` supports `id`, `name`,
   `status`, `exited`, `before`, and `since`; other filter keys are rejected.
   Status values are limited to `created`, `running`, `paused`, and `exited`.

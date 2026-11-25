@@ -62,6 +62,7 @@ Docker-style container commands:
                                        remove one or more containers
   container prune                      remove all stopped containers
   run [options] IMAGE [COMMAND] [ARG...] run an image in a new container
+  system events | events [options]     follow container events or replay retained history
 
 Docker-style image commands:
   image ls | images [-q|--quiet]       list cached image references
@@ -113,6 +114,12 @@ ps/container ls options:
   -n, --last N                       newest N matches, including all states (default: -1)
   -s, --size                         private-data file bytes, excluding mounted storage
   --no-trunc                         show full IDs and recorded commands
+
+events/system events options:
+  --since TIME                       replay retained events since TIME, then follow
+  --until TIME                       stop at TIME (past values query history only)
+  -f, --filter KEY=VALUE              event, container, image, or type=container
+  --format json|TEMPLATE              JSON Lines or a Go template (default: text)
 
 exec options (before CONTAINER):
   -d, --detach                        return after launch; discard command output
@@ -759,6 +766,7 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 		}
 		ctx.Store = st
 		ctx.Store.Verbose = ctx.Verbose
+		ctx.Store.EventWarnings = ctx.Stderr
 		return run.Supervise(ctx, rest[1], rest[2], len(rest) == 4)
 	}
 	if cmd == "login" {
@@ -790,7 +798,7 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 		return 0, nil
 	}
 	switch cmd {
-	case "convert", "build", "volume", "container", "create", "commit", "ps", "diff", "exec", "attach", "start", "restart", "pause", "unpause", "kill", "stop", "rm", "logs", "image", "images", "inspect", "tag", "pull", "push", "save", "load", "rmi", "run", "search", "trust", "signature", "prune", "repair", "grants":
+	case "events", "system", "convert", "build", "volume", "container", "create", "commit", "ps", "diff", "exec", "attach", "start", "restart", "pause", "unpause", "kill", "stop", "rm", "logs", "image", "images", "inspect", "tag", "pull", "push", "save", "load", "rmi", "run", "search", "trust", "signature", "prune", "repair", "grants":
 	default:
 		return usageError()
 	}
@@ -801,8 +809,16 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 	}
 	ctx.Store = st
 	ctx.Store.Verbose = ctx.Verbose
+	ctx.Store.EventWarnings = ctx.Stderr
 
 	switch cmd {
+	case "events":
+		return eventsCommand(ctx, rest)
+	case "system":
+		if len(rest) == 0 || rest[0] != "events" {
+			return 1, errors.New("usage: quasidock system events [OPTIONS]")
+		}
+		return eventsCommand(ctx, rest[1:])
 	case "volume":
 		return volumeCommand(ctx, rest)
 	case "convert":

@@ -50,6 +50,8 @@ type Store struct {
 	Root      string
 	Verbose   bool
 	LedgerKey string
+	// EventWarnings receives best-effort journal failures; nil uses os.Stderr.
+	EventWarnings io.Writer
 }
 
 var subdirs = []string{
