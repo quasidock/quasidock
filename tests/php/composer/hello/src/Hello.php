@@ -1,6 +1,6 @@
 <?php
 
-namespace Zigsaw\Hello;
+namespace Quasidock\Hello;
 
 final class Hello
 {

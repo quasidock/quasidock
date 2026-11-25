@@ -175,196 +175,10 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
-  # NGINX stays local until its first publication, like Apache below.
-  nginx:
-    runs-on: windows-2025
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
-      - name: Build quasidock
-        run: go run ./scripts/build.go
-      - name: Build NGINX in two independent stores
-        shell: bash
-        env:
-          QUASIDOCK_REGISTRY_USERNAME: ${{ github.actor }}
-          QUASIDOCK_REGISTRY_PASSWORD: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          export MSYS_NO_PATHCONV=1
-          mkdir -p "$RUNNER_TEMP/nginx-logs"
-          for store in nginx-one nginx-two; do
-            export QUASIDOCK_HOME="$RUNNER_TEMP/$store"
-            ./out/bin/quasidock.exe build recipes/nginx.json 2>&1 | tee "$RUNNER_TEMP/nginx-logs/$store.log"
-            ./out/bin/quasidock.exe inspect -f '{{.Id}}' nginx | tr -d '\r' >"$RUNNER_TEMP/nginx-logs/$store.digest"
-          done
-          cmp "$RUNNER_TEMP/nginx-logs/nginx-one.digest" "$RUNNER_TEMP/nginx-logs/nginx-two.digest"
-      - name: NGINX HTTP, TLS, HTTP/2, and lifecycle in every sandbox
-        shell: bash
-        env:
-          NGINX_HOME: ${{ runner.temp }}/nginx-two
-          LOG_DIR: ${{ runner.temp }}/nginx-logs
-        run: bash tests/nginx.sh 2>&1 | tee "$RUNNER_TEMP/nginx-logs/tests.log"
-      - name: Upload NGINX logs
-        if: ${{ always() }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: logs-nginx
-          path: ${{ runner.temp }}/nginx-logs
-          if-no-files-found: ignore
-          retention-days: 14
-
-  # Apache is built locally until its first publication; the published-image
-  # lists must only contain images that are already available in the registry.
-  apache:
-    runs-on: windows-2025
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
-      - name: Build quasidock
-        run: go run ./scripts/build.go
-      - name: Build Apache in two independent stores
-        shell: bash
-        env:
-          QUASIDOCK_REGISTRY_USERNAME: ${{ github.actor }}
-          QUASIDOCK_REGISTRY_PASSWORD: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          export MSYS_NO_PATHCONV=1
-          mkdir -p "$RUNNER_TEMP/apache-logs"
-          for store in apache-one apache-two; do
-            export QUASIDOCK_HOME="$RUNNER_TEMP/$store"
-            ./out/bin/quasidock.exe build recipes/apache.json 2>&1 | tee "$RUNNER_TEMP/apache-logs/$store.log"
-            ./out/bin/quasidock.exe inspect -f '{{.Id}}' apache | tr -d '\r' >"$RUNNER_TEMP/apache-logs/$store.digest"
-          done
-          cmp "$RUNNER_TEMP/apache-logs/apache-one.digest" "$RUNNER_TEMP/apache-logs/apache-two.digest"
-      - name: HTTP and TLS in every sandbox
-        shell: bash
-        env:
-          APACHE_HOME: ${{ runner.temp }}/apache-two
-          LOG_DIR: ${{ runner.temp }}/apache-logs
-        run: bash tests/apache.sh 2>&1 | tee "$RUNNER_TEMP/apache-logs/tests.log"
-      - name: Upload Apache logs
-        if: ${{ always() }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: logs-apache
-          path: ${{ runner.temp }}/apache-logs
-          if-no-files-found: ignore
-          retention-days: 14
-
-  # MariaDB stays local until its first publication, like Apache above.
-  mariadb:
-    runs-on: windows-2025
-    timeout-minutes: 120
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
-      - name: Build quasidock
-        run: go run ./scripts/build.go
-      - name: Build MariaDB SDK and runtime in two independent stores
-        shell: bash
-        env:
-          QUASIDOCK_REGISTRY_USERNAME: ${{ github.actor }}
-          QUASIDOCK_REGISTRY_PASSWORD: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          export MSYS_NO_PATHCONV=1
-          mkdir -p "$RUNNER_TEMP/mariadb-logs"
-          for store in mariadb-one mariadb-two; do
-            export QUASIDOCK_HOME="$RUNNER_TEMP/$store"
-            for image in mariadb-sdk mariadb; do
-              ./out/bin/quasidock.exe build "recipes/$image.json" 2>&1 | tee "$RUNNER_TEMP/mariadb-logs/$store-$image.log"
-              ./out/bin/quasidock.exe inspect -f '{{.Id}}' "$image" | tr -d '\r' >"$RUNNER_TEMP/mariadb-logs/$store-$image.digest"
-            done
-          done
-          for image in mariadb-sdk mariadb; do
-            cmp "$RUNNER_TEMP/mariadb-logs/mariadb-one-$image.digest" "$RUNNER_TEMP/mariadb-logs/mariadb-two-$image.digest"
-          done
-      - name: SQL, persistence, TLS, and SDK plugins in every sandbox
-        shell: bash
-        env:
-          MARIADB_HOME: ${{ runner.temp }}/mariadb-two
-          LOG_DIR: ${{ runner.temp }}/mariadb-logs
-        run: |
-          set -euo pipefail
-          bash tests/mariadb.sh 2>&1 | tee "$RUNNER_TEMP/mariadb-logs/tests.log"
-      - name: Upload MariaDB logs
-        if: ${{ always() }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: logs-mariadb
-          path: ${{ runner.temp }}/mariadb-logs
-          if-no-files-found: ignore
-          retention-days: 14
-
-  # Erlang and RabbitMQ stay local until their first publication.
-  rabbitmq:
-    runs-on: windows-2025
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
-      - name: Build quasidock
-        run: go run ./scripts/build.go
-      - name: Build Erlang and RabbitMQ in independent stores
-        shell: bash
-        env:
-          QUASIDOCK_REGISTRY_USERNAME: ${{ github.actor }}
-          QUASIDOCK_REGISTRY_PASSWORD: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          export MSYS_NO_PATHCONV=1
-          mkdir -p "$RUNNER_TEMP/rabbitmq-logs"
-          for store in rabbitmq-one rabbitmq-two; do
-            export QUASIDOCK_HOME="$RUNNER_TEMP/$store"
-            for image in erlang rabbitmq; do
-              ./out/bin/quasidock.exe build "recipes/$image.json" 2>&1 | tee "$RUNNER_TEMP/rabbitmq-logs/$store-$image.log"
-              ./out/bin/quasidock.exe inspect -f '{{.Id}}' "$image" | tr -d '\r' >"$RUNNER_TEMP/rabbitmq-logs/$store-$image.digest"
-            done
-          done
-          for image in erlang rabbitmq; do
-            cmp "$RUNNER_TEMP/rabbitmq-logs/rabbitmq-one-$image.digest" "$RUNNER_TEMP/rabbitmq-logs/rabbitmq-two-$image.digest"
-          done
-      - name: Erlang tools and RabbitMQ in every sandbox
-        shell: bash
-        env:
-          RABBITMQ_HOME: ${{ runner.temp }}/rabbitmq-two
-          LOG_DIR: ${{ runner.temp }}/rabbitmq-logs
-        run: |
-          set -euo pipefail
-          bash tests/erlang.sh 2>&1 | tee "$RUNNER_TEMP/rabbitmq-logs/erlang-tests.log"
-          bash tests/rabbitmq.sh 2>&1 | tee "$RUNNER_TEMP/rabbitmq-logs/rabbitmq-tests.log"
-      - name: Upload Erlang and RabbitMQ logs
-        if: ${{ always() }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: logs-rabbitmq
-          path: ${{ runner.temp }}/rabbitmq-logs
-          if-no-files-found: ignore
-          retention-days: 14
-
   suites:
     needs: pins
     runs-on: windows-2025
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
         with:
@@ -400,7 +214,7 @@ jobs:
           QUASIDOCK_HOME: ${{ runner.temp }}\store
         run: |
           mkdir -p "$(cygpath -u "$LOG_DIR")"
-          bash tests/seed-store.sh --build busybox node --pull zig rust ripgrep bat go fzf zot oras skopeo cosign cmake zstd mingit python python-sdk java-sdk java maven gradle pdfbox plantuml zls texlive gdal postgresql osm2pgsql perl php composer 2>&1 | tee "$(cygpath -u "$LOG_DIR")/seed.txt"
+          bash tests/seed-store.sh --build busybox node --pull zig rust ripgrep bat go fzf zot oras skopeo cosign cmake zstd mingit python python-sdk java-sdk java maven gradle pdfbox plantuml zls texlive gdal postgresql osm2pgsql perl php composer nginx apache mariadb-sdk mariadb erlang rabbitmq 2>&1 | tee "$(cygpath -u "$LOG_DIR")/seed.txt"
 
       - name: Dockerfile conversion with native toolchains
         shell: pwsh
@@ -528,6 +342,43 @@ jobs:
         env:
           OSM2PGSQL_HOME: ${{ runner.temp }}\store
         run: bash tests/osm2pgsql.sh 2>&1 | tee "$(cygpath -u "$LOG_DIR")/osm2pgsql.txt"
+
+      # Native servers and Erlang's tools, using the published images in
+      # the seeded store; the published groups check their reproducibility.
+      - name: tests/nginx.sh
+        if: ${{ !cancelled() }}
+        shell: bash
+        env:
+          NGINX_HOME: ${{ runner.temp }}\store
+        run: bash tests/nginx.sh 2>&1 | tee "$(cygpath -u "$LOG_DIR")/nginx.txt"
+
+      - name: tests/apache.sh
+        if: ${{ !cancelled() }}
+        shell: bash
+        env:
+          APACHE_HOME: ${{ runner.temp }}\store
+        run: bash tests/apache.sh 2>&1 | tee "$(cygpath -u "$LOG_DIR")/apache.txt"
+
+      - name: tests/mariadb.sh
+        if: ${{ !cancelled() }}
+        shell: bash
+        env:
+          MARIADB_HOME: ${{ runner.temp }}\store
+        run: bash tests/mariadb.sh 2>&1 | tee "$(cygpath -u "$LOG_DIR")/mariadb.txt"
+
+      - name: tests/erlang.sh
+        if: ${{ !cancelled() }}
+        shell: bash
+        env:
+          ERLANG_TEST_HOME: ${{ runner.temp }}\store
+        run: bash tests/erlang.sh 2>&1 | tee "$(cygpath -u "$LOG_DIR")/erlang.txt"
+
+      - name: tests/rabbitmq.sh
+        if: ${{ !cancelled() }}
+        shell: bash
+        env:
+          RABBITMQ_HOME: ${{ runner.temp }}\store
+        run: bash tests/rabbitmq.sh 2>&1 | tee "$(cygpath -u "$LOG_DIR")/rabbitmq.txt"
 
       # Which apps trust a root CA added to Windows, as a network that
       # inspects TLS adds one, in the seeded store: the suite makes a test CA

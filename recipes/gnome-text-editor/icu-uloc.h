@@ -2,8 +2,8 @@
  * Windows 10 1903 and later), which llvm-mingw links as -licu but has no header
  * for: the two functions libspelling uses, to name a dictionary's language
  * in the user's. */
-#ifndef ZIGSAW_ULOC_H
-#define ZIGSAW_ULOC_H
+#ifndef QUASIDOCK_ULOC_H
+#define QUASIDOCK_ULOC_H
 
 #include <stdint.h>
 

@@ -82,3 +82,11 @@ gdal: llvm-mingw.json gdal-sdk.json gdal.json
 # PostGIS under 3 here (on GDAL's SDK; 9 in iteration 47, when it built GEOS
 # and PROJ itself), and osm2pgsql, on both SDKs (2 here)
 postgresql: make.json postgresql-sdk.json postgresql.json osm2pgsql.json
+
+# Native HTTP servers, each built with LLVM-MinGW and pinned dependencies.
+nginx: nginx.json
+apache: apache.json
+# MariaDB's SDK, followed by the runtime stripped from it.
+mariadb: mariadb-sdk.json mariadb.json
+# Erlang/OTP and the RabbitMQ broker built on it.
+rabbitmq: erlang.json rabbitmq.json

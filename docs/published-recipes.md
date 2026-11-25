@@ -1,7 +1,7 @@
 # Published recipes
 
-Sixty-eight recipes in [recipes/](../recipes) build into published OCI images in
-`ghcr.io/quasidock/quasidock`, listed in dependency order in
+Seventy-four recipes in [recipes/](../recipes) are registered for publication as
+OCI images in `ghcr.io/quasidock/quasidock`, listed in dependency order in
 [published-recipes.txt](../scripts/published-recipes.txt). `quasidock search`
 queries the published catalog, and `quasidock run --rm <id>` pulls an image on
 demand, verifies its `cosign` signature against
@@ -80,6 +80,12 @@ catalog are published, and [recipes.md](recipes.md) for the recipe format.
 | [`postgresql`](../recipes/postgresql.json) | `18.6` | `bin/pg-server.exe` (`psql`, `pg_ctl`, `initdb`, `pg_dump`, `pg_restore`, `pg_isready` in `bin/`) | PostgreSQL 18 server and clients with PL/Perl and PL/Python (`from: perl`, `python`, port `5432`) |
 | [`osm2pgsql`](../recipes/osm2pgsql.json) | `2.3.1` | `bin/osm2pgsql.exe` (`osm2pgsql-expire` in `bin/`) | OpenStreetMap-to-PostGIS importer (`uses: postgresql` on `5432`) |
 | [`vscodium`](../recipes/vscodium.json) | `1.143.17232` | `VSCodium.exe` (`codium` in `bin/`, `git` from `mingit`, `host: true`) | VSCodium editor (`from: mingit`, `estargz`, `soft` sandbox; `low`/`appcontainer` unsupported) |
+| [`nginx`](../recipes/nginx.json) | `1.31.10` | `bin/nginx.exe` | NGINX HTTP server and reverse proxy with TLS and HTTP/2 (`http` on `8080`, `https` on `8443`) |
+| [`apache`](../recipes/apache.json) | `2.4.71` | `bin/httpd.exe -d ${app} -f ${app}\\conf\\httpd.conf` | Apache HTTP Server with TLS and proxy modules (`http` on `8080`, `https` on `8443`) |
+| [`mariadb-sdk`](../recipes/mariadb-sdk.json) | `12.3.4` | `bin/mariadb.exe --version` | MariaDB server and Connector/C SDK with client and plugin development files |
+| [`mariadb`](../recipes/mariadb.json) | `12.3.4` | `bin/mariadb-server.exe` (`mariadb`, `mariadb-dump` in `bin/`) | MariaDB server and clients with persistent initialization and TLS (`mariadb` on `3306`) |
+| [`erlang`](../recipes/erlang.json) | `29.1.3` | `bin/erl.exe` (`erlc`, `escript` in `bin/`) | Erlang/OTP runtime, compiler, and development tools |
+| [`rabbitmq`](../recipes/rabbitmq.json) | `4.4.1` | `bin/rabbitmq-server.exe` (`rabbitmqctl`, `rabbitmq-diagnostics` in `bin/`) | RabbitMQ broker and management UI (`from: erlang`, `amqp` on `5672`, `management` on `15672`) |
 
 ### Running images, `from` base images, and commands
 
@@ -206,6 +212,7 @@ and Mondays at 03:17 UTC:
   `mounts.sh`, `ctrlc.sh`, `network.sh`, `reach.sh`, `install.sh`, the local
   `zot` registry suites (`registry.sh`, `lazy.sh`, `signing.sh`, `oci.sh`),
   `zls.sh`, `texlive.sh`, `gdal.sh`, `postgresql.sh`, `osm2pgsql.sh`,
+  `nginx.sh`, `apache.sh`, `mariadb.sh`, `erlang.sh`, `rabbitmq.sh`,
   `certs.sh`, and `matrix.sh`. Interactive GUI and `no-publish` suites
   (`gtk.sh`, `gtk3.sh`, `qt.sh`, `java.sh`, `php.sh`, `files.sh`, `chromium.sh`)
   are run manually outside CI.

@@ -616,7 +616,7 @@ placeholders, vendoring, and pinned dependencies.
 [NGINX](docs/nginx.md) can be built locally from pinned sources with
 `quasidock build recipes/nginx.json`. The image serves a default page, supports
 TLS and HTTP/2, and keeps configuration, logs, and temporary files in container
-data. It is not yet in the published catalog.
+data. The recipe is registered for publication.
 
 Convert a supported Linux Dockerfile before building:
 

@@ -1294,8 +1294,9 @@ broker shutdown; allow `stop -t 30` for orderly termination.
 The native CLI commands include `rabbitmqctl.exe`, `rabbitmq-diagnostics.exe`,
 `rabbitmq-plugins.exe`, `rabbitmq-queues.exe`, `rabbitmq-streams.exe` and
 `rabbitmq-upgrade.exe`. Clustering, automated TLS setup and additional protocol
-listeners are outside this image's tested configuration. These two images
-remain local recipes until their first publication.
+listeners are outside this image's tested configuration. Reproduce CI compares
+both recipes with their published images in the `rabbitmq` group and runs
+`tests/erlang.sh` and `tests/rabbitmq.sh` against the seeded published images.
 
 ### Java
 
@@ -1357,7 +1358,6 @@ OpenSSL, rewrite, expires, headers, compression, HTTP/FastCGI/WebSocket proxy
 modules, and TLS. Build tools and development libraries stay out of the image.
 APR patches support AppContainer path checks and child-process pipes without
 granting access to parent directories.
-This recipe is available locally; it has not been added to the published catalog.
 
 ```powershell
 quasidock build recipes/apache.json
@@ -1401,9 +1401,10 @@ modules, or `apache apache -f C:\path\httpd.conf` to select a custom configurati
 must declare their own services and use their own document root. PHP handling
 and Dockerfile conversion are separate work.
 
-`APACHE_HOME=path/to/store bash tests/apache.sh` verifies a locally built image
+`APACHE_HOME=path/to/store bash tests/apache.sh` verifies a built or pulled image
 under all three sandboxes. The suite needs Git Bash, curl, and OpenSSL for its
-temporary test certificate. CI also compares builds from two independent stores.
+temporary test certificate. Reproduce CI compares a fresh build with the
+published image in the `apache` group and runs the suite in the seeded store.
 
 ### PHP
 
@@ -1505,8 +1506,8 @@ Galera, RocksDB, ColumnStore, Spider, and the embedded server are excluded.
 CONNECT is also disabled, following upstream's Windows Clang restriction.
 
 `recipes/mariadb.json` takes its files from the digest-pinned SDK image and
-removes development files and test programs. The images are available as local
-recipes; they have not been added to the published catalog.
+removes development files and test programs. Both images are included in the
+published recipes.
 
 ```powershell
 quasidock build recipes/mariadb-sdk.json
@@ -1556,9 +1557,9 @@ defaults to `mariadb.exe --version`; it does not start a server.
 `MARIADB_HOME=path/to/store bash tests/mariadb.sh` builds dynamic and static C
 clients and a server plugin using only installed SDK files, then exercises SQL,
 TLS, dump/restore, storage, ports and lifecycle behavior in all three sandboxes.
-It needs Git Bash and its OpenSSL command for temporary test certificates. CI
-also builds the SDK and runtime in two independent stores and compares their
-manifest digests.
+It needs Git Bash and its OpenSSL command for temporary test certificates.
+Reproduce CI compares fresh SDK and runtime builds with the published images
+in the `mariadb` group and runs the suite in the seeded store.
 
 ### PostgreSQL
 

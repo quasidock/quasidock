@@ -94,7 +94,9 @@ slowest() {
 # run still going then fails, rather than holding up the job).
 smoke_args() {
     case $1 in
+    nginx) printf '%s\n' -v ;;
     apache) printf '%s\n' -v ;;
+    erlang) printf '%s\n' '-noshell -eval halt().' ;;
     # GTK's option parser: it has no --version.
     rnote) printf '%s\n' --help ;;
     busybox) printf '%s\n' true ;;

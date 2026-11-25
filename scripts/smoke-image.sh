@@ -48,6 +48,7 @@ if [ "$id" = kanboard ]; then
     exit 1
 fi
 case $id in
+nginx) args=(-v) ;;
 apache) args=(-v) ;;
 erlang) args=(-noshell -eval 'halt().') ;;
 rabbitmq) args=(--version) ;;

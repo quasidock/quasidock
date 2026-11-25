@@ -164,7 +164,7 @@ composer_installs() {
     grep -q '^Composer version 2\.10\.3' <<<"$out" || { echo "$sb, its script: $(tail -1 <<<"$out")"; return 1; }
     # Without what quasidock says about grants: the run's grant of the working
     # directory under low goes when it ends.
-    out=$(cd "$work\\composer" && qd_run z --sandbox=$sb $PHP -r 'require "vendor/autoload.php"; echo Zigsaw\Hello\Hello::hi(), "\n";' 2>&1 | tr -d '\r' |
+    out=$(cd "$work\\composer" && qd_run z --sandbox=$sb $PHP -r 'require "vendor/autoload.php"; echo Quasidock\Hello\Hello::hi(), "\n";' 2>&1 | tr -d '\r' |
         grep -v -e '^labelled ' -e '^removed the low integrity label ')
     [ "$out" = "hello from a package Composer installed" ] || { echo "$sb, PHP: $out"; return 1; }
 }

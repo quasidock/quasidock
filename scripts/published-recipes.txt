@@ -69,3 +69,9 @@ postgresql-sdk.json
 postgresql.json
 osm2pgsql.json
 vscodium.json
+nginx.json
+apache.json
+mariadb-sdk.json
+mariadb.json
+erlang.json
+rabbitmq.json

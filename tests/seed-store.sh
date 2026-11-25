@@ -13,7 +13,7 @@
 # the recipe instead. After --build, recipes are built, so that their
 # downloads are in the store's cache\downloads, for the suites'
 # SEED_DOWNLOADS. Uses the store in QUASIDOCK_HOME (required) and the quasidock in
-# ZIGSAW (default out\bin\quasidock.exe); apps installed there already are
+# QUASIDOCK (default out\bin\quasidock.exe); apps installed there already are
 # left as they are.
 
 set -u

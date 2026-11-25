@@ -123,7 +123,7 @@ quasidock="$store\\bin\\quasidock.exe"
 BB=busybox
 z() { "$quasidock" "$@" </dev/null; }
 sch="$(cygpath -u "$WINDIR")/System32/schtasks.exe"
-task="Zigsaw update check"
+task="Quasidock update check"
 
 # What a run of this that didn't finish left, as the account's deployments are
 # read-only.

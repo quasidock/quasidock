@@ -122,6 +122,7 @@ NGINX_HOME=path/to/store bash tests/nginx.sh
 
 The suite requires Windows, Git Bash, Go, curl, and OpenSSL. It verifies TLS
 with a temporary test certificate and checks HTTP/2, proxy/FastCGI traffic,
-configuration, lifecycle, and isolation in all three sandboxes. The dedicated
-Reproduce CI job also compares builds from two independent stores. TCP stream
-proxying, mail modules, third-party modules, and HTTP/3 are outside this image.
+configuration, lifecycle, and isolation in all three sandboxes. Reproduce CI
+compares a fresh build with the published image in the `nginx` group and runs
+the suite against the published image in the seeded store. TCP stream proxying,
+mail modules, third-party modules, and HTTP/3 are outside this image.

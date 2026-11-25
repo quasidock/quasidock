@@ -270,7 +270,7 @@ CMD ["php", "/app/main.php"]
         Write-ConversionFile (Join-Path $conversionComposerProject 'main.php') @'
 <?php
 require __DIR__ . '/vendor/autoload.php';
-if (Zigsaw\Hello\Hello::hi() !== 'hello from a package Composer installed') { exit(2); }
+if (Quasidock\Hello\Hello::hi() !== 'hello from a package Composer installed') { exit(2); }
 echo 'composer-ok';
 '@
         Invoke-ConversionCLI @('convert', $conversionComposerProject, '--id', 'converted-composer') | Write-Host
