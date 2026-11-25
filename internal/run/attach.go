@@ -136,7 +136,7 @@ func StartAttached(ctx *context.Context, opts AttachOptions) (uint32, error) {
 	defer func() { _ = c.Close() }()
 	startup := make(chan error, 1)
 	go func() {
-		err := awaitSupervisor(ctx, rec, det.Process, ready, 30000)
+		err := awaitSupervisor(ctx, rec, det.Process, ready, supervisorStartupTimeout)
 		if err != nil {
 			_ = c.Close()
 		}

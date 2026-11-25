@@ -20,6 +20,6 @@
 [credential]
 	helper = manager
 [http]
-	; zigsaw: Windows' certificate stores, whatever Git for Windows
+	; quasidock: Windows' certificate stores, whatever Git for Windows
 	; installed on this machine says (its configs aren't included)
 	sslBackend = schannel

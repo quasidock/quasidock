@@ -35,8 +35,8 @@ import (
 var (
 	sshAddr    = flag.String("ssh", "", "address for the SSH server")
 	redisAddr  = flag.String("redis", "", "address for the Redis server")
-	user       = flag.String("user", "zigsaw", "the SSH user")
-	pass       = flag.String("pass", "zigsaw", "the SSH user's password")
+	user       = flag.String("user", "quasidock", "the SSH user")
+	pass       = flag.String("pass", "quasidock", "the SSH user's password")
 	authorized = flag.String("authorized", "", "a public key the SSH user may log in with")
 	shell      = flag.String("sh", "busybox sh", "the shell that runs commands")
 	verbose    = flag.Bool("v", false, "log SFTP requests")
@@ -169,7 +169,7 @@ func serveSession(ch ssh.Channel, requests <-chan *ssh.Request, files sftp.Handl
 				// What a terminal shows: a login message, as OpenSSH's
 				// message of the day, then prompts, as an interactive shell
 				// prints them.
-				io.WriteString(ch, "zigsaw's test server\r\nfor tests/php.sh\r\n")
+				io.WriteString(ch, "quasidock's test server\r\nfor tests/php.sh\r\n")
 				args = append(args, "-i")
 			}
 			go func() { finish(run(ch, args, pty)) }()

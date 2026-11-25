@@ -17,13 +17,13 @@
 #   sh pdpmake.sh  (in goffice's or Gnumeric's source tree)
 set -e
 printf '%s\n' '.SUFFIXES: .in' '.in:' \
-    '	LC_ALL=C $(INTLTOOL_MERGE) -x -u -c $(top_builddir)/po/.intltool-merge-cache $(top_srcdir)/po $< $@' > zigsaw-xml-rule.mk
+    '	LC_ALL=C $(INTLTOOL_MERGE) -x -u -c $(top_builddir)/po/.intltool-merge-cache $(top_srcdir)/po $< $@' > quasidock-xml-rule.mk
 find . -name Makefile.in | while read -r f; do
     grep -q '^@INTLTOOL_[A-Z]*_RULE@$' "$f" || continue
-    sed -i -e '/^@INTLTOOL_XML_RULE@$/{r zigsaw-xml-rule.mk' -e 'd}' \
+    sed -i -e '/^@INTLTOOL_XML_RULE@$/{r quasidock-xml-rule.mk' -e 'd}' \
         -e '/^@INTLTOOL_DESKTOP_RULE@$/d' -e '/^@INTLTOOL_SCHEMAS_RULE@$/d' "$f"
 done
-rm zigsaw-xml-rule.mk
+rm quasidock-xml-rule.mk
 ! find . -name Makefile.in -exec grep -l '^@INTLTOOL_[A-Z]*_RULE@$' {} + | grep -q .
 
 for f in po*/Makefile.in.in; do

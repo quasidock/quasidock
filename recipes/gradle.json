@@ -37,7 +37,7 @@
     {
       "name": "quasidock",
       "sources": [
-        { "path": "gradle/zigsaw-offline.gradle", "dest": "init.d/zigsaw-offline.gradle" },
+        { "path": "gradle/quasidock-offline.gradle", "dest": "init.d/quasidock-offline.gradle" },
         { "path": "gradle/GradleVendor.java", "dest": "quasidock/GradleVendor.java" }
       ]
     },

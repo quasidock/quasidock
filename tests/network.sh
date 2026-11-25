@@ -6,7 +6,7 @@
 # service, which a client on the host reaches under soft, low and
 # appcontainer, on the port the app's config says, on one --port or an
 # override moves it to, and not after the run ends; in an AppContainer, the
-# app listens on an internal port that all its runs agree on, and its runs
+# app listens on a container-specific internal port, and exec commands
 # reach each other there without the network; a port another program holds
 # leaves the service unpublished, and the app running. In an AppContainer, a
 # run with the network reaches a server on this machine, as its container is
@@ -120,14 +120,14 @@ check "eight first runs in an AppContainer start at once" race
 answers() { "$probe" ping $1 >/dev/null 2>&1; }
 
 # serve <run options...>: a run of the app's command, which serves, in the
-# background; $server is its quasidock.
+# background; $server is its container ID.
 serve() {
-    bash "$QD_IMAGES_HELPER" run "$quasidock" "$@" $APP >"$work\\serve.out" 2>&1 &
-    server=$!
+    server=$(bash "$QD_IMAGES_HELPER" run "$quasidock" -d "$@" $APP 2>"$work\\serve.out" | tr -d '\r')
 }
 stop() {
-    kill $server 2>/dev/null
-    wait $server 2>/dev/null
+    z stop -t 0 "$server" >/dev/null
+    z logs "$server" >>"$work\\serve.out" 2>&1
+    z rm "$server" >/dev/null
 }
 
 # served <port> <run options...>: a run serves the app's service on <port>
@@ -163,21 +163,26 @@ same_ports() {
     [ "$got" = "$declared $declared" ] || { echo "got $got"; return 1; }
 }
 internal_port() {
-    local got listen port again
-    got=$(ports --sandbox=appcontainer)
+    local got listen port again cid
+    cid=$(z create --sandbox=appcontainer --entrypoint=quasidock-netprobe.exe $APP env ECHO_LISTEN ECHO_PORT | tr -d '\r') || return
+    got=$(z start -a "$cid" | tr -d '\r')
+    got="$(sed -n 's/^ECHO_LISTEN=//p' <<<"$got") $(sed -n 's/^ECHO_PORT=//p' <<<"$got")"
     read -r listen port <<<"$got"
     [ "$port" = $declared ] && [ "$listen" != $declared ] && [ "$listen" -ge 20000 ] && [ "$listen" -le 48999 ] ||
         { echo "got $got"; return 1; }
-    again=$(ports --sandbox=appcontainer)
+    again=$(z start -a "$cid" | tr -d '\r')
+    again="$(sed -n 's/^ECHO_LISTEN=//p' <<<"$again") $(sed -n 's/^ECHO_PORT=//p' <<<"$again")"
     [ "$again" = "$got" ] || { echo "first $got, then $again"; return 1; }
-    grep -qx "echo $listen" "$QUASIDOCK_HOME\\ports\\$APP.txt" || { echo "not kept: $(cat "$QUASIDOCK_HOME\\ports\\$APP.txt")"; return 1; }
+    grep -qx "echo $listen" "$QUASIDOCK_HOME\\containers\\$cid\\ports.txt" || return
+    z container prune >/dev/null
+    [ ! -e "$QUASIDOCK_HOME\\containers\\$cid\\ports.txt" ] || return 1
 }
 
 for sandbox in soft low appcontainer; do
     check "$sandbox: a host client reaches the app's service on its port" served $declared --sandbox=$sandbox
 done
 check "soft and low: the app listens on that port itself" same_ports --sandbox=low
-check "appcontainer: it listens on an internal port, the same in every run" internal_port
+check "appcontainer: internal ports persist across starts of one container" internal_port
 check "--port moves the service" served $moved --sandbox=appcontainer --port=echo=$moved
 moved_ports() {
     local got
@@ -198,32 +203,52 @@ private_loopback() {
     local out i
     serve --sandbox=appcontainer
     for i in $(seq 40); do
-        out=$(qd_run z --sandbox=appcontainer --entrypoint=quasidock-netprobe.exe $APP ping "$(ports --sandbox=appcontainer | cut -d' ' -f1)" 2>&1 | tr -d '\r') && break
+        out=$(z exec "$server" quasidock-netprobe.exe ping ECHO_LISTEN 2>&1 | tr -d '\r') && break
         sleep 0.25
     done
     stop
     [ "$out" = connects ] || { echo "$out"; return 1; }
 }
-check "appcontainer: the app's runs reach each other, without the network" private_loopback
+check "appcontainer: exec reaches its server without the network" private_loopback
 
 # Another program holds the port: the run says so, and the app runs on.
 taken() {
-    local holder out i
+    local holder out i foreground
     "$probe" serve $declared >/dev/null 2>&1 &
     holder=$!
     sleep 0.5
-    serve --sandbox=appcontainer
+    server=network-taken-$$
+    bash "$QD_IMAGES_HELPER" run "$quasidock" --name="$server" --sandbox=appcontainer $APP >"$work\\serve.out" 2>&1 &
+    foreground=$!
     for i in $(seq 40); do
-        out=$(qd_run z --sandbox=appcontainer --entrypoint=quasidock-netprobe.exe $APP ping "$(ports --sandbox=appcontainer | cut -d' ' -f1)" 2>&1 | tr -d '\r') && break
+        out=$(z exec "$server" quasidock-netprobe.exe ping ECHO_LISTEN 2>&1 | tr -d '\r') && break
         sleep 0.25
     done
     stop
+    wait "$foreground" 2>/dev/null || true
     kill $holder 2>/dev/null
     wait $holder 2>/dev/null
     grep -q "port $declared is taken, so echo isn't published this run" "$work\\serve.out" || { echo "$(cat "$work\\serve.out")"; return 1; }
     [ "$out" = connects ] || { echo "the app didn't run on: $out"; return 1; }
 }
 check "appcontainer: a port another program holds leaves the service unpublished" taken
+
+concurrent_services() {
+    local first second one two result=0
+    serve --sandbox=appcontainer --port=echo=$moved
+    first=$server
+    serve --sandbox=appcontainer --port=echo=$saved
+    second=$server
+    one=$(z exec "$first" quasidock-netprobe.exe env ECHO_LISTEN | tr -d '\r')
+    two=$(z exec "$second" quasidock-netprobe.exe env ECHO_LISTEN | tr -d '\r')
+    [ "$one" != "$two" ] && answers $moved && answers $saved || result=1
+    server=$first; stop
+    answers $saved || result=1
+    server=$second; stop
+    [ ! -e "$QUASIDOCK_HOME\\containers\\$first\\ports.txt" ] || result=1
+    return "$result"
+}
+check "appcontainer: concurrent containers have independent service ports and lifetimes" concurrent_services
 
 # --- Reaching this machine ---------------------------------------------------
 

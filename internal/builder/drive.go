@@ -3,6 +3,7 @@ package builder
 import (
 	"errors"
 	"fmt"
+	"runtime"
 	"strings"
 	"syscall"
 
@@ -31,10 +32,20 @@ func (d *Drive) Release() {
 		_ = win32.ReleaseMutex(win32.HANDLE(d.Mutex))
 		_ = win32.CloseHandle(win32.HANDLE(d.Mutex))
 		d.Mutex = 0
+		runtime.UnlockOSThread()
 	}
 }
 
 func AcquireDrive(ctx *context.Context, dir string) (*Drive, error) {
+	// Windows assigns mutex ownership to a thread. Keep B: protected until
+	// Release removes the mapping and releases the mutex on that same thread.
+	runtime.LockOSThread()
+	keepThread := false
+	defer func() {
+		if !keepThread {
+			runtime.UnlockOSThread()
+		}
+	}()
 	mutex, err := win32.CreateMutex(mutexName)
 	if err != nil {
 		return nil, fmt.Errorf("CreateMutexW: %w", err)
@@ -80,6 +91,7 @@ func AcquireDrive(ctx *context.Context, dir string) (*Drive, error) {
 		return nil, fmt.Errorf("%s vanished right after it was mapped", DriveLetter)
 	}
 
+	keepThread = true
 	return &Drive{
 		Mutex:     syscall.Handle(mutex),
 		RawTarget: rawTarget,

@@ -3,7 +3,7 @@
 // built-in web server where KANBOARD_LISTEN says, or --listen, and opens it
 // in the default browser unless --no-browser, at KANBOARD_URL. Those are
 // the app's service, http (see recipes/kanboard.json): 127.0.0.1:8471, or
-// where zigsaw publishes it from inside an AppContainer. Kanboard keeps its
+// where quasidock publishes it from inside an AppContainer. Kanboard keeps its
 // database and files where DATA_DIR says: the app's data directory. Ctrl+C,
 // or closing the window, stops it.
 //
@@ -17,7 +17,7 @@ $browser = true;
 foreach (array_slice($argv, 1) as $a) {
     if (str_starts_with($a, '--listen=')) {
         $listen = substr($a, strlen('--listen='));
-        // Served there, rather than where zigsaw publishes it.
+        // Served there, rather than where quasidock publishes it.
         $url = null;
     } elseif ($a === '--no-browser') {
         $browser = false;

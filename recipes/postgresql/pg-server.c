@@ -1,5 +1,5 @@
 /*
- * pg-server: runs PostgreSQL's server in the foreground for zigsaw, making
+ * pg-server: runs PostgreSQL's server in the foreground for quasidock, making
  * its cluster first if there isn't one.
  *
  *   postgresql [postgres options]      e.g. postgresql -p 5433
@@ -17,7 +17,7 @@
  *
  * Installed extensions (images based on postgresql) name
  * their directories in PG_EXTENSION_DIRS, and what a server must load at
- * start in PG_PRELOAD_LIBRARIES, each a ;-list, as zigsaw joins them. The
+ * start in PG_PRELOAD_LIBRARIES, each a ;-list, as quasidock joins them. The
  * server gets extension_control_path and dynamic_library_path with each
  * directory's share and lib after PostgreSQL's own, and
  * shared_preload_libraries, before the options given here, so that those

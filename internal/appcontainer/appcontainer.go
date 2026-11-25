@@ -2,6 +2,7 @@ package appcontainer
 
 import (
 	"fmt"
+	"runtime"
 
 	"github.com/quasidock/quasidock/internal/win32"
 )
@@ -21,8 +22,11 @@ type Profile struct {
 }
 
 func acquireMutex(name string) (win32.HANDLE, error) {
+	// Windows mutex ownership belongs to an OS thread, not a goroutine.
+	runtime.LockOSThread()
 	h, err := win32.CreateMutex(name)
 	if err != nil {
+		runtime.UnlockOSThread()
 		return 0, fmt.Errorf("CreateMutex %s: %w", name, err)
 	}
 	wait := win32.WaitForSingleObject(h, win32.INFINITE)
@@ -31,13 +35,16 @@ func acquireMutex(name string) (win32.HANDLE, error) {
 		return h, nil
 	default:
 		win32.CloseHandle(h)
+		runtime.UnlockOSThread()
 		return 0, fmt.Errorf("WaitForSingleObject on %s failed: %d", name, wait)
 	}
 }
 
-func releaseMutex(h win32.HANDLE) {
-	win32.ReleaseMutex(h)
+func releaseMutex(h win32.HANDLE) bool {
+	released := win32.ReleaseMutex(h)
 	win32.CloseHandle(h)
+	runtime.UnlockOSThread()
+	return released
 }
 
 func ProfileName(id string) string {

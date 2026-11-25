@@ -4,7 +4,7 @@
 # icu.dll, and PL/Perl and PL/Python on the Perl and Python images as
 # runtimes). Under each sandbox, `postgresql` makes a cluster in the app's
 # data on its first run and serves it in the foreground; psql, pg_dump,
-# pg_restore, pg_basebackup and pg_ctl, each a run of its own, reach it on
+# pg_restore and pg_basebackup, executed in the running container, reach it on
 # 127.0.0.1 with the password the cluster was made with, from the password
 # file in the app's data. At low integrity, the default: TLS (a test
 # certificate), pgcrypto on OpenSSL, ICU collations, lz4 and zstd
@@ -54,6 +54,7 @@ port=$((57000 + RANDOM % 900))
 # Every run gets it: the server listens there, or in an AppContainer is
 # published there, and its clients connect there (PGPORT).
 on_port=--port=postgresql=$port
+server_name=postgresql-test-$$
 
 failures=0
 gaps=0
@@ -84,6 +85,12 @@ gap() {
 pg() {
     local command=$1
     shift
+    # pg_ctl waits for server exit, which intentionally ends every exec job.
+    # Keep shutdown outside the server's job; it locates the server via PGDATA.
+    if [ "$command" != pg_ctl ] && [ "$("$quasidock" inspect -f '{{.State.Running}}' "$server_name" 2>/dev/null | tr -d '\r')" = true ]; then
+        timeout 120 "$quasidock" exec -i "$server_name" "$command" "$@"
+        return
+    fi
     timeout 120 bash "$QD_IMAGES_HELPER" run "$quasidock" --rm -v "$volume:\${data}" ${SANDBOX:+--sandbox=$SANDBOX} $on_port --entrypoint=$command $APP "$@"
 }
 # sql <statement...>: psql's unaligned output, one line per row.
@@ -107,7 +114,7 @@ start() {
     local log="$work\\server-${SANDBOX:-low}${RUN_OPTIONS:+-options}.out" i
     rm -rf "$data\\data" "$data\\pgpass.conf" "$work\\server.exit"
     (
-        timeout 600 bash "$QD_IMAGES_HELPER" run "$quasidock" --rm -v "$volume:\${data}" ${SANDBOX:+--sandbox=$SANDBOX} ${RUN_OPTIONS:-} $on_port $APP "$@" >"$log" 2>&1
+        timeout 600 bash "$QD_IMAGES_HELPER" run "$quasidock" --name="$server_name" --rm -v "$volume:\${data}" ${SANDBOX:+--sandbox=$SANDBOX} ${RUN_OPTIONS:-} $on_port $APP "$@" >"$log" 2>&1
         echo $? >"$work\\server.exit"
     ) </dev/null >/dev/null 2>&1 &
     for i in $(seq 60); do
@@ -207,7 +214,7 @@ check "the cluster is UTF-8, in the builtin provider's C.UTF-8" is "UTF8|b|C.UTF
     "select pg_encoding_to_char(encoding), datlocprovider, datlocale from pg_database where datname = 'postgres'"
 check "with the server's default settings" is "100|128MB" "select current_setting('max_connections') || '|' || current_setting('shared_buffers')"
 check "its password is in the app's data" grep -q '^\*:\*:\*:postgres:[A-Za-z0-9]\{24\}$' "$data\\pgpass.conf"
-nopass() { timeout 60 bash "$QD_IMAGES_HELPER" run "$quasidock" --rm -v "$volume:\${data}" --env="PGPASSFILE=$data\\none" $on_port --entrypoint=psql $APP -X -w -c "select 1" 2>&1 | grep -q 'no password supplied'; }
+nopass() { timeout 60 "$quasidock" exec -e "PGPASSFILE=$data\\none" "$server_name" psql -X -w -c "select 1" 2>&1 | grep -q 'no password supplied'; }
 check "a client without it is refused" nopass
 tls() { pg psql "host=localhost port=$port sslmode=require" -XAt -c 'select ssl, version from pg_stat_ssl where pid = pg_backend_pid()' | tr -d '\r' | grep -qx 't|TLSv1.3'; }
 check "a connection over TLS 1.3" tls

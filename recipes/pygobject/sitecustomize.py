@@ -1,10 +1,10 @@
-"""Python in AppContainers, for zigsaw's Python images: PyGObject's runtime
+"""Python in AppContainers, for quasidock's Python images: PyGObject's runtime
 and Python's own (python).
 
 A process in an AppContainer may create named pipes only in its own
 namespace, \\\\.\\pipe\\LOCAL\\. multiprocessing names its pipes
 \\\\.\\pipe\\pyc-..., which Windows refuses there, so a Queue, Pipe or Pool
-fails with PermissionError under zigsaw's --sandbox=appcontainer (Meld
+fails with PermissionError under quasidock's --sandbox=appcontainer (Meld
 compares files in such a worker). Names under LOCAL\\ work outside
 AppContainers too. This moves them there once multiprocessing.connection is
 imported, rather than importing it in every run.
@@ -14,7 +14,7 @@ of its own (owner, SYSTEM, Administrators), which leaves out the container:
 an AppContainer makes the directory and then can't create anything in it.
 tempfile.mkdtemp and TemporaryDirectory make theirs so (Gaphor's auto layout
 runs Graphviz in one). In an AppContainer, such a directory takes the ACL of
-where it's made instead, which zigsaw's grants limit to you and the
+where it's made instead, which quasidock's grants limit to you and the
 container already.
 """
 import sys

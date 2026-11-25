@@ -13,7 +13,7 @@
     {
       "name": "about",
       "build": [
-        "printf '%s\\r\\n' '@echo off' 'echo GTK 3 for apps built with zigsaw. It needs the GTK 4 runtime, gtk4, for GLib, Pango, cairo and the rest:' 'echo an app lists both. gtk3-demo is gtk3demo.' > \"$PREFIX/about.bat\""
+        "printf '%s\\r\\n' '@echo off' 'echo GTK 3 for apps built with quasidock. It needs the GTK 4 runtime, gtk4, for GLib, Pango, cairo and the rest:' 'echo an app lists both. gtk3-demo is gtk3demo.' > \"$PREFIX/about.bat\""
       ]
     },
     {

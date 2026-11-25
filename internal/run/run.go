@@ -216,6 +216,8 @@ func Run(ctx *context.Context, opts Options) (uint32, error) {
 	return executeContainer(ctx, created, selected, img, lazyLayers, failuresBefore, opts, hostCwd, false, 0)
 }
 
+const supervisorStartupTimeout win32.DWORD = 120000
+
 func launchSupervisor(ctx *context.Context, created *store.ContainerRecord, hostCwd string) error {
 	det, readyEvent, err := spawnSupervisor(ctx, created, hostCwd, false)
 	if err != nil {
@@ -223,7 +225,9 @@ func launchSupervisor(ctx *context.Context, created *store.ContainerRecord, host
 	}
 	defer win32.CloseHandle(readyEvent)
 	defer win32.CloseHandle(det.Process)
-	return awaitSupervisor(ctx, created, det.Process, readyEvent, 30000)
+	// A cold AppContainer start grants every file in large runtime images.
+	// This is launch preparation, before the application's own readiness.
+	return awaitSupervisor(ctx, created, det.Process, readyEvent, supervisorStartupTimeout)
 }
 
 func spawnSupervisor(ctx *context.Context, created *store.ContainerRecord, hostCwd string, attach bool) (process.Detached, win32.HANDLE, error) {
@@ -589,7 +593,7 @@ func launchContainer(
 
 	used := services.UsedBy(cfg)
 	targets := services.Targets(used, settings.Ports)
-	servicePorts, err := services.Resolve(ctx.Store, cfg, used, settings.Ports, sandbox)
+	servicePorts, err := services.Resolve(ctx.Store, created.ID, cfg, used, settings.Ports, sandbox)
 	if err != nil {
 		return 1, false, err
 	}

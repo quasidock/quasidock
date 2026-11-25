@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -35,7 +36,7 @@ type Ports struct {
 	Listen  uint16
 }
 
-func Resolve(st *store.Store, cfg oci.AppConfig, uses []oci.Use, moved []string, sandbox oci.Sandbox) ([]Ports, error) {
+func Resolve(st *store.Store, containerID string, cfg oci.AppConfig, uses []oci.Use, moved []string, sandbox oci.Sandbox) ([]Ports, error) {
 	services := cfg.Permissions.Services
 
 	for _, m := range moved {
@@ -81,7 +82,7 @@ func Resolve(st *store.Store, cfg oci.AppConfig, uses []oci.Use, moved []string,
 	}
 
 	if sandbox == oci.SandboxAppContainer && len(out) > 0 {
-		internal, err := internalPorts(st, cfg.ID, out)
+		internal, err := internalPorts(st, containerID, out)
 		if err != nil {
 			return nil, err
 		}
@@ -209,60 +210,89 @@ const (
 	internalCount = 29000
 )
 
+// Reservations belong to the container, outside its mounted/committed data.
+// One allocator lock also protects simultaneous first starts of different images.
 func internalPorts(st *store.Store, id string, ports []Ports) ([]uint16, error) {
-	p := PortsPath(st, id)
-	_ = os.MkdirAll(filepath.Dir(p), 0755)
-
-	lock, err := store.OpenLock(p+".lock", true, true)
+	p := filepath.Join(st.ContainerDir(id), "ports.txt")
+	lock, err := store.OpenLock(st.Path("ports", "allocate.lock"), true, true)
 	if err != nil {
 		return nil, err
 	}
 	defer lock.Release()
 
-	textBytes, _ := os.ReadFile(p)
-	kept := ParseKept(string(textBytes))
-
-	out := make([]uint16, len(ports))
-	picked := false
-
-	for i, s := range ports {
-		var foundPort uint16
-		for _, k := range kept {
-			if strings.EqualFold(k.Name, s.Service.Name) {
-				foundPort = k.Port
-				break
-			}
+	read := func(path string) ([]Kept, error) {
+		b, err := os.ReadFile(path)
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
 		}
-
-		if foundPort != 0 {
-			out[i] = foundPort
-		} else {
-			var taken []uint16
-			for _, k := range kept {
-				taken = append(taken, k.Port)
+		if err != nil {
+			return nil, err
+		}
+		kept := ParseKept(string(b))
+		if len(kept) != len(strings.Fields(string(b)))/2 || len(strings.Fields(string(b)))%2 != 0 {
+			return nil, fmt.Errorf("invalid service reservations in %s", path)
+		}
+		return kept, nil
+	}
+	kept, err := read(p)
+	if err != nil {
+		return nil, err
+	}
+	var taken []uint16
+	// Include the old image-scoped files while older supervisors may be alive.
+	for _, pattern := range []string{st.Path("containers", "*", "ports.txt"), st.Path("ports", "*.txt")} {
+		files, err := filepath.Glob(pattern)
+		if err != nil {
+			return nil, err
+		}
+		for _, file := range files {
+			if strings.EqualFold(file, p) {
+				continue
 			}
-			for _, other := range ports {
-				taken = append(taken, other.Port)
-			}
-			newPort, err := pickPort(taken)
+			reserved, err := read(file)
 			if err != nil {
 				return nil, err
 			}
-			kept = append(kept, Kept{Name: s.Service.Name, Port: newPort})
-			picked = true
-			out[i] = newPort
+			for _, k := range reserved {
+				taken = append(taken, k.Port)
+			}
 		}
 	}
-
-	if picked {
-		var lines strings.Builder
+	for _, service := range ports {
+		taken = append(taken, service.Port)
+	}
+	out := make([]uint16, len(ports))
+	var lines strings.Builder
+	for i, service := range ports {
+		var port uint16
 		for _, k := range kept {
-			fmt.Fprintf(&lines, "%s %d\n", k.Name, k.Port)
+			if strings.EqualFold(k.Name, service.Service.Name) && isPortFree(k.Port) {
+				conflict := false
+				for _, t := range taken {
+					conflict = conflict || t == k.Port
+				}
+				if !conflict {
+					port = k.Port
+				}
+			}
 		}
-		tmp := st.TmpPath("ports")
-		if err := os.WriteFile(tmp, []byte(lines.String()), 0644); err == nil {
-			_ = store.RenameRetrying(tmp, p, 5000)
+		if port == 0 {
+			port, err = pickPort(taken)
+			if err != nil {
+				return nil, err
+			}
 		}
+		out[i] = port
+		taken = append(taken, port)
+		fmt.Fprintf(&lines, "%s %d\n", service.Service.Name, port)
+	}
+	tmp := st.TmpPath("ports")
+	defer os.Remove(tmp)
+	if err := os.WriteFile(tmp, []byte(lines.String()), 0644); err != nil {
+		return nil, err
+	}
+	if err := store.RenameRetrying(tmp, p, 5000); err != nil {
+		return nil, fmt.Errorf("saving container service ports: %w", err)
 	}
 	return out, nil
 }

@@ -1,0 +1,52 @@
+{
+  "id": "rabbitmq",
+  "version": "4.4.1",
+  "name": "RabbitMQ",
+  "summary": "RabbitMQ broker, management UI and native CLI launchers, built from source on Erlang/OTP",
+  "homepage": "https://www.rabbitmq.com/",
+  "license": "MPL-2.0",
+  "entrypoint": "bin/rabbitmq-server.exe",
+  "path": ["bin"],
+  "env": {
+    "RABBITMQ_BASE": "${data}",
+    "ERL_LIBS": "${app}\\plugins",
+    "RABBITMQ_NODE_PORT": "${listen:amqp}",
+    "QUASIDOCK_RABBITMQ_MANAGEMENT_PORT": "${listen:management}"
+  },
+  "permissions": {
+    "services": [
+      { "name": "amqp", "port": 5672 },
+      { "name": "management", "port": 15672 }
+    ]
+  },
+  "from": { "erlang": "erlang:29.1.3@sha256:58a898d64b3593203e4d1223e18a5eb52b01af4b883cd722b02d9e8d6bbdc0c1" },
+  "sdk": {
+    "busybox": "busybox:FRP-6075-g169694ebd@sha256:baca1ecd27b7b5ffe54402d4f8b6e36802d9db5e0e4cb2b7ab13104031045c50",
+    "make": "make:4.4.1@sha256:006bae7035738763ef26e8d8f995567375c90f73ff1cac885036f4139af67b2b",
+    "python": "python:3.14.10@sha256:6c21dc182028bd8bf86a9b13969425eceb7701c611e13c74c73491c5a9509605",
+    "go": "go:1.27.3@sha256:7ce8afd12dc7371e8f546f455036b941fdfdcbbaa81cefb3c320ea693d951ccc"
+  },
+  "stages": [
+    {
+      "name": "rabbitmq",
+      "sources": [
+        { "url": "https://github.com/rabbitmq/rabbitmq-server/releases/download/v4.4.1/rabbitmq-server-4.4.1.tar.xz", "sha256": "dbe50d6e29a9e3842f42baa780814e0218a5e77cf2175fd46ca731f3f68acf9d", "strip": 1 },
+        { "url": "https://github.com/elixir-lang/elixir/releases/download/v1.20.5/elixir-otp-29.zip", "sha256": "f424d6f0bb710a1d4898f2645d8ad6cab3f5eab8d71848c0dda2579d3a8e8a06", "dest": "toolchain/elixir" },
+        { "path": "rabbitmq/build.sh", "dest": "quasidock/build.sh" },
+        { "path": "rabbitmq/zip-escript.py", "dest": "quasidock/zip-escript.py" },
+        { "path": "rabbitmq/python-codegen.py", "dest": "quasidock/python-codegen.py" }
+      ],
+      "build": ["sh quasidock/build.sh"]
+    },
+    {
+      "name": "launchers",
+      "sources": [{ "path": "rabbitmq/launcher.go" }],
+      "env": { "CGO_ENABLED": "0" },
+      "build": [
+        "mkdir -p \"$PREFIX/bin\"",
+        "go build -trimpath -buildvcs=false -ldflags='-s -w -buildid=' -o \"$PREFIX/bin/rabbitmq-server.exe\" launcher.go",
+        "for command in rabbitmqctl rabbitmq-diagnostics rabbitmq-plugins rabbitmq-queues rabbitmq-streams rabbitmq-upgrade vmware-rabbitmq; do cp \"$PREFIX/bin/rabbitmq-server.exe\" \"$PREFIX/bin/$command.exe\"; done"
+      ]
+    }
+  ]
+}

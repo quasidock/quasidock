@@ -1,7 +1,7 @@
 # Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
 # file LICENSE.rst or https://cmake.org/licensing for details.
 
-# zigsaw: CMake 4.4.4's Modules/Platform/WindowsPaths.cmake without the
+# quasidock: CMake 4.4.4's Modules/Platform/WindowsPaths.cmake without the
 # program-files folders, so that builds don't find what the machine has
 # installed there: CMake found them through %SystemDrive% though the build's
 # environment has no ProgramFiles, and a runner's PostgreSQL went into Qt's

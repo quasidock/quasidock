@@ -1,4 +1,4 @@
-PostgreSQL's MinGW build with Clang (zigsaw):
+PostgreSQL's MinGW build with Clang (quasidock):
 
 - clang's __builtin_setjmp and __builtin_longjmp, which c.h uses for
   MinGW-64 (for GCC's sake), left a backend crashing after some errors;
@@ -15,7 +15,7 @@ diff --git a/meson.build b/meson.build
  
    buggy_int128 = false
  
-+  # zigsaw: not with clang for MinGW, which lays a struct with an int128
++  # quasidock: not with clang for MinGW, which lays a struct with an int128
 +  # member out on 16 bytes despite the typedef's aligned(8): copying
 +  # palloc'd aggregate states (int8_avg_combine) used movaps on 8-byte
 +  # boundaries, and crashed parallel aggregates.
@@ -36,7 +36,7 @@ diff --git a/src/include/c.h b/src/include/c.h
  #ifdef WIN32
 -#ifdef __MINGW64__
 +/*
-+ * zigsaw: not with clang. With its builtins, a backend crashed after some
++ * quasidock: not with clang. With its builtins, a backend crashed after some
 + * errors (a DO block in a language that doesn't exist), calling a bad
 + * portal's cleanup in MarkPortalFailed() once longjmp was back in
 + * PortalRun(). clang gives every function the SEH unwind data that MinGW's

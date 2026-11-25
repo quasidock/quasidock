@@ -82,7 +82,8 @@ Implications for Quasidock:
 - **Concurrent first runs need profile serialization.**
   [`internal/appcontainer/appcontainer.go`](../internal/appcontainer/appcontainer.go)
   guards `CreateAppContainerProfile` with named mutex
-  `Local\quasidock-appcontainer` and retries once after `100 ms` if it returns a
+  `Local\quasidock-appcontainer`, acquiring and releasing it on the same OS
+  thread, and retries once after `100 ms` if it returns a
   non-`E_ALREADY_EXISTS` error (exercised by the 8-way concurrent startup test
   in [`tests/network.sh`](../tests/network.sh)).
 
@@ -113,7 +114,7 @@ Implications for Quasidock:
 Runs of the same app inside an AppContainer already reach each other on
 `127.0.0.1` with no `network` capability. [`tests/network.sh`](../tests/network.sh)
 verifies this by starting `quasidock-netprobe.exe serve` without `network` and
-reaching it from a second run using `${listen:<name>}`.
+reaching it with `exec` using the server container's `${listen:<name>}`.
 
 ### Services: reaching an app in a container
 
@@ -156,13 +157,16 @@ Behavior by sandbox:
 - **Under `soft` and `low`**: both `${listen:<name>}` and `${port:<name>}`
   equal the declared port (or the port given by `--port`). The app binds it
   directly.
-- **Under `appcontainer`**: `services.Resolve` assigns a stable internal port
-  per app and service from `20000`–`48999` (`internalFirst = 20000`,
+- **Under `appcontainer`**: `services.Resolve` reserves an internal port
+  per container and service from `20000`–`48999` (`internalFirst = 20000`,
   `internalCount = 29000`, below Windows' dynamic port range, verified free on
-  `127.0.0.1` and `::1`), persisted in `<store>\ports\<id>.txt`
-  (`services.PortsPath`) and cleaned up by `quasidock rmi` (`services.Forget`)
-  and `quasidock prune` (`services.Prune` in
-  [`internal/lifecycle/prune.go`](../internal/lifecycle/prune.go)).
+  `127.0.0.1` and `::1`), persisted in
+  `<store>\containers\<container-id>\ports.txt` outside mounted data.
+  A store-wide allocator lock prevents simultaneous starts from reserving the
+  same port. Restarts reuse free ports and replace occupied ones; removing or
+  pruning a container also removes its reservations. Legacy image-scoped port
+  files remain reserved while older supervisors may be running. `exec` uses the
+  running container's environment; separate clients need an explicit endpoint.
   `${listen:<name>}` expands to that internal port while `${port:<name>}` expands
   to the published port.
   - Before starting a matching serving command, `services.Publish` binds the

@@ -268,6 +268,56 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
+  # Erlang and RabbitMQ stay local until their first publication.
+  rabbitmq:
+    runs-on: windows-2025
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Build quasidock
+        run: go run ./scripts/build.go
+      - name: Build Erlang and RabbitMQ in independent stores
+        shell: bash
+        env:
+          QUASIDOCK_REGISTRY_USERNAME: ${{ github.actor }}
+          QUASIDOCK_REGISTRY_PASSWORD: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          export MSYS_NO_PATHCONV=1
+          mkdir -p "$RUNNER_TEMP/rabbitmq-logs"
+          for store in rabbitmq-one rabbitmq-two; do
+            export QUASIDOCK_HOME="$RUNNER_TEMP/$store"
+            for image in erlang rabbitmq; do
+              ./out/bin/quasidock.exe build "recipes/$image.json" 2>&1 | tee "$RUNNER_TEMP/rabbitmq-logs/$store-$image.log"
+              ./out/bin/quasidock.exe inspect -f '{{.Id}}' "$image" | tr -d '\r' >"$RUNNER_TEMP/rabbitmq-logs/$store-$image.digest"
+            done
+          done
+          for image in erlang rabbitmq; do
+            cmp "$RUNNER_TEMP/rabbitmq-logs/rabbitmq-one-$image.digest" "$RUNNER_TEMP/rabbitmq-logs/rabbitmq-two-$image.digest"
+          done
+      - name: Erlang tools and RabbitMQ in every sandbox
+        shell: bash
+        env:
+          RABBITMQ_HOME: ${{ runner.temp }}/rabbitmq-two
+          LOG_DIR: ${{ runner.temp }}/rabbitmq-logs
+        run: |
+          set -euo pipefail
+          bash tests/erlang.sh 2>&1 | tee "$RUNNER_TEMP/rabbitmq-logs/erlang-tests.log"
+          bash tests/rabbitmq.sh 2>&1 | tee "$RUNNER_TEMP/rabbitmq-logs/rabbitmq-tests.log"
+      - name: Upload Erlang and RabbitMQ logs
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: logs-rabbitmq
+          path: ${{ runner.temp }}/rabbitmq-logs
+          if-no-files-found: ignore
+          retention-days: 14
+
   suites:
     needs: pins
     runs-on: windows-2025

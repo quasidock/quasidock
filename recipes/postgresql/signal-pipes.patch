@@ -1,4 +1,4 @@
-PostgreSQL's signal pipes under \\.\pipe\LOCAL\, for zigsaw: an AppContainer
+PostgreSQL's signal pipes under \\.\pipe\LOCAL\, for quasidock: an AppContainer
 may only make named pipes there, and LOCAL\ works in every sandbox. Both
 ends are renamed: the listener each process makes (signal.c) and kill()'s
 client (kill.c).

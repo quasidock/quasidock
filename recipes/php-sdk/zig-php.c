@@ -14,5 +14,5 @@ static bool ZEND_FASTCALL equal_val(const zend_string *s1, const zend_string *s2
 	return !memcmp(ZSTR_VAL(s1), ZSTR_VAL(s2), ZSTR_LEN(s1));
 }
 
-bool (ZEND_FASTCALL *const zigsaw_imp_zend_string_equal_val)(const zend_string *, const zend_string *)
+bool (ZEND_FASTCALL *const quasidock_imp_zend_string_equal_val)(const zend_string *, const zend_string *)
 	__asm__("__imp_zend_string_equal_val@@16") = equal_val;

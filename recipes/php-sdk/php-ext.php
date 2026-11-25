@@ -151,7 +151,7 @@ function build(string $dev, array $args): int
             '@echo off',
             "echo This image is the PHP extension $name, for PHP $php (NTS, x64, API $api).",
             "echo Installed, it joins every run of PHP, and of apps that have PHP as a runtime;",
-            "echo zigsaw run --noextension=^<its id^> leaves it out.",
+            "echo quasidock run --noextension=^<its id^> leaves it out.",
             '',
         ]));
         fwrite(STDOUT, "php-ext: built $dll\n");

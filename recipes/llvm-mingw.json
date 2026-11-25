@@ -65,7 +65,7 @@
       "name": "reproducible",
       "build": [
         "cd \"$PREFIX/x86_64-w64-mingw32/lib\" && rm libc++.dll.a libunwind.dll.a libpthread.dll.a libwinpthread.dll.a libwinpthread.la libomp.dll.a",
-        "printf '%s\\n' '# zigsaw: no time in the objects Clang writes or the programs lld links, so that builds are reproducible.' '-mno-incremental-linker-compatible' '-Wl,--no-insert-timestamp' >> \"$PREFIX/bin/mingw32-common.cfg\"",
+        "printf '%s\\n' '# quasidock: no time in the objects Clang writes or the programs lld links, so that builds are reproducible.' '-mno-incremental-linker-compatible' '-Wl,--no-insert-timestamp' >> \"$PREFIX/bin/mingw32-common.cfg\"",
         "printf 'int main(void) { return 0; }\\n' > t.c && cc -Werror -c t.c -o t1.o && cc -s t.c -o t1.exe && sleep 2 && cc -Werror -c t.c -o t2.o && cc -s t.c -o t2.exe && cmp t1.o t2.o && cmp t1.exe t2.exe",
         "printf '#include <thread>\\nint main() { std::thread t([] {}); t.join(); }\\n' > t.cpp && c++ -s t.cpp -o t.exe && ! llvm-objdump -p t.exe | grep -iE 'DLL Name: lib(c\\+\\+|unwind|winpthread)'"
       ]

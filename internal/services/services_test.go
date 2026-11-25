@@ -1,10 +1,75 @@
 package services
 
 import (
+	"fmt"
+	"net"
+	"os"
+	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/quasidock/quasidock/internal/oci"
+	"github.com/quasidock/quasidock/internal/store"
 )
+
+func TestContainerReservations(t *testing.T) {
+	st, err := store.Open(t.TempDir(), false, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ports := []Ports{{Service: oci.Service{Name: "amqp", Port: 5672}, Port: 5672}, {Service: oci.Service{Name: "management", Port: 15672}, Port: 15672}}
+	const count = 8
+	results := make([][]uint16, count)
+	errs := make([]error, count)
+	var wg sync.WaitGroup
+	for i := range count {
+		if err := os.MkdirAll(st.ContainerDir(fmt.Sprint(i)), 0755); err != nil {
+			t.Fatal(err)
+		}
+		wg.Go(func() { results[i], errs[i] = internalPorts(st, fmt.Sprint(i), ports) })
+	}
+	wg.Wait()
+	seen := map[uint16]bool{}
+	for i := range count {
+		if errs[i] != nil {
+			t.Fatal(errs[i])
+		}
+		for _, p := range results[i] {
+			if seen[p] {
+				t.Fatalf("containers share reserved port %d", p)
+			}
+			seen[p] = true
+		}
+	}
+	again, err := internalPorts(st, "0", ports)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fmt.Sprint(again) != fmt.Sprint(results[0]) {
+		t.Fatal("restart lost reservations")
+	}
+	listener, err := net.Listen("tcp4", fmt.Sprintf("127.0.0.1:%d", again[0]))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	replaced, err := internalPorts(st, "0", ports)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if replaced[0] == again[0] || replaced[1] != again[1] {
+		t.Fatalf("occupied port not replaced independently: %v", replaced)
+	}
+	if err := os.Remove(filepath.Join(st.ContainerDir("0"), "ports.txt")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(st.ContainerDir("1"), "ports.txt"), []byte("amqp invalid\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := internalPorts(st, "0", ports); err == nil {
+		t.Fatal("accepted corrupt reservations")
+	}
+}
 
 func TestUsedBy(t *testing.T) {
 	digest := "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"

@@ -300,7 +300,12 @@ outside the container cannot connect directly into the container's loopback
 ([networking](networking.md)):
 
 - `${listen:<name>}` is assigned an internal port (`20000`–`48999`) chosen on
-  first run and saved in `<store>\ports\<id>.txt` so runs agree.
+  first start and saved in `<store>\containers\<container-id>\ports.txt`.
+  Different containers reserve different internal ports, including containers
+  of the same image. Starts reuse free reservations and replace occupied ports.
+  `exec` inherits the running container's resolved ports; a new `run` has its
+  own ports. Use `exec` for local administration of a running server, or an
+  explicit published endpoint for a separate client.
 - Publishing runs when the command matches `command` (or the app's default
   entrypoint if `command` is omitted; `command` obeys the same path rules as
   `entrypoint[0]`).
@@ -1245,6 +1250,63 @@ Go recipes (`vendor` stage running `go mod vendor` / `go mod download`, offline
 - **[recipes/cosign.json](../recipes/cosign.json)** (3.1.4), used directly by
   [scripts/sign-images.sh](../scripts/sign-images.sh) and verified offline in
   [tests/oci.sh](../tests/oci.sh).
+
+### Erlang and RabbitMQ
+
+`erlang` packages the official OTP 29.1.3 Windows ZIP, including `erl.exe`,
+`erlc.exe`, `escript.exe`, headers and standard applications. Installation-specific
+`erl.ini` files and debug symbols are removed. A small native console launcher
+loads `erlexec.dll` relative to its deployment, without the ancestor traversal
+that AppContainer denies. A checked, fixed-length replacement in the VM DLL
+moves subprocess pipes into Windows' `LOCAL` namespace, allowing DNS and the
+OS monitor to start their helpers in AppContainer. It also serves as a pinned
+build tool image.
+
+`rabbitmq` builds RabbitMQ 4.4.1 and its bundled plugins from the release source
+distribution, which contains dependency sources. The build uses pinned Elixir
+libraries and GNU Make with native Windows paths. Python generates protocol
+sources with UTF-8 enabled and deterministic CLI ZIPs; a pinned Go SDK builds
+native launchers. Build tools are not included in the runtime image.
+
+Build Erlang before RabbitMQ; RabbitMQ's `from` pin must match the Erlang image:
+
+```powershell
+$env:QUASIDOCK_HOME = 'C:\quasidock-rabbitmq' # A local NTFS directory for mounts
+quasidock build recipes/erlang.json
+quasidock build recipes/rabbitmq.json
+quasidock run -d --name broker -v 'rabbitmq-data:${data}' rabbitmq
+quasidock exec broker rabbitmq-diagnostics.exe -q ping
+quasidock exec broker rabbitmqctl.exe status
+quasidock logs broker
+quasidock stop -t 30 broker
+```
+
+AMQP defaults to localhost:5672 and management to http://localhost:15672.
+Override them with `--port=amqp=5673 --port=management=15673` before the image
+name. Concurrent brokers need distinct published ports in every sandbox.
+The default sandbox is `low`; `soft` and `appcontainer` are also tested.
+
+On first startup the launcher creates an `admin` account with a random password
+in `${data}/credentials.json` and prints that file's location. Retrieve it from
+the mounted volume, or inspect the container's `DataDir` and read
+`credentials.json` there. The persistent `rabbitmq.conf` initially enables
+management and binds listeners to loopback, with ports interpolated from the
+image's environment. Edit this file to customize the broker, keeping the port
+interpolation when using Quasidock service forwarding. `enabled_plugins`,
+`node.txt`, `home/.erlang.cookie`, databases and plugin expansion remain under
+`${data}`. First-start defaults do not overwrite existing configuration.
+
+Each broker owns an EPMD process and distribution endpoint; CLI launchers read
+the current endpoint from `${data}/runtime.json`. A lock prevents two brokers
+from using one data directory simultaneously. Restart and volume reuse preserve
+credentials, node identity and durable messages. Ctrl+C and Ctrl+Break request
+broker shutdown; allow `stop -t 30` for orderly termination.
+
+The native CLI commands include `rabbitmqctl.exe`, `rabbitmq-diagnostics.exe`,
+`rabbitmq-plugins.exe`, `rabbitmq-queues.exe`, `rabbitmq-streams.exe` and
+`rabbitmq-upgrade.exe`. Clustering, automated TLS setup and additional protocol
+listeners are outside this image's tested configuration. These two images
+remain local recipes until their first publication.
 
 ### Java
 

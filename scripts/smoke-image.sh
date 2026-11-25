@@ -49,6 +49,8 @@ if [ "$id" = kanboard ]; then
 fi
 case $id in
 apache) args=(-v) ;;
+erlang) args=(-noshell -eval 'halt().') ;;
+rabbitmq) args=(--version) ;;
 rnote) args=(--help) ;;
 busybox) args=(true) ;;
 node) args=(-e 0) ;;
