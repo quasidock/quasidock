@@ -79,6 +79,7 @@ go run ./scripts/build.go
 | Command | Alias | Purpose |
 |---|---|---|
 | `image ls` | `images` | List references; `-q` prints unique full IDs |
+| `image history` | `history` | Show local app, runtime, and committed data layers |
 | `image inspect` | — | Local image JSON metadata, or `-f TEMPLATE` Go templates (`inspect` resolves containers first, then images) |
 | `image pull` | `pull` | Download and cache an image without prompting |
 | `image tag` | `tag` | Add or move a local name |
@@ -117,6 +118,49 @@ containers first). Shared layers remain while other images, containers, or
 builds need them. `quasidock prune` collects stopped containers first, then
 newly unpinned unnamed images and unused deployments; `prune --data` also
 removes leftover legacy app data once unused.
+
+### Image history
+
+`history` (also `image history`) describes the selected local image's current
+layers: its committed data snapshot, when present, then its app layer, then
+runtime layers in reverse manifest order. It works offline, including with
+incomplete lazy images, without reading layer contents or fetching parent images.
+
+```powershell
+quasidock history node
+quasidock image history --no-trunc node
+quasidock history --human=false --no-trunc --format=json node
+quasidock history --format '{{.ID}} {{.LayerDigest}} {{.CreatedBy}}' node
+```
+
+Default columns are `IMAGE`, `CREATED`, `CREATED BY`, `SIZE`, and `COMMENT`.
+`CREATED BY` contains synthesized `APP`, `FROM`, and `COMMIT` / `DATA`
+descriptions; recipe stages and commands are not recorded in existing images.
+`SIZE` is the stored descriptor byte count, including compression, excluding
+config bytes. Repeated descriptors each get a row, so summing history sizes can
+differ from inspect's deduplicated total.
+
+The first row's image ID is the selected manifest digest. Runtime rows use their
+pinned manifest digests, even if those manifests are not cached separately.
+A committed image's reused app row shows `<missing>` because its original image
+ID is unknown. Layer digests remain available through `.LayerDigest`.
+Creation dates show `--` when unavailable or invalid. Commit timestamps,
+messages, and authors belong to the data snapshot row; they are not assigned to
+reused app or runtime layers. Only the current snapshot appears after recommits.
+
+Options can appear before or after IMAGE. `-q` / `--quiet` prints only image IDs
+and overrides `--format`. IDs default to 12 characters; `--no-trunc` preserves
+full IDs and descriptions, which otherwise truncate to 45 characters. `-H` /
+`--human` defaults to true; `--human=false` prints UTC RFC3339 timestamps and
+decimal byte counts. These formatting options also apply to JSON and templates.
+
+`--format` accepts `table`, `table TEMPLATE`, `json` (one JSON object per row),
+or a Go template without headers. All fields are strings: `ID`, `CreatedAt`,
+`CreatedSince`, `CreatedBy`, `Size`, `Comment`, `LayerDigest`, and `Author`.
+`CreatedAt` is always a UTC timestamp or `--`; `CreatedSince` follows `--human`.
+Templates also support the `json` function. Table output escapes control
+characters in descriptions, messages, and authors; JSON and plain templates
+preserve their values.
 
 ### Offline image transfer
 

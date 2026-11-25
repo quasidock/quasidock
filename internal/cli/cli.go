@@ -74,6 +74,8 @@ Docker-style image commands:
   image ls | images [-q|--quiet]       list cached image references
   image inspect [-f TEMPLATE] IMAGE [IMAGE...]
                                        inspect local images (JSON by default)
+  image history | history [options] IMAGE
+                                       show local app, runtime and data layers
   image pull | pull [--lazy] <image>   cache an image, without prompting
   image tag | tag SOURCE TARGET       name a cached image; an omitted tag is latest
   image push | push [--sources] IMAGE  publish the exact local image
@@ -131,6 +133,14 @@ top/container top options:
   --format table|json|TEMPLATE        table, JSON Lines, or a Go template
                                      fields: PID, PPID, Time, Command
 
+history/image history options:
+  -q, --quiet                        print image IDs only (overrides --format)
+  --no-trunc                         show full IDs and layer descriptions
+  -H, --human[=true|false]            human-readable sizes and dates (default: true)
+  --format table|json|TEMPLATE        table, JSON Lines, or a Go template
+                                     fields: ID, CreatedAt, CreatedSince, CreatedBy,
+                                     Size, Comment, LayerDigest, Author
+
 events/system events options:
   --since TIME                       replay retained events since TIME, then follow
   --until TIME                       stop at TIME (past values query history only)
@@ -170,6 +180,8 @@ QUASIDOCK_REGISTRY changes the default registry (ghcr.io/quasidock/quasidock).
 A bare cached app ID selects its last successful build/pull; full sha256 IDs
 select local manifests. Explicit names and tags select exactly that reference.
 Image IDs are manifest digests. images -q prints full IDs; inspect is local-only.
+history is local-only; CREATED BY describes current layers, not build commands.
+history --human=false prints UTC timestamps and byte counts; unknown dates are --.
 save writes tar to stdout by default; load reads stdin by default (use -o/-i on Windows).
 save/load are offline; incomplete lazy images must be fully pulled before saving.
 load preserves existing app defaults; conflicting names require --force.
@@ -816,7 +828,7 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 		return 0, nil
 	}
 	switch cmd {
-	case "top", "stats", "events", "system", "convert", "build", "volume", "container", "create", "commit", "ps", "diff", "cp", "exec", "attach", "start", "restart", "pause", "unpause", "kill", "stop", "rm", "logs", "image", "images", "inspect", "tag", "pull", "push", "save", "load", "rmi", "run", "search", "trust", "signature", "prune", "repair", "grants":
+	case "top", "stats", "events", "system", "convert", "build", "volume", "container", "create", "commit", "ps", "diff", "cp", "exec", "attach", "start", "restart", "pause", "unpause", "kill", "stop", "rm", "logs", "image", "images", "inspect", "history", "tag", "pull", "push", "save", "load", "rmi", "run", "search", "trust", "signature", "prune", "repair", "grants":
 	default:
 		return usageError()
 	}
@@ -855,7 +867,7 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 		return imageCommand(ctx, rest)
 	case "images":
 		return imageCommand(ctx, append([]string{"ls"}, rest...))
-	case "tag", "pull", "push", "save", "load":
+	case "history", "tag", "pull", "push", "save", "load":
 		return imageCommand(ctx, append([]string{cmd}, rest...))
 	case "rmi":
 		return imageCommand(ctx, append([]string{"rm"}, rest...))

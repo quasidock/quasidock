@@ -79,6 +79,10 @@ func TestCommitRoundTripAndDiff(t *testing.T) {
 	if image.Config.ID != "captured" || image.Config.Version != "saved" || image.Config.Env["SAVED"] != "original" || !reflect.DeepEqual(image.Config.UnsetEnv, []string{"REMOVE_ME"}) || image.Config.Labels["purpose"] != "round trip" || image.Manifest.Annotations["io.quasidock.commit.parent"] != parent || image.Manifest.Annotations["org.opencontainers.image.authors"] != "test author" || image.Manifest.Annotations["io.quasidock.commit.message"] != "saved state" {
 		t.Fatalf("image: %+v", image)
 	}
+	history := decodeHistory(t, []byte(must(st.Root, "history", "--no-trunc", "--human=false", "--format=json", digest)))
+	if len(history) != 2 || history[0].ID != digest || history[0].LayerDigest != image.Config.DataLayer || history[0].CreatedBy != "COMMIT "+parent || history[0].Author != "test author" || history[0].Comment != "saved state" || history[0].CreatedAt == "--" {
+		t.Fatalf("commit history: %+v", history)
+	}
 	for _, name := range []string{"copy-one", "copy-two"} {
 		must(st.Root, "create", "--name", name, target)
 	}
@@ -115,6 +119,10 @@ func TestCommitRoundTripAndDiff(t *testing.T) {
 	}
 	if len(second.Manifest.Layers) != 2 || oci.OwnLayer(&second.Manifest).Digest != oci.OwnLayer(&image.Manifest).Digest || second.Config.DataLayer == image.Config.DataLayer {
 		t.Fatal("recommit did not replace just the data layer")
+	}
+	recommittedHistory := decodeHistory(t, []byte(must(st.Root, "image", "history", "--no-trunc", "--human=false", "--format=json", unnamed)))
+	if len(recommittedHistory) != 2 || recommittedHistory[0].ID != unnamed || recommittedHistory[0].LayerDigest != second.Config.DataLayer || recommittedHistory[0].CreatedBy != "COMMIT "+digest || recommittedHistory[1].LayerDigest != history[1].LayerDigest || recommittedHistory[1].ID != "<missing>" {
+		t.Fatalf("recommit history: %+v", recommittedHistory)
 	}
 	ref, _ := st.ResolveLocalImage("", target)
 	if ref.Manifest != digest {
@@ -155,6 +163,9 @@ func TestCommitRoundTripAndDiff(t *testing.T) {
 	}
 	fresh, _ := fixtureCLI(t)
 	must(fresh.Store.Root, "pull", target)
+	if restored := decodeHistory(t, []byte(must(fresh.Store.Root, "history", "--no-trunc", "--human=false", "--format=json", digest))); !reflect.DeepEqual(restored, history) {
+		t.Fatalf("pull changed history without cached parent: %+v", restored)
+	}
 	if out := must(fresh.Store.Root, "run", "--rm", target); out != "committed" {
 		t.Fatalf("fresh run: %q", out)
 	}

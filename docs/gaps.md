@@ -218,6 +218,17 @@ TERM/KILL requests; recorded exit codes retain Quasidock's Windows semantics.
 
 ## Registry, signing, and OCI
 
+- **Image history.** `history` / `image history` describes current layer
+  composition using existing metadata. `CREATED BY` values are synthesized;
+  recipe stages, commands, configuration-only build steps, and local build/pull/tag
+  timelines are not recorded. Builds normally lack creation timestamps; missing
+  or invalid optional dates display `--`. Recommits replace the data snapshot;
+  history does not traverse parents or show superseded snapshots. The reused
+  app's original image ID displays `<missing>`. Pinned runtime manifest IDs may
+  not be cached separately. Sizes count stored bytes per descriptor occurrence,
+  excluding config bytes. Platform selection is unsupported. See
+  [image history](../README.md#image-history).
+
 - **Catalog and search.** `quasidock search` queries only the configured
   registry's `catalog` image (`ghcr.io/quasidock/quasidock` or `QUASIDOCK_REGISTRY`);
   there are no multiple remotes, icons, or screenshots. Seven published tool and

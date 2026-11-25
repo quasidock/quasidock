@@ -116,7 +116,7 @@ func newTopRenderer(format string) (*topRenderer, error) {
 	return r, nil
 }
 
-func escapeTopCommand(command string) string {
+func escapeTableText(command string) string {
 	var escaped strings.Builder
 	for _, r := range command {
 		if unicode.IsControl(r) || r == '\u2028' || r == '\u2029' {
@@ -151,7 +151,7 @@ func (r *topRenderer) render(out io.Writer, rows []topRow) error {
 		}
 		for _, row := range rows {
 			if r.table {
-				row.Command = escapeTopCommand(row.Command)
+				row.Command = escapeTableText(row.Command)
 			}
 			if err := r.tmpl.Execute(writer, row); err != nil {
 				return err
