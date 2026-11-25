@@ -40,6 +40,8 @@ const (
 	commitAcquired
 	commitRelease
 	commitReleased
+	statsQuery
+	statsResult
 )
 
 type ExecOptions struct {
@@ -449,6 +451,10 @@ func (r *execRuntime) serve(c *execStream) {
 	}
 	if kind == commitAcquire {
 		r.serveCapture(c, data)
+		return
+	}
+	if kind == statsQuery {
+		r.serveStats(c, data)
 		return
 	}
 	var req execRequest

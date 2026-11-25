@@ -1049,6 +1049,7 @@ func launchContainer(
 		c.Args = append([]string(nil), allArgs...)
 		c.Config.WorkingDir = cwd
 		c.State = store.ContainerState{
+			StatsProtocol:   statsProtocol,
 			CommitProtocol:  commitProtocol,
 			ControlProtocol: controlProtocol,
 			ExecProtocol:    execProtocol,

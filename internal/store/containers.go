@@ -24,6 +24,7 @@ var (
 )
 
 type ContainerState struct {
+	StatsProtocol   int    `json:"StatsProtocol,omitempty"`
 	CommitProtocol  int    `json:"CommitProtocol,omitempty"`
 	ControlProtocol int    `json:"ControlProtocol,omitempty"`
 	AttachProtocol  int    `json:"AttachProtocol,omitempty"`

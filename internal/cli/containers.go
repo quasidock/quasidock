@@ -23,7 +23,7 @@ import (
 
 func containerCommand(ctx *context.Context, args []string) (uint32, error) {
 	if len(args) == 0 {
-		return 1, errors.New("usage: quasidock container <create|commit|ls|inspect|diff|cp|exec|attach|start|restart|pause|unpause|kill|stop|rm|logs|prune>")
+		return 1, errors.New("usage: quasidock container <create|commit|ls|stats|inspect|diff|cp|exec|attach|start|restart|pause|unpause|kill|stop|rm|logs|prune>")
 	}
 	cmd, rest := args[0], args[1:]
 	if cmd == "--help" || cmd == "help" {
@@ -43,6 +43,8 @@ func containerCommand(ctx *context.Context, args []string) (uint32, error) {
 		return startCommand(ctx, rest)
 	case "ls", "list":
 		return 0, containerList(ctx, rest)
+	case "stats":
+		return statsCommand(ctx, rest)
 	case "inspect":
 		return 0, containerInspect(ctx, rest)
 	case "diff":

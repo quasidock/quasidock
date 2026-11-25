@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"sync/atomic"
 	"syscall"
@@ -22,6 +23,29 @@ func main() {
 	args := os.Args[1:]
 	if len(args) > 0 {
 		switch args[0] {
+		case "stats-hold":
+			ready := os.ExpandEnv(args[1])
+			memory := make([]byte, 32<<20)
+			for i := range memory {
+				memory[i] = byte(i)
+			}
+			if err := os.WriteFile(ready+".io", memory[:1<<20], 0o600); err != nil {
+				panic(err)
+			}
+			data, err := os.ReadFile(ready + ".io")
+			if err != nil || len(data) != 1<<20 {
+				panic("stats fixture read failed")
+			}
+			if err := os.WriteFile(ready, nil, 0o600); err != nil {
+				panic(err)
+			}
+			for {
+				for i := range memory {
+					memory[i]++
+				}
+				runtime.KeepAlive(memory)
+				time.Sleep(10 * time.Millisecond)
+			}
 		case "wait-path":
 			if err := os.WriteFile(args[1], []byte(strconv.Itoa(os.Getpid())), 0o644); err != nil {
 				panic(err)
@@ -60,6 +84,7 @@ func main() {
 			cmd := exec.Command(args[1], args[2:]...)
 			cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 			var originalMode win32.DWORD
+			var originalOutputMode win32.DWORD
 			inputHandle := win32.GetStdHandle(win32.STD_INPUT_HANDLE)
 			if args[0] == "console-run-check-mode" {
 				// CreateProcess with a pseudoconsole can leave the wrapper's
@@ -78,12 +103,21 @@ func main() {
 				inputHandle = win32.HANDLE(input.Fd())
 			}
 			win32.GetConsoleMode(inputHandle, &originalMode)
+			outputHandle := win32.GetStdHandle(win32.STD_OUTPUT_HANDLE)
+			if output, ok := cmd.Stdout.(*os.File); ok {
+				outputHandle = win32.HANDLE(output.Fd())
+			}
+			checkOutputMode := win32.GetConsoleMode(outputHandle, &originalOutputMode)
 			commandErr := cmd.Run()
 			if args[0] == "console-run-check-mode" {
 				var finalMode win32.DWORD
 				if !win32.GetConsoleMode(inputHandle, &finalMode) || originalMode != finalMode {
 					fmt.Fprintf(cmd.Stderr, "console mode changed: %#x -> %#x\n", originalMode, finalMode)
 					os.Exit(91)
+				}
+				if checkOutputMode && (!win32.GetConsoleMode(outputHandle, &finalMode) || originalOutputMode != finalMode) {
+					fmt.Fprintf(cmd.Stderr, "output console mode changed: %#x -> %#x\n", originalOutputMode, finalMode)
+					os.Exit(92)
 				}
 			}
 			if err := commandErr; err != nil {

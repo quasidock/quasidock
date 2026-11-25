@@ -4,7 +4,7 @@ Quasidock runs sandboxed Windows programs from OCI-distributed images using a
 Docker-style CLI.
 
 Currently it supports Docker-style container lifecycle management (`create`, `run`, `ps`,
-`logs`, `exec`, `attach`, `start`, `restart`, `pause`, `unpause`, `kill`, `stop`, `rm`, `inspect`, `diff`, `commit`, `prune`), per-container isolated data, image
+`logs`, `stats`, `exec`, `attach`, `start`, `restart`, `pause`, `unpause`, `kill`, `stop`, `rm`, `inspect`, `diff`, `commit`, `prune`), per-container isolated data, image
 management, named volumes, local directory bind mounts, and Quasidock images for
 `windows/amd64`.
 
@@ -162,6 +162,7 @@ metadata, and compatibility details.
 |---|---|---|
 | `container create` | `create` | Save a new container without starting it; print its full ID |
 | `container ls` | `ps` | List containers (`-a`, `-q`, `--filter`, `--last`, `--size`, `--no-trunc`) |
+| `container stats` | `stats` | Stream CPU, private committed memory, cumulative I/O, and process counts |
 | `container inspect` | `inspect` | Container JSON metadata or `-f TEMPLATE` (`inspect` falls back to images) |
 | `container diff` | `diff` | Compare private `${data}` with image data; exclude mounted storage |
 | `container cp` | `cp` | Copy files/folders between container data and the host; `-` streams tar |
@@ -189,6 +190,44 @@ quasidock run [OPTIONS] IMAGE [COMMAND] [ARG...]
 containers, newest first. `-a` / `--all` includes created and exited containers;
 `-q` / `--quiet` prints IDs only. `--no-trunc` shows full IDs, including with
 `-q`, and full recorded executable paths and arguments.
+
+`stats` (also `container stats`) samples running and paused containers every
+second. Supply names or ID prefixes to select containers; `-a` / `--all`
+includes created and exited containers. Explicit stopped containers are also
+shown, with zero metrics. `--no-stream` collects two samples one second apart,
+prints one result, and exits. `--no-trunc` shows full IDs.
+
+```powershell
+quasidock stats
+quasidock stats --no-stream worker
+quasidock container stats --all --no-stream --format json
+quasidock stats --format '{{.Name}}: {{.CPUPerc}} {{.MemUsage}}'
+```
+
+The columns are `CONTAINER ID`, `NAME`, `CPU %`, `PRIVATE MEMORY`, `I/O`, and
+`PIDS`. CPU uses whole-host capacity: one busy logical processor on an
+eight-processor host is about 12.5%. Memory counts private committed bytes,
+including paged-out memory. I/O shows cumulative read/write bytes for the
+current run, including exited child processes; it measures Windows process
+I/O rather than physical block-device traffic. PIDS counts active processes,
+including `exec` children and the container's relay. Shared host services and
+the supervisor are excluded.
+
+`--format` accepts `table` (the default), `table TEMPLATE`, `json` (JSON Lines),
+or a Go template. Fields are `.Container`, `.ID`, `.Name`, `.CPUPerc`,
+`.MemUsage`, `.IO`, and `.PIDs`; `{{json .}}` also emits JSON. Values are
+formatted strings, using the same units as the table. `.Container` preserves
+the supplied selector, or uses the displayed ID when no selectors were given.
+Tables refresh in place on a console; redirected output and bare templates
+append each sample without terminal escapes.
+
+Stats follows restarts, resetting its counters and CPU baseline. Newly
+discovered runs show `--` for CPU until a second sample is available. Without
+selectors, stats keeps discovering new containers even when none are running;
+with selectors, it finishes when all selected containers have been removed.
+Ctrl+C exits with code 130 and leaves workloads running. Existing supervisors
+without `State.StatsProtocol` must be stopped and started with the current
+binary before stats is available. See [stats limits](docs/gaps.md#container-stats).
 
 `events` (also `system events`) follows new container events. `--since` first
 replays matching history, then follows; each store retains its latest **256**

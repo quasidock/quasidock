@@ -5,6 +5,29 @@ Known limitations, platform constraints, and incomplete features in Quasidock
 
 ## Runs, sandboxes, and grants
 
+### Container stats
+
+`stats` / `container stats` reports the resources of the Windows Job Object,
+including nested `exec` jobs and the container's relay, but excluding its
+supervisor and shared host services. PIDS counts processes rather than threads.
+CPU is normalized to all host logical processors. Memory is private committed
+memory, not resident RAM or Docker's private working set. There are no memory
+limit or percentage columns, network counters, or historical samples.
+
+I/O is cumulative Windows process read/write traffic, which can include file,
+pipe, and device I/O; it is not physical block-device accounting. CPU and I/O
+include exited descendants during the current run and reset on restart. Stopped
+containers show zero metrics, not their previous run's totals.
+
+Memory is a point-in-time sum of process counters. Processes can start or exit
+during enumeration, so samples are not atomic; exited processes are skipped,
+while other query errors fail the command. CPU shows `--` until there are two
+samples from the same run. A run replaced during sampling is discarded and
+discovered again on the next refresh. Old live supervisors without
+`State.StatsProtocol` require a stop/start with the current binary. JSON output
+uses formatted strings and Quasidock's `.IO` field rather than Docker's `.NetIO`
+or `.BlockIO` fields.
+
 ### Container events
 
 `events` / `system events` records container lifecycle and exec actions only.
