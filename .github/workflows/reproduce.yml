@@ -175,6 +175,49 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
+  # NGINX stays local until its first publication, like Apache below.
+  nginx:
+    runs-on: windows-2025
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Build quasidock
+        run: go run ./scripts/build.go
+      - name: Build NGINX in two independent stores
+        shell: bash
+        env:
+          QUASIDOCK_REGISTRY_USERNAME: ${{ github.actor }}
+          QUASIDOCK_REGISTRY_PASSWORD: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          export MSYS_NO_PATHCONV=1
+          mkdir -p "$RUNNER_TEMP/nginx-logs"
+          for store in nginx-one nginx-two; do
+            export QUASIDOCK_HOME="$RUNNER_TEMP/$store"
+            ./out/bin/quasidock.exe build recipes/nginx.json 2>&1 | tee "$RUNNER_TEMP/nginx-logs/$store.log"
+            ./out/bin/quasidock.exe inspect -f '{{.Id}}' nginx | tr -d '\r' >"$RUNNER_TEMP/nginx-logs/$store.digest"
+          done
+          cmp "$RUNNER_TEMP/nginx-logs/nginx-one.digest" "$RUNNER_TEMP/nginx-logs/nginx-two.digest"
+      - name: NGINX HTTP, TLS, HTTP/2, and lifecycle in every sandbox
+        shell: bash
+        env:
+          NGINX_HOME: ${{ runner.temp }}/nginx-two
+          LOG_DIR: ${{ runner.temp }}/nginx-logs
+        run: bash tests/nginx.sh 2>&1 | tee "$RUNNER_TEMP/nginx-logs/tests.log"
+      - name: Upload NGINX logs
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: logs-nginx
+          path: ${{ runner.temp }}/nginx-logs
+          if-no-files-found: ignore
+          retention-days: 14
+
   # Apache is built locally until its first publication; the published-image
   # lists must only contain images that are already available in the registry.
   apache:

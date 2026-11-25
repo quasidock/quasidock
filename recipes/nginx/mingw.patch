@@ -1,0 +1,93 @@
+--- a/auto/lib/pcre/conf
++++ b/auto/lib/pcre/conf
+@@ -68,7 +68,7 @@
+ 
+ else
+ 
+-    if [ "$NGX_PLATFORM" != win32 ]; then
++    if [ "$NGX_PLATFORM" != win32 -o "$NGX_CC_NAME" = clang ]; then
+         PCRE=NO
+     fi
+ 
+--- a/auto/lib/zlib/conf
++++ b/auto/lib/zlib/conf
+@@ -42,7 +42,7 @@
+ 
+ else
+ 
+-    if [ "$NGX_PLATFORM" != win32 ]; then
++    if [ "$NGX_PLATFORM" != win32 -o "$NGX_CC_NAME" = clang ]; then
+         ZLIB=NO
+ 
+         # FreeBSD, Solaris, Linux
+--- a/auto/lib/openssl/conf
++++ b/auto/lib/openssl/conf
+@@ -54,7 +54,7 @@
+ 
+ else
+ 
+-    if [ "$NGX_PLATFORM" != win32 ]; then
++    if [ "$NGX_PLATFORM" != win32 -o "$NGX_CC_NAME" = clang ]; then
+ 
+         OPENSSL=NO
+ 
+--- a/src/os/win32/ngx_process_cycle.c
++++ b/src/os/win32/ngx_process_cycle.c
+@@ -318,7 +318,7 @@
+ ngx_create_signal_events(ngx_cycle_t *cycle)
+ {
+     ngx_sprintf((u_char *) ngx_stop_event_name,
+-                "Global\\ngx_stop_%s%Z", ngx_unique);
++                "Local\\ngx_stop_%s%Z", ngx_unique);
+ 
+     ngx_stop_event = CreateEvent(NULL, 1, 0, ngx_stop_event_name);
+     if (ngx_stop_event == NULL) {
+@@ -329,7 +329,7 @@
+ 
+ 
+     ngx_sprintf((u_char *) ngx_quit_event_name,
+-                "Global\\ngx_quit_%s%Z", ngx_unique);
++                "Local\\ngx_quit_%s%Z", ngx_unique);
+ 
+     ngx_quit_event = CreateEvent(NULL, 1, 0, ngx_quit_event_name);
+     if (ngx_quit_event == NULL) {
+@@ -340,7 +340,7 @@
+ 
+ 
+     ngx_sprintf((u_char *) ngx_reopen_event_name,
+-                "Global\\ngx_reopen_%s%Z", ngx_unique);
++                "Local\\ngx_reopen_%s%Z", ngx_unique);
+ 
+     ngx_reopen_event = CreateEvent(NULL, 1, 0, ngx_reopen_event_name);
+     if (ngx_reopen_event == NULL) {
+@@ -351,7 +351,7 @@
+ 
+ 
+     ngx_sprintf((u_char *) ngx_reload_event_name,
+-                "Global\\ngx_reload_%s%Z", ngx_unique);
++                "Local\\ngx_reload_%s%Z", ngx_unique);
+ 
+     ngx_reload_event = CreateEvent(NULL, 1, 0, ngx_reload_event_name);
+     if (ngx_reload_event == NULL) {
+@@ -1010,7 +1010,7 @@
+     ngx_int_t  rc;
+     char       evn[NGX_PROCESS_SYNC_NAME];
+ 
+-    ngx_sprintf((u_char *) evn, "Global\\ngx_%s_%P%Z", sig, pid);
++    ngx_sprintf((u_char *) evn, "Local\\ngx_%s_%P%Z", sig, pid);
+ 
+     ev = OpenEvent(EVENT_MODIFY_STATE, 0, evn);
+     if (ev == NULL) {
+--- a/auto/os/win32
++++ b/auto/os/win32
+@@ -2,6 +2,10 @@
+ # Copyright (C) Igor Sysoev
+ # Copyright (C) Nginx, Inc.
+ 
++
++# Native Clang appends .exe even when -o has no extension. BusyBox's
++# test -x checks the exact filename used by configure's feature probes.
++NGX_AUTOTEST=$NGX_AUTOTEST.exe
+ 
+ have=NGX_WIN32 . auto/have_headers
+ 

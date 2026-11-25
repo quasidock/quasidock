@@ -395,6 +395,11 @@ Recipe builds remain available through `build [recipe.json|directory]` (using
 [docs/recipes.md](docs/recipes.md) for the Docker-style recipe schema,
 placeholders, vendoring, and pinned dependencies.
 
+[NGINX](docs/nginx.md) can be built locally from pinned sources with
+`quasidock build recipes/nginx.json`. The image serves a default page, supports
+TLS and HTTP/2, and keeps configuration, logs, and temporary files in container
+data. It is not yet in the published catalog.
+
 Convert a supported Linux Dockerfile before building:
 
 ```powershell

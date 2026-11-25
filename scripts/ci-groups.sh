@@ -21,7 +21,7 @@
 # rarely; TeX Live's downloads 432 files from a mirror that replaces them as
 # packages change, and GDAL's SDK is some 1,500 compiles.
 # Without a commit, or one git can't compare with, every group is checked:
-# as in the workflow's weekly run, which also catches a change to zigsaw
+# as in the workflow's weekly run, which also catches a change to quasidock
 # that a GTK or Qt image no longer reproduces with.
 set -euo pipefail
 cd "$(dirname "$0")/.."

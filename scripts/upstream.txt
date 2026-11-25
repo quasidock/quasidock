@@ -231,6 +231,9 @@ graphviz git https://gitlab.com/graphviz/graphviz {version} series=1
 
 # --- Libraries -----------------------------------------------------------------
 
+nginx git https://github.com/nginx/nginx release-{version}
+  https://nginx.org/download/nginx-{version}.tar.gz
+
 apache git https://github.com/apache/httpd {version}
   https://dlcdn.apache.org/httpd/httpd-{version}.tar.gz
 apr-util git https://github.com/apache/apr-util {version}

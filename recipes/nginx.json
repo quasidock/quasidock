@@ -1,0 +1,160 @@
+{
+  "id": "nginx",
+  "version": "1.31.10",
+  "name": "NGINX",
+  "summary": "Native NGINX HTTP server and reverse proxy with TLS, HTTP/2, FastCGI, rewrite and gzip, built with LLVM-MinGW",
+  "homepage": "https://nginx.org/",
+  "license": "BSD-2-Clause",
+  "entrypoint": "bin/nginx.exe",
+  "path": [
+    "bin"
+  ],
+  "env": {
+    "NGINX_DATA": "${data}",
+    "NGINX_DOCUMENT_ROOT": "${app}\\html",
+    "NGINX_HTTP_PORT": "${listen:http}",
+    "NGINX_HTTPS_PORT": "${listen:https}",
+    "SSL_CERT_FILE": "${roots}"
+  },
+  "permissions": {
+    "network": true,
+    "filesystem": [
+      "cwd"
+    ],
+    "services": [
+      {
+        "name": "http",
+        "port": 8080
+      },
+      {
+        "name": "https",
+        "port": 8443
+      }
+    ]
+  },
+  "sdk": {
+    "busybox": "busybox:FRP-6075-g169694ebd@sha256:baca1ecd27b7b5ffe54402d4f8b6e36802d9db5e0e4cb2b7ab13104031045c50",
+    "cmake": "cmake:4.4.4@sha256:b96b30bb57b5147726b7deef2607917b43972bb896d9f5d3e3082e31368dbeae",
+    "llvm": "llvm-mingw:20261020@sha256:65425754b958693accc5dc8d8e8ca0dfa6235669c286cc8875105171b3e299b9",
+    "perl": "perl:5.42.3.1@sha256:2854c34722b812ef3173f5d4ab6fb091ac45dc16d6079865a5024d6a6527dfd6",
+    "make": "make:4.4.1@sha256:006bae7035738763ef26e8d8f995567375c90f73ff1cac885036f4139af67b2b"
+  },
+  "cleanup": [
+    "/include",
+    "/lib",
+    "/share",
+    "/bin/pcre2-config",
+    "*.pdb",
+    "*.a"
+  ],
+  "stages": [
+    {
+      "name": "pcre2",
+      "sources": [
+        {
+          "url": "https://github.com/PCRE2Project/pcre2/releases/download/pcre2-10.49/pcre2-10.49.tar.gz",
+          "sha256": "929f0b20e62879252a15886b06c89f1edef61a363cbd5826fb041080a5e557ae",
+          "strip": 1
+        }
+      ],
+      "build": [
+        "mkdir -p \"$PREFIX/licenses\"",
+        "cmake -S . -B out -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_INSTALL_PREFIX=\"$PREFIX\" -DBUILD_SHARED_LIBS=OFF -DBUILD_STATIC_LIBS=ON -DPCRE2_BUILD_TESTS=OFF -DPCRE2_BUILD_PCRE2GREP=OFF -DPCRE2_SUPPORT_JIT=ON",
+        "cmake --build out",
+        "cmake --install out",
+        "cp LICENCE.md \"$PREFIX/licenses/pcre2.txt\""
+      ]
+    },
+    {
+      "name": "zlib",
+      "sources": [
+        {
+          "url": "https://github.com/madler/zlib/releases/download/v1.4/zlib-1.4.tar.xz",
+          "sha256": "4f11c512053d7bab8d9e9b89bde3575add3e4c50a383b42ef6cb837035fc5a7c",
+          "strip": 1
+        }
+      ],
+      "build": [
+        "cmake -S . -B out -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_INSTALL_PREFIX=\"$PREFIX\" -DZLIB_BUILD_TESTING=OFF -DZLIB_BUILD_SHARED=OFF",
+        "cmake --build out",
+        "cmake --install out",
+        "mv \"$PREFIX/lib/libzs.a\" \"$PREFIX/lib/libz.a\"",
+        "cp LICENSE \"$PREFIX/licenses/zlib.txt\""
+      ]
+    },
+    {
+      "name": "openssl",
+      "env": {
+        "CFLAGS": "-O2",
+        "PREFIX": "B:/prefix",
+        "PERL": "perl",
+        "PERL5OPT": "-IB:/src/openssl/quasidock -Munixspec"
+      },
+      "sources": [
+        {
+          "url": "https://github.com/openssl/openssl/releases/download/openssl-3.5.9/openssl-3.5.9.tar.gz",
+          "sha256": "603f5602e2eef00d77fbd429d34dcd5822bb301757a1bc9cdb24c670f1eb859a",
+          "strip": 1
+        },
+        {
+          "path": "gtk4-sdk/openssl-unixspec.pm",
+          "dest": "quasidock/unixspec.pm"
+        }
+      ],
+      "build": [
+        "perl Configure mingw64 no-shared no-asm no-tests no-docs no-apps no-module --prefix=\"$PREFIX\" --libdir=lib",
+        "make build_generated $(sed -n '/^GENERATED=/,/[^\\\\]$/p' Makefile | tr ' ' '\\n' | grep '[.][ch]$')",
+        "make -n build_libs | grep -e ' -c -o ' | tr '\\n' '\\0' | xargs -0 -P \"$(nproc)\" -n 1 sh -c",
+        "make build_sw",
+        "make install_dev",
+        "sed -i 's/^Libs: .* -lcrypto$/& -lws2_32 -lgdi32 -lcrypt32/' \"$PREFIX/lib/pkgconfig/libcrypto.pc\"",
+        "grep -q '^Libs: .* -lcrypt32$' \"$PREFIX/lib/pkgconfig/libcrypto.pc\"",
+        "cp LICENSE.txt \"$PREFIX/LICENSE.openssl\""
+      ]
+    },
+    {
+      "name": "nginx",
+      "sources": [
+        {
+          "url": "https://nginx.org/download/nginx-1.31.10.tar.gz",
+          "sha256": "a9b690957fca84abdae8a9b52d66b1bb459282d7f01fe4b94b498ed8e977bdb3",
+          "strip": 1
+        },
+        {
+          "path": "nginx/mingw.patch",
+          "dest": "quasidock/mingw.patch"
+        },
+        {
+          "path": "nginx/build-nginx.sh",
+          "dest": "quasidock/build-nginx.sh"
+        },
+        {
+          "path": "nginx/launcher.c",
+          "dest": "quasidock/launcher.c"
+        },
+        {
+          "path": "nginx/appcontainer.patch",
+          "dest": "quasidock/appcontainer.patch"
+        }
+      ],
+      "build": [
+        "patch -p1 < quasidock/mingw.patch",
+        "patch -p1 < quasidock/appcontainer.patch",
+        "sh quasidock/build-nginx.sh"
+      ]
+    },
+    {
+      "name": "configuration",
+      "sources": [
+        {
+          "path": "nginx/nginx.conf.in",
+          "dest": "conf/nginx.conf.in"
+        },
+        {
+          "path": "nginx/index.html",
+          "dest": "html/index.html"
+        }
+      ]
+    }
+  ]
+}
