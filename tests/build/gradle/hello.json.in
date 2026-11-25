@@ -17,7 +17,7 @@
         "dir": "vendor",
         "sha256": "db850a04ba97ee4f537bc62f669caabb99a7c6ef4f57968b8a259894627bb825"
       },
-      "build": ["ZIGSAW_GRADLE_REPO=\"$PWD/vendor\" gradle --offline stage", "cp -r build/stage/. \"$PREFIX/\""]
+      "build": ["QUASIDOCK_GRADLE_REPO=\"$PWD/vendor\" gradle --offline stage", "cp -r build/stage/. \"$PREFIX/\""]
     }
   ]
 }

@@ -29,7 +29,7 @@
       "build": [
         "sed -i -e 's/\\$version\\$/1.2026.9/' -e 's/\\$git\\.commit\\.id\\$/18d0aae/' -e 's/COMPILE_TIMESTAMP = 000L/COMPILE_TIMESTAMP = 1792224379000L/' src/main/java/net/sourceforge/plantuml/version/CompilationInfo.java",
         "grep -q '\"1.2026.9\"' src/main/java/net/sourceforge/plantuml/version/CompilationInfo.java",
-        "ZIGSAW_GRADLE_REPO=\"$PWD/vendor\" gradle --offline -Pfast jar -x generateGitProperties",
+        "QUASIDOCK_GRADLE_REPO=\"$PWD/vendor\" gradle --offline -Pfast jar -x generateGitProperties",
         "cp build/libs/plantuml-1.2026.9.jar \"$PREFIX/plantuml.jar\"",
         "cp COPYING \"$PREFIX/\""
       ]

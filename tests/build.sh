@@ -1104,7 +1104,7 @@ maven_again() { [ "$(rebuilt_manifest "$work\\maven\\hello.json")" = "$maven_dig
 check "built again, from the vendored repository in the cache, it's the same image" maven_again
 # Gradle, on the JDK: its vendor step builds with a Gradle home of its own,
 # and gradle-vendor makes the files Gradle downloaded a Maven repository; the
-# build points every repository there (ZIGSAW_GRADLE_REPO, read by the init
+# build points every repository there (QUASIDOCK_GRADLE_REPO, read by the init
 # script in Gradle's image), offline. The project has a settings plugin from
 # Gradle's plugin portal.
 check "gradle.json builds Gradle's image, on the JDK's" z build "$root\\recipes\\gradle.json"

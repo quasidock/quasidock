@@ -206,12 +206,6 @@ At runtime (`quasidock run [OPTIONS] IMAGE [COMMAND] [ARG...]`):
 See [containers and running images](../README.md#containers-and-running-images)
 for run flags and examples.
 
-Zigsaw's `exports`, `aliases`, Windows shortcuts/shims, `override`, `update`,
-`--share=commands`, and user-folder junctions were removed in Quasidock
-0.2.0–0.3.0; `entrypoint`, `cmd`, and `--rm` replace `command`, `args`,
-`exports`, and `--ephemeral` (see
-[Legacy Zigsaw differences](#legacy-zigsaw-differences)).
-
 ## `permissions`
 
 - `sandbox`: `"soft"`, `"low"` (default), or `"appcontainer"`.
@@ -1332,8 +1326,8 @@ on `"java"` (`"from": { "java": "java-sdk:..." }`), invoking Java with
 `-Dorg.gradle.daemon=false` in its `entrypoint` and packaging two helper files
 for reproducible offline builds:
 
-- [recipes/gradle/zigsaw-offline.gradle](../recipes/gradle/zigsaw-offline.gradle)
-  (staged at `init.d/zigsaw-offline.gradle`): when the `ZIGSAW_GRADLE_REPO`
+- [recipes/gradle/quasidock-offline.gradle](../recipes/gradle/quasidock-offline.gradle)
+  (staged at `init.d/quasidock-offline.gradle`): when the `QUASIDOCK_GRADLE_REPO`
   environment variable names a directory, it redirects every
   `MavenArtifactRepository` declared in settings (`buildscript`,
   `pluginManagement`, `dependencyResolutionManagement`) and projects
@@ -1345,7 +1339,7 @@ for reproducible offline builds:
   layout into a plain Maven repository layout
   `<group-dirs>/<module>/<version>/<file>`, stripping non-deterministic Gradle
   cache metadata so a stage's `vendor` directory hashes reproducibly for
-  offline `ZIGSAW_GRADLE_REPO="$PWD/vendor" gradle --offline` builds.
+  offline `QUASIDOCK_GRADLE_REPO="$PWD/vendor" gradle --offline` builds.
 
 Java application recipes targeting `"java"` (or `"java-sdk"` for Scene Builder)
 include:

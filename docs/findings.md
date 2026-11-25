@@ -687,7 +687,7 @@ Probed with `java Probe.java` on JDK and compiled bytecode on JRE:
   between stores after pinning `genBuildInfo`'s date to the tag commit in UTC.
 - **Vendoring Gradle**: copying Gradle's `caches/modules-2/files-2.1` cache
   into Maven layout via [`recipes/gradle/GradleVendor.java`](../recipes/gradle/GradleVendor.java)
-  and redirecting repositories with `ZIGSAW_GRADLE_REPO` /
+  and redirecting repositories with `QUASIDOCK_GRADLE_REPO` /
   [`recipes/gradle/zigsaw-offline.gradle`](../recipes/gradle/zigsaw-offline.gradle)
   handles settings plugins, `git-properties`, TeaVM, and `kotlin-dsl` offline
   (PlantUML: 3 min vendor, 2 min build).

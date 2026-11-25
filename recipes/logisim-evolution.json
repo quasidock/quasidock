@@ -29,7 +29,7 @@
       "build": [
         "sed -i -e 's/val now = Date()/val now = Date(1789185815000L)/' -e 's/val nowIso = SimpleDateFormat(.*/val nowIso = \"2026-09-12T04:03:35+0000\"/' -e 's/val currentMillis = Date().time/val currentMillis = now.time/' -e 's/val buildYear = SimpleDateFormat(\"yyyy\").format(now)/val buildYear = \"2026\"/' build.gradle.kts",
         "[ $(grep -c -e 'Date(1789185815000L)' -e '\"2026-09-12T04:03:35+0000\"' -e 'currentMillis = now.time' -e 'buildYear = \"2026\"' build.gradle.kts) = 4 ]",
-        "ZIGSAW_GRADLE_REPO=\"$PWD/vendor\" gradle --offline shadowJar",
+        "QUASIDOCK_GRADLE_REPO=\"$PWD/vendor\" gradle --offline shadowJar",
         "cp build/libs/logisim-evolution-5.0.0-all.jar \"$PREFIX/logisim-evolution.jar\"",
         "cp LICENSE.md support/jpackage/windows/Logisim-evolution.ico \"$PREFIX/\""
       ]

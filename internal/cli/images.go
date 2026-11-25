@@ -335,12 +335,19 @@ func imageRemove(ctx *context.Context, args []string) error {
 
 func imageCommand(ctx *context.Context, args []string) (uint32, error) {
 	if len(args) == 0 {
-		return 1, errors.New("usage: quasidock image <ls|inspect|pull|tag|push|rm|info|files|cat>")
+		return 1, errors.New("usage: quasidock image <ls|inspect|pull|tag|push|save|load|rm|info|files|cat>")
 	}
 	cmd, rest := args[0], args[1:]
 	if cmd == "--help" || cmd == "help" {
 		fmt.Fprint(ctx.Stdout, usage)
 		return 0, nil
+	}
+	// Archive operations own their shared store lock, including stream I/O.
+	if cmd == "save" {
+		return 0, imageSave(ctx, rest)
+	}
+	if cmd == "load" {
+		return 0, imageLoad(ctx, rest)
 	}
 	lock, err := ctx.Store.Lock(cmd == "rm" || cmd == "remove")
 	if err != nil {

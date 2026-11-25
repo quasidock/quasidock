@@ -81,6 +81,8 @@ go run ./scripts/build.go
 | `image pull` | `pull` | Download and cache an image without prompting |
 | `image tag` | `tag` | Add or move a local name |
 | `image push` | `push` | Publish the exact locally selected image |
+| `image save` | `save` | Save local images and all their aliases to an OCI tar archive |
+| `image load` | `load` | Load images from an OCI tar archive; `--force` replaces conflicting names |
 | `image rm` | `rmi` | Untag a reference or remove a cached manifest |
 
 References are `registry/repository[:tag][@sha256:...]`, or
@@ -113,6 +115,44 @@ containers first). Shared layers remain while other images, containers, or
 builds need them. `quasidock prune` collects stopped containers first, then
 newly unpinned unnamed images and unused deployments; `prune --data` also
 removes leftover legacy app data once unused.
+
+### Offline image transfer
+
+`save` (also `image save`) writes selected local images and **all their local
+aliases** to an OCI tar archive. It preserves image IDs and original compressed
+layer bytes, sharing each blob once. A bare app ID selects its current default,
+as with other local image commands; it does not select every cached version.
+
+```powershell
+quasidock save -o tools.tar node go
+quasidock load -i tools.tar
+quasidock run --rm --pull=never node node.exe --version
+```
+
+`load` (also `image load`) accepts plain tar or gzip-compressed tar, verifies
+the complete archive, and restores images and names together. Conflicting names
+fail the entire import unless `--force` is supplied. Existing app defaults and
+container image selections are preserved, including with `--force`. For apps
+without a default, load restores the archived default when included, otherwise
+choosing the lexicographically smallest imported manifest digest. Repeated loads
+are safe; `-q` / `--quiet` suppresses the loaded-image list.
+
+Both commands work offline. Incomplete lazy images must be fully pulled by their
+exact repository digest before saving. Save writes binary tar to stdout by
+default, and load reads stdin; use `-o` / `--output` and `-i` / `--input` to avoid
+shell text conversion. File saves replace existing output only after success.
+
+Container records, live private data, and volumes are separate from images.
+Capture private data and declared HKCU state with `commit` before transferring:
+
+```powershell
+quasidock commit worker example.test/worker:saved
+quasidock save -o worker.tar example.test/worker:saved
+quasidock load -i worker.tar
+```
+
+See [archive format and limits](docs/image-archives.md) for the OCI layout,
+metadata, and compatibility details.
 
 ## Containers and running images
 

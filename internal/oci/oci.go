@@ -951,7 +951,7 @@ func IsValidRegistryKey(key string) bool {
 	if !strings.EqualFold(parts[0], "Software") {
 		return false
 	}
-	for _, shared := range []string{"Classes", "Microsoft", "Policies", "Wow6432Node", "AppDataLow", "zigsaw", "quasidock"} {
+	for _, shared := range []string{"Classes", "Microsoft", "Policies", "Wow6432Node", "AppDataLow", "quasidock"} {
 		if strings.EqualFold(parts[1], shared) {
 			return false
 		}

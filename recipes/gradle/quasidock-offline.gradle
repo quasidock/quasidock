@@ -1,9 +1,9 @@
-// quasidock's offline builds (docs/recipes.md, "Gradle"): when ZIGSAW_GRADLE_REPO
+// quasidock's offline builds (docs/recipes.md, "Gradle"): when QUASIDOCK_GRADLE_REPO
 // names a directory, a Maven repository that gradle-vendor made from a build's
 // downloads, every Maven repository a build declares, wherever and whenever it
 // declares it (plugins, settings, build scripts, projects, included builds),
 // is that directory instead.
-def quasidockRepo = System.getenv('ZIGSAW_GRADLE_REPO')
+def quasidockRepo = System.getenv('QUASIDOCK_GRADLE_REPO')
 if (quasidockRepo) {
     def uri = new File(quasidockRepo).absoluteFile.toURI()
     def redirect = { RepositoryHandler repositories ->

@@ -5,7 +5,7 @@ import java.util.stream.Stream;
 
 // gradle-vendor <gradle user home> <dir>: makes <dir> a Maven repository of
 // everything a build downloaded into <gradle user home>, which a recipe's
-// vendor step pins, and its build reads through ZIGSAW_GRADLE_REPO
+// vendor step pins, and its build reads through QUASIDOCK_GRADLE_REPO
 // (quasidock-offline.gradle). Gradle keeps each download as
 // caches/modules-2/files-2.1/<group>/<module>/<version>/<sha1>/<file>, and
 // its other records there change from run to run, so only these are kept, as

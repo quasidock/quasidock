@@ -70,6 +70,10 @@ Docker-style image commands:
   image pull | pull [--lazy] <image>   cache an image, without prompting
   image tag | tag SOURCE TARGET       name a cached image; an omitted tag is latest
   image push | push [--sources] IMAGE  publish the exact local image
+  image save | save [-o|--output FILE] IMAGE [IMAGE...]
+                                       save local images and all their aliases as OCI tar
+  image load | load [-i|--input FILE] [-q|--quiet] [--force]
+                                       load OCI tar (or gzip); --force replaces names
   image rm | rmi IMAGE [IMAGE...]      untag a reference or remove a manifest ID
 
 Persistent storage:
@@ -143,6 +147,9 @@ QUASIDOCK_REGISTRY changes the default registry (ghcr.io/quasidock/quasidock).
 A bare cached app ID selects its last successful build/pull; full sha256 IDs
 select local manifests. Explicit names and tags select exactly that reference.
 Image IDs are manifest digests. images -q prints full IDs; inspect is local-only.
+save writes tar to stdout by default; load reads stdin by default (use -o/-i on Windows).
+save/load are offline; incomplete lazy images must be fully pulled before saving.
+load preserves existing app defaults; conflicting names require --force.
 Each run or create allocates isolated data under containers/<id>/data.
 create saves configuration without launching; start defaults to background.
 ps filters repeat (same key: OR; different keys: AND); status includes all states.
@@ -783,7 +790,7 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 		return 0, nil
 	}
 	switch cmd {
-	case "convert", "build", "volume", "container", "create", "commit", "ps", "diff", "exec", "attach", "start", "restart", "pause", "unpause", "kill", "stop", "rm", "logs", "image", "images", "inspect", "tag", "pull", "push", "rmi", "run", "search", "trust", "signature", "prune", "repair", "grants":
+	case "convert", "build", "volume", "container", "create", "commit", "ps", "diff", "exec", "attach", "start", "restart", "pause", "unpause", "kill", "stop", "rm", "logs", "image", "images", "inspect", "tag", "pull", "push", "save", "load", "rmi", "run", "search", "trust", "signature", "prune", "repair", "grants":
 	default:
 		return usageError()
 	}
@@ -814,7 +821,7 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 		return imageCommand(ctx, rest)
 	case "images":
 		return imageCommand(ctx, append([]string{"ls"}, rest...))
-	case "tag", "pull", "push":
+	case "tag", "pull", "push", "save", "load":
 		return imageCommand(ctx, append([]string{cmd}, rest...))
 	case "rmi":
 		return imageCommand(ctx, append([]string{"rm"}, rest...))
