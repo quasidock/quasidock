@@ -190,7 +190,7 @@ func selectStatsContainers(st *store.Store, opts statsOptions, targets []statsTa
 	var selected []statsContainer
 	if len(opts.targets) == 0 {
 		for _, rec := range all {
-			if opts.all || rec.State.Running {
+			if opts.all || rec.State.Running || rec.State.Restarting {
 				selected = append(selected, statsContainer{record: rec})
 			}
 		}

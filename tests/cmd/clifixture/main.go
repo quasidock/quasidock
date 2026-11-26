@@ -24,6 +24,26 @@ func main() {
 	args := os.Args[1:]
 	if len(args) > 0 {
 		switch args[0] {
+		case "restart-exit":
+			path := os.ExpandEnv(args[1])
+			data, _ := os.ReadFile(path)
+			count, _ := strconv.Atoi(string(data))
+			count++
+			if err := os.WriteFile(path, []byte(strconv.Itoa(count)), 0600); err != nil {
+				panic(err)
+			}
+			fmt.Printf("attempt %d\n", count)
+			code, _ := strconv.Atoi(args[2])
+			os.Exit(code)
+		case "allocate":
+			n, _ := strconv.ParseUint(args[1], 10, 64)
+			kernel := syscall.NewLazyDLL("kernel32.dll")
+			p, _, _ := kernel.NewProc("VirtualAlloc").Call(0, uintptr(n), 0x3000, 4)
+			if p == 0 {
+				os.Exit(23)
+			}
+			kernel.NewProc("VirtualFree").Call(p, 0, 0x8000)
+			return
 		case "stats-hold":
 			ready := os.ExpandEnv(args[1])
 			memory := make([]byte, 32<<20)

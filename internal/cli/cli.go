@@ -31,6 +31,10 @@ import (
 const usage = `usage: quasidock [--verbose] <command> [options]
 
 Docker-style container commands:
+  container rename | rename CONTAINER NEW_NAME
+                                       rename a container without changing its ID or data
+  container update | update [options] CONTAINER [CONTAINER...]
+                                       change resource limits and restart policy
   container create | create [options] IMAGE [COMMAND] [ARG...]
                                        create a container without starting it; print its ID
   container ls | ps [options]
@@ -158,6 +162,10 @@ exec options (before CONTAINER):
   --verbose                           print runtime diagnostics
 
 run/create options (before IMAGE; create rejects -d/--detach):
+  --cpus NUMBER                       logical CPU limit; 0 removes the limit
+  -m, --memory SIZE                    committed-memory limit; 0 removes the limit
+  --pids-limit N                       process limit; 0 or -1 removes the limit
+  --restart POLICY                     no, on-failure[:N], always, or unless-stopped
   --name NAME                         assign a name to the container
   --rm                                automatically remove the container when it exits
   -d, --detach                        run container in background and print container ID
@@ -189,6 +197,11 @@ save/load are offline; incomplete lazy images must be fully pulled before saving
 load preserves existing app defaults; conflicting names require --force.
 Each run or create allocates isolated data under containers/<id>/data.
 create saves configuration without launching; start defaults to background.
+update accepts --cpus, -m/--memory, --pids-limit and --restart; omitted settings stay.
+Limits apply live and on future starts, including exec children and the relay.
+Restart policies cannot be combined with --rm; the default policy is no.
+Automatic recovery ends if the supervisor exits or Windows restarts; use start.
+Foreground run attaches through pipes and returns after its first payload exits.
 ps filters repeat (same key: OR; different keys: AND); status includes all states.
 ps --last values <= 0 leave results unlimited with normal visibility rules.
 ps --size includes copied image seed files, excludes logs, and has no virtual total.
@@ -327,10 +340,12 @@ func parseContainerOptions(ctx *context.Context, args []string, command string) 
 	opts := run.Options{Pull: "missing"}
 	args = append([]string(nil), args...)
 	parser := settingsParser{command: command}
+	var updates run.UpdateOptions
 
 	flags := []string{"rm", "detach", "interactive", "tty", "verbose", "ephemeral"}
 	i := 0
 	for i < len(args) {
+		args[i] = memoryOption(args[i])
 		if args[i] == "--" {
 			i++
 			break
@@ -388,6 +403,13 @@ func parseContainerOptions(ctx *context.Context, args []string, command string) 
 			return opts, err
 		}
 		switch opt.Name {
+		case "cpus", "memory", "pids-limit", "restart":
+			if opt.Value == nil {
+				return opts, fmt.Errorf("--%s needs a value", opt.Name)
+			}
+			if err := parseUpdateSetting(&updates, opt.Name, *opt.Value); err != nil {
+				return opts, err
+			}
 		case "mount", "volume":
 			if opt.Value == nil {
 				return opts, errors.New("mount needs a value")
@@ -460,6 +482,21 @@ func parseContainerOptions(ctx *context.Context, args []string, command string) 
 	opts.ID = args[i]
 	opts.Args = args[i+1:]
 	opts.Settings = parser.finish()
+	if updates.NanoCPUs != nil {
+		opts.Resources.NanoCPUs = *updates.NanoCPUs
+	}
+	if updates.Memory != nil {
+		opts.Resources.Memory = *updates.Memory
+	}
+	if updates.PidsLimit != nil {
+		opts.Resources.PidsLimit = *updates.PidsLimit
+	}
+	if updates.RestartPolicy != nil {
+		opts.RestartPolicy = *updates.RestartPolicy
+	}
+	if opts.AutoRemove && opts.RestartPolicy.Enabled() {
+		return opts, errors.New("--rm and a non-no --restart policy cannot be combined")
+	}
 	if err := mounts.ValidateTargets(opts.Mounts); err != nil {
 		return opts, err
 	}
@@ -832,7 +869,7 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 		return 0, nil
 	}
 	switch cmd {
-	case "top", "stats", "events", "system", "convert", "build", "volume", "container", "create", "commit", "export", "ps", "diff", "cp", "exec", "attach", "start", "restart", "pause", "unpause", "kill", "stop", "rm", "logs", "image", "images", "inspect", "history", "tag", "pull", "push", "save", "load", "rmi", "run", "search", "trust", "signature", "prune", "repair", "grants":
+	case "rename", "update", "top", "stats", "events", "system", "convert", "build", "volume", "container", "create", "commit", "export", "ps", "diff", "cp", "exec", "attach", "start", "restart", "pause", "unpause", "kill", "stop", "rm", "logs", "image", "images", "inspect", "history", "tag", "pull", "push", "save", "load", "rmi", "run", "search", "trust", "signature", "prune", "repair", "grants":
 	default:
 		return usageError()
 	}
@@ -863,7 +900,7 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 		return execCommand(ctx, rest)
 	case "ps":
 		return containerCommand(ctx, append([]string{"ls"}, rest...))
-	case "top", "stats", "create", "commit", "export", "diff", "cp", "attach", "start", "restart", "pause", "unpause", "kill", "stop", "rm", "logs":
+	case "rename", "update", "top", "stats", "create", "commit", "export", "diff", "cp", "attach", "start", "restart", "pause", "unpause", "kill", "stop", "rm", "logs":
 		return containerCommand(ctx, append([]string{cmd}, rest...))
 	case "inspect":
 		return inspectAny(ctx, rest)

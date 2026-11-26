@@ -23,18 +23,21 @@ const (
 var errForegroundTERM = errors.New("TERM is unsupported for foreground containers; use stop or kill --signal KILL")
 var errSignalDelivery = errors.New("signal delivery failed")
 
-const controlProtocol = 1
+const controlProtocol = 2
 
 type controlAction string
 
 const (
-	actionPause   controlAction = "pause"
-	actionUnpause controlAction = "unpause"
+	actionUpdate        controlAction = "update"
+	actionCancelRestart controlAction = "cancel-restart"
+	actionPause         controlAction = "pause"
+	actionUnpause       controlAction = "unpause"
 	// Resume is idempotent for shutdown, which can race with attached TERM.
 	actionResume controlAction = "resume"
 )
 
 type controlRequest struct {
+	Update    *UpdateOptions `json:",omitempty"`
 	RunID     string
 	RequestID string
 	Signal    KillSignal
@@ -76,14 +79,19 @@ func controlResultPath(st *store.Store, id, requestID string) string {
 }
 
 func sendControl(ctx *context.Context, rec *store.ContainerRecord, signal KillSignal) error {
+	if rec.State.ControlProtocol >= 2 {
+		if err := sendControlRequest(ctx, rec, controlRequest{Action: actionCancelRestart}); err != nil && ctx.Store.IsContainerRunning(rec.ID) {
+			return err
+		}
+	}
 	return sendControlRequest(ctx, rec, controlRequest{Signal: signal})
 }
 
 func sendControlRequest(ctx *context.Context, rec *store.ContainerRecord, request controlRequest) error {
-	if !validRunID(rec.State.RunID) {
+	if !validRunID(controlKey(rec)) {
 		return errors.New("container uses an older supervisor; finish its run with the original binary before upgrading")
 	}
-	if request.Action != "" && rec.State.ControlProtocol != controlProtocol {
+	if request.Action != "" && rec.State.ControlProtocol < 1 {
 		return errors.New("container's supervisor does not support pause; stop and start it with this binary")
 	}
 	exited := func() error {
@@ -101,7 +109,7 @@ func sendControlRequest(ctx *context.Context, rec *store.ContainerRecord, reques
 		return err
 	}
 	defer win32.CloseHandle(ack)
-	event, err := win32.OpenEvent(controlEventName(rec.ID, rec.State.RunID), win32.EVENT_MODIFY_STATE)
+	event, err := win32.OpenEvent(controlEventName(rec.ID, controlKey(rec)), win32.EVENT_MODIFY_STATE)
 	if err != nil {
 		if !ctx.Store.IsContainerRunning(rec.ID) {
 			return exited()
@@ -109,11 +117,11 @@ func sendControlRequest(ctx *context.Context, rec *store.ContainerRecord, reques
 		return fmt.Errorf("opening container control event: %w", err)
 	}
 	defer win32.CloseHandle(event)
-	requestPath := controlPath(ctx.Store, rec.ID, rec.State.RunID)
+	requestPath := controlPath(ctx.Store, rec.ID, controlKey(rec))
 	resultPath := controlResultPath(ctx.Store, rec.ID, requestID)
 	defer func() { _ = os.Remove(requestPath) }()
 	defer func() { _ = os.Remove(resultPath) }()
-	request.RunID, request.RequestID = rec.State.RunID, requestID
+	request.RunID, request.RequestID = controlKey(rec), requestID
 	if err := writeControlJSON(ctx.Store, requestPath, request); err != nil {
 		return err
 	}
@@ -159,6 +167,29 @@ func sendControlRequest(ctx *context.Context, rec *store.ContainerRecord, reques
 	}
 }
 
+func serveControlRequest(ctx *context.Context, rec *store.ContainerRecord, handle func(controlRequest) error) {
+	data, err := os.ReadFile(controlPath(ctx.Store, rec.ID, controlKey(rec)))
+	if err != nil {
+		return
+	}
+	var request controlRequest
+	if json.Unmarshal(data, &request) != nil || request.RunID != controlKey(rec) || !validRunID(request.RequestID) {
+		return
+	}
+	result := controlResult{RequestID: request.RequestID}
+	if err := handle(request); err != nil {
+		result.Error = err.Error()
+	}
+	if err := writeControlJSON(ctx.Store, controlResultPath(ctx.Store, rec.ID, request.RequestID), result); err != nil {
+		ctx.Note("warning: writing container control response: %v", err)
+		return
+	}
+	if ack, err := win32.OpenEvent(controlAckName(request.RequestID), win32.EVENT_MODIFY_STATE); err == nil {
+		win32.SetEvent(ack)
+		win32.CloseHandle(ack)
+	}
+}
+
 func waitControlled(ctx *context.Context, rec *store.ContainerRecord, child *process.Child, detached bool, event win32.HANDLE, live *execRuntime, attachment *attachRuntime) (uint32, error) {
 	defer child.Close()
 	defer live.Close()
@@ -172,29 +203,15 @@ func waitControlled(ctx *context.Context, rec *store.ContainerRecord, child *pro
 				attachment.stopAccepting()
 			}
 			live.Close()
-			return child.Wait()
+			code, err := child.Wait()
+			live.mu.Lock()
+			failure := live.updateFailure
+			live.mu.Unlock()
+			return code, errors.Join(err, failure)
 		case win32.WAIT_OBJECT_0 + 1:
-			data, err := os.ReadFile(controlPath(ctx.Store, rec.ID, rec.State.RunID))
-			if err != nil {
-				continue
-			}
-			var request controlRequest
-			if json.Unmarshal(data, &request) != nil || request.RunID != rec.State.RunID || !validRunID(request.RequestID) {
-				continue
-			}
-			signalErr := live.control(ctx, rec, request, detached)
-			result := controlResult{RequestID: request.RequestID}
-			if signalErr != nil {
-				result.Error = signalErr.Error()
-			}
-			if err := writeControlJSON(ctx.Store, controlResultPath(ctx.Store, rec.ID, request.RequestID), result); err != nil {
-				ctx.Note("warning: writing container control response: %v", err)
-				continue
-			}
-			if ack, err := win32.OpenEvent(controlAckName(request.RequestID), win32.EVENT_MODIFY_STATE); err == nil {
-				win32.SetEvent(ack)
-				win32.CloseHandle(ack)
-			}
+			serveControlRequest(ctx, rec, func(request controlRequest) error {
+				return live.control(ctx, rec, request, detached)
+			})
 		default:
 			return 1, errors.New("waiting for container process or control event failed")
 		}
@@ -209,6 +226,13 @@ func (r *execRuntime) control(ctx *context.Context, rec *store.ContainerRecord, 
 	if r.runID != rec.State.RunID {
 		return errors.New("container run changed")
 	}
+	if request.Action == actionCancelRestart {
+		if request.Signal != "" || request.Update != nil {
+			return errors.New("invalid cancel-restart request")
+		}
+		_, err := suppressRestart(ctx, rec)
+		return err
+	}
 	if r.closing || win32.WaitForSingleObject(r.primary, 0) != win32.WAIT_TIMEOUT {
 		return errors.New("container is not running")
 	}
@@ -220,6 +244,11 @@ func (r *execRuntime) control(ctx *context.Context, rec *store.ContainerRecord, 
 			return errors.New("control action cannot include a signal")
 		}
 		switch request.Action {
+		case actionUpdate:
+			if request.Update == nil || request.Update.Empty() {
+				return errors.New("update requires at least one setting")
+			}
+			return r.updateLocked(ctx, rec, *request.Update)
 		case actionPause:
 			if r.paused {
 				return errors.New("container is already paused")
@@ -239,11 +268,16 @@ func (r *execRuntime) control(ctx *context.Context, rec *store.ContainerRecord, 
 			return fmt.Errorf("unsupported control action %q", request.Action)
 		}
 	}
+	if request.Signal == SignalTERM && !detached {
+		return errForegroundTERM
+	}
+	if (rec.State.SupervisorID != "" || rec.State.ControlProtocol >= 2) && (request.Signal == SignalTERM || request.Signal == SignalKILL) {
+		if _, err := suppressRestart(ctx, rec); err != nil {
+			return err
+		}
+	}
 	switch request.Signal {
 	case SignalTERM:
-		if !detached {
-			return errForegroundTERM
-		}
 		if r.paused {
 			if err := r.setPausedLocked(ctx, rec, false); err != nil {
 				return err
@@ -252,14 +286,14 @@ func (r *execRuntime) control(ctx *context.Context, rec *store.ContainerRecord, 
 		if err := win32.SendConsoleBreak(win32.GetProcessId(r.primary)); err != nil {
 			return err
 		}
-		ctx.Store.RecordContainerEvent(rec, "kill", map[string]string{"signal": "15"})
+		ctx.Store.RecordLiveContainerEvent(rec, "kill", map[string]string{"signal": "15"})
 		return nil
 	case SignalKILL:
 		r.stopLocked()
 		if !win32.TerminateJobObject(r.job, 1) {
 			return errors.New("TerminateJobObject failed")
 		}
-		ctx.Store.RecordContainerEvent(rec, "kill", map[string]string{"signal": "9"})
+		ctx.Store.RecordLiveContainerEvent(rec, "kill", map[string]string{"signal": "9"})
 		return nil
 	default:
 		return fmt.Errorf("unsupported signal %q", request.Signal)

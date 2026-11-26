@@ -117,6 +117,10 @@ func StartAttached(ctx *context.Context, opts AttachOptions) (uint32, error) {
 	if err != nil {
 		return 1, err
 	}
+	return startAttachedRecord(ctx, rec, op, opts)
+}
+
+func startAttachedRecord(ctx *context.Context, rec *store.ContainerRecord, op *store.ContainerOperation, opts AttachOptions) (uint32, error) {
 	det, ready, err := spawnSupervisor(ctx, rec, rec.RunSpec.HostCwd, true)
 	if err != nil {
 		recordLaunchFailure(ctx.Store, rec.ID, rec.State.RunID, err)
@@ -149,6 +153,14 @@ func StartAttached(ctx *context.Context, opts AttachOptions) (uint32, error) {
 			recordLaunchFailure(ctx.Store, rec.ID, rec.State.RunID, err)
 		}
 		return 1, err
+	}
+	// Auto-removal finishes after the final exit frame. Wait for that cleanup
+	// before returning to scripts that immediately reuse the container's name.
+	if rec.HostConfig.AutoRemove && streamErr == nil {
+		current, readErr := ctx.Store.ReadContainer(rec.ID)
+		if readErr == nil && !current.State.Running {
+			win32.WaitForSingleObject(det.Process, 5000)
+		}
 	}
 	return code, streamErr
 }

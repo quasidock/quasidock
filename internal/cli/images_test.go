@@ -239,7 +239,7 @@ func TestForegroundImages(t *testing.T) {
 	defer reg.Close()
 	a, _ := fixtureImage(t, reg, "1", payload)
 	fixtureImage(t, reg, "2", payload)
-	// Run actual CLI children so stdout, exit status and abrupt owner death are
+	// Run actual CLI children so stdout, exit status and abrupt client death are
 	// tested through the same entrypoint as the shipped program.
 	binary := filepath.Join(buildDir, "quasidock.exe")
 	cmd = exec.Command("go", "build", "-o", binary, "../../cmd/quasidock")
@@ -346,6 +346,13 @@ func TestForegroundImages(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = hold.Wait()
+	// Losing the foreground viewer leaves its detached supervisor running.
+	if rec, err := ctx.Store.ResolveContainer("held"); err != nil || !rec.State.Running {
+		t.Fatalf("client exit killed container: %+v %v", rec, err)
+	}
+	if out, code := call("stop", "-t", "0", "held"); code != 0 {
+		t.Fatalf("stop after client exit: %s %d", out, code)
+	}
 	// Exited containers continue pinning their image until removed or pruned.
 	if out, code := call("rmi", a); code == 0 || !strings.Contains(out, "in use") {
 		t.Fatalf("stopped container should pin image: %s %d", out, code)

@@ -23,7 +23,7 @@ import (
 
 func containerCommand(ctx *context.Context, args []string) (uint32, error) {
 	if len(args) == 0 {
-		return 1, errors.New("usage: quasidock container <create|commit|export|ls|stats|top|inspect|diff|cp|exec|attach|start|restart|pause|unpause|kill|stop|rm|logs|prune>")
+		return 1, errors.New("usage: quasidock container <create|commit|export|ls|stats|top|inspect|diff|cp|exec|attach|start|restart|rename|update|pause|unpause|kill|stop|rm|logs|prune>")
 	}
 	cmd, rest := args[0], args[1:]
 	if cmd == "--help" || cmd == "help" {
@@ -31,6 +31,10 @@ func containerCommand(ctx *context.Context, args []string) (uint32, error) {
 		return 0, nil
 	}
 	switch cmd {
+	case "rename":
+		return renameCommand(ctx, rest)
+	case "update":
+		return updateCommand(ctx, rest)
 	case "create":
 		return createCommand(ctx, rest)
 	case "commit":
@@ -461,6 +465,9 @@ func formatRelativeTime(ts string, now time.Time) string {
 }
 
 func formatContainerStatus(c store.ContainerRecord, now time.Time) string {
+	if c.State.Restarting {
+		return fmt.Sprintf("Restarting (%d)", c.State.ExitCode)
+	}
 	if c.State.Running {
 		status := "Up"
 		if t, err := parseTimestamp(c.State.StartedAt); err == nil {

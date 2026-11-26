@@ -168,6 +168,20 @@ func (s *Store) RecordContainerEvent(rec *ContainerRecord, action string, attrib
 	}
 }
 
+// RecordLiveContainerEvent refreshes names held in long-lived supervisors.
+// Unlike RecordContainerEvent, it must be called outside the container index lock.
+func (s *Store) RecordLiveContainerEvent(rec *ContainerRecord, action string, attributes map[string]string) {
+	copy := *rec
+	// Keep name lookup and append ordered with rename's index-locked event.
+	if lk, err := s.containersLock(false); err == nil {
+		defer lk.Release()
+		if current, err := s.readRawContainer(rec.ID); err == nil {
+			copy.Name = current.Name
+		}
+	}
+	s.RecordContainerEvent(&copy, action, attributes)
+}
+
 func (s *Store) recordContainerTransition(before ContainerState, rec *ContainerRecord, reconciled bool) {
 	if before.RunID != rec.State.RunID {
 		// A new run first saves its created state; only its later launch counts.
@@ -183,7 +197,7 @@ func (s *Store) recordContainerTransition(before ContainerState, rec *ContainerR
 		}
 		s.RecordContainerEvent(rec, action, nil)
 	}
-	if (before.Running || before.Launched && before.Status != "exited") && rec.State.Status == "exited" && !rec.State.Running {
+	if (before.Running || before.Launched && before.Status != "exited" && !before.Restarting) && rec.State.Status == "exited" && !rec.State.Running {
 		attrs := map[string]string{"exitCode": strconv.Itoa(rec.State.ExitCode)}
 		if reconciled {
 			attrs["reconciled"] = "true"

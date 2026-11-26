@@ -150,7 +150,8 @@ func prepareStart(ctx *context.Context, rec *store.ContainerRecord) (*store.Cont
 		snapshotInheritedEnv(ctx.Env, &c.RunSpec)
 		c.RunSpec.HostCwd = cwd
 		c.Config.AttachStdin = false
-		c.State = store.ContainerState{Status: "created", RunID: runID}
+		c.RestartCount = 0
+		c.State = store.ContainerState{Status: "created", RunID: runID, SupervisorID: runID, ControlProtocol: controlProtocol}
 		return nil
 	})
 	if err != nil {

@@ -51,6 +51,12 @@ func selectedImage(ctx *context.Context, opts Options) (*store.Ref, error) {
 // imminent launch; an empty one represents an intentionally unstarted container.
 // The caller holds the store lock until this record pins its image.
 func createContainer(ctx *context.Context, opts Options, selected *store.Ref, cfg oci.AppConfig, runID string) (*store.ContainerRecord, error) {
+	if opts.RestartPolicy.Name == "" {
+		opts.RestartPolicy.Name = "no"
+	}
+	if err := validateHostConfig(store.ContainerHostConfig{ContainerResources: opts.Resources, RestartPolicy: opts.RestartPolicy, AutoRemove: opts.AutoRemove}); err != nil {
+		return nil, err
+	}
 	for _, spec := range opts.Settings.FilesystemFor(cfg.Permissions.Filesystem) {
 		if oci.ParseFsGrant(spec) == nil {
 			return nil, ctx.Fail("invalid filesystem permission %q", spec)
@@ -77,7 +83,7 @@ func createContainer(ctx *context.Context, opts Options, selected *store.Ref, cf
 		AppID:      cfg.ID,
 		AppVersion: cfg.Version,
 		Args:       append([]string(nil), opts.Args...),
-		State:      store.ContainerState{Status: "created", RunID: runID},
+		State:      store.ContainerState{Status: "created", RunID: runID, SupervisorID: runID},
 		Config: store.ContainerConfig{
 			Image:       imageRef,
 			Cmd:         append([]string(nil), opts.Args...),
@@ -87,14 +93,16 @@ func createContainer(ctx *context.Context, opts Options, selected *store.Ref, cf
 			OpenStdin:   opts.Interactive,
 		},
 		HostConfig: store.ContainerHostConfig{
-			Mounts:       append([]mounts.Spec(nil), opts.Mounts...),
-			AutoRemove:   opts.AutoRemove,
-			Sandbox:      sandboxStr,
-			Network:      opts.Settings.Network,
-			Host:         opts.Settings.Host,
-			Filesystem:   append([]string(nil), opts.Settings.Filesystem...),
-			NoFilesystem: append([]string(nil), opts.Settings.NoFilesystem...),
-			Ports:        append([]string(nil), opts.Settings.Ports...),
+			ContainerResources: opts.Resources,
+			RestartPolicy:      opts.RestartPolicy,
+			Mounts:             append([]mounts.Spec(nil), opts.Mounts...),
+			AutoRemove:         opts.AutoRemove,
+			Sandbox:            sandboxStr,
+			Network:            opts.Settings.Network,
+			Host:               opts.Settings.Host,
+			Filesystem:         append([]string(nil), opts.Settings.Filesystem...),
+			NoFilesystem:       append([]string(nil), opts.Settings.NoFilesystem...),
+			Ports:              append([]string(nil), opts.Settings.Ports...),
 		},
 		RunSpec: store.ContainerRunSpec{
 			Args:       append([]string(nil), opts.Args...),

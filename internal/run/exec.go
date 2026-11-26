@@ -237,6 +237,7 @@ func Exec(ctx *context.Context, opts ExecOptions) (uint32, error) {
 // execRuntime borrows launchContainer's resources. Close joins all workers before
 // their tokens, mounts, registry, relays, and write watcher can be released.
 type execRuntime struct {
+	updateFailure       error
 	commitContext       *context.Context
 	commitRecord        *store.ContainerRecord
 	capturing           bool
@@ -437,7 +438,7 @@ func (r *execRuntime) recordExecEvent(action, id string, attrs map[string]string
 		attrs = make(map[string]string)
 	}
 	attrs["execID"] = id
-	r.commitContext.Store.RecordContainerEvent(r.commitRecord, action, attrs)
+	r.commitContext.Store.RecordLiveContainerEvent(r.commitRecord, action, attrs)
 }
 
 func (r *execRuntime) serve(c *execStream) {

@@ -24,22 +24,25 @@ var (
 )
 
 type ContainerState struct {
-	TopProtocol     int    `json:"TopProtocol,omitempty"`
-	StatsProtocol   int    `json:"StatsProtocol,omitempty"`
-	CommitProtocol  int    `json:"CommitProtocol,omitempty"`
-	ControlProtocol int    `json:"ControlProtocol,omitempty"`
-	AttachProtocol  int    `json:"AttachProtocol,omitempty"`
-	ExecProtocol    int    `json:"ExecProtocol,omitempty"`
-	RunID           string `json:"RunID,omitempty"`
-	Status          string `json:"Status"`
-	Running         bool   `json:"Running"`
-	Paused          bool   `json:"Paused"`
-	Pid             uint32 `json:"Pid"`
-	ExitCode        int    `json:"ExitCode"`
-	Error           string `json:"Error,omitempty"`
-	StartedAt       string `json:"StartedAt,omitempty"`
-	FinishedAt      string `json:"FinishedAt,omitempty"`
-	Launched        bool   `json:"Launched,omitempty"`
+	SupervisorID      string `json:"SupervisorID,omitempty"`
+	Restarting        bool   `json:"Restarting,omitempty"`
+	RestartSuppressed bool   `json:"RestartSuppressed,omitempty"`
+	TopProtocol       int    `json:"TopProtocol,omitempty"`
+	StatsProtocol     int    `json:"StatsProtocol,omitempty"`
+	CommitProtocol    int    `json:"CommitProtocol,omitempty"`
+	ControlProtocol   int    `json:"ControlProtocol,omitempty"`
+	AttachProtocol    int    `json:"AttachProtocol,omitempty"`
+	ExecProtocol      int    `json:"ExecProtocol,omitempty"`
+	RunID             string `json:"RunID,omitempty"`
+	Status            string `json:"Status"`
+	Running           bool   `json:"Running"`
+	Paused            bool   `json:"Paused"`
+	Pid               uint32 `json:"Pid"`
+	ExitCode          int    `json:"ExitCode"`
+	Error             string `json:"Error,omitempty"`
+	StartedAt         string `json:"StartedAt,omitempty"`
+	FinishedAt        string `json:"FinishedAt,omitempty"`
+	Launched          bool   `json:"Launched,omitempty"`
 }
 
 type ContainerConfig struct {
@@ -54,14 +57,16 @@ type ContainerConfig struct {
 }
 
 type ContainerHostConfig struct {
-	Mounts       []mounts.Spec `json:"Mounts,omitempty"`
-	AutoRemove   bool          `json:"AutoRemove"`
-	Sandbox      string        `json:"Sandbox,omitempty"`
-	Network      *bool         `json:"Network,omitempty"`
-	Host         *bool         `json:"Host,omitempty"`
-	Filesystem   []string      `json:"Filesystem,omitempty"`
-	NoFilesystem []string      `json:"NoFilesystem,omitempty"`
-	Ports        []string      `json:"Ports,omitempty"`
+	ContainerResources
+	RestartPolicy RestartPolicy `json:"RestartPolicy"`
+	Mounts        []mounts.Spec `json:"Mounts,omitempty"`
+	AutoRemove    bool          `json:"AutoRemove"`
+	Sandbox       string        `json:"Sandbox,omitempty"`
+	Network       *bool         `json:"Network,omitempty"`
+	Host          *bool         `json:"Host,omitempty"`
+	Filesystem    []string      `json:"Filesystem,omitempty"`
+	NoFilesystem  []string      `json:"NoFilesystem,omitempty"`
+	Ports         []string      `json:"Ports,omitempty"`
 }
 
 // ContainerRunSpec records the original launch inputs, independently of the
@@ -76,22 +81,23 @@ type ContainerRunSpec struct {
 }
 
 type ContainerRecord struct {
-	Mounts     []mounts.Mount      `json:"Mounts,omitempty"`
-	ID         string              `json:"Id"`
-	Created    string              `json:"Created"`
-	Name       string              `json:"Name"`
-	Image      string              `json:"Image"`
-	ImageRef   string              `json:"ImageRef"`
-	AppID      string              `json:"AppId"`
-	AppVersion string              `json:"AppVersion"`
-	Path       string              `json:"Path"`
-	Args       []string            `json:"Args"`
-	State      ContainerState      `json:"State"`
-	Config     ContainerConfig     `json:"Config"`
-	HostConfig ContainerHostConfig `json:"HostConfig"`
-	RunSpec    ContainerRunSpec    `json:"RunSpec,omitempty"`
-	DataDir    string              `json:"DataDir"`
-	LogPath    string              `json:"LogPath"`
+	RestartCount int                 `json:"RestartCount"`
+	Mounts       []mounts.Mount      `json:"Mounts,omitempty"`
+	ID           string              `json:"Id"`
+	Created      string              `json:"Created"`
+	Name         string              `json:"Name"`
+	Image        string              `json:"Image"`
+	ImageRef     string              `json:"ImageRef"`
+	AppID        string              `json:"AppId"`
+	AppVersion   string              `json:"AppVersion"`
+	Path         string              `json:"Path"`
+	Args         []string            `json:"Args"`
+	State        ContainerState      `json:"State"`
+	Config       ContainerConfig     `json:"Config"`
+	HostConfig   ContainerHostConfig `json:"HostConfig"`
+	RunSpec      ContainerRunSpec    `json:"RunSpec,omitempty"`
+	DataDir      string              `json:"DataDir"`
+	LogPath      string              `json:"LogPath"`
 }
 
 func (c *ContainerRecord) ShortID() string {
@@ -192,11 +198,67 @@ func (s *Store) LockContainer(id string) (*ContainerOperation, error) {
 	return &ContainerOperation{store: s, id: id, lock: lk}, nil
 }
 
+// TryLockContainer never waits, allowing supervisors to serve commands while a
+// caller holds the operation lock during a restart delay.
+func (s *Store) TryLockContainer(id string) (*ContainerOperation, error) {
+	if !oci.IsSha256Hex(id) {
+		return nil, fmt.Errorf("invalid container ID %q", id)
+	}
+	lk, err := TryLock(s.ContainerOperationLockPath(id), true)
+	if err != nil || lk == nil {
+		return nil, err
+	}
+	return &ContainerOperation{store: s, id: id, lock: lk}, nil
+}
+
 func (o *ContainerOperation) Release() { o.lock.Release() }
 
 // Remove removes the stopped container while the caller owns its operation lock.
 func (o *ContainerOperation) Remove() error {
 	return o.store.removeContainer(o.id)
+}
+
+// Rename checks uniqueness and writes the new name under the same index lock
+// used by creation. The caller owns this container's operation lock.
+func (o *ContainerOperation) Rename(name string) (*ContainerRecord, error) {
+	bare, err := ValidateContainerName(name)
+	if err != nil {
+		return nil, err
+	}
+	s := o.store
+	lk, err := s.containersLock(true)
+	if err != nil {
+		return nil, err
+	}
+	defer lk.Release()
+	rec, err := s.readRawContainer(o.id)
+	if err != nil {
+		return nil, err
+	}
+	if rec.BareName() == bare {
+		return rec, nil
+	}
+	all, err := s.listContainersNoLock(true)
+	if err != nil {
+		return nil, err
+	}
+	// Listing may reconcile a supervisor that exited during name resolution.
+	rec, err = s.readRawContainer(o.id)
+	if err != nil {
+		return nil, err
+	}
+	for _, c := range all {
+		if c.ID != rec.ID && strings.EqualFold(c.BareName(), bare) {
+			return nil, fmt.Errorf("%w: name %q is already assigned to container %s", ErrContainerNameInUse, bare, c.ShortID())
+		}
+	}
+	old := rec.BareName()
+	rec.Name = "/" + bare
+	if err := s.writeContainerStateNoLock(rec); err != nil {
+		return nil, err
+	}
+	s.RecordContainerEvent(rec, "rename", map[string]string{"oldName": old, "newName": bare})
+	return rec, nil
 }
 
 func (s *Store) writeContainerStateNoLock(rec *ContainerRecord) error {
@@ -243,6 +305,9 @@ func (s *Store) readRawContainer(id string) (*ContainerRecord, error) {
 	if err := json.Unmarshal(data, &rec); err != nil {
 		return nil, fmt.Errorf("reading container %s: %w", id, err)
 	}
+	if rec.HostConfig.RestartPolicy.Name == "" {
+		rec.HostConfig.RestartPolicy.Name = "no"
+	}
 	return &rec, nil
 }
 
@@ -253,7 +318,7 @@ func (s *Store) reconcileContainerNoLock(rec *ContainerRecord) (*ContainerRecord
 	if rec == nil {
 		return nil, nil
 	}
-	staleRunning := rec.State.Running || (rec.State.Status == "created" && rec.State.Launched)
+	staleRunning := rec.State.Running || rec.State.Restarting || (rec.State.Status == "created" && rec.State.Launched)
 	staleAutoRemove := rec.HostConfig.AutoRemove && rec.State.Status == "exited" && rec.State.Launched
 	if (!staleRunning && !staleAutoRemove) || s.IsContainerRunning(rec.ID) {
 		return rec, nil
@@ -261,6 +326,7 @@ func (s *Store) reconcileContainerNoLock(rec *ContainerRecord) (*ContainerRecord
 	before := rec.State
 	rec.State.Running = false
 	rec.State.Paused = false
+	rec.State.Restarting = false
 	rec.State.Status = "exited"
 	rec.State.Pid = 0
 	if rec.State.FinishedAt == "" {
@@ -304,7 +370,7 @@ func (s *Store) listContainersNoLock(all bool) ([]ContainerRecord, error) {
 		if err != nil || rec == nil {
 			continue
 		}
-		if !all && !rec.State.Running {
+		if !all && !rec.State.Running && !rec.State.Restarting {
 			continue
 		}
 		out = append(out, *rec)

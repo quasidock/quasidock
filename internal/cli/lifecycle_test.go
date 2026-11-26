@@ -336,7 +336,7 @@ func TestContainerStartRestartKill(t *testing.T) {
 		must(t, "kill", "retry")
 	})
 
-	t.Run("foreground TERM preserves native console behavior", func(t *testing.T) {
+	t.Run("foreground TERM uses the detached supervisor", func(t *testing.T) {
 		ready := filepath.Join(buildDir, "foreground-ready")
 		cmd := exec.Command(binary, "run", "--name", "foreground", app, "fixture.exe", "signal-hold", ready, "ignore")
 		cmd.Env = append(os.Environ(), "QUASIDOCK_HOME="+ctx.Store.Root)
@@ -349,9 +349,7 @@ func TestContainerStartRestartKill(t *testing.T) {
 		go func() { _ = cmd.Wait(); close(done) }()
 		t.Cleanup(func() { _ = cmd.Process.Kill() })
 		waitPID(t, ready, 0)
-		if out, code := call("kill", "-s", "TERM", "foreground"); code == 0 || !strings.Contains(out, "foreground") {
-			t.Fatalf("foreground TERM was not rejected: %s %d", out, code)
-		}
+		must(t, "kill", "-s", "TERM", "foreground")
 		must(t, "kill", "foreground")
 		select {
 		case <-done:
@@ -402,7 +400,7 @@ func TestContainerStartRestartKill(t *testing.T) {
 		must(t, "kill", "crashed")
 	})
 
-	t.Run("native foreground Ctrl+C", func(t *testing.T) {
+	t.Run("foreground Ctrl+C forwards TERM", func(t *testing.T) {
 		ready := filepath.Join(buildDir, "console-ready")
 		// Use a real pseudoconsole so this checks the event received by the
 		// application, rather than inferring it from process creation flags.
@@ -415,8 +413,8 @@ func TestContainerStartRestartKill(t *testing.T) {
 		if win32.WaitForSingleObject(consoleProcess, 5000) != win32.WAIT_OBJECT_0 {
 			t.Fatal("foreground Ctrl+C did not reach application")
 		}
-		if data, err := os.ReadFile(ready + ".signal"); err != nil || string(data) != "0" {
-			t.Fatalf("application did not receive native CTRL_C_EVENT: %q %v", data, err)
+		if data, err := os.ReadFile(ready + ".signal"); err != nil || string(data) != "1" {
+			t.Fatalf("application did not receive forwarded CTRL_BREAK_EVENT: %q %v", data, err)
 		}
 	})
 }

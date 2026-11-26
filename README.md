@@ -218,6 +218,8 @@ metadata, and compatibility details.
 | `container attach` | `attach` | Attach to a background container's live output and optional stdin |
 | `container start` | `start` | Start existing containers; `-a` attaches output, `-i` also attaches saved stdin |
 | `container restart` | `restart` | Stop and start containers (`-t`/`--time SECONDS`, default 10s) |
+| `container rename` | `rename` | Change a container's name while preserving its ID and data |
+| `container update` | `update` | Change CPU, memory, process limits, and restart policy |
 | `container pause` | `pause` | Freeze all processes in running containers |
 | `container unpause` | `unpause` | Resume paused containers without restarting them |
 | `container kill` | `kill` | Immediately terminate process trees; `-s`/`--signal TERM` requests graceful shutdown |
@@ -449,6 +451,10 @@ Single-letter boolean flags before IMAGE can be combined (for example `-it`, or
 | Option | Behavior |
 |---|---|
 | `--name NAME` | Assign a unique container name (`[a-zA-Z0-9][a-zA-Z0-9_.-]*`) |
+| `--cpus NUMBER` | Limit logical CPUs, including fractions; `0` removes the limit |
+| `-m SIZE`, `--memory SIZE` | Limit job-wide committed memory; `0` removes the limit |
+| `--pids-limit N` | Limit processes, including exec children and the relay; `0` or `-1` removes the limit |
+| `--restart POLICY` | `no` (default), `on-failure[:N]`, `always`, or `unless-stopped`; incompatible with `--rm` |
 | `--rm` | Delete the container and its private data on exit; preserve mounted contents and mounted registry state |
 | `-d`, `--detach` | `run` only: supervise the container in the background and print its 64-hex container ID |
 | `-i`, `--interactive` | Enable stdin: forward it in foreground runs, or keep a supervisor-owned pipe open for later attachment in background runs (otherwise stdin is `\\.\NUL`) |
@@ -469,6 +475,49 @@ per-container HKCU hive. Multiple containers—
 including different versions of the same app—can run concurrently without sharing
 state unless mounted storage is explicitly shared. Containers persist after exit
 unless `--rm` is set. Docker-style `-p` port publishing remains deferred.
+
+`rename CONTAINER NEW_NAME` works in every container state and produces no output
+on success. Names are unique case-insensitively; case-only changes are allowed.
+The old name becomes available immediately. Existing attachments and commands
+continue using the same container ID.
+
+`update [OPTIONS] CONTAINER [CONTAINER...]` accepts the resource and restart-policy
+flags above. Omitted settings stay as saved. Running and paused containers receive
+limits immediately; created and exited containers use them on their next start.
+Each successful selector is printed, and failures do not prevent later selectors
+from being updated. Updating an exited container does not start it.
+
+```powershell
+quasidock run -d --name worker --cpus=1.5 --memory=512m --pids-limit=32 --restart=on-failure:3 my-app
+quasidock rename worker processor
+quasidock update --memory=1g --restart=unless-stopped processor
+quasidock update --cpus=0 --memory=0 --pids-limit=-1 processor
+```
+
+Limits apply to the entire Windows Job Object, including descendants, exec jobs,
+and the relay; the supervisor and shared host services are excluded. Memory is
+committed memory, rather than resident RAM. Size suffixes such as `m`, `MB`, and
+`MiB` use powers of 1024. Lowering a memory limit can make later allocations fail.
+A process limit below the current process count is rejected. CPU limits are
+rounded down to Windows' 1/10,000 host-capacity increments; positive values below
+that resolution or above the host's logical processor count are rejected.
+
+Restart policies retry application exits while their detached supervisor remains
+alive. `on-failure:N` allows N automatic attempts per explicit start after nonzero
+exits; an omitted or zero N allows unlimited attempts. `always` and
+`unless-stopped` also restart successful exits. Both stop retrying after explicit
+stop, kill, or forwarded termination. An explicit start or restart clears the
+attempt count and suppression. Setup and process-creation failures are retained
+for manual retry. Backoff starts at 100 ms, doubles to at most one minute, and
+resets after a run lasts at least ten seconds.
+
+`ps` includes restart backoff and accepts `--filter=status=restarting`; inspect
+exposes `RestartCount` and `State.Restarting`. Updating the policy during backoff
+reevaluates the pending retry without resetting its count or delay. Policies
+cannot be combined with `--rm`. No Windows startup integration is installed:
+after reboot or supervisor failure, use `start`. Within this recovery scope,
+`always` and `unless-stopped` behave the same. Older live supervisors must be
+stopped and started with the current binary before they accept `update`.
 
 `diff CONTAINER` (also `container diff`) compares files and directories with the
 image's initial data, sorted as `A /home/example.txt`, `C /changed.txt`, or
@@ -546,13 +595,13 @@ next exit. It also retains the record if the replacement launch fails.
 sends Ctrl+Break to a detached container's console process group and returns after
 Windows accepts the request; applications may ignore it. TERM has no timeout or
 automatic escalation. Signals also accept `SIGKILL`/`9` and `SIGTERM`/`15`,
-case-insensitively. Foreground TERM is unsupported so native terminal Ctrl+C keeps
-its existing behavior; KILL works for foreground containers. `stop` and `restart`
+case-insensitively. Foreground `run` uses a detached supervisor and pipe attachment;
+Ctrl+C forwards TERM. `stop` and `restart`
 wait their requested grace period before forcing termination; `-t 0` forces it
 immediately. Killing a stopped container is an error.
 
 `attach [OPTIONS] CONTAINER` (also `container attach`) joins the primary process's
-live streams for a container launched by `run -d` or `start`. It streams stdout
+live streams for a container launched by `run` or `start`. It streams stdout
 and stderr separately without replaying historical logs. It forwards stdin when
 the container has saved `-i` and stdin remains open; `--no-stdin` selects an output
 viewer. Multiple viewers may connect, but only one session may own stdin. A second
@@ -572,8 +621,9 @@ later attachments can still view output. Attach returns the primary process's ex
 code after draining output, including for `--rm` containers. Stop, kill, and restart
 end attachments to the old run; attach never follows a replacement run. A viewer
 that exceeds its bounded output queue or stalls pipe writes for five seconds is
-disconnected so other viewers and logging can continue. Foreground `run` attachment
-is unsupported; its native Ctrl+C behavior is preserved. Older live supervisors must
+disconnected so other viewers and logging can continue. Foreground `run` returns
+the first payload's exit code even if automatic restarts continue in the background.
+Older live supervisors must
 be stopped and started with this binary before attachment is available.
 
 `exec [OPTIONS] CONTAINER COMMAND [ARG...]` (also `container exec`) runs an

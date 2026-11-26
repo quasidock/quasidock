@@ -100,23 +100,26 @@ func grantKey(spec string) string {
 }
 
 type Options struct {
-	Mounts      []mounts.Spec
-	ID          string
-	Args        []string
-	Entrypoint  *string
-	Pull        string
-	Image       *store.Ref
-	Name        string
-	Detach      bool
-	AutoRemove  bool
-	Interactive bool
-	TTY         bool
-	ContainerID string
-	Settings    Settings
-	operation   *store.ContainerOperation
-	runLock     *store.Lock
-	attachment  *attachRuntime
-	attachStart bool
+	Resources     store.ContainerResources
+	RestartPolicy store.RestartPolicy
+	Mounts        []mounts.Spec
+	ID            string
+	Args          []string
+	Entrypoint    *string
+	Pull          string
+	Image         *store.Ref
+	Name          string
+	Detach        bool
+	AutoRemove    bool
+	Interactive   bool
+	TTY           bool
+	ContainerID   string
+	Settings      Settings
+	operation     *store.ContainerOperation
+	runLock       *store.Lock
+	attachment    *attachRuntime
+	attachStart   bool
+	controlEvent  win32.HANDLE
 }
 
 // ReadyEventName returns the named manual-reset Win32 event signaled by a
@@ -150,22 +153,8 @@ func Run(ctx *context.Context, opts Options) (uint32, error) {
 		return 1, err
 	}
 
-	lazyLayers, err := lazyLayersOf(ctx, selected.Manifest)
-	if err != nil {
-		storeLock.Release()
-		return 1, err
-	}
-	_ = lazy.EnsureServed(ctx.Store, lazyLayers, ctx.Verbose)
-	failuresBefore := make([]int, len(lazyLayers))
-	for i, l := range lazyLayers {
-		hex := oci.DigestHex(l.Digest)
-		fails, _ := lazy.FailedFetches(ctx.Store, hex, 0)
-		failuresBefore[i] = len(fails)
-	}
-
 	img, err := ctx.Store.LoadImageRef(*selected)
 	if err != nil {
-		storeLock.Release()
 		return 1, err
 	}
 
@@ -195,25 +184,23 @@ func Run(ctx *context.Context, opts Options) (uint32, error) {
 		return 1, err
 	}
 
-	if opts.Detach {
-		img.Release()
-		storeLock.Release()
-		if err := launchSupervisor(ctx, created, hostCwd); err != nil {
-			if !ctx.Store.IsContainerRunning(created.ID) {
-				recordLaunchFailure(ctx.Store, created.ID, created.State.RunID, err)
-			}
-			if opts.AutoRemove && !ctx.Store.IsContainerRunning(created.ID) {
+	img.Release()
+	storeLock.Release()
+	if !opts.Detach {
+		stream := AttachOptions{Container: created.ID, NoStdin: !opts.Interactive, SigProxy: true}
+		return startAttachedRecord(ctx, created, op, stream)
+	}
+	if err := launchSupervisor(ctx, created, hostCwd); err != nil {
+		if !ctx.Store.IsContainerRunning(created.ID) {
+			recordLaunchFailure(ctx.Store, created.ID, created.State.RunID, err)
+			if opts.AutoRemove {
 				_ = op.Remove()
 			}
-			return 1, err
 		}
-		fmt.Fprintln(ctx.Stdout, created.ID)
-		return 0, nil
+		return 1, err
 	}
-
-	storeLock.Release()
-	opts.operation = op
-	return executeContainer(ctx, created, selected, img, lazyLayers, failuresBefore, opts, hostCwd, false, 0)
+	fmt.Fprintln(ctx.Stdout, created.ID)
+	return 0, nil
 }
 
 const supervisorStartupTimeout win32.DWORD = 120000
@@ -265,7 +252,8 @@ func awaitSupervisor(ctx *context.Context, created *store.ContainerRecord, super
 		if readErr != nil {
 			return readErr
 		}
-		if rec.State.RunID == created.State.RunID && rec.State.Launched {
+		if (rec.State.RunID == created.State.RunID && rec.State.Launched) ||
+			(created.State.SupervisorID != "" && rec.State.SupervisorID == created.State.SupervisorID && rec.RestartCount > 0) {
 			return nil
 		}
 		if rec.State.Error != "" {
@@ -292,46 +280,31 @@ func awaitSupervisor(ctx *context.Context, created *store.ContainerRecord, super
 	return fmt.Errorf("timed out waiting for container %s to start", created.ShortID())
 }
 
-// Supervise executes a previously created container in the background under a
-// detached supervisor process.
-func Supervise(ctx *context.Context, containerID, runID string, attached ...bool) (code uint32, runErr error) {
-	if !oci.IsSha256Hex(containerID) || !validRunID(runID) {
-		return 1, errors.New("invalid container supervisor arguments")
-	}
-	readyEvent, _ := win32.OpenEvent(ReadyEventName(containerID, runID), win32.EVENT_MODIFY_STATE)
-	if readyEvent != 0 {
-		defer win32.CloseHandle(readyEvent)
-		defer win32.SetEvent(readyEvent)
-	}
-	runLock, err := store.OpenLock(ctx.Store.ContainerRunLockPath(containerID), true, false)
-	if err != nil {
-		return 1, err
-	}
-	defer runLock.Release()
-	rec, err := ctx.Store.ReadContainer(containerID)
-	if err != nil {
-		return 1, err
-	}
-	if rec.State.RunID != runID {
-		return 1, errors.New("container launch attempt was superseded")
-	}
+// superviseAttempt loads the pinned image and executes one payload launch.
+func superviseAttempt(ctx *context.Context, rec *store.ContainerRecord, runLock *store.Lock, event, readyEvent win32.HANDLE, attached bool, operation *store.ContainerOperation) (code uint32, runErr error) {
+	var err error
+	runID := rec.State.RunID
 	var sandboxPtr *oci.Sandbox
 	if rec.HostConfig.Sandbox != "" {
 		sb := oci.Sandbox(rec.HostConfig.Sandbox)
 		sandboxPtr = &sb
 	}
 	opts := Options{
-		Mounts:      append([]mounts.Spec(nil), rec.HostConfig.Mounts...),
-		ID:          rec.AppID,
-		Args:        append([]string(nil), rec.RunSpec.Args...),
-		Entrypoint:  rec.RunSpec.Entrypoint,
-		Detach:      true,
-		AutoRemove:  rec.HostConfig.AutoRemove,
-		Interactive: rec.Config.OpenStdin,
-		TTY:         rec.Config.Tty,
-		ContainerID: rec.ID,
-		Name:        rec.BareName(),
-		runLock:     runLock,
+		Mounts:        append([]mounts.Spec(nil), rec.HostConfig.Mounts...),
+		ID:            rec.AppID,
+		Args:          append([]string(nil), rec.RunSpec.Args...),
+		Entrypoint:    rec.RunSpec.Entrypoint,
+		Detach:        true,
+		AutoRemove:    rec.HostConfig.AutoRemove,
+		Interactive:   rec.Config.OpenStdin,
+		TTY:           rec.Config.Tty,
+		ContainerID:   rec.ID,
+		Name:          rec.BareName(),
+		runLock:       runLock,
+		controlEvent:  event,
+		operation:     operation,
+		Resources:     rec.HostConfig.ContainerResources,
+		RestartPolicy: rec.HostConfig.RestartPolicy,
 		Settings: Settings{
 			Sandbox:      sandboxPtr,
 			Filesystem:   append([]string(nil), rec.HostConfig.Filesystem...),
@@ -342,7 +315,7 @@ func Supervise(ctx *context.Context, containerID, runID string, attached ...bool
 			Ports:        append([]string(nil), rec.HostConfig.Ports...),
 		},
 	}
-	opts.attachStart = len(attached) != 0 && attached[0]
+	opts.attachStart = attached
 	opts.attachment, err = newAttachRuntime(rec.ID, runID, rec.Config.OpenStdin, rec.Config.Tty)
 	if err != nil {
 		recordLaunchFailure(ctx.Store, rec.ID, runID, err)
@@ -398,7 +371,8 @@ func recordLaunchFailure(st *store.Store, id, runID string, err error) {
 			return nil
 		}
 		c.State = store.ContainerState{
-			RunID: runID, Status: "created", ExitCode: 1, Error: err.Error(),
+			SupervisorID: c.State.SupervisorID,
+			RunID:        runID, Status: "created", ExitCode: 1, Error: err.Error(),
 			FinishedAt: time.Now().UTC().Format(time.RFC3339Nano),
 		}
 		return nil
@@ -418,6 +392,7 @@ func executeContainer(
 	readyEvent win32.HANDLE,
 ) (uint32, error) {
 	runLock := opts.runLock
+	ownsRunLock := runLock == nil
 	if runLock == nil {
 		var err error
 		runLock, err = store.OpenLock(ctx.Store.ContainerRunLockPath(created.ID), true, false)
@@ -472,11 +447,13 @@ func executeContainer(
 		if opts.attachment != nil {
 			opts.attachment.finish(code, runErr)
 		}
-		runLock.Release()
+		if ownsRunLock {
+			runLock.Release()
+		}
 		if opts.operation != nil {
 			opts.operation.Release()
 		}
-		if created.HostConfig.AutoRemove && (launched || !detached) {
+		if ownsRunLock && created.HostConfig.AutoRemove && (launched || !detached) {
 			autoRemoveContainer(ctx, created)
 		}
 	}()
@@ -523,7 +500,7 @@ func launchContainer(
 	for _, spec := range fsSpecs {
 		g := oci.ParseFsGrant(spec)
 		if g == nil {
-			return 1, false, ctx.Fail("invalid filesystem permission %q", spec)
+			return 1, false, fmt.Errorf("invalid filesystem permission %q", spec)
 		}
 		switch g.Where.Type {
 		case oci.FsGrantCwd:
@@ -653,9 +630,9 @@ func launchContainer(
 		commandLine, err = process.BuildBatchCommandLine(exe, cmd.Exe, allArgs)
 		if err != nil {
 			if errors.Is(err, process.ErrInvalidBatchArgument) {
-				return 1, false, ctx.Fail("%s is a batch file, and cmd.exe can't pass it an argument with a line break or a NUL character", cmd.Exe)
+				return 1, false, fmt.Errorf("%s is a batch file, and cmd.exe can't pass it an argument with a line break or a NUL character", cmd.Exe)
 			}
-			return 1, false, ctx.Fail("%s can't be run as a batch file: %v", cmd.Exe, err)
+			return 1, false, fmt.Errorf("%s can't be run as a batch file: %v", cmd.Exe, err)
 		}
 	} else {
 		commandLine = process.BuildCommandLine(exe, allArgs)
@@ -858,11 +835,14 @@ func launchContainer(
 		return 1, false, err
 	}
 
-	controlEvent, err := win32.CreateEvent(controlEventName(created.ID, created.State.RunID), false, false)
-	if err != nil {
-		return 1, false, fmt.Errorf("creating container control event: %w", err)
+	controlEvent := opts.controlEvent
+	if controlEvent == 0 {
+		controlEvent, err = win32.CreateEvent(controlEventName(created.ID, controlKey(created)), false, false)
+		if err != nil {
+			return 1, false, fmt.Errorf("creating container control event: %w", err)
+		}
+		defer win32.CloseHandle(controlEvent)
 	}
-	defer win32.CloseHandle(controlEvent)
 
 	logFile, err := os.OpenFile(created.LogPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
@@ -942,6 +922,16 @@ func launchContainer(
 	}
 	child := process.Child{Job: job}
 	defer child.Close()
+	if _, _, err := setJobResources(job, created.HostConfig.ContainerResources); err != nil {
+		win32.CloseHandle(outRead)
+		win32.CloseHandle(outWrite)
+		win32.CloseHandle(errRead)
+		win32.CloseHandle(errWrite)
+		if nulIn != 0 {
+			win32.CloseHandle(nulIn)
+		}
+		return 1, false, fmt.Errorf("setting container resource limits: %w", err)
+	}
 
 	if relayExe != "" {
 		startRelay(ctx, cfg.ID, job, relayExe, published, forwards, security, envBlock)
@@ -1049,6 +1039,7 @@ func launchContainer(
 		c.Args = append([]string(nil), allArgs...)
 		c.Config.WorkingDir = cwd
 		c.State = store.ContainerState{
+			SupervisorID:    created.State.SupervisorID,
 			TopProtocol:     topProtocol,
 			StatsProtocol:   statsProtocol,
 			CommitProtocol:  commitProtocol,
@@ -1076,6 +1067,9 @@ func launchContainer(
 			written.Finish(ctx.Store, cfg.ID, watcher)
 		}
 		return 1, false, stateErr
+	}
+	if created.RestartCount > 0 {
+		ctx.Store.RecordLiveContainerEvent(created, "restart", map[string]string{"automatic": "true"})
 	}
 	if opts.attachment != nil {
 		opts.attachment.mu.Lock()
@@ -1213,7 +1207,7 @@ func hostDir(ctx *context.Context) (string, error) {
 	src := filepath.Join(filepath.Dir(self), "quasidock-host.exe")
 	bytes, err := os.ReadFile(src)
 	if err != nil {
-		return "", ctx.Fail("reading %s, which should be installed next to quasidock.exe: %v", src, err)
+		return "", fmt.Errorf("reading %s, which should be installed next to quasidock.exe: %v", src, err)
 	}
 	dir := ctx.Store.Path("host")
 	_ = os.MkdirAll(dir, 0o755)
@@ -1355,7 +1349,7 @@ func setUpAppContainer(ctx *context.Context, id string, setup appContainerSetup)
 					elsewhere = "elsewhere"
 				}
 				if g.Path != nil {
-					return nil, ctx.Fail("--sandbox=appcontainer won't let %s write %s: %s, and the app could then change every app's files; grant a directory %s, or read-only access (:ro)", id, p, why, elsewhere)
+					return nil, fmt.Errorf("--sandbox=appcontainer won't let %s write %s: %s, and the app could then change every app's files; grant a directory %s, or read-only access (:ro)", id, p, why, elsewhere)
 				}
 				ctx.Note("warning: %s is read-only for this run, as %s: run the app from a folder %s to let it write there, or with --sandbox=soft", p, why, elsewhere)
 				access = acl.AccessReadExecute
@@ -1559,7 +1553,7 @@ func setUpLow(ctx *context.Context, id string, setup lowSetup) (win32.HANDLE, er
 				ctx.Note("warning: %s is read-only for this run, as %s: run the app from a folder %s to let it write there, or with --sandbox=soft", p, why, elsewhere)
 				continue
 			}
-			return 0, ctx.Fail("--sandbox=low won't label %s low integrity: %s, and every low-integrity process could then write anywhere in it; grant a directory %s, or read-only access (:ro)", p, why, elsewhere)
+			return 0, fmt.Errorf("--sandbox=low won't label %s low integrity: %s, and every low-integrity process could then write anywhere in it; grant a directory %s, or read-only access (:ro)", p, why, elsewhere)
 		}
 
 		label := store.Grant{Kind: store.GrantLow, Path: p}

@@ -318,13 +318,19 @@ func TestContainerPauseUnpause(t *testing.T) {
 			before := record(t, name)
 			must(t, "pause", name)
 			if mode == "stop" {
-				fails(t, "foreground", "kill", "--signal=TERM", name)
-				if !record(t, name).State.Paused {
-					t.Fatal("rejected foreground TERM unpaused the container")
+				must(t, "kill", "--signal=TERM", name)
+				if record(t, name).State.Paused {
+					t.Fatal("foreground TERM did not unpause the container")
 				}
 				must(t, "stop", "-t", "1", name)
-			} else if err := owner.Process.Kill(); err != nil {
-				t.Fatal(err)
+			} else {
+				if err := owner.Process.Kill(); err != nil {
+					t.Fatal(err)
+				}
+				if !ctx.Store.IsContainerRunning(before.ID) {
+					t.Fatal("foreground client exit killed detached supervisor")
+				}
+				killTestSupervisor(t, before.State.Pid)
 			}
 			waitSession(t, done)
 			awaitPauseCondition(t, "dead owner retained run lock", func() bool { return !ctx.Store.IsContainerRunning(before.ID) })

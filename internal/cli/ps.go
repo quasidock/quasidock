@@ -46,9 +46,9 @@ func (f *containerListFilters) add(raw string) error {
 		f.names = append(f.names, pattern)
 	case "status":
 		switch value {
-		case "created", "running", "paused", "exited":
+		case "created", "running", "paused", "restarting", "exited":
 		default:
-			return fmt.Errorf("invalid ps status %q: use created, running, paused, or exited", value)
+			return fmt.Errorf("invalid ps status %q: use created, running, paused, restarting, or exited", value)
 		}
 		if f.statuses == nil {
 			f.statuses = make(map[string]bool)
@@ -181,6 +181,9 @@ func parseContainerListOptions(args []string) (containerListOptions, error) {
 }
 
 func containerFilterStatus(c store.ContainerRecord) string {
+	if c.State.Restarting {
+		return "restarting"
+	}
 	if c.State.Paused {
 		return "paused"
 	}
@@ -257,7 +260,7 @@ func selectContainers(st *store.Store, containers []store.ContainerRecord, opts 
 	all := opts.all || opts.last > 0 || len(opts.filters.statuses) > 0
 	var selected []store.ContainerRecord
 	for i, c := range containers {
-		if i <= before || i >= since || (!all && !c.State.Running) || !opts.filters.matches(c) {
+		if i <= before || i >= since || (!all && !c.State.Running && !c.State.Restarting) || !opts.filters.matches(c) {
 			continue
 		}
 		selected = append(selected, c)

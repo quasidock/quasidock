@@ -30,7 +30,7 @@ or `.BlockIO` fields.
 
 ### Container events
 
-`events` / `system events` records container lifecycle and exec actions only.
+`events` / `system events` records container lifecycle, rename, update, and exec actions.
 Image, volume, attach/detach, and commit actions are not recorded. Actual pause
 changes during commit capture and automatic shutdown resumes do produce
 `pause` / `unpause` events. Explicit successful `stop` and `restart` commands
@@ -71,14 +71,25 @@ TERM/KILL requests; recorded exit codes retain Quasidock's Windows semantics.
   reparse points, logs, and record metadata. Scans do not pause applications,
   and a scan error fails the listing before output. `--latest` and `--format`
   remain unsupported.
+- **Resource limits and restart recovery.** `run`, `create`, and `update` accept
+  `--cpus`, `--memory`, `--pids-limit`, and `--restart`. Limits cover the parent
+  Windows Job Object, including exec jobs and the relay. Memory limits count
+  committed memory, not resident RAM; lowering them can fail later allocations.
+  CPU rate is quantized to 1/10,000 host capacity and can be further constrained
+  by enclosing host jobs. CPU shares, affinity, swap, reservations, and I/O limits
+  are unsupported. Restart policies recover application exits only while the
+  supervisor lives; reboot or supervisor failure requires an explicit `start`.
+  `always` and `unless-stopped` therefore have the same recovery behavior here.
+  Setup and process-creation failures are not retried. Updating older live
+  supervisors requires a stop/start with the current binary.
 - **Lifecycle signals and attachment.** `start` defaults to background and
-  supports `-a`/`-i`; `restart` launches in the background. Attachment supports
-  `run -d` and `start` containers only, with one stdin writer and multiple output
-  viewers; foreground `run` attachment and automatic restart policies remain
-  unsupported. Clients do not follow a replacement run after restart.
+  supports `-a`/`-i`; `restart` launches in the background. All new runs use a
+  detached supervisor, with one stdin writer and multiple output viewers.
+  Foreground `run` returns after its first payload exits, even when automatic
+  restarts continue. Clients do not follow a replacement run after restart.
   `kill --signal TERM` maps to Ctrl+Break for detached console process groups,
-  which applications may ignore. Foreground TERM is rejected to preserve native
-  terminal Ctrl+C. KILL ends the Job Object for either mode. Finish active runs
+  which applications may ignore. Foreground Ctrl+C forwards TERM through its
+  attachment. KILL ends the Job Object for either mode. Finish active runs
   before upgrading a binary whose supervisor uses the older stop-event protocol.
 - **Pause platform support.** Pause uses Windows' private Job Object freeze
   information class, whose layout follows
@@ -187,7 +198,7 @@ TERM/KILL requests; recorded exit codes retain Quasidock's Windows semantics.
   `CreatePseudoConsole` helpers are implemented while `main()` currently exits
   `0` without running a live interactive Ctrl+C test
   ([iteration 2](iteration-2.md)). The offline CLI lifecycle test separately checks
-  that a foreground application receives native Ctrl+C through a pseudoconsole.
+  that foreground Ctrl+C forwards TERM through a pseudoconsole.
   Attachment tests also check TERM forwarding, keyboard detachment, and console
   input mode restoration through a pseudoconsole.
 - **Exec terminal and inspection support.** `exec` and `container exec` support
