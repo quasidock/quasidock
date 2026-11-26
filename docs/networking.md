@@ -118,6 +118,8 @@ the Host Network Service (HNS) and private virtual switch support.
 $networkId = quasidock network create example-private
 quasidock network ls
 quasidock network ls --quiet
+quasidock network inspect $networkId
+quasidock network inspect -f '{{.Id}} {{.Driver}}' example-private
 ```
 
 `network create` provisions a private Windows virtual network and prints its
@@ -131,6 +133,17 @@ later release.
 including those created by Windows and other tools. The inventory is independent
 of `QUASIDOCK_HOME`. Use `-q` or `--quiet` to print just the network GUIDs.
 
+`network inspect` reads live HNS networks by exact case-insensitive name or full
+GUID, with or without braces. A matching GUID takes precedence. Use a GUID when
+multiple networks share a name. The default output is an indented JSON array in
+argument order. Each record contains `Id`, `Name`, `Driver`, `Scope` (`local`),
+and `Properties`. The `Properties` object contains the detailed HCN properties
+returned by Windows and can vary by Windows version and network type.
+
+Use `-f` or `--format` to run a Go template on each record. For example,
+`--format '{{json .Properties}}'` prints the HCN properties as JSON, one object
+per argument. A failed lookup returns an error with empty stdout.
+
 Remove a network you created by passing its GUID to Windows' HNS diagnostics
 tool. [Microsoft HNS diagnostics](https://learn.microsoft.com/en-us/virtualization/windowscontainers/kubernetes/common-problems)
 
@@ -138,8 +151,8 @@ tool. [Microsoft HNS diagnostics](https://learn.microsoft.com/en-us/virtualizati
 hnsdiag delete networks $networkId
 ```
 
-The opt-in smoke test creates, checks, and removes a temporary private network.
-From the same elevated session, set `QUASIDOCK_TEST_HCN=1` and run
+The opt-in smoke test creates, lists, inspects, and removes a temporary private
+network. From the same elevated session, set `QUASIDOCK_TEST_HCN=1` and run
 `go test -count=1 ./internal/cli -run '^TestNetworkHCNSmoke$'`.
 
 ### Private loopback

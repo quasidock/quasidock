@@ -818,8 +818,10 @@ trust, signatures, grants, repair, and maintenance pruning remain available.
 Run `quasidock help` for supported commands.
 
 From an elevated PowerShell session, use `quasidock network create NAME` to
-provision a private Windows virtual network and `quasidock network ls` to list
-the host's HNS networks.
+provision a private Windows virtual network, `quasidock network ls` to list
+the host's HNS networks, and `quasidock network inspect NAME` to view live
+network properties as JSON. Use a full GUID or a name to select a network.
+`quasidock network inspect -f '{{.Id}}' NAME` prints just the GUID.
 [Host networking guide](docs/networking.md#host-network-management)
 
 Pull reports signature status and permissions. With a matching trust key, missing

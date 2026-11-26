@@ -3,11 +3,13 @@ package cli
 import (
 	"bytes"
 	"crypto/rand"
+	"encoding/json"
 	"errors"
 	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -24,6 +26,7 @@ func TestNetworkArguments(t *testing.T) {
 		{"create", ""}, {"create", ".hidden"}, {"create", "white space"},
 		{"create", "path/name"}, {"create", "héllo"}, {"create", strings.Repeat("a", 129)},
 		{"ls", "example"}, {"list", "--quiet=true"},
+		{"inspect"}, {"inspect", "-f"}, {"inspect", "--format={{.Id}}"}, {"inspect", "--quiet", "example"},
 	} {
 		if code, err := networkCommand(ctx, args, networkBackend{}); code != 1 || err == nil || out.Len() != 0 {
 			t.Errorf("%v: exit %d, error %v, output %q", args, code, err, out.String())
@@ -32,7 +35,7 @@ func TestNetworkArguments(t *testing.T) {
 	// An invalid network command must reach its parser without opening the store.
 	root := filepath.Join(t.TempDir(), "unopened-store")
 	t.Setenv("QUASIDOCK_HOME", root)
-	if code, err := Dispatch(ctx, []string{"network", "ls", "--invalid"}); code != 1 || err == nil || !strings.Contains(err.Error(), "unknown network ls option") {
+	if code, err := Dispatch(ctx, []string{"network", "inspect", "--invalid"}); code != 1 || err == nil || !strings.Contains(err.Error(), "unknown inspect option") {
 		t.Fatalf("network dispatch: exit %d, error %v", code, err)
 	}
 	if _, err := os.Stat(root); ctx.Store != nil || !errors.Is(err, fs.ErrNotExist) {
@@ -121,6 +124,136 @@ func TestNetworkList(t *testing.T) {
 	}
 }
 
+func TestNetworkInspectOutput(t *testing.T) {
+	private := win32.HCNNetwork{ID: "00000000-1234-5678-90ab-bcdef0123456", Name: "Example", Driver: "private"}
+	defaultSwitch := win32.HCNNetwork{ID: "10000000-1234-5678-90ab-bcdef0123456", Name: "Default Switch", Driver: "ics"}
+	shadow := win32.HCNNetwork{ID: "20000000-1234-5678-90ab-bcdef0123456", Name: defaultSwitch.ID, Driver: "nat"}
+	ctx := context.New()
+	var out bytes.Buffer
+	ctx.Stdout = &out
+	listCalls := 0
+	var queried []string
+	backend := networkBackend{
+		list: func() ([]win32.HCNNetwork, error) {
+			listCalls++
+			return []win32.HCNNetwork{shadow, private, defaultSwitch}, nil
+		},
+		inspect: func(id string) (win32.HCNNetworkDetails, error) {
+			queried = append(queried, id)
+			switch id {
+			case private.ID:
+				return win32.HCNNetworkDetails{HCNNetwork: private, Properties: map[string]any{
+					"AdditionalParams": map[string]any{"LargeID": json.Number("18446744073709551615")},
+				}}, nil
+			case defaultSwitch.ID:
+				return win32.HCNNetworkDetails{HCNNetwork: defaultSwitch, Properties: map[string]any{"Type": "ICS"}}, nil
+			default:
+				t.Fatalf("queried unexpected network %q", id)
+				return win32.HCNNetworkDetails{}, nil
+			}
+		},
+	}
+	first := `{"Id":"` + defaultSwitch.ID + `","Name":"Default Switch","Driver":"ics","Scope":"local","Properties":{"Type":"ICS"}}`
+	second := `{"Id":"` + private.ID + `","Name":"Example","Driver":"private","Scope":"local","Properties":{"AdditionalParams":{"LargeID":18446744073709551615}}}`
+	for _, test := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "JSON",
+			args: []string{defaultSwitch.ID, "example", "{" + strings.ToUpper(defaultSwitch.ID) + "}", "default switch"},
+			want: "[" + first + "," + second + "," + first + "," + first + "]",
+		},
+		{
+			name: "template",
+			args: []string{"--format={{.Id}} {{json .Properties}}", strings.ToUpper(defaultSwitch.ID), "example"},
+			want: defaultSwitch.ID + ` {"Type":"ICS"}` + "\n" + private.ID + ` {"AdditionalParams":{"LargeID":18446744073709551615}}` + "\n",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			out.Reset()
+			listCalls = 0
+			queried = nil
+			if code, err := networkCommand(ctx, append([]string{"inspect"}, test.args...), backend); code != 0 || err != nil {
+				t.Fatalf("inspect: exit %d, error %v, output %q", code, err, out.String())
+			}
+			got := out.String()
+			if test.name == "JSON" {
+				var compact bytes.Buffer
+				if !strings.HasPrefix(got, "[\n  {") || json.Compact(&compact, out.Bytes()) != nil {
+					t.Fatalf("expected an indented JSON array, got %q", got)
+				}
+				got = compact.String()
+			}
+			if got != test.want {
+				t.Errorf("inspect output = %q, want %q", got, test.want)
+			}
+			if listCalls != 1 || !slices.Equal(queried, []string{defaultSwitch.ID, private.ID}) {
+				t.Errorf("listed %d times and queried %v", listCalls, queried)
+			}
+		})
+	}
+}
+
+func TestNetworkInspectErrors(t *testing.T) {
+	private := win32.HCNNetwork{ID: "00000000-1234-5678-90ab-bcdef0123456", Name: "Example"}
+	other := win32.HCNNetwork{ID: "10000000-1234-5678-90ab-bcdef0123456", Name: "Other"}
+	for _, test := range []struct {
+		name          string
+		args          []string
+		inspectErr    error
+		message       string
+		wantInspected int
+	}{
+		{name: "unknown", args: []string{"Example", "missing"}, message: `network "missing" not found`},
+		{name: "ID prefix", args: []string{private.ID[:12]}, message: "not found"},
+		{name: "name prefix", args: []string{"exam"}, message: "not found"},
+		{name: "ambiguous", args: []string{"Shared"}, message: "use a full network GUID"},
+		{name: "removed", args: []string{"Example", "Other"}, inspectErr: win32.ErrHCNNetworkNotFound, message: `network "Other" not found`, wantInspected: 2},
+		{name: "permission", args: []string{"Other"}, inspectErr: fs.ErrPermission, message: "elevated PowerShell session", wantInspected: 1},
+		{name: "unavailable", args: []string{"Other"}, inspectErr: win32.ErrHCNUnavailable, message: "Host Network Service", wantInspected: 1},
+		{name: "invalid template", args: []string{"--format", "{{", "Example"}, message: "template:", wantInspected: 1},
+		{name: "template execution", args: []string{"Example", "Other", "-f", `{{if eq .Name "Other"}}{{.Missing}}{{else}}{{.Id}}{{end}}`}, message: "can't evaluate field Missing", wantInspected: 2},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			ctx := context.New()
+			var out bytes.Buffer
+			ctx.Stdout = &out
+			inspected := 0
+			backend := networkBackend{
+				list: func() ([]win32.HCNNetwork, error) {
+					return []win32.HCNNetwork{
+						private,
+						other,
+						{ID: "20000000-1234-5678-90ab-bcdef0123456", Name: "Shared"},
+						{ID: "30000000-1234-5678-90ab-bcdef0123456", Name: "shared"},
+					}, nil
+				},
+				inspect: func(id string) (win32.HCNNetworkDetails, error) {
+					inspected++
+					switch id {
+					case private.ID:
+						return win32.HCNNetworkDetails{HCNNetwork: private}, nil
+					case other.ID:
+						return win32.HCNNetworkDetails{HCNNetwork: other}, test.inspectErr
+					default:
+						t.Fatalf("queried unexpected network %q", id)
+						return win32.HCNNetworkDetails{}, nil
+					}
+				},
+			}
+			code, err := networkCommand(ctx, append([]string{"inspect"}, test.args...), backend)
+			if code != 1 || err == nil || !strings.Contains(err.Error(), test.message) || out.Len() != 0 {
+				t.Fatalf("inspect: exit %d, error %v, output %q", code, err, out.String())
+			}
+			if inspected != test.wantInspected || (test.inspectErr != nil && !errors.Is(err, test.inspectErr)) {
+				t.Errorf("inspected %d networks, error %v", inspected, err)
+			}
+		})
+	}
+}
+
 func TestNetworkBackendErrors(t *testing.T) {
 	ctx := context.New()
 	var out bytes.Buffer
@@ -133,7 +266,7 @@ func TestNetworkBackendErrors(t *testing.T) {
 		{win32.ErrHCNUnavailable, "Host Network Service"},
 	} {
 		backend := networkBackend{list: func() ([]win32.HCNNetwork, error) { return nil, test.err }}
-		for _, args := range [][]string{{"ls"}, {"create", "example"}} {
+		for _, args := range [][]string{{"ls"}, {"create", "example"}, {"inspect", "example"}} {
 			if code, err := networkCommand(ctx, args, backend); code != 1 || !errors.Is(err, test.err) || !strings.Contains(err.Error(), test.message) || out.Len() != 0 {
 				t.Errorf("%v: exit %d, error %v, output %q", args, code, err, out.String())
 			}
@@ -213,6 +346,16 @@ func TestNetworkHCNSmoke(t *testing.T) {
 	if table.err != nil || table.code != 0 || !listed {
 		t.Fatalf("private network %s missing from network ls: %v\n%s", id, table.err, table.out)
 	}
+	inspection := call("inspect", strings.ToLower(name), id)
+	var networks []inspectedNetwork
+	if inspection.err != nil || inspection.code != 0 || json.Unmarshal([]byte(inspection.out), &networks) != nil || len(networks) != 2 {
+		t.Fatalf("inspect private network by name and ID: %v\n%s", inspection.err, inspection.out)
+	}
+	for _, network := range networks {
+		if network.Id != id || !strings.EqualFold(network.Name, name) || network.Driver != "private" || network.Scope != "local" || network.Properties["Type"] != "Private" {
+			t.Errorf("unexpected network inspect result: %+v", network)
+		}
+	}
 	diagnostics, err = exec.Command(hnsdiag, "list", "networks", id).CombinedOutput()
 	if err != nil || !strings.Contains(strings.ToLower(string(diagnostics)), id) {
 		t.Fatalf("private network %s missing from hnsdiag: %v\n%s", id, err, diagnostics)
@@ -220,9 +363,15 @@ func TestNetworkHCNSmoke(t *testing.T) {
 	if out, err := exec.Command(hnsdiag, "delete", "networks", id).CombinedOutput(); err != nil {
 		t.Fatalf("delete HNS network %s: %v\n%s", id, err, out)
 	}
+	created = nil
 	quiet := call("ls", "-q")
 	if quiet.err != nil || quiet.code != 0 || strings.Contains(quiet.out, id) {
 		t.Fatalf("network ls after deletion of %s: %v\n%s", id, quiet.err, quiet.out)
 	}
-	created = nil
+	for _, target := range []string{name, id} {
+		missing := call("inspect", target)
+		if missing.code != 1 || missing.err == nil || !strings.Contains(missing.err.Error(), "not found") || missing.out != "" {
+			t.Errorf("inspect %q after deletion: exit %d, error %v, output %q", target, missing.code, missing.err, missing.out)
+		}
+	}
 }

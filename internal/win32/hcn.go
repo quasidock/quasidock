@@ -15,9 +15,9 @@ import (
 const hcnSchemaVersion = `{"Major":2,"Minor":0}`
 
 var (
-	ErrHCNUnavailable   = errors.New("host networking is unavailable")
-	ErrHCNNetworkExists = errors.New("a Windows network with this name already exists")
-	errHCNNetworkGone   = errors.New("Windows network no longer exists")
+	ErrHCNUnavailable     = errors.New("host networking is unavailable")
+	ErrHCNNetworkExists   = errors.New("a Windows network with this name already exists")
+	ErrHCNNetworkNotFound = errors.New("Windows network no longer exists")
 
 	getHCN = sync.OnceValues(loadHCN)
 )
@@ -27,6 +27,12 @@ type HCNNetwork struct {
 	ID     string
 	Name   string
 	Driver string
+}
+
+// HCNNetworkDetails includes the complete HCN properties of a live network.
+type HCNNetworkDetails struct {
+	HCNNetwork
+	Properties map[string]any
 }
 
 type hcnAPI struct {
@@ -135,10 +141,14 @@ func ListHCNNetworks() ([]HCNNetwork, error) {
 		if err != nil {
 			return nil, err
 		}
-		network, err := api.network(guid, query)
-		if errors.Is(err, errHCNNetworkGone) {
+		raw, err := api.networkProperties(guid, query)
+		if errors.Is(err, ErrHCNNetworkNotFound) {
 			continue
 		}
+		if err != nil {
+			return nil, fmt.Errorf("query Windows network %s: %w", id, err)
+		}
+		network, err := decodeHCNNetwork(guid, raw)
 		if err != nil {
 			return nil, fmt.Errorf("query Windows network %s: %w", id, err)
 		}
@@ -147,7 +157,29 @@ func ListHCNNetworks() ([]HCNNetwork, error) {
 	return networks, nil
 }
 
-func (api *hcnAPI) network(id GUID, query *uint16) (HCNNetwork, error) {
+// InspectHCNNetwork queries the detailed properties of a Windows network by GUID.
+func InspectHCNNetwork(id string) (HCNNetworkDetails, error) {
+	guid, err := parseHCNID(id)
+	if err != nil {
+		return HCNNetworkDetails{}, err
+	}
+	api, err := getHCN()
+	if err != nil {
+		return HCNNetworkDetails{}, err
+	}
+	// Flag 1 is HCN's Detailed query flag.
+	query, err := syscall.UTF16PtrFromString(`{"SchemaVersion":` + hcnSchemaVersion + `,"Flags":1}`)
+	if err != nil {
+		return HCNNetworkDetails{}, err
+	}
+	raw, err := api.networkProperties(guid, query)
+	if err != nil {
+		return HCNNetworkDetails{}, err
+	}
+	return decodeHCNNetworkDetails(guid, raw)
+}
+
+func (api *hcnAPI) networkProperties(id GUID, query *uint16) (string, error) {
 	var handle HANDLE
 	var result *uint16
 	hr, _, _ := api.open.Call(
@@ -159,7 +191,7 @@ func (api *hcnAPI) network(id GUID, query *uint16) (HCNNetwork, error) {
 		defer api.close.Call(handle)
 	}
 	if err := hcnResult("HcnOpenNetwork", hr, result); err != nil {
-		return HCNNetwork{}, err
+		return "", err
 	}
 	var output *uint16
 	result = nil
@@ -171,9 +203,9 @@ func (api *hcnAPI) network(id GUID, query *uint16) (HCNNetwork, error) {
 	)
 	raw := takeHCNString(output)
 	if err := hcnResult("HcnQueryNetworkProperties", hr, result); err != nil {
-		return HCNNetwork{}, err
+		return "", err
 	}
-	return decodeHCNNetwork(id, raw)
+	return raw, nil
 }
 
 func decodeHCNNetwork(id GUID, raw string) (HCNNetwork, error) {
@@ -183,6 +215,23 @@ func decodeHCNNetwork(id GUID, raw string) (HCNNetwork, error) {
 		return HCNNetwork{}, fmt.Errorf("decode HCN network properties: %w", err)
 	}
 	return HCNNetwork{ID: formatHCNID(id), Name: properties.Name, Driver: strings.ToLower(properties.Type)}, nil
+}
+
+func decodeHCNNetworkDetails(id GUID, raw string) (HCNNetworkDetails, error) {
+	network, err := decodeHCNNetwork(id, raw)
+	if err != nil {
+		return HCNNetworkDetails{}, err
+	}
+	decoder := json.NewDecoder(strings.NewReader(raw))
+	decoder.UseNumber()
+	var properties map[string]any
+	if err := decoder.Decode(&properties); err != nil {
+		return HCNNetworkDetails{}, fmt.Errorf("decode HCN network properties: %w", err)
+	}
+	if properties == nil {
+		return HCNNetworkDetails{}, errors.New("decode HCN network properties: expected a JSON object")
+	}
+	return HCNNetworkDetails{HCNNetwork: network, Properties: properties}, nil
 }
 
 func takeHCNString(value *uint16) string {
@@ -214,7 +263,7 @@ func (e *hcnError) Unwrap() error {
 	case 0x803b0010, 0x800700b7: // HCN_E_NETWORK_ALREADY_EXISTS, ERROR_ALREADY_EXISTS
 		return ErrHCNNetworkExists
 	case 0x803b0001, 0x80070490, 0x803b0031: // HCN_E_NETWORK_NOT_FOUND, ERROR_NOT_FOUND, HCN_E_OBJECT_USED_AFTER_UNLOAD
-		return errHCNNetworkGone
+		return ErrHCNNetworkNotFound
 	case 0x803b0020, 0x800706ba, 0x80070422, 0x80070426: // HCN manager stopped, RPC unavailable, service disabled or inactive
 		return ErrHCNUnavailable
 	default:

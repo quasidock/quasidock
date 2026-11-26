@@ -104,6 +104,8 @@ Windows host networking (elevated shell):
   network create NAME                create a private Windows network; print its ID
   network ls | network list [-q|--quiet]
                                      list Windows host networks
+  network inspect [-f TEMPLATE|--format TEMPLATE] NAME|ID [NAME|ID...]
+                                     show live Windows network properties (JSON by default)
 
 Persistent storage:
   volume create NAME                 create a reusable named volume

@@ -1,6 +1,7 @@
 package win32
 
 import (
+	"encoding/json"
 	"errors"
 	"io/fs"
 	"strings"
@@ -39,6 +40,28 @@ func TestHCNNetworkProperties(t *testing.T) {
 	}
 }
 
+func TestHCNNetworkDetails(t *testing.T) {
+	const raw = `{"Name":"Sample","FutureField":[{"LargestID":18446744073709551615,"Enabled":true,"Optional":null}]}`
+	id := GUID{Data1: 1}
+	details, err := decodeHCNNetworkDetails(id, raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if details.ID != "00000001-0000-0000-0000-000000000000" || details.Name != "Sample" || details.Driver != "nat" {
+		t.Errorf("unexpected network summary: %+v", details.HCNNetwork)
+	}
+	got, err := json.Marshal(details.Properties)
+	const want = `{"FutureField":[{"Enabled":true,"LargestID":18446744073709551615,"Optional":null}],"Name":"Sample"}`
+	if err != nil || string(got) != want {
+		t.Errorf("detailed properties = %s, error %v", got, err)
+	}
+	for _, invalid := range []string{"", "null", "[]", `{"Name":123}`, `{"Name":"Sample"}{}`} {
+		if _, err := decodeHCNNetworkDetails(id, invalid); err == nil {
+			t.Errorf("accepted invalid HCN properties %q", invalid)
+		}
+	}
+}
+
 func TestHCNResult(t *testing.T) {
 	if err := hcnResult("HcnCreateNetwork", 0, nil); err != nil {
 		t.Fatal(err)
@@ -49,7 +72,9 @@ func TestHCNResult(t *testing.T) {
 	}{
 		{0x80070005, fs.ErrPermission},
 		{0x803b0010, ErrHCNNetworkExists},
-		{0x803b0001, errHCNNetworkGone},
+		{0x803b0001, ErrHCNNetworkNotFound},
+		{0x80070490, ErrHCNNetworkNotFound},
+		{0x803b0031, ErrHCNNetworkNotFound},
 		{0x800706ba, ErrHCNUnavailable},
 	} {
 		err := hcnResult("HcnOpenNetwork", test.code, nil)
