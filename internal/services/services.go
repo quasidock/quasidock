@@ -37,6 +37,10 @@ type Ports struct {
 }
 
 func Resolve(st *store.Store, containerID string, cfg oci.AppConfig, uses []oci.Use, moved []string, sandbox oci.Sandbox) ([]Ports, error) {
+	return ResolvePublishing(st, containerID, cfg, uses, moved, sandbox, nil)
+}
+
+func ResolvePublishing(st *store.Store, containerID string, cfg oci.AppConfig, uses []oci.Use, moved []string, sandbox oci.Sandbox, requests map[string][]store.PortBinding) ([]Ports, error) {
 	services := cfg.Permissions.Services
 
 	for _, m := range moved {
@@ -81,13 +85,35 @@ func Resolve(st *store.Store, containerID string, cfg oci.AppConfig, uses []oci.
 		out[i] = Ports{Service: s, Port: port, Listen: port}
 	}
 
-	if sandbox == oci.SandboxAppContainer && len(out) > 0 {
-		internal, err := internalPorts(st, containerID, out)
+	var allocate []Ports
+	var indices []int
+	var excluded []uint16
+	for key, bindings := range requests {
+		var raw uint16
+		_, _ = fmt.Sscanf(key, "%d/tcp", &raw)
+		excluded = append(excluded, raw)
+		for _, binding := range bindings {
+			port, _ := strconv.ParseUint(binding.HostPort, 10, 16)
+			excluded = append(excluded, uint16(port))
+		}
+	}
+	for _, target := range Targets(uses, moved) {
+		excluded = append(excluded, target.Port)
+	}
+	for i, port := range out {
+		excluded = append(excluded, port.Port)
+		if sandbox == oci.SandboxAppContainer || len(requests[PortKey(port.Service.Port)]) > 0 {
+			allocate = append(allocate, port)
+			indices = append(indices, i)
+		}
+	}
+	if len(allocate) > 0 {
+		internal, err := internalPorts(st, containerID, allocate, excluded...)
 		if err != nil {
 			return nil, err
 		}
-		for i := range out {
-			out[i].Listen = internal[i]
+		for i, index := range indices {
+			out[index].Listen = internal[i]
 		}
 	}
 	return out, nil
@@ -212,7 +238,7 @@ const (
 
 // Reservations belong to the container, outside its mounted/committed data.
 // One allocator lock also protects simultaneous first starts of different images.
-func internalPorts(st *store.Store, id string, ports []Ports) ([]uint16, error) {
+func internalPorts(st *store.Store, id string, ports []Ports, excluded ...uint16) ([]uint16, error) {
 	p := filepath.Join(st.ContainerDir(id), "ports.txt")
 	lock, err := store.OpenLock(st.Path("ports", "allocate.lock"), true, true)
 	if err != nil {
@@ -238,7 +264,7 @@ func internalPorts(st *store.Store, id string, ports []Ports) ([]uint16, error) 
 	if err != nil {
 		return nil, err
 	}
-	var taken []uint16
+	taken := append([]uint16(nil), excluded...)
 	// Include the old image-scoped files while older supervisors may be alive.
 	for _, pattern := range []string{st.Path("containers", "*", "ports.txt"), st.Path("ports", "*.txt")} {
 		files, err := filepath.Glob(pattern)
@@ -360,8 +386,8 @@ func isPortFree(port uint16) bool {
 	return true
 }
 
-func ForwardThrough(st *store.Store, list []Target, ports []Ports) error {
-	var taken []uint16
+func ForwardThrough(st *store.Store, list []Target, ports []Ports, excluded ...uint16) error {
+	taken := append([]uint16(nil), excluded...)
 	for _, p := range ports {
 		taken = append(taken, p.Port, p.Listen)
 	}
@@ -382,6 +408,8 @@ func ForwardThrough(st *store.Store, list []Target, ports []Ports) error {
 type Published struct {
 	Sockets []win32.SOCKET
 	Args    []string
+	Ports   map[string][]store.PortBinding
+	Direct  map[string][]store.PortBinding
 }
 
 func (p *Published) Close() {
@@ -391,48 +419,17 @@ func (p *Published) Close() {
 	for _, s := range p.Sockets {
 		_, _ = win32.Closesocket(s)
 	}
+	p.Sockets = nil
 }
 
 func Publish(cfg oci.AppConfig, ports []Ports, command string) (*Published, error) {
-	var sockets []win32.SOCKET
-	var args []string
-
-	for _, p := range ports {
-		if !Serves(cfg, p.Service, command) {
-			continue
-		}
-		if err := net.Startup(); err != nil {
-			return nil, fmt.Errorf("Windows sockets not available: %w", err)
-		}
-		before := len(sockets)
-		for _, fam := range []net.Family{net.FamilyIPv4, net.FamilyIPv6} {
-			res := net.Listen(net.Loopback(fam, p.Port))
-			if res.Ok() {
-				sockets = append(sockets, res.Socket)
-				args = append(args, fmt.Sprintf("%d=%d", res.Socket, p.Listen))
-			} else {
-				if fam == net.FamilyIPv6 && (res.Failed == int32(win32.WSAEAFNOSUPPORT) || res.Failed == int32(win32.WSAEADDRNOTAVAIL)) {
-					continue
-				}
-				if res.Failed == int32(win32.WSAEADDRINUSE) || res.Failed == int32(win32.WSAEACCES) {
-					fmt.Fprintf(os.Stderr, "note: port %d is taken, so %s isn't published this run\n", p.Port, p.Service.Name)
-				} else {
-					fmt.Fprintf(os.Stderr, "note: can't listen on port %d, so %s isn't published this run: Winsock error %d\n", p.Port, p.Service.Name, res.Failed)
-				}
-				for _, s := range sockets[before:] {
-					_, _ = win32.Closesocket(s)
-				}
-				sockets = sockets[:before]
-				args = args[:before]
-				break
-			}
-		}
-	}
-
-	if len(sockets) == 0 {
+	p, err := PreparePublish(cfg, ports, nil, command, oci.SandboxAppContainer, func(format string, args ...any) {
+		fmt.Fprintf(os.Stderr, format+"\n", args...)
+	})
+	if err == nil && len(p.Sockets) == 0 {
 		return nil, nil
 	}
-	return &Published{Sockets: sockets, Args: args}, nil
+	return p, err
 }
 
 func RelayExe(st *store.Store) (string, error) {

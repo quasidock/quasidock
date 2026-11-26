@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -24,6 +25,24 @@ func main() {
 	args := os.Args[1:]
 	if len(args) > 0 {
 		switch args[0] {
+		case "tcp-serve":
+			listener, err := net.Listen("tcp", os.ExpandEnv(args[1]))
+			if err != nil {
+				panic(err)
+			}
+			defer listener.Close()
+			if len(args) > 2 {
+				if err := os.WriteFile(os.ExpandEnv(args[2]), []byte(listener.Addr().String()), 0600); err != nil {
+					panic(err)
+				}
+			}
+			for {
+				conn, err := listener.Accept()
+				if err != nil {
+					return
+				}
+				go func() { defer conn.Close(); _, _ = io.Copy(conn, conn) }()
+			}
 		case "restart-exit":
 			path := os.ExpandEnv(args[1])
 			data, _ := os.ReadFile(path)

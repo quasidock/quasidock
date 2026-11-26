@@ -100,6 +100,7 @@ func grantKey(spec string) string {
 }
 
 type Options struct {
+	Publish       []services.PublishSpec
 	Resources     store.ContainerResources
 	RestartPolicy store.RestartPolicy
 	Mounts        []mounts.Spec
@@ -575,7 +576,7 @@ func launchContainer(
 
 	used := services.UsedBy(cfg)
 	targets := services.Targets(used, settings.Ports)
-	servicePorts, err := services.Resolve(ctx.Store, created.ID, cfg, used, settings.Ports, sandbox)
+	servicePorts, err := services.ResolvePublishing(ctx.Store, created.ID, cfg, used, settings.Ports, sandbox, created.HostConfig.PortBindings)
 	if err != nil {
 		return 1, false, err
 	}
@@ -590,8 +591,33 @@ func launchContainer(
 
 	forwarding := reach == LoopbackIsolated && len(targets) > 0
 	if forwarding {
-		_ = services.ForwardThrough(ctx.Store, targets, servicePorts)
+		var rawPorts []uint16
+		for key := range created.HostConfig.PortBindings {
+			var port uint16
+			_, _ = fmt.Sscanf(key, "%d/tcp", &port)
+			rawPorts = append(rawPorts, port)
+		}
+		_ = services.ForwardThrough(ctx.Store, targets, servicePorts, rawPorts...)
 	}
+	command := ""
+	if opts.Entrypoint != nil {
+		command = *opts.Entrypoint
+	} else if len(opts.Args) > 0 {
+		command = opts.Args[0]
+	}
+	var portNotes []string
+	publicationNote := func(format string, args ...any) {
+		portNotes = append(portNotes, fmt.Sprintf(format, args...))
+	}
+	var reserved []uint16
+	for _, target := range targets {
+		reserved = append(reserved, target.Port, target.Connect)
+	}
+	published, err := services.PreparePublish(cfg, servicePorts, created.HostConfig.PortBindings, command, sandbox, publicationNote, reserved...)
+	if err != nil {
+		return 1, false, err
+	}
+	defer published.Close()
 	uses := services.UsePlaceholders(targets)
 	rt := runtimeDirs(cfg, img.RuntimeDirs, dataDir, cacheDir, rootsFile, uses)
 	rootsPath := ""
@@ -713,22 +739,6 @@ func launchContainer(
 		}
 	}
 
-	var published *services.Published
-	if sandbox == oci.SandboxAppContainer {
-		cmdStr := ""
-		if opts.Entrypoint != nil {
-			cmdStr = *opts.Entrypoint
-		} else if len(opts.Args) > 0 {
-			cmdStr = opts.Args[0]
-		}
-		published, _ = services.Publish(cfg, servicePorts, cmdStr)
-	}
-	defer func() {
-		if published != nil {
-			published.Close()
-		}
-	}()
-
 	var forwards *forward.Forwards
 	if forwarding {
 		forwards, _ = forwardsOf(targets)
@@ -740,8 +750,16 @@ func launchContainer(
 	}()
 
 	relayExe := ""
-	if published != nil || forwards != nil {
-		relayExe, _ = services.RelayExe(ctx.Store)
+	if len(published.Sockets) > 0 || forwards != nil {
+		relayExe, err = services.RelayExe(ctx.Store)
+		if err != nil {
+			if len(created.HostConfig.PortBindings) > 0 {
+				return 1, false, fmt.Errorf("preparing port relay: %w", err)
+			}
+			publicationNote("note: port relay unavailable this run: %v", err)
+			published.Close()
+			published.Ports = published.Direct
+		}
 	}
 
 	if sandbox == oci.SandboxSoft {
@@ -938,8 +956,29 @@ func launchContainer(
 		return 1, false, fmt.Errorf("setting container resource limits: %w", err)
 	}
 
+	var relay win32.HANDLE
 	if relayExe != "" {
-		startRelay(ctx, cfg.ID, job, relayExe, published, forwards, security, envBlock)
+		relay, err = startRelay(job, relayExe, published, forwards, security, token, envBlock)
+		if err != nil {
+			published.Close()
+			published.Ports = published.Direct
+			if len(created.HostConfig.PortBindings) > 0 {
+				win32.CloseHandle(outRead)
+				win32.CloseHandle(outWrite)
+				win32.CloseHandle(errRead)
+				win32.CloseHandle(errWrite)
+				if nulIn != 0 {
+					win32.CloseHandle(nulIn)
+				}
+				return 1, false, fmt.Errorf("starting port relay: %w", err)
+			}
+			publicationNote("note: port relay did not start this run: %v", err)
+		} else {
+			defer win32.CloseHandle(relay)
+			// The relay owns the inherited listeners from here. Keeping copies in
+			// the supervisor would leave dead listeners open if the relay exits.
+			published.Close()
+		}
 	}
 
 	watcherDirs := watchedDirs(sandbox, hostGrants, hostCwd, dataDir, ctx.Env["USERPROFILE"], own)
@@ -1002,6 +1041,9 @@ func launchContainer(
 	var pumpsOnce sync.Once
 	startPumps := func() {
 		pumpsOnce.Do(func() {
+			for _, note := range portNotes {
+				_, _ = fmt.Fprintln(errDst, note)
+			}
 			pipeWG.Add(2)
 			go func() {
 				defer pipeWG.Done()
@@ -1043,6 +1085,7 @@ func launchContainer(
 		c.Path = cmd.Exe
 		c.Args = append([]string(nil), allArgs...)
 		c.Config.WorkingDir = cwd
+		c.NetworkSettings = &store.ContainerNetworkSettings{Ports: published.Ports}
 		c.State = store.ContainerState{
 			SupervisorID:    created.State.SupervisorID,
 			TopProtocol:     topProtocol,
@@ -1073,6 +1116,11 @@ func launchContainer(
 			written.Finish(ctx.Store, cfg.ID, watcher)
 		}
 		return 1, false, stateErr
+	}
+	if relay != 0 {
+		defer monitorPortRelay(ctx, created, relay, hProcess, published.Direct, func(format string, args ...any) {
+			_, _ = fmt.Fprintf(errDst, format+"\n", args...)
+		})()
 	}
 	if created.RestartCount > 0 {
 		ctx.Store.RecordLiveContainerEvent(created, "restart", map[string]string{"automatic": "true"})
@@ -1234,7 +1282,7 @@ func hostDir(ctx *context.Context) (string, error) {
 	return dir, nil
 }
 
-func startRelay(ctx *context.Context, id string, job win32.HANDLE, exe string, published *services.Published, forwards *forward.Forwards, appCaps *win32.SECURITY_CAPABILITIES, envBlock []uint16) {
+func startRelay(job win32.HANDLE, exe string, published *services.Published, forwards *forward.Forwards, appCaps *win32.SECURITY_CAPABILITIES, token win32.HANDLE, envBlock []uint16) (win32.HANDLE, error) {
 	var handles []win32.HANDLE
 	var args []string
 	if published != nil {
@@ -1249,9 +1297,11 @@ func startRelay(ctx *context.Context, id string, job win32.HANDLE, exe string, p
 	}
 	cmdLine := process.BuildCommandLine(exe, args)
 	var ownCaps win32.SECURITY_CAPABILITIES
+	var relayCaps *win32.SECURITY_CAPABILITIES
 	if appCaps != nil {
 		ownCaps = *appCaps
 		ownCaps.CapabilityCount = 1
+		relayCaps = &ownCaps
 	}
 
 	relay, err := process.StartIn(job, process.SpawnSpec{
@@ -1259,7 +1309,8 @@ func startRelay(ctx *context.Context, id string, job win32.HANDLE, exe string, p
 		CommandLine:   cmdLine,
 		EnvBlock:      envBlock,
 		Cwd:           filepath.Dir(exe),
-		Security:      &ownCaps,
+		Security:      relayCaps,
+		Token:         token,
 		CreationFlags: win32.DETACHED_PROCESS,
 		Inherit:       handles,
 	})
@@ -1267,21 +1318,20 @@ func startRelay(ctx *context.Context, id string, job win32.HANDLE, exe string, p
 		if forwards != nil {
 			forwards.Close()
 		}
-		what := "publishes no service"
-		if published != nil && forwards != nil {
-			what = "publishes no service, and reaches none of the ports it uses,"
-		} else if forwards != nil {
-			what = "reaches none of the ports it uses"
-		}
-		ctx.Note("note: the relay of %s's run didn't start, so it %s this run", id, what)
-		return
+		return 0, err
 	}
 	if forwards != nil {
 		if !forwards.Serve(relay) {
-			ctx.Note("note: the relay of %s's run couldn't listen for the ports it uses, so it doesn't reach them this run", id)
+			_ = win32.TerminateProcess(relay, 1)
+			win32.CloseHandle(relay)
+			return 0, errors.New("relay could not initialize dependency forwarding")
 		}
 	}
-	_ = win32.CloseHandle(relay)
+	if win32.WaitForSingleObject(relay, 0) != win32.WAIT_TIMEOUT {
+		win32.CloseHandle(relay)
+		return 0, errors.New("relay exited during startup")
+	}
+	return relay, nil
 }
 
 func forwardsOf(targets []services.Target) (*forward.Forwards, error) {

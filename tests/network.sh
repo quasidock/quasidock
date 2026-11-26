@@ -250,6 +250,44 @@ concurrent_services() {
 }
 check "appcontainer: concurrent containers have independent service ports and lifetimes" concurrent_services
 
+# Explicit publishing allocates host ports at start and reports stable service
+# identities even though the application's backend port is allocated separately.
+published_port() {
+    local sandbox=$1 cid endpoint port i ok=1 result=0
+    cid=$(z create --sandbox="$sandbox" -p echo "$APP" | tr -d '\r') || return 1
+    [ -z "$(z port "$cid")" ] || result=1
+    z start "$cid" >/dev/null || { z rm -f "$cid" >/dev/null; return 1; }
+    endpoint=$(z container port "$cid" echo | tr -d '\r' | head -1)
+    port=${endpoint##*:}
+    for i in $(seq 40); do
+        answers "$port" && { ok=0; break; }
+        sleep 0.25
+    done
+    [ "$ok" = 0 ] || result=1
+    [ "$(z port "$cid" "$declared/tcp" | tr -d '\r' | head -1)" = "$endpoint" ] || result=1
+    z pause "$cid" >/dev/null || result=1
+    [ -n "$(z port "$cid")" ] || result=1
+    z unpause "$cid" >/dev/null || result=1
+    z restart -t 0 "$cid" >/dev/null || result=1
+    endpoint=$(z port "$cid" echo | tr -d '\r' | head -1)
+    port=${endpoint##*:}
+    ok=1
+    for i in $(seq 40); do
+        answers "$port" && { ok=0; break; }
+        sleep 0.25
+    done
+    [ "$ok" = 0 ] || result=1
+    z stop -t 0 "$cid" >/dev/null || result=1
+    [ -z "$(z port "$cid")" ] || result=1
+    z port "$cid" echo >/dev/null 2>&1 && result=1
+    z rm "$cid" >/dev/null || result=1
+    return "$result"
+}
+for sandbox in soft low appcontainer; do
+    check "$sandbox: -p automatic ports, selectors, pause and restart" published_port "$sandbox"
+done
+check "-p fixed host port remaps a service under low" served $moved --sandbox=low -p "$moved:echo"
+
 # --- Reaching this machine ---------------------------------------------------
 
 # A server on this machine, outside quasidock.
@@ -315,8 +353,9 @@ check "QUASIDOCK_LOOPBACK_EXEMPTION=0: not even with the network" switched_off
 killed() {
     waiting --sandbox=appcontainer --share=network
     becomes exempt || { wait $waiter; echo "not exempt while it ran"; return 1; }
-    # bash's kill would let it end as on Ctrl+C.
-    taskkill /F /PID "$(cat /proc/$waiter/winpid)" >/dev/null
+    # The foreground client attaches to a supervisor. Kill the process tree
+    # to simulate a supervisor crash; killing only the client leaves it alive.
+    taskkill /F /T /PID "$(cat /proc/$waiter/winpid)" >/dev/null
     wait $waiter 2>/dev/null
     sleep 0.5
     exempt || { echo "not exempt after quasidock was killed"; return 1; }

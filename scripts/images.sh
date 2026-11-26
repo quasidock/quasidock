@@ -24,8 +24,8 @@ qd_run() {
             --verbose|--rm|-d|--detach|-i|--interactive|-t|--tty|-it|-ti|-dit|-di|-dt|-id|-td|-itd) options+=("$1"); shift ;;
             --*=*) options+=("$1"); shift ;;
             --) options+=("$1"); shift; break ;;
-            --*|-e|-v) options+=("$1" "$2"); shift 2 ;;
-            -v?*) options+=("$1"); shift ;;
+            --*|-e|-v|-p) options+=("$1" "$2"); shift 2 ;;
+            -v?*|-p?*) options+=("$1"); shift ;;
             *) break ;;
         esac
     done

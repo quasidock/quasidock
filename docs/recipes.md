@@ -287,8 +287,12 @@ names and distinct ports (`1`–`65535`). Each service provides two placeholders
 - `${port:<name>}`: the external localhost port other programs on this machine
   use (for example Kanboard's `"KANBOARD_URL": "http://127.0.0.1:${port:http}/"`).
 
-Under `soft` and `low`, both placeholders equal the declared port (or the port
-passed to `--port=<name>=<port>`). Under `--sandbox=appcontainer`, processes
+Under `soft` and `low` without `-p`, both placeholders equal the declared port
+(or the port passed to `--port=<name>=<port>`). Explicit `-p HOST:NAME` or
+`-p HOST:PORT` allocates an internal listen port in every sandbox; the app must
+honor `${listen:<name>}`. `${port:<name>}` uses the first requested host binding,
+including automatic host ports. Multiple bindings share one backend. Under
+`--sandbox=appcontainer`, processes
 outside the container cannot connect directly into the container's loopback
 ([networking](networking.md)):
 
@@ -307,6 +311,7 @@ outside the container cannot connect directly into the container's loopback
   the container's job without network capability, which forwards traffic to the
   internal port.
 - If the host port is already taken, the run warns and continues unpublished.
+  Explicit `-p` mappings instead fail launch if binding or relay setup fails.
 
 Declaring `services` does not require `"network": true`, which controls outbound
 network access. `quasidock image info` and `quasidock pull` list declared

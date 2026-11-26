@@ -3,6 +3,7 @@ package net
 import (
 	"errors"
 	"math/bits"
+	"net/netip"
 
 	"github.com/quasidock/quasidock/internal/win32"
 )
@@ -29,6 +30,18 @@ type Address struct {
 	Family Family
 	IPv4   win32.SockaddrIn
 	IPv6   win32.SockaddrIn6
+}
+
+// IPAddress constructs a Winsock address for an unscoped IP literal.
+func IPAddress(ip netip.Addr, port uint16) Address {
+	if ip.Is4() {
+		a := Loopback(FamilyIPv4, port)
+		a.IPv4.Addr = ip.As4()
+		return a
+	}
+	a := Loopback(FamilyIPv6, port)
+	a.IPv6.Addr = ip.As16()
+	return a
 }
 
 func Loopback(family Family, port uint16) Address {
@@ -96,6 +109,12 @@ func Listen(address Address) Result {
 	}
 	s := res.Socket
 
+	if address.Family == FamilyIPv6 {
+		// IPV6_V6ONLY keeps wildcard IPv6 bindings separate from IPv4.
+		if ret, err := win32.SetsockoptInt(s, win32.IPPROTO_IPV6, win32.IPV6_V6ONLY, 1); ret != 0 {
+			return failWith(s, err)
+		}
+	}
 	if ret, err := win32.SetsockoptInt(s, win32.SOL_SOCKET, win32.SO_EXCLUSIVEADDRUSE, 1); ret != 0 {
 		return failWith(s, err)
 	}

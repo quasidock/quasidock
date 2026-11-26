@@ -208,6 +208,7 @@ metadata, and compatibility details.
 | `container ls` | `ps` | List containers (`-a`, `-q`, `--filter`, `--last`, `--size`, `--no-trunc`) |
 | `container stats` | `stats` | Stream CPU, private committed memory, cumulative I/O, and process counts |
 | `container top` | `top` | List processes once, with parent PIDs, cumulative CPU time, and full commands |
+| `container port` | `port` | List active TCP mappings, or endpoints for a port number or service name |
 | `container inspect` | `inspect` | Container JSON metadata or `-f TEMPLATE` (`inspect` falls back to images) |
 | `container diff` | `diff` | Compare private `${data}` with image data; exclude mounted storage |
 | `container cp` | `cp` | Copy files/folders between container data and the host; `-` streams tar |
@@ -465,6 +466,7 @@ Single-letter boolean flags before IMAGE can be combined (for example `-it`, or
 | `--pull=never` | Use only local images; a missing image is an error |
 | `-e NAME=VALUE`, `--env NAME=VALUE` | Set a variable; the last setting wins |
 | `-e NAME`, `--env NAME` | Inherit a host variable, or unset it if absent |
+| `-p [IP:]HOST_PORT:PORT`, `--publish ...` | Publish TCP ports or named services; omit/zero HOST_PORT (or supply PORT alone) for an automatic port; repeatable; defaults to loopback |
 | `-v SOURCE:TARGET[:rw]`, `--volume SOURCE:TARGET[:rw]` | Mount a named volume or host directory at `${data}` or a data subpath |
 | `--mount type=volume\|bind,source=SOURCE,target=TARGET` | Explicitly select a writable directory mount |
 | `--verbose` | Print runtime diagnostics |
@@ -475,7 +477,48 @@ and prepares `${data}`, `HOME`, `APPDATA`, `LOCALAPPDATA`, `TEMP`, cache, and th
 per-container HKCU hive. Multiple containers—
 including different versions of the same app—can run concurrently without sharing
 state unless mounted storage is explicitly shared. Containers persist after exit
-unless `--rm` is set. Docker-style `-p` port publishing remains deferred.
+unless `--rm` is set.
+
+`port CONTAINER [PORT[/tcp]|SERVICE]` (also `container port`) lists active
+mappings, for example `80/tcp -> 127.0.0.1:8080`. Selecting a port or service
+prints only its host endpoints. Names, full IDs, and unique ID prefixes work.
+Running and paused containers have mappings; created and stopped containers
+print nothing. An unpublished selector is an error. Reporting reads local
+metadata and does not check whether the application is ready to accept traffic.
+
+```powershell
+quasidock run -d --name web -p 8080:http nginx
+quasidock port web
+quasidock container port web http
+quasidock create --name web-auto -p http nginx
+quasidock start web-auto
+quasidock port web-auto http
+```
+
+`-p` / `--publish` supports fixed mappings (`8080:80`), automatic host ports
+(`80`, `:80`, or `0:80`), and explicit IP literals (`127.0.0.1:8080:80`,
+`[::1]:8080:80`). Without an IP it binds both loopback addresses, or IPv4 only
+when IPv6 is unavailable. An explicit wildcard such as `0.0.0.0:8080:80`
+allows access through the host's network addresses, subject to Windows firewall
+rules. Hostnames, UDP/SCTP, ranges, and `-P` are unsupported.
+
+Numeric targets matching an image service use its declared port as a stable
+identity. Such services must bind `${listen:SERVICE}`; Quasidock allocates a
+backend port in every sandbox and sets `${port:SERVICE}` to the first requested
+host binding. Multiple bindings share that backend. Explicit mappings replace
+the targeted service's automatic publication; other services retain their
+defaults. Combining `-p` and `--port` for the same service is an error.
+
+Undeclared numeric targets keep the supplied backend port. The application
+must listen there, and other processes or containers can conflict with it.
+Overlapping host/backend endpoints are rejected; use different ports or a
+declared service. Explicit binding or relay startup failures fail launch.
+
+`inspect` saves requests in `HostConfig.PortBindings` and current endpoints in
+`NetworkSettings.Ports`. Automatic host ports can change on each start. Relay
+loss removes forwarded endpoints while leaving the application running.
+Containers supervised by older binaries must be stopped and started with the
+new binary before `port` can report their mappings.
 
 `rename CONTAINER NEW_NAME` works in every container state and produces no output
 on success. Names are unique case-insensitively; case-only changes are allowed.

@@ -184,6 +184,8 @@ const (
 	AF_UNIX             int32 = 1
 	SOCK_STREAM         int32 = 1
 	IPPROTO_TCP         int32 = 6
+	IPPROTO_IPV6        int32 = 41
+	IPV6_V6ONLY         int32 = 27
 	SOL_SOCKET          int32 = 0xFFFF
 	SO_REUSEADDR        int32 = 0x0004
 	SO_EXCLUSIVEADDRUSE int32 = ^int32(0x0004)

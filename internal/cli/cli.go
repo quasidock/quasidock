@@ -43,6 +43,8 @@ Docker-style container commands:
                                        stream CPU, private memory, I/O and process counts
   container top | top [--format table|json|TEMPLATE] CONTAINER
                                        list processes once, including exec commands
+  container port | port CONTAINER [PORT[/tcp]|SERVICE]
+                                       list active published ports or one mapping
   container inspect | inspect [-f TEMPLATE] NAME|ID [NAME|ID...]
                                        inspect containers or images (JSON by default)
   container diff | diff CONTAINER      list additions to private data; exclude mounts
@@ -176,6 +178,9 @@ run/create options (before IMAGE; create rejects -d/--detach):
   --pull=missing|always|never          default: missing; failed pulls never use stale images
   --entrypoint=COMMAND                override the entrypoint and clear the default cmd
   -e, --env NAME[=VALUE]               set or inherit an environment variable
+  -p, --publish [IP:]HOST_PORT:PORT    publish TCP; PORT may be a service name
+                                       PORT alone or an empty/zero HOST_PORT allocates one
+                                       defaults to loopback; repeat for multiple bindings
   -v, --volume SOURCE:TARGET[:rw]      mount at ${data} or a data subpath
   --mount type=volume|bind,source=SOURCE,target=TARGET
                                        mount a writable local NTFS directory
@@ -209,6 +214,10 @@ ps --last values <= 0 leave results unlimited with normal visibility rules.
 ps --size includes copied image seed files, excludes logs, and has no virtual total.
 top accepts running or paused containers; TIME is cumulative CPU time, COMMAND is full.
 top does not accept Linux ps arguments; unavailable details display --.
+port lists active endpoints for running/paused containers; stopped output is empty.
+port selectors use image service ports or names; /tcp is optional.
+Explicit publishing replaces targeted service defaults; --port cannot target the same service.
+Raw numeric backends keep fixed ports and cannot overlap their host listeners.
 diff lists A/C/D /PATH relative to image data; mounts are excluded.
 export writes filesystem tar to stdout by default; -o FILE replaces only on success.
 export is offline, excludes mounts, and pauses running apps during private-data capture.
@@ -348,6 +357,13 @@ func parseContainerOptions(ctx *context.Context, args []string, command string) 
 	i := 0
 	for i < len(args) {
 		args[i] = memoryOption(args[i])
+		if args[i] == "-p" {
+			args[i] = "--publish"
+		} else if strings.HasPrefix(args[i], "-p=") {
+			args[i] = "--publish=" + args[i][3:]
+		} else if strings.HasPrefix(args[i], "-p") {
+			args[i] = "--publish=" + args[i][2:]
+		}
 		if args[i] == "--" {
 			i++
 			break
@@ -405,6 +421,15 @@ func parseContainerOptions(ctx *context.Context, args []string, command string) 
 			return opts, err
 		}
 		switch opt.Name {
+		case "publish":
+			if opt.Value == nil {
+				return opts, errors.New("--publish needs a value")
+			}
+			publication, err := services.ParsePublish(*opt.Value)
+			if err != nil {
+				return opts, err
+			}
+			opts.Publish = append(opts.Publish, publication)
 		case "cpus", "memory", "pids-limit", "restart":
 			if opt.Value == nil {
 				return opts, fmt.Errorf("--%s needs a value", opt.Name)
@@ -871,7 +896,7 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 		return 0, nil
 	}
 	switch cmd {
-	case "wait", "rename", "update", "top", "stats", "events", "system", "convert", "build", "volume", "container", "create", "commit", "export", "ps", "diff", "cp", "exec", "attach", "start", "restart", "pause", "unpause", "kill", "stop", "rm", "logs", "image", "images", "inspect", "history", "tag", "pull", "push", "save", "load", "rmi", "run", "search", "trust", "signature", "prune", "repair", "grants":
+	case "port", "wait", "rename", "update", "top", "stats", "events", "system", "convert", "build", "volume", "container", "create", "commit", "export", "ps", "diff", "cp", "exec", "attach", "start", "restart", "pause", "unpause", "kill", "stop", "rm", "logs", "image", "images", "inspect", "history", "tag", "pull", "push", "save", "load", "rmi", "run", "search", "trust", "signature", "prune", "repair", "grants":
 	default:
 		return usageError()
 	}
@@ -902,7 +927,7 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 		return execCommand(ctx, rest)
 	case "ps":
 		return containerCommand(ctx, append([]string{"ls"}, rest...))
-	case "wait", "rename", "update", "top", "stats", "create", "commit", "export", "diff", "cp", "attach", "start", "restart", "pause", "unpause", "kill", "stop", "rm", "logs":
+	case "port", "wait", "rename", "update", "top", "stats", "create", "commit", "export", "diff", "cp", "attach", "start", "restart", "pause", "unpause", "kill", "stop", "rm", "logs":
 		return containerCommand(ctx, append([]string{cmd}, rest...))
 	case "inspect":
 		return inspectAny(ctx, rest)

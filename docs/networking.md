@@ -95,9 +95,9 @@ Implications for Quasidock:
    - With `network`, it reaches the internet, the LAN, and local host servers.
    - `soft` and `low` cannot enforce this boundary without elevated Windows
      filtering.
-2. **Serving is declared.** An app reachable from outside declares services
-   (`permissions.services`); clients use the same port placeholders in every
-   sandbox.
+2. **Serving is explicit.** Images declare services (`permissions.services`),
+   or callers explicitly publish numeric ports through `-p`. Named services
+   use the same port placeholders in every sandbox.
 3. **Apps never share a container.**
 4. **Only connected or bound sockets enter a container.** `quasidock.exe`
    accepts or connects outside the container and passes sockets or handles to
@@ -154,7 +154,7 @@ Each declared service provides two placeholders
 
 Behavior by sandbox:
 
-- **Under `soft` and `low`**: both `${listen:<name>}` and `${port:<name>}`
+- **Under `soft` and `low` without `-p`**: both `${listen:<name>}` and `${port:<name>}`
   equal the declared port (or the port given by `--port`). The app binds it
   directly.
 - **Under `appcontainer`**: `services.Resolve` reserves an internal port
@@ -182,25 +182,64 @@ Behavior by sandbox:
     connections on those listening sockets, connects to the internal port on
     `127.0.0.1` or `::1` (retrying up to `20` times with `100 ms` sleeps while
     the app starts listening), and pumps `16 KiB` buffers bidirectionally.
-  - `quasidock.exe` holds its own copies of the listening sockets until the run
-    exits (`published.Close()`), releasing the port when the container finishes.
+  - After the relay starts, `quasidock.exe` closes its own listener copies.
+    The relay owns them until job teardown or relay exit. An owned process
+    handle monitors relay exit and removes forwarded mappings for that run.
 
 Operational rules:
 
 - Publishing is automatic under `appcontainer` whenever the matching serving
   command runs; nothing extra needs to be passed.
-- `--port=<service>=<port>` moves the published port for that run. Saved
-  overrides were removed in Quasidock [iteration 3](iteration-3.md), and
-  Docker-style `-p` is not supported ([`internal/cli/cli.go`](../internal/cli/cli.go)).
+- `--port=<service>=<port>` moves the published port and is saved on the
+  container for subsequent starts. `-p` / `--publish` offers explicit TCP
+  publication, described below.
   `quasidock image info` and install output list `serves`.
 - If the published port is already bound (`WSAEADDRINUSE` / `WSAEACCES`),
   `services.Publish` prints a note (`note: port <port> is taken, so <service> isn't published this run`)
   and lets the run continue unpublished.
-- Services listen on loopback (`127.0.0.1` and `::1`) only.
+- Automatic services listen on loopback (`127.0.0.1` and `::1`). Explicit `-p`
+  can choose a different host IP.
 - In [`recipes/postgresql.json`](../recipes/postgresql.json), `PGPORT` is set to
   `${listen:postgresql}` (`postgres.exe` and `libpq` clients honor it); passing
   PostgreSQL's own `-p` flag to `postgres.exe` or `psql` overrides `PGPORT` and
   bypasses the service's internal port mapping.
+
+### Explicit TCP publishing and reporting
+
+`run/create -p [IP:]HOST_PORT:TARGET[/tcp]` accepts a numeric port or declared
+service name. `-p TARGET`, an empty host port, or host port `0` allocates a
+port at startup. Requests are saved in `HostConfig.PortBindings`; `create`
+does not allocate or bind sockets. Explicit IPs must be unscoped literals;
+bracket IPv6. The default binds IPv4 and IPv6 loopback on the same port,
+falling back to IPv4 only if IPv6 is unavailable. Explicit addresses must bind
+successfully. UDP/SCTP, ranges, hostnames, and `-P` are unsupported.
+
+An explicit service mapping suppresses only that service's automatic mapping.
+Its declared port remains the lookup identity, while `${listen:SERVICE}` uses
+a reserved backend in every sandbox and `${port:SERVICE}` uses the first
+requested host binding. The application must honor the listen placeholder.
+Several bindings share the backend; conflicting `--port` overrides are rejected.
+Explicit bindings apply even with an auxiliary command. Unselected automatic
+services still follow the serving-command match.
+
+Raw numeric targets have fixed backend ports. Quasidock cannot rewrite those
+applications' listening addresses or provide private network namespaces.
+Backend conflicts remain possible, and a host listener overlapping a raw
+backend is rejected. Explicit binding or relay preparation/startup failure
+fails launch and closes all listeners. Automatic services retain their warning
+and continue behavior. Relays run in the container job under its sandbox;
+AppContainer relays receive no network capability.
+
+`container port` / `port CONTAINER [PORT[/tcp]|SERVICE]` reads current
+`NetworkSettings.Ports`. Running and paused containers expose established
+forwarding endpoints and eligible direct service endpoints; output does not
+assert application readiness. Stopped containers print nothing; an unpublished
+selector fails. Mappings clear on exit, failed startup, restart backoff, or
+crash reconciliation. Relay loss clears forwarded mappings and warns while the
+payload continues. Updates are guarded by `RunID`. Older live supervisors lack
+this metadata and require a stop/start; no stored-record migration is needed.
+Automatic host ports can change each start. Reporting never allocates ports,
+opens sockets, pulls images, or deploys files.
 
 ### Reaching this machine from a container
 
@@ -373,5 +412,6 @@ Key details:
   out of scope because several toolchains still fail inside AppContainer
   (e.g., `NUL`/device-path issues under Server 2025). Offline `build` stages
   continue to rely on the dead proxy convention.
-- **Not in this design**: binding services on non-loopback interfaces (LAN),
-  per-host network rules, or custom DNS.
+- **Not in this design**: per-host network rules, private network namespaces,
+  UDP/SCTP publication, or custom DNS. Explicit TCP `-p` can bind LAN addresses
+  subject to the machine's existing firewall configuration.

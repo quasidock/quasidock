@@ -60,15 +60,27 @@ type ContainerConfig struct {
 
 type ContainerHostConfig struct {
 	ContainerResources
-	RestartPolicy RestartPolicy `json:"RestartPolicy"`
-	Mounts        []mounts.Spec `json:"Mounts,omitempty"`
-	AutoRemove    bool          `json:"AutoRemove"`
-	Sandbox       string        `json:"Sandbox,omitempty"`
-	Network       *bool         `json:"Network,omitempty"`
-	Host          *bool         `json:"Host,omitempty"`
-	Filesystem    []string      `json:"Filesystem,omitempty"`
-	NoFilesystem  []string      `json:"NoFilesystem,omitempty"`
-	Ports         []string      `json:"Ports,omitempty"`
+	PortBindings  map[string][]PortBinding `json:"PortBindings,omitempty"`
+	RestartPolicy RestartPolicy            `json:"RestartPolicy"`
+	Mounts        []mounts.Spec            `json:"Mounts,omitempty"`
+	AutoRemove    bool                     `json:"AutoRemove"`
+	Sandbox       string                   `json:"Sandbox,omitempty"`
+	Network       *bool                    `json:"Network,omitempty"`
+	Host          *bool                    `json:"Host,omitempty"`
+	Filesystem    []string                 `json:"Filesystem,omitempty"`
+	NoFilesystem  []string                 `json:"NoFilesystem,omitempty"`
+	Ports         []string                 `json:"Ports,omitempty"`
+}
+
+// PortBinding describes a requested or resolved host endpoint. Empty HostIp
+// requests both loopback addresses; empty HostPort requests an automatic port.
+type PortBinding struct {
+	HostIP   string `json:"HostIp"`
+	HostPort string `json:"HostPort"`
+}
+
+type ContainerNetworkSettings struct {
+	Ports map[string][]PortBinding `json:"Ports"`
 }
 
 // ContainerRunSpec records the original launch inputs, independently of the
@@ -83,23 +95,24 @@ type ContainerRunSpec struct {
 }
 
 type ContainerRecord struct {
-	RestartCount int                 `json:"RestartCount"`
-	Mounts       []mounts.Mount      `json:"Mounts,omitempty"`
-	ID           string              `json:"Id"`
-	Created      string              `json:"Created"`
-	Name         string              `json:"Name"`
-	Image        string              `json:"Image"`
-	ImageRef     string              `json:"ImageRef"`
-	AppID        string              `json:"AppId"`
-	AppVersion   string              `json:"AppVersion"`
-	Path         string              `json:"Path"`
-	Args         []string            `json:"Args"`
-	State        ContainerState      `json:"State"`
-	Config       ContainerConfig     `json:"Config"`
-	HostConfig   ContainerHostConfig `json:"HostConfig"`
-	RunSpec      ContainerRunSpec    `json:"RunSpec,omitempty"`
-	DataDir      string              `json:"DataDir"`
-	LogPath      string              `json:"LogPath"`
+	NetworkSettings *ContainerNetworkSettings `json:"NetworkSettings,omitempty"`
+	RestartCount    int                       `json:"RestartCount"`
+	Mounts          []mounts.Mount            `json:"Mounts,omitempty"`
+	ID              string                    `json:"Id"`
+	Created         string                    `json:"Created"`
+	Name            string                    `json:"Name"`
+	Image           string                    `json:"Image"`
+	ImageRef        string                    `json:"ImageRef"`
+	AppID           string                    `json:"AppId"`
+	AppVersion      string                    `json:"AppVersion"`
+	Path            string                    `json:"Path"`
+	Args            []string                  `json:"Args"`
+	State           ContainerState            `json:"State"`
+	Config          ContainerConfig           `json:"Config"`
+	HostConfig      ContainerHostConfig       `json:"HostConfig"`
+	RunSpec         ContainerRunSpec          `json:"RunSpec,omitempty"`
+	DataDir         string                    `json:"DataDir"`
+	LogPath         string                    `json:"LogPath"`
 }
 
 func (c *ContainerRecord) ShortID() string {
@@ -281,6 +294,9 @@ func (o *ContainerOperation) Rename(name string) (*ContainerRecord, error) {
 }
 
 func (s *Store) writeContainerStateNoLock(rec *ContainerRecord) error {
+	if !rec.State.Running && rec.NetworkSettings != nil {
+		rec.NetworkSettings.Ports = map[string][]PortBinding{}
+	}
 	data, err := json.MarshalIndent(rec, "", "  ")
 	if err != nil {
 		return err

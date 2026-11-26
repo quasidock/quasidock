@@ -32,6 +32,10 @@ func buildContainerTestBinaries(t *testing.T) (quasidockExe string, fixturePaylo
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("build quasidock: %s %v", out, err)
 	}
+	cmd = exec.Command("go", "build", "-o", filepath.Join(buildDir, "quasidock-relay.exe"), "../../cmd/quasidock-relay")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("build relay: %s %v", out, err)
+	}
 	return quasidockExe, payload, buildDir
 }
 

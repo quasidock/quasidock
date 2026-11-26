@@ -177,13 +177,18 @@ TERM/KILL requests; recorded exit codes retain Quasidock's Windows semantics.
   user shell folders (`Desktop`, `Documents`, `Downloads`), so apps whose
   Save As dialogs open `Documents` without an explicit `-v` mount see the
   container's `data\home` layout instead.
-- **Services and port forwarding.** Services bind to loopback only (exposing
-  services off-host requires administrator firewall rules). `-p` / `--publish`
-  flags are not supported yet (use image `services` and `--port=<svc>=<port>`).
+- **Services and port forwarding.** `-p` / `--publish` supports TCP, numeric
+  ports or named services, fixed or automatic host ports, and explicit IP
+  literals. The default is loopback; explicit broader binds remain subject to
+  Windows firewall rules. UDP/SCTP, ranges, hostnames, and `-P` are unsupported.
+  Undeclared numeric backends cannot be remapped and can conflict with other
+  processes; overlapping host/backend endpoints are rejected. `port` reports
+  active mappings, not application readiness; older supervisors need a restart.
   Under `appcontainer`, containers without loopback exemptions reach only their
   declared `uses` ports forwarded one connection at a time through
   `quasidock-relay` (with a 2 s connect timeout), and allocated internal ports
-  in `ports\<id>.txt` stay fixed until `quasidock rmi`. Loopback exemptions
+  in `containers\<id>\ports.txt` persist across starts when still free and are
+  removed with the container. Loopback exemptions
   are a machine-wide Windows setting that can be blocked by domain policy and
   are enabled for `--share=network` containers unless
   `QUASIDOCK_LOOPBACK_EXEMPTION=0`.

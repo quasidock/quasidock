@@ -9,6 +9,7 @@ import (
 	"github.com/quasidock/quasidock/internal/context"
 	"github.com/quasidock/quasidock/internal/mounts"
 	"github.com/quasidock/quasidock/internal/oci"
+	"github.com/quasidock/quasidock/internal/services"
 	"github.com/quasidock/quasidock/internal/store"
 )
 
@@ -51,6 +52,10 @@ func selectedImage(ctx *context.Context, opts Options) (*store.Ref, error) {
 // imminent launch; an empty one represents an intentionally unstarted container.
 // The caller holds the store lock until this record pins its image.
 func createContainer(ctx *context.Context, opts Options, selected *store.Ref, cfg oci.AppConfig, runID string) (*store.ContainerRecord, error) {
+	bindings, err := services.NormalizePublishing(cfg, opts.Publish, opts.Settings.Ports)
+	if err != nil {
+		return nil, err
+	}
 	if opts.RestartPolicy.Name == "" {
 		opts.RestartPolicy.Name = "no"
 	}
@@ -93,6 +98,7 @@ func createContainer(ctx *context.Context, opts Options, selected *store.Ref, cf
 			OpenStdin:   opts.Interactive,
 		},
 		HostConfig: store.ContainerHostConfig{
+			PortBindings:       bindings,
 			ContainerResources: opts.Resources,
 			RestartPolicy:      opts.RestartPolicy,
 			Mounts:             append([]mounts.Spec(nil), opts.Mounts...),

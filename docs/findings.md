@@ -86,9 +86,7 @@ Windows. A probe program calling `GetFinalPathNameByHandleW` with each flag
 combination inside the AppContainer ruled out missing grants on parent folders
 as the cause.
 
-**3. On Windows Server 2025, `NUL` is denied too** (seen in
-[Zigsaw iteration 6](../legacy/iteration-6.md) and
-[Zigsaw iteration 7](../legacy/iteration-7.md) on GitHub's `windows-2025`
+**3. On Windows Server 2025, `NUL` is denied too** (as seen on GitHub's `windows-2025`
 runners). Git opens `/dev/null` as it starts, and fails (`could not open
 '/dev/null' for reading and writing: Permission denied`), so even
 `git --version` fails there while starting on Windows 11. Go's toolchain opens
@@ -99,7 +97,7 @@ AppContainer failures as known gaps, so CI only fails when a result changes.
 
 ## Re-checked on Windows 11 26300.9550
 
-[Zigsaw iteration 8](../legacy/iteration-8.md), 2026-10-05: several previously
+After 2026-10-05 updates: several previously
 failing AppContainer gaps began passing on the Windows 11 test machine (`git
 --version`, `zig env`, Zig builds, and Python's `realpath`) after three Windows
 updates (KB5124010, KB5121794, KB5124009) installed on 2026-10-03.
@@ -123,9 +121,6 @@ these causes from inside an AppContainer:
 - **Restriction 2 remains, and is wider than the drive root.** An AppContainer
   cannot read the attributes of any directory that does not grant it access,
   including the drive root, `C:\Users`, and parents of paths Quasidock grants.
-- **Windows Server 2025 differs.** CI's `windows-2025` runners still denied
-  `NUL` in Zigsaw iterations 6 and 7. [`tests/matrix.sh`](../tests/matrix.sh)
-  prints the probe's results at the start of each run.
 
 What the remaining AppContainer failures need:
 
@@ -150,7 +145,7 @@ causes remain marked as known gaps.
 
 ### A low-integrity sandbox
 
-Tested first in Zigsaw iteration 8 by running `acprobe --low <command>` with a
+Tested first on 2026-10-05 by running `acprobe --low <command>` with a
 copy of the user's token labelled low integrity (requiring no privileges), with
 deployments ungranted to AppContainers and `home` / working directories labelled
 low (`icacls <dir> /setintegritylevel low`):
@@ -168,13 +163,6 @@ low (`icacls <dir> /setintegritylevel low`):
 - **Every tool tested works**, unlike under AppContainer: low integrity restricts
   writing, not reading or path resolution.
 - **It confines writes only.** Reading and the network stay open, as in `soft`.
-- **AppContainer package-SID grants break low integrity.** Under Zigsaw's
-  original AppContainer model, a file whose ACL granted a specific
-  AppContainer package SID could not be read by a low-integrity process outside
-  that AppContainer, even though the user held full access. Once an app ran
-  with `--sandbox=appcontainer`, `zig` at low integrity could no longer find its
-  executable and `python` could not start. *Resolved in
-  [Zigsaw iteration 9](../legacy/iteration-9.md); see below.*
 
 ## The low sandbox
 
@@ -249,8 +237,7 @@ and the executable file's mandatory label:
   [`internal/run/run.go`](../internal/run/run.go) only unlabels unmounted `data`
   on `soft` runs, and [`internal/acl/acl.go`](../internal/acl/acl.go) skips
   unlabelling with a warning when `BelowMedium()` is true).
-- **CI's Kanboard incident ([Zigsaw iteration 54](../legacy/iteration-54.md) and
-  [Zigsaw iteration 55](../legacy/iteration-55.md))**:
+- **CI's Kanboard failure**:
   [`tests/published.sh`](../tests/published.sh) previously ran its smoke checks
   inside a scratch working directory holding the pull store. When low-integrity
   `mingit` labelled `cwd`, the inherited low label reached deployed layers, and
@@ -289,8 +276,8 @@ mismatches:
 
 ## The user's folders
 
-[Zigsaw iteration 18](../legacy/iteration-18.md), 2026-10-14, Windows 11 26300.
-Before Zigsaw temporarily exposed named user folders (`Documents`, `Downloads`,
+Measured 2026-10-14, Windows 11 26300.
+Before Quasidock temporarily exposed named user folders (`Documents`, `Downloads`,
 etc.) via NTFS directory junctions inside an app's home, probes verified that
 neither recursive deletes nor ACL changes traversed through a junction into its
 target, and that sandboxes enforced target permissions across junctions.
@@ -303,7 +290,7 @@ and [`internal/run/mounts.go`](../internal/run/mounts.go), tested by
 [`tests/mounts.sh`](../tests/mounts.sh) and
 [`tests/sandbox.sh`](../tests/sandbox.sh).)*
 
-| Probe (measured in Zigsaw iteration 18) | Result |
+| Probe (measured 2026-10-14) | Result |
 |---|---|
 | Zig 0.16's `Io.Dir.deleteTree` on a tree containing a junction | removes the junction; the target's files stay |
 | Zig 0.16's `Dir.walk` | reports the junction as a `sym_link` and does not enter it |
@@ -1419,47 +1406,6 @@ was removed):
   `Hydrate` on `estargz.Prioritized()` files (and the `QUASIDOCK_TEST_LAZY_*`
   gate/fail/refuse test hooks expected by [tests/lazy.sh](../tests/lazy.sh))
   are not yet wired into `helper.go` in the Go port.
-
-### Measurements from Zigsaw iterations 77–78
-
-Measured on the full Zig implementation ([Zigsaw iteration 77](../legacy/iteration-77.md)
-and [iteration 78](../legacy/iteration-78.md), ~5–10 MB/s from `ghcr.io`):
-
-- **Windows Server 2025 CI behavior.** `cldflt` is active on GitHub's `C:` and
-  `D:` NTFS runners (`soft`, `low`, `appcontainer` all work); Server 2025 splits
-  15 MB fetches into more partial callbacks than Windows 11.
-- **Jobs and provider self-open.** GitHub runner steps use unconstrained job
-  objects (`flags 0x0`) refusing `CREATE_BREAKAWAY_FROM_JOB` (error 5).
-  Opening a placeholder or starting a binary from the provider process fails
-  with error `395`, whereas calling `CfHydratePlaceholder` on an attributes-only
-  handle (`FILE_READ_ATTRIBUTES`) succeeds.
-- **Sync root swap and cold post-swap run.** Placeholders survive provider
-  restarts; a registered root renames, unregisters under its new name, and
-  deletes cleanly once disconnected. Keeping hydrated/reverted placeholders
-  instead of unpacking left `clang` slower (`0.33 s` vs `0.24 s` because
-  `libLLVM` image sections still took 66 ms vs 0.45 ms), so swapping in a
-  4-worker unpack pays off—though the first run right after the swap is cold
-  (e.g. `pdflatex` 13.8 s then 0.3 s). Explorer shows no progress toast because
-  the sync root has no Explorer integration.
-- **Time-to-first-use vs full pull (Zigsaw 0.77 -> 0.78, parallel demand pieces
-  + background download deferring to pull & runs):**
-
-  | App & command | Full pull | Zigsaw 0.77 lazy | Zigsaw 0.78 lazy | Fetched on demand |
-  |---|---|---|---|---|
-  | `llvm-mingw`, `clang hello.c` | 23.7 s | 23.3 s | 15.7 s | 139 MB |
-  | `qt6`, Designer window | 12.5 s | 15.7 s | 12.8 s | 71 MB (36 files) |
-  | `qt6-sdk`, `moc --version` | 46.8 s | 50.8 s | 35.8 s | 1.2 MB |
-  | `vscodium`, window | 38.0 s | 61.1 s | 27.7 s | 369 MB (239 MB `.exe`) |
-  | `texlive`, first `pdflatex` | 96.6 s | 86.3 s | 62.5 s | 17.7 MB (135 files) |
-
-  Key lessons from Zigsaw 0.78: fetching in 4 MiB parallel demand pieces (vs
-  1 MiB sequential), avoiding re-downloading demand-fetched blocks, letting the
-  pull's gzip runtimes download before starting the background helper (which
-  otherwise inflated `texlive`'s gzip pull from 46 s to 79–93 s), and placing
-  recipes' `prefetch` files ahead of `.prefetch.landmark` (via
-  [internal/estargz/estargz.go](../internal/estargz/estargz.go)
-  `WithPrioritizedFiles`, matching Go `containerd/stargazer`) eliminated
-  on-demand fetches for `qt6` Designer on local zot.
 
 ## Not yet tested
 
