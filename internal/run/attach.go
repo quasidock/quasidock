@@ -134,6 +134,7 @@ func startAttachedRecord(ctx *context.Context, rec *store.ContainerRecord, op *s
 		startupErr := awaitSupervisor(ctx, rec, det.Process, ready, 1)
 		if startupErr != nil {
 			recordLaunchFailure(ctx.Store, rec.ID, rec.State.RunID, startupErr)
+			return 1, startupErr
 		}
 		return 1, err
 	}
@@ -210,6 +211,13 @@ func dialAttachment(ctx *context.Context, rec *store.ContainerRecord, opts Attac
 	var response attachResponse
 	if kind != attachReady || json.Unmarshal(data, &response) != nil {
 		return fail(errors.New("invalid attach acknowledgement"))
+	}
+	if supervisor != 0 {
+		// Startup diagnostics can arrive while a cold sandbox is still being
+		// prepared. Give it the same bound as awaitSupervisor, until started.
+		if err := c.SetDeadline(time.Now().Add(time.Duration(supervisorStartupTimeout) * time.Millisecond)); err != nil {
+			return fail(err)
+		}
 	}
 	return c, response, nil
 }

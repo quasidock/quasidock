@@ -235,6 +235,41 @@ func TestAttachMalformedFramesAndBlockedIO(t *testing.T) {
 	}
 }
 
+func TestAttachEOFAfterChildExitPreservesOutputAndStatus(t *testing.T) {
+	r, id, runID := attachTestRuntime(t, true)
+	input, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = input.Close() }()
+	r.setInput(writer)
+	c, kind, _ := attachTestDial(t, id, runID, true)
+	if kind != attachReady {
+		t.Fatal(kind)
+	}
+	r.markStarted(func() error { return nil })
+	expectAttachFrame(t, c, attachStarted)
+	r.stopAccepting()
+	if err := c.send(attachEOF, nil); err != nil {
+		t.Fatal(err)
+	}
+	// Cleanup can still be draining output when the client's stdin reaches EOF.
+	if err := c.send(attachTERM, nil); err != nil {
+		t.Fatal(err)
+	}
+	expectAttachFrame(t, c, attachSignalError)
+	_, _ = (attachWriter{r, attachStdout}).Write([]byte("last output"))
+	if out := string(expectAttachFrame(t, c, attachStdout)); out != "last output" {
+		t.Fatal(out)
+	}
+	done := make(chan struct{})
+	go func() { r.finish(23, nil); close(done) }()
+	if code := binary.LittleEndian.Uint32(expectAttachFrame(t, c, attachExit)); code != 23 {
+		t.Fatal(code)
+	}
+	<-done
+}
+
 func TestAttachSlowSubscriberDoesNotBlockPublisher(t *testing.T) {
 	r, id, runID := attachTestRuntime(t, false)
 	r.markStarted(func() error { return nil })

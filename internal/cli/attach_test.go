@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/quasidock/quasidock/internal/context"
+	"github.com/quasidock/quasidock/internal/oci"
 	"github.com/quasidock/quasidock/internal/store"
 	"github.com/quasidock/quasidock/internal/testregistry"
 	"github.com/quasidock/quasidock/internal/win32"
@@ -116,6 +117,25 @@ func TestContainerAttachAndAttachedStart(t *testing.T) {
 		}
 	})
 	must("pull", app)
+	t.Run("supervisor diagnostics reach the initial attachment", func(t *testing.T) {
+		fixtureImage(t, reg, "diagnostics", payload, func(c *oci.AppConfig) {
+			c.Permissions.Filesystem = []string{"xdg-later"}
+		})
+		diagnosticApp := reg.Host() + "/app:diagnostics"
+		must("pull", diagnosticApp)
+		out, stderr, code := call("", "run", "--verbose", "--name", "diagnostics", diagnosticApp, "fixture.exe", "log-exit", "stdout", "stderr", "23")
+		if code != 23 || out != "stdout\n" {
+			t.Fatalf("diagnostic run: %d %q %q", code, out, stderr)
+		}
+		for _, want := range []string{"xdg-later", "doesn't know", "sandbox  soft", "cmdline  ", "stderr\n"} {
+			if !strings.Contains(stderr, want) {
+				t.Fatalf("missing %q in diagnostics: %s", want, stderr)
+			}
+		}
+		if logs := must("logs", "diagnostics"); strings.Contains(logs, "xdg-later") || strings.Contains(logs, "sandbox  ") || !strings.Contains(logs, "stdout\n") || !strings.Contains(logs, "stderr\n") {
+			t.Fatalf("supervisor diagnostics mixed with payload logs: %s", logs)
+		}
+	})
 
 	t.Run("immediate output status and auto-removal", func(t *testing.T) {
 		for _, name := range []string{"short-one", "short-two", "short-three"} {

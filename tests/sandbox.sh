@@ -215,10 +215,18 @@ check "appcontainer: can't write elsewhere" fails writes $BB appcontainer "$work
 # asked for: a second run that hands a file to the first, as Text Editor's
 # does, leaves the first able to open it.
 
+# Crash the supervisor, whose job ends the payload without running cleanup.
+# Killing an attached client only disconnects it and leaves the container alive.
+crash_container() {
+    local payload
+    payload=$(z container inspect -f '{{.State.Pid}}' "$1" | tr -d '\r') || return 1
+    [ "$payload" -gt 0 ] || return 1
+    powershell -NoProfile -Command "\$child = Get-CimInstance Win32_Process -Filter 'ProcessId=$payload'; if (!\$child.ParentProcessId) { exit 1 }; \$supervisor = Get-Process -Id \$child.ParentProcessId -ErrorAction Stop; Stop-Process -InputObject \$supervisor -Force -ErrorAction Stop; \$supervisor.WaitForExit()"
+}
+
 killed_leaves() {
-    hold "$work\\rw" $BB --sandbox=low --filesystem="$work\\rw" || return 1
-    kill -9 $held
-    touch "$work\\rw\\stop"
+    hold "$work\\rw" $BB --name crashed-grants --sandbox=low --filesystem="$work\\rw" || return 1
+    crash_container crashed-grants || return 1
     wait $held 2>/dev/null
     low_label "$work\\rw"
 }
@@ -304,11 +312,9 @@ moved_aside() {
     reg delete "HKCU\\$key" /f >/dev/null 2>&1
     return $status
 }
-# Runs `sleep` in the app in the background, and waits until its run has put
-# the key in HKCU; its PID in $runner.
+# Starts a detached container, and waits until its run has put the key in HKCU.
 start_sleeping() {
-    bash "$QD_IMAGES_HELPER" run "$quasidock" "$1" sleep 60 </dev/null >/dev/null 2>&1 &
-    runner=$!
+    sleeping=$(qd_run z -d "$1" sleep 60 | tr -d '\r') || return 1
     local i
     for i in $(seq 50); do reg query "$record" >/dev/null 2>&1 && return 0; sleep 0.2; done
     return 1
@@ -317,8 +323,7 @@ killed_run() {
     start_sleeping $REG || return 1
     # Set as the app would, while its run goes on.
     reg add "HKCU\\$key" /v killed /d 1 /f >/dev/null
-    kill -9 $runner
-    wait $runner 2>/dev/null
+    crash_container "$sleeping" || return 1
     reg query "$record" >/dev/null 2>&1 || { echo "the record went with the run"; return 1; }
     sets soft settled && not_in_hkcu
 }
@@ -327,16 +332,14 @@ other_app_waits() {
     local out
     out=$(qd_run z --entrypoint=reg $REG2 query "HKCU\\$key" 2>&1)
     local status=$?
-    kill -9 $runner
-    wait $runner 2>/dev/null
+    crash_container "$sleeping" || return 1
     [ $status -ne 0 ] && grep -q "which a run of $REG is using" <<<"$out" || { echo "$out"; return 1; }
     # Its next run settles what the killed one left.
     qd_run z $REG2 true >/dev/null 2>&1 && not_in_hkcu
 }
 rm_settles() {
     start_sleeping $REG || return 1
-    kill -9 $runner
-    wait $runner 2>/dev/null
+    crash_container "$sleeping" || return 1
     qd_remove_app "$quasidock" $REG >/dev/null 2>&1 </dev/null && not_in_hkcu && ! z container inspect reg-soft >/dev/null 2>&1
 }
 

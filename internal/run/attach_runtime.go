@@ -256,7 +256,13 @@ func (r *attachRuntime) serve(c *framedStream) {
 		case attachStdin, attachEOF:
 			r.mu.Lock()
 			running := r.started && !r.ending
+			ending := r.ending
 			r.mu.Unlock()
+			if ending {
+				// Stdin may reach EOF after a short-lived child exits. Keep the
+				// subscription alive for its remaining output and exit status.
+				continue
+			}
 			if !running || eof || len(data) > 64*1024 || !s.pending.CompareAndSwap(false, true) {
 				return
 			}

@@ -89,7 +89,11 @@ func (c *Context) Fail(format string, args ...any) error {
 
 // Note logs a line to stderr.
 func (c *Context) Note(format string, args ...any) {
-	Note(format, args...)
+	w := c.Stderr
+	if w == nil {
+		w = os.Stderr
+	}
+	_, _ = fmt.Fprintf(w, format+"\n", args...)
 }
 
 func (c *Context) Now() time.Time {
@@ -101,7 +105,9 @@ func (c *Context) Since(start time.Time) time.Duration {
 }
 
 func (c *Context) Timed(start time.Time, format string, args ...any) {
-	ReportTime(c.Verbose, start, format, args...)
+	if c.Verbose {
+		c.Note("%7d ms  %s", time.Since(start).Milliseconds(), fmt.Sprintf(format, args...))
+	}
 }
 
 // ReportTime reports elapsed time if verbose is true.

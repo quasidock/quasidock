@@ -93,20 +93,31 @@ limit=${MATRIX_TIMEOUT:-120}
 started=$SECONDS
 
 # Runs an installed app in the current sandbox ($sb), for at most $limit
-# seconds. Ending quasidock ends the app's whole process tree (its job object).
+# seconds.
 # Its stdin is empty, whatever the matrix's is: given a pipe, as in CI,
 # ripgrep would search that instead of its working directory.
 run() {
-    run_input "$@" </dev/null
+    run_command false "$@" </dev/null
 }
 
 # Like run, but the app reads the caller's stdin.
 run_input() {
+    run_command true "$@"
+}
+
+run_command() {
+    local interactive=()
+    [ "$1" != true ] || interactive=(--interactive)
+    shift
     local shared=()
+    local name=matrix-$current_tool-$sb-$$-$RANDOM
     case $current_tool in git|node) shared=(-v "matrix-$current_tool-$sb-$$:\${data}") ;; esac
-    timeout "$limit" bash "$QD_IMAGES_HELPER" run "$quasidock" --rm --interactive "${shared[@]}" --sandbox="$sb" "$@"
+    timeout "$limit" bash "$QD_IMAGES_HELPER" run "$quasidock" --rm --name "$name" "${interactive[@]}" "${shared[@]}" --sandbox="$sb" "$@"
     local code=$?
-    [ $code -eq 124 ] && echo "error: timed out after ${limit}s"
+    if [ $code -eq 124 ]; then
+        "$quasidock" rm -f "$name" >/dev/null 2>&1
+        echo "error: timed out after ${limit}s"
+    fi
     return $code
 }
 

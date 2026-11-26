@@ -119,7 +119,6 @@ type Options struct {
 	operation     *store.ContainerOperation
 	runLock       *store.Lock
 	attachment    *attachRuntime
-	attachStart   bool
 	controlEvent  win32.HANDLE
 }
 
@@ -321,13 +320,26 @@ func superviseAttempt(ctx *context.Context, rec *store.ContainerRecord, runLock 
 			Ports:        append([]string(nil), rec.HostConfig.Ports...),
 		},
 	}
-	opts.attachStart = attached
 	opts.attachment, err = newAttachRuntime(rec.ID, runID, rec.Config.OpenStdin, rec.Config.Tty)
 	if err != nil {
 		recordLaunchFailure(ctx.Store, rec.ID, runID, err)
 		return 1, err
 	}
 	defer func() { opts.attachment.finish(code, runErr) }()
+	// Subscribe before launch preparation so warnings and verbose diagnostics
+	// reach the initial caller, including failures before process creation.
+	if attached {
+		select {
+		case <-opts.attachment.gate:
+		case <-time.After(execStartupTimeout):
+			err := errors.New("timed out waiting for startup attachment")
+			recordLaunchFailure(ctx.Store, rec.ID, runID, err)
+			return 1, err
+		}
+	}
+	runCtx := *ctx
+	runCtx.Stderr = attachWriter{opts.attachment, attachStderr}
+	ctx = &runCtx
 
 	storeLock, err := ctx.Store.Lock(false)
 	if err != nil {
@@ -912,21 +924,6 @@ func launchContainer(
 		stdinHandle = nulIn
 	}
 	stdio := [3]win32.HANDLE{stdinHandle, outWrite, errWrite}
-	if opts.attachStart {
-		select {
-		case <-opts.attachment.gate:
-		case <-time.After(execStartupTimeout):
-			win32.CloseHandle(outRead)
-			win32.CloseHandle(outWrite)
-			win32.CloseHandle(errRead)
-			win32.CloseHandle(errWrite)
-			if nulIn != 0 {
-				win32.CloseHandle(nulIn)
-			}
-			return 1, false, errors.New("timed out waiting for startup attachment")
-		}
-	}
-
 	var creationFlags win32.DWORD
 	if detached {
 		creationFlags = win32.CREATE_NEW_PROCESS_GROUP

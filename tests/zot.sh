@@ -61,12 +61,13 @@ config() {
 }
 config 5000 ""
 config 5001 ', "auth": { "htpasswd": { "path": "htpasswd" } }'
-# quasidock itself in the background, not a function or subshell running it, so
-# that `kill` below ends quasidock.
+# Name the containers so cleanup ends the servers as well as their clients.
+plain_name=zot-plain-$$
+login_name=zot-login-$$
 cd "$dir"
-QUASIDOCK_HOME="$store" bash "$QD_IMAGES_HELPER" run "$quasidock" $ZOT serve zot-5000.json >zot-5000.log 2>&1 &
+QUASIDOCK_HOME="$store" bash "$QD_IMAGES_HELPER" run "$quasidock" --name "$plain_name" $ZOT serve zot-5000.json >zot-5000.log 2>&1 &
 plain=$!
-QUASIDOCK_HOME="$store" bash "$QD_IMAGES_HELPER" run "$quasidock" $ZOT serve zot-5001.json >zot-5001.log 2>&1 &
+QUASIDOCK_HOME="$store" bash "$QD_IMAGES_HELPER" run "$quasidock" --name "$login_name" $ZOT serve zot-5001.json >zot-5001.log 2>&1 &
 login=$!
 cd "$OLDPWD"
 
@@ -88,8 +89,8 @@ else
     cat "$dir"/zot-*.log
     code=1
 fi
-# Ending quasidock ends zot with it: the run's job object. For a moment, zot
-# may still be exiting, in $dir.
+# Ending a client disconnects it; explicitly remove the supervised containers.
+z rm -f "$plain_name" "$login_name" >/dev/null 2>&1
 kill $plain $login 2>/dev/null
 wait 2>/dev/null
 for _ in $(seq 20); do rm -rf "$dir" 2>/dev/null && break; sleep 0.5; done
