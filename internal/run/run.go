@@ -188,7 +188,12 @@ func Run(ctx *context.Context, opts Options) (uint32, error) {
 	storeLock.Release()
 	if !opts.Detach {
 		stream := AttachOptions{Container: created.ID, NoStdin: !opts.Interactive, SigProxy: true}
-		return startAttachedRecord(ctx, created, op, stream)
+		code, err := startAttachedRecord(ctx, created, op, stream)
+		if err != nil && opts.AutoRemove {
+			op.Release()
+			autoRemoveContainer(ctx, created)
+		}
+		return code, err
 	}
 	if err := launchSupervisor(ctx, created, hostCwd); err != nil {
 		if !ctx.Store.IsContainerRunning(created.ID) {

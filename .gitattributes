@@ -16,8 +16,7 @@ tests/osm2pgsql/*.pbf binary
 *.bat text eol=crlf
 *.cmd text eol=crlf
 
-# Hashed for releases (SHA256SUMS), so the same bytes on every checkout. LICENSE
-# is in the zip: a runner's checkout made it CRLF up to v0.72.0.
+# Hashed for releases (SHA256SUMS), so the same bytes on every checkout.
 *.ps1 text eol=lf
 LICENSE text eol=lf
 

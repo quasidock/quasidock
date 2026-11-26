@@ -10,8 +10,8 @@
   "env": { "ERLANG_HOME": "${app}", "ERL_CRASH_DUMP": "${data}\\erl_crash.dump" },
   "permissions": { "filesystem": ["cwd"] },
   "sdk": {
-    "llvm": "llvm-mingw:20261020@sha256:65425754b958693accc5dc8d8e8ca0dfa6235669c286cc8875105171b3e299b9",
-    "python": "python:3.14.10@sha256:6c21dc182028bd8bf86a9b13969425eceb7701c611e13c74c73491c5a9509605",
+    "llvm": "llvm-mingw:20261020@sha256:c4d0aa87912200ce510965071375618de13c4064fb433ea5b1b182b83cd79099",
+    "python": "python:3.14.10@sha256:3d18034b1becc9bb3b4a36fd212662db33015bbb510b3cf78fd3776d6e9fa274",
     "busybox": "busybox:FRP-6075-g169694ebd@sha256:baca1ecd27b7b5ffe54402d4f8b6e36802d9db5e0e4cb2b7ab13104031045c50"
   },
   "cleanup": ["/doc", "/Install.exe", "/Install.ini", "erl.ini", "*.pdb", "beam.debug.*.dll"],

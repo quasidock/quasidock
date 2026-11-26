@@ -88,7 +88,7 @@ func Supervise(ctx *context.Context, containerID, runID string, attached ...bool
 	defer func() {
 		// Release ownership before auto-removal takes the operation lock.
 		runLock.Release()
-		if rec != nil && rec.HostConfig.AutoRemove && (rec.State.Launched || len(attached) > 0 && attached[0]) {
+		if rec != nil && rec.HostConfig.AutoRemove && rec.State.Launched {
 			autoRemoveContainer(ctx, rec)
 		}
 	}()

@@ -1,31 +1,15 @@
 # Findings
 
-Empirical findings on Windows sandboxing, OS quirks, and toolchains. Most
-measurements and platform investigations were originally performed during
-Zigsaw's development (`../legacy/iteration-N.md`), and are updated here for
-Quasidock's Go implementation, short image IDs, CLI (`quasidock`), and
-per-container storage.
+Empirical findings on Windows sandboxing, OS quirks, and toolchains.
 
 ## Does the no-admin stack hold up?
 
-[Zigsaw iteration 1](../legacy/iteration-1.md) asked whether an unprivileged
-no-admin runner can execute real command-line tools reproducibly on Windows
-(Home edition included) without administrator rights. Six tools were tested in
-both `soft` and `appcontainer` sandboxes with
-[`tests/matrix.sh`](../tests/matrix.sh): `busybox`, `ripgrep`, MinGit
-(`mingit`), Node + npm (`node`), embeddable Python (`python`), and the Zig
-toolchain (`zig`), on Windows 11 Home 10.0.26300 with Defender real-time
-protection enabled. Quasidock replaces Zigsaw's reverse-DNS IDs with short IDs
-and now runs [`tests/matrix.sh`](../tests/matrix.sh) over 14 tools (adding
-`bat`, `go`, `fzf`, `zot`, `cmake`, `zstd`, `pdfbox`, and `plantuml`).
-
 ### Summary
 
-- **The `soft` sandbox works for every tool tested.** All 26 checks in Zigsaw's
+- **The `soft` sandbox works for every tool tested.** All 26 checks in Quasidock's
   initial matrix behaved as intended. Each container gets a hermetic environment,
-  an isolated data directory (`containers/<id>/data` since
-  [Quasidock 0.6](iteration-6.md)), and working-directory access; `mingit`,
-  `npm`, and `zig` builds all keep their state inside container data.
+  an isolated data directory (`containers/<id>/data`), and working-directory
+  access; `mingit`, `npm`, and `zig` builds all keep their state inside container data.
 - **The `appcontainer` sandbox only suits self-contained tools.** `busybox`,
   `ripgrep`, and `python` mostly work and permissions are enforced. Git, Node
   scripts, npm, and Zig failed on the original test build because of two Windows
@@ -33,9 +17,9 @@ and now runs [`tests/matrix.sh`](../tests/matrix.sh) over 14 tools (adding
   rights.
 - One reproducibility hole in `soft` mode was found and fixed early: apps could
   modify deployed application files. Deployed layers are made read-only.
-- **Re-checked in [Zigsaw iteration 8](../legacy/iteration-8.md)** (see
-  [below](#re-checked-on-windows-11-263009550)): on Windows 11 26300.9550,
-  restriction 1 is gone, and `mingit` and `node` work under `appcontainer` in
+- **Re-checked on Windows 11 26300.9550** (see [below](#re-checked-on-windows-11-263009550)):
+  on Windows 11 26300.9550, restriction 1 is gone, and `mingit` and `node`
+  work under `appcontainer` in
   part. (In Quasidock's current recipes, `node`, `python`, and `zig` set
   `"sandbox": "soft"`, so the matrix passes `--sandbox=appcontainer` and
   `--sandbox=low` explicitly.)
@@ -43,11 +27,11 @@ and now runs [`tests/matrix.sh`](../tests/matrix.sh) over 14 tools (adding
   every tool the matrix runs, and keeps them from writing outside their data
   directory and the paths they may write (see [below](#the-low-sandbox)). It
   confines nothing else.
-- **Prebuilt GUI apps ([Zigsaw iteration 17](../legacy/iteration-17.md))** keep
+- **Prebuilt GUI apps** keep
   their settings in container data in all three sandboxes, since Windows derives
   AppData from `USERPROFILE`; the registry, `LocalLow`, and real profile folders
   do not follow (see [below](#prebuilt-gui-apps)).
-- **The registry ([Zigsaw iteration 19](../legacy/iteration-19.md))**: a key in
+- **The registry**: a key in
   `HKCU` labelled low, or granted to an app's capability SID, can be written by
   the app at low integrity and in an AppContainer. Quasidock keeps an app's
   declared `registry` keys per container in `containers/<id>/data/registry` and
@@ -1079,10 +1063,9 @@ against local `zot` via [tests/oci.sh](../tests/oci.sh) (recipes updated to Go
   fails with `Access is denied` inside an AppContainer (`oras push`, remote
   registry commands, and `cosign` key reads work).
 
-## The small chains on Zig 0.17 (Zigsaw iteration 60)
+## The small chains on Zig 0.17
 
-Measured in [Zigsaw iteration 60](../legacy/iteration-60.md) on Windows 11
-26300 (16 logical processors, 16 GB RAM, 18.5 GB commit limit):
+Measured on Windows 11 26300 (16 logical processors, 16 GB RAM, 18.5 GB commit limit):
 
 - **Zig 0.17's `cc` commits ~2x virtual memory when linking:** 906 MB vs 0.16's
   425 MB for a hello-world link (`zig cc -s -Wl,-Brepro hi.o`, independent of
@@ -1100,138 +1083,6 @@ Measured in [Zigsaw iteration 60](../legacy/iteration-60.md) on Windows 11
   `-Wno-error=incompatible-pointer-types`. (`meson`, `make`, `cargo-c`,
   `ghostscript`, and `php-sdk` build cleanly on `zig:0.17.0`; note standalone
   PHP extension recipes were later removed in Quasidock.)
-
-## GDAL and PostgreSQL on `llvm-mingw`
-
-In [Zigsaw iteration 61](../legacy/iteration-61.md), `gdal-sdk`, `gdal`,
-`postgresql-sdk`, and `postgresql` moved from `zig` 0.16 to
-[llvm-mingw](https://github.com/mstorsjo/llvm-mingw) 20261020 (LLVM 23.1.4,
-UCRT, [recipes/llvm-mingw.json](../recipes/llvm-mingw.json)):
-
-| Measured on Zigsaw (16 CPUs, 18 Ninja jobs) | `zig` 0.16 | `llvm-mingw` |
-|---|---|---|
-| `gdal-sdk` build time | 16–21 min | 11.7 min |
-| `postgresql-sdk` build time | 15 min | 7 min |
-| Hello-world link, peak private commit | 425 MB (`0.17`: 906) | ~10 MB |
-| Least free commit during `gdal-sdk` | OOM on `0.17` | 6.9 GB |
-| `gdal-sdk` / `gdal` layer size | 39 / 25 MB | 42.8 / 29 MB |
-| PostgreSQL regress / isolation / PL suites | 231 / 122 / 50 | 231 / 122 / 50 |
-
-- **Trimmed toolchain image size.** Dropping non-x86_64 targets (`aarch64`,
-  `armv7`, `i686`, UWP), `lldb`+Python, `clangd`, and `clang-tidy` reduces
-  `llvm-mingw` from 736 MB to 108 MB (417 MB deployed).
-
-- **Reproducible COFF timestamps.** Upstream Clang and `lld` write build
-  timestamps into `.o` and `.exe`/`.dll` headers (`lld`'s MinGW driver rejects
-  `-Brepro`). [recipes/llvm-mingw.json](../recipes/llvm-mingw.json) appends
-  `-mno-incremental-linker-compatible` and `-Wl,--no-insert-timestamp` to
-  `bin/mingw32-common.cfg` and tests both `.o` and `.exe` 2 s apart.
-
-- **No `as` alias and static C++/pthreads runtime.** `x86_64-w64-mingw32-as`
-  calls Clang as a linker wrapper rather than assembling. Deleting
-  `libc++.dll.a`, `libunwind.dll.a`, and `libwinpthread.dll.a` causes user
-  programs to link those runtimes statically (`clang` itself still uses
-  `bin\libc++.dll`).
-
-- **`lld` matches GNU ld features `zig` lacked.** `--export-all-symbols`
-  (properly omitting CRT `atexit`/`_CRT_INIT`),
-  `--allow-multiple-definition`, `-lX` matching `libX.dll.a`, and
-  `__cpu_model` all work natively, dropping Zigsaw's custom `crt-noexport`,
-  `postgres.def`, custom `nm`/`windres`, and GDAL's CPUID patch.
-
-- **LLVM 23 libc++ and Clang 23 changes:** stricter transitive headers
-  required adding `<type_traits>`/`<algorithm>` in GEOS and
-  `<cstdlib>`/`<atomic>` in GDAL; json-c's `-Werror` tripped on
-  `-Wunused-but-set-global` (`-DDISABLE_WERROR=ON`); Clang 23 removed the
-  `evex512` target feature; mingw-w64's `wchar.h` includes `sys/stat.h` ->
-  `<io.h>`, colliding with `libopencad`'s local `io.h`.
-
-- **Clang MinGW `__int128` 16-byte struct alignment crash.** PostgreSQL's
-  `int128` has `__attribute__((aligned(8)))`, yet Clang for MinGW aligns
-  structs containing it on 16 bytes and copies them with `movaps` on 8-byte
-  `palloc` pointers—crashing `int8_avg_combine` (`0xC0000005`, 31/231 tests).
-  [recipes/postgresql/clang-mingw.patch](../recipes/postgresql/clang-mingw.patch)
-  disables `__int128` for Clang on Windows.
-
-- **`PATH_SEPARATOR=;`.** Autoconf `configure` scripts running on `B:` fail to
-  locate `WINDRES` or other tools on `PATH` unless `PATH_SEPARATOR=;` is set.
-
-## Qt on `llvm-mingw` (Zigsaw iteration 62)
-
-Measured in [Zigsaw iteration 62](../legacy/iteration-62.md) moving `qt6`,
-`qt6-sdk-base`, `qt6-sdk`, `flameshot`, and `notes` to `llvm-mingw`:
-
-| Measured on Zigsaw (16 CPUs, 18 Ninja jobs) | `zig` 0.16 | `llvm-mingw` |
-|---|---|---|
-| `qt6-sdk-base` build time | 25 min (`qtbase` 17.5) | 16.5 min (`qtbase` 12.3) |
-| `qt6-sdk` build time | 26 min (`qtdeclarative` 14 + 2.5) | 18.6–19.3 min (9.9 + 1.6; `qttools` 4) |
-| Least free commit (`base` / `sdk`) | — | 6.2 / 4.6 GB |
-| `base` / `sdk` / runtime layer | 35.3 / 87.5 / 55.6 MB | 37.2 / 91.3 / 57.4 MB |
-| Runtime deployed | 153 MB | 160 MB |
-| Toolchain pulled with SDK | `zig`, 88 MB | `llvm-mingw`, 108 MB |
-
-- **Static `libc++` across DLLs verified.** All 19 checks in
-  [tests/build/xdll](../tests/build/xdll) (`tests/build.sh`) passed across
-  `soft`, `low`, and `appcontainer`, including rethrowing `exception_ptr` and
-  clean `dllexport`-only symbol tables without CRT exports.
-
-- **Workarounds dropped on `llvm-mingw`:** no extra `synchronization` /
-  `runtimeobject` import libs, `-mwindows` works directly, no `crt-noexport`
-  object, no `-s` in `CFLAGS` or `-Wl,-Brepro`, and unquoted manifest paths
-  work in `llvm-windres`.
-
-- **`llvm-windres` unquotes `-D` strings.** CMake's
-  `-DFLAMESHOT_VERSION_STRING=\"14.0.0\"` passes `14.0.0` unquoted unless
-  `RCFLAGS=--use-temp-file` is set ([recipes/qt6-sdk.json](../recipes/qt6-sdk.json)),
-  which breaks Flameshot's `.rc` parser. (And Flameshot needed `<iterator>` in
-  `strfparse.cpp` for LLVM 23 in [recipes/flameshot.json](../recipes/flameshot.json).)
-
-## GTK on `llvm-mingw` (Zigsaw iteration 63)
-
-Measured in [Zigsaw iteration 63](../legacy/iteration-63.md) moving `gettext`,
-`gtk4-sdk-base`, `gtk4-sdk`, `gtk4`, `gtk3`, `gaphor`, `gnumeric`, `meld`,
-`pygobject`, and `rnote` to `llvm-mingw`:
-
-| Measured on Zigsaw (16 CPUs) | `zig` 0.16 | `llvm-mingw` |
-|---|---|---|
-| `gettext` build time | ~27 min | 25 min |
-| `gtk4-sdk-base` / `gtk4-sdk` build time | ~20 / 20 min | 14 / 15 min |
-| `gettext` / `base` / `sdk` / `gtk4` layer | 7.8 / 69.9 / 93.9 / 53.6 MB | 7.0 / 66.2 / 89.7 / 52.2 MB |
-
-- **Workarounds dropped vs `zig`:** `crt-noexport`, WinRT headers, `-s`/`-Brepro`,
-  custom `windres`/`nm`/libtool wrappers, `.lib` copies of `.dll.a`, Cairo
-  `-Wno-error=date-time`, CRoaring AVX-512 workaround, `gettext` export edits,
-  parts of `gobject-introspection.patch`, `gtk3` `-luuid`, and Gnumeric
-  `-mwindows`/`--include-dir`/export header. `lld` finds `python314.lib` and
-  Windows ICU directly (`libspelling` keeps its stub because `llvm-mingw`
-  lacks ICU headers).
-
-- **Rust + `llvm-mingw` toolchain interaction.** When `x86_64-w64-mingw32-gcc`
-  is on `PATH`, `rustc` skips its self-contained gcc+GNU ld and invokes
-  `llvm-mingw`'s gcc/lld (which lacks `libgcc_eh`); `RUSTFLAGS=-Clink-self-contained=yes`
-  does not reach Cargo build scripts under `--target`, whereas setting
-  `CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER` to Rust's self-contained
-  `x86_64-w64-mingw32-gcc.exe` does ([recipes/gtk4-sdk.json](../recipes/gtk4-sdk.json),
-  [recipes/rnote.json](../recipes/rnote.json), binding all 193 imports in
-  [tests/build/rust](../tests/build/rust) and 1,051 imports in `rnote.exe`).
-  Note that Zigsaw iteration 63 also relied on an `as` alias in `llvm-mingw`
-  (since GNU `dlltool` invokes `as --64`) and image ordering so `rust`'s
-  GNU `dlltool` alias shadowed LLVM's `dlltool`; Quasidock removed `aliases` in
-  [iteration 2](iteration-2.md).
-
-- **OpenSSL `.pc` `Libs` vs `Libs.private`.** Meson links only `Libs`, missing
-  `ws2_32`, `gdi32`, and `crypt32` from OpenSSL's static `Libs.private`;
-  [recipes/gtk4-sdk.json](../recipes/gtk4-sdk.json) moves them into `Libs` in
-  `libcrypto.pc`.
-
-- **Remaining `libtool`, Gnumeric, and Rnote adjustments.** `libtool` C++
-  builds (`hunspell`) still strip `-nostdlib` so compiler-rt builtins
-  (`___chkstk_ms`) link; [recipes/gnumeric.json](../recipes/gnumeric.json)
-  passes `-Wl,--export-all-symbols` for `libspreadsheet`;
-  [recipes/rnote.json](../recipes/rnote.json) caps memory with
-  `CARGO_BUILD_JOBS=8` and `CARGO_PROFILE_RELEASE_DEBUG=0` (on 16 CPUs, 16
-  `rustc` jobs + debug info fat LTO exhausted a 16 GB RAM / 2.8 GB pagefile
-  commit limit, and CPU affinity does not reduce Cargo's job count).
 
 ## Links, and what runs reach
 
@@ -1351,18 +1202,7 @@ Added in [Zigsaw iteration 71](../legacy/iteration-71.md) in
 
 ## A connection reset while downloading
 
-During Zigsaw development up to 0.70.0 (and up to 0.74.0 for source fetches),
-Zig's `std.http.Client` panicked (`attempt to use null value`, exit 3) when a
-server reset a `Content-Length` response mid-body: `contentLengthStream` left
-`response.bodyErr()` null (unlike chunked streams) and passed `error.ReadFailed`,
-which `Registry.zig` and `std.http.Client.fetch` unwrapped with `.?`. That
-bug bypassed simulated breaks (`TEST_DOWNLOAD_BREAK`) until tested with a real
-TCP RST proxy (`SO_LINGER {1, 0}`), and ReleaseSafe traces pointed at a wrong
-call site until checked in Debug mode
-([Zigsaw iteration 72](../legacy/iteration-72.md),
-[iteration 75](../legacy/iteration-75.md)).
-
-In Quasidock's Go codebase:
+In Quasidock's codebase:
 
 - **Blob downloads resume on connection resets.** In
   [internal/registry/registry.go](../internal/registry/registry.go), `GetBlob`
@@ -1382,8 +1222,7 @@ In Quasidock's Go codebase:
   and [tests/cmd/resetproxy/main.go](../tests/cmd/resetproxy/main.go) (which
   forwards `<bytes>`, sleeps 500 ms, sets `tcp.SetLinger(0)`, and closes to emit
   a real RST) exercise blob resets, manifest resets, and source fallbacks in
-  [tests/registry.sh](../tests/registry.sh). (`quasidock upgrade` was removed
-  in [iteration 2](iteration-2.md).)
+  [tests/registry.sh](../tests/registry.sh).
 
 ## Telling someone something, on Windows
 
@@ -1476,8 +1315,7 @@ Evaluated using `cosign`3.1.4 directly from the store
 
 ## An empty macro in BusyBox's `make`
 
-Discovered in [Zigsaw iteration 74](../legacy/iteration-74.md) when `enchant`
-failed intermittently in CI on `make -C lib install nodist_doc_DATA=`:
+Discovered when `enchant` failed intermittently in CI on `make -C lib install nodist_doc_DATA=`:
 
 - **`update_makeflags()` off-by-one.** In BusyBox-w32 `FRP-6075`'s
   `miscutils/make.c`, `update_makeflags()` allocates
@@ -1500,9 +1338,8 @@ failed intermittently in CI on `make -C lib install nodist_doc_DATA=`:
 
 ## `zlib` inside images
 
-Measured in [Zigsaw iteration 75](../legacy/iteration-75.md) by scanning
-deployed binaries for `inflate 1.x Copyright` strings (note that standalone
-`postgis` was later removed from `recipes/`):
+Measured by scanning deployed binaries for `inflate 1.x Copyright` strings
+(note that standalone`postgis` was later removed from `recipes/`):
 
 | Image | File | zlib |
 |---|---|---|
@@ -1532,8 +1369,7 @@ only calls `gzopen`/`gzread`/`gzwrite`.
 
 ## Lazy running with the Cloud Files API (experiment, 2026-11-04)
 
-From the initial Zigsaw Cloud Files prototype
-([experiment-cloud-files.md](experiment-cloud-files.md)):
+From the initial Cloud Files prototype ([cloud-files.md](cloud-files.md)):
 
 - **Works unprivileged under all three sandboxes.** Hydrating and executing
   dehydrated placeholders works with `acl.Protect` and sandbox grants under
@@ -1553,12 +1389,12 @@ From the initial Zigsaw Cloud Files prototype
   `BAD_EXE_FORMAT`, and the provider's own process cannot open or launch its
   own placeholders (`395`).
 
-## Lazy pulling, built (Zigsaw iterations 77–78)
+## Lazy pulling
 
 ### Status in Quasidock
 
 Quasidock retains `pull --lazy` (and dropped `update --lazy` when self-update
-was removed in [iteration 2](iteration-2.md)):
+was removed):
 
 - [internal/lazy/lazy.go](../internal/lazy/lazy.go) checks eligibility
   (`DefaultMinSize` 32 MiB, override `QUASIDOCK_TEST_LAZY_MIN`, eStargz TOC

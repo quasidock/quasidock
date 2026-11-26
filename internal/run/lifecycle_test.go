@@ -44,6 +44,50 @@ func TestInheritedEnvironmentSnapshot(t *testing.T) {
 	}
 }
 
+func TestSupervisorRetainsFailedAutoRemoveStart(t *testing.T) {
+	for _, attached := range []bool{false, true} {
+		t.Run(strconv.FormatBool(attached), func(t *testing.T) {
+			ctx := context.New()
+			var err error
+			ctx.Store, err = store.Open(t.TempDir(), false, "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			runID, err := newRunID()
+			if err != nil {
+				t.Fatal(err)
+			}
+			// The absent image fails startup before a payload can be launched.
+			rec, err := ctx.Store.CreateContainer("failed-start", store.ContainerRecord{
+				Image:      "sha256:" + strings.Repeat("a", 64),
+				HostConfig: store.ContainerHostConfig{AutoRemove: true},
+				State:      store.ContainerState{Status: "created", RunID: runID},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			sentinel := filepath.Join(rec.DataDir, "retained.txt")
+			if err := os.WriteFile(sentinel, []byte("keep"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			// Calling synchronously includes the supervisor's deferred cleanup.
+			if code, err := Supervise(ctx, rec.ID, runID, attached); code != 1 || err == nil {
+				t.Fatalf("failed startup: %d %v", code, err)
+			}
+			failed, err := ctx.Store.ResolveContainer(rec.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if failed.State.Launched || failed.State.Running || failed.State.Status != "created" || failed.State.Error == "" {
+				t.Fatalf("failed start was not retained for retry: %+v", failed.State)
+			}
+			if data, err := os.ReadFile(sentinel); err != nil || string(data) != "keep" {
+				t.Fatalf("failed start lost private data: %q %v", data, err)
+			}
+		})
+	}
+}
+
 // This helper is launched as a separate supervisor-like process. Its child job
 // must be ended by Windows when startup cancellation closes the owner's handles.
 func TestSupervisorStartupChild(t *testing.T) {

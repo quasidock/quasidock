@@ -259,6 +259,15 @@ func TestContainerAttachAndAttachedStart(t *testing.T) {
 			t.Fatalf("replacement: %d %q %q", code, newOut, newErr)
 		}
 	})
+	t.Run("failed run removes a new auto-remove container", func(t *testing.T) {
+		_, stderr, code := call("", "run", "--rm", "--name", "bad-run", app, "missing.exe")
+		if code != 1 || stderr == "" {
+			t.Fatalf("failed run: %d %s", code, stderr)
+		}
+		if _, err := ctx.Store.ResolveContainer("bad-run"); !errors.Is(err, store.ErrContainerNotFound) {
+			t.Fatalf("failed run retained auto-remove container: %v", err)
+		}
+	})
 	t.Run("failed starts and incompatible owners", func(t *testing.T) {
 		must("create", "--rm", "--name", "bad-attached", app, "missing.exe")
 		_, stderr, code := call("", "start", "-a", "bad-attached")

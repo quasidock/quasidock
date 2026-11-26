@@ -1,5 +1,9 @@
 version: '3'
 
+env:
+  # Different Go versions can produce different gzip digests. Since Quasidock uses the Go toolchain to build several images, we pin the version here to ensure reproducible builds.
+  GOTOOLCHAIN: 'go1.26.8'
+
 tasks:
   default:
     desc: List available tasks
