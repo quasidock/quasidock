@@ -16,6 +16,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/quasidock/quasidock/internal/format"
 	"github.com/quasidock/quasidock/internal/oci"
@@ -150,8 +151,18 @@ func TestRoundTrip(t *testing.T) {
 			if err != nil || len(loaded) != 2 {
 				t.Fatalf("load: %v %v", loaded, err)
 			}
-			if !reflect.DeepEqual(catalog(t, source), catalog(t, dest)) {
-				t.Fatalf("catalog changed: source=%+v dest=%+v", catalog(t, source), catalog(t, dest))
+			sourceCatalog, destCatalog := catalog(t, source), catalog(t, dest)
+			// Registration times belong to each store and are deliberately not
+			// transferred. All portable image metadata must still round-trip.
+			for digest, ref := range sourceCatalog.Images {
+				ref.CachedAt = ""
+				sourceCatalog.Images[digest] = ref
+				ref = destCatalog.Images[digest]
+				ref.CachedAt = ""
+				destCatalog.Images[digest] = ref
+			}
+			if !reflect.DeepEqual(sourceCatalog, destCatalog) {
+				t.Fatalf("catalog changed: source=%+v dest=%+v", sourceCatalog, destCatalog)
 			}
 			if !bytes.Equal(data, saved(t, dest, a.Manifest, b.Manifest)) {
 				t.Fatal("re-saving changed archive")
@@ -243,6 +254,41 @@ func TestLoadPreservesExistingProvenance(t *testing.T) {
 	got := catalog(t, dest).Images[ref.Manifest]
 	if got.Source != ref.Source || !reflect.DeepEqual(got.Repositories, []string{"example.test/app", "other.test/app"}) {
 		t.Fatalf("provenance not merged: %+v", got)
+	}
+}
+
+func TestArchiveCacheDatesStayLocal(t *testing.T) {
+	source, dest := newStore(t), newStore(t)
+	ref := fixtureImage(t, source, "1", []oci.Descriptor{fixtureLayer(t, source, format.FormatTar)}, []string{"example.test/app:one"}, true)
+	sourceDate := catalog(t, source).Images[ref.Manifest].CachedAt
+	data := saved(t, source, ref.Manifest)
+	if sourceDate == "" || bytes.Contains(data, []byte("cachedAt")) || bytes.Contains(data, []byte(sourceDate)) {
+		t.Fatal("archive includes local cache metadata or registration did not date image")
+	}
+	start := time.Now().UTC()
+	if _, err := Load(dest, bytes.NewReader(data), LoadOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	first := catalog(t, dest).Images[ref.Manifest].CachedAt
+	if date, err := time.Parse(time.RFC3339Nano, first); err != nil || date.Before(start) {
+		t.Fatalf("load did not use destination time: %q %v", first, err)
+	}
+	if _, err := Load(dest, bytes.NewReader(data), LoadOptions{}); err != nil || catalog(t, dest).Images[ref.Manifest].CachedAt != first {
+		t.Fatal("repeat load reset local cache date", err)
+	}
+	idx := catalog(t, dest)
+	local := idx.Images[ref.Manifest]
+	local.CachedAt = ""
+	idx.Images[ref.Manifest] = local
+	encoded, err := json.Marshal(idx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dest.Path("images", "index.json"), encoded, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(dest, bytes.NewReader(data), LoadOptions{}); err != nil || catalog(t, dest).Images[ref.Manifest].CachedAt == "" {
+		t.Fatal("loading an undated image did not assign cache date", err)
 	}
 }
 

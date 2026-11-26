@@ -36,7 +36,10 @@ The local catalog in `images\index.json` lets multiple versions and tags of an
 app coexist ([`images.go`](../internal/store/images.go)):
 
 - `Images` indexes installed manifests by `sha256:...` manifest digest (image
-  ID).
+  ID). Each record can include `cachedAt`, the UTC time of its first successful
+  local registration. Repeat registrations and imports preserve this date;
+  pre-existing undated records remain undated until recached. This optional
+  field does not change the catalog version or image/archive formats.
 - `Names` maps normalized `<host>/<repository>[:tag|@digest]` names to
   manifest digests.
 - `Defaults` maps lowercased bare app IDs to the most recently pulled, built, or named committed
@@ -116,10 +119,17 @@ lock, grants.lock             Win32 LockFileEx coordination lock files
 ```
 
 Concurrent `quasidock` processes synchronize via Win32 `LockFileEx` locks (`lock`
-shared for normal commands, exclusive for `prune` and `image rm`; plus index,
+shared for normal commands, exclusive for `prune`, `image prune`, and `image rm`; plus index,
 `use-<hex>`, `run.lock`, `deploy\<hex>.lock`, `grants.lock`, and registry
 locks). Unpacked files in `deploy\<hex>\` carry a `DENY` `FILE_MODIFY` ACL entry
 for the current user (`acl.Protect`) so containers cannot alter shared layers.
+
+`image prune` freezes a selection under the exclusive store lock, reads raw
+container pins without crash reconciliation, and validates required manifest
+and config metadata before atomically removing catalog entries and names.
+It then removes only selected content that surviving images, containers,
+build dependency pins, and active leases no longer need. Lazy cleanup is scoped
+to those layers; previews do not stop helpers or hydrate placeholders.
 
 ## Container events
 

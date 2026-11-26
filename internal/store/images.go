@@ -7,6 +7,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/quasidock/quasidock/internal/oci"
 	"github.com/quasidock/quasidock/internal/registry"
@@ -236,8 +237,13 @@ func (s *Store) RegisterImage(ref Ref, name string, makeDefault bool) error {
 		return err
 	}
 	return s.changeImages(func(idx *ImageIndex) error {
+		ref.CachedAt = ""
 		if previous, ok := idx.Images[ref.Manifest]; ok {
 			ref.Repositories = previous.Repositories
+			ref.CachedAt = previous.CachedAt
+		}
+		if ref.CachedAt == "" {
+			ref.CachedAt = time.Now().UTC().Format(time.RFC3339Nano)
 		}
 		idx.Images[ref.Manifest] = ref
 		if name != "" {
@@ -402,36 +408,15 @@ func (s *Store) BeginImageRun(ref Ref) (*Lock, *Lock, error) {
 	return app, image, nil
 }
 
-// PruneImages collects only unnamed, nondefault manifests which are not running.
+// PruneImages collects unnamed, nondefault manifests not held by containers or
+// image leases. The caller excludes concurrent image operations.
 func (s *Store) PruneImages(dryRun bool) ([]Ref, error) {
-	var removed []Ref
-	collect := func(idx *ImageIndex) error {
-		kept := map[string]bool{}
-		for _, d := range idx.Names {
-			kept[d] = true
-		}
-		for _, d := range idx.Defaults {
-			kept[d] = true
-		}
-		for d, ref := range idx.Images {
-			if !kept[d] && !s.ImageInUse(ref) {
-				removed = append(removed, ref)
-				if !dryRun {
-					delete(idx.Images, d)
-				}
-			}
-		}
-		return nil
+	plan, err := s.PlanImagePrune(ImagePruneOptions{})
+	if err != nil {
+		return nil, err
 	}
-	var err error
-	if dryRun {
-		var idx *ImageIndex
-		idx, err = s.ImageCatalog()
-		if err == nil {
-			err = collect(idx)
-		}
-	} else {
-		err = s.changeImages(collect)
+	if !dryRun {
+		err = s.ApplyImagePrune(plan)
 	}
-	return removed, err
+	return plan.Images, err
 }

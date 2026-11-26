@@ -28,6 +28,11 @@ type eventOptions struct {
 }
 
 func parseEventTime(raw string, now time.Time) (time.Time, error) {
+	return parseCommandTime(raw, now)
+}
+
+// parseCommandTime shares local timestamp and relative-duration syntax across commands.
+func parseCommandTime(raw string, now time.Time) (time.Time, error) {
 	parts := strings.Split(raw, ".")
 	if len(parts) <= 2 {
 		seconds, err := strconv.ParseInt(parts[0], 10, 64)
@@ -67,7 +72,7 @@ func parseEventTime(raw string, now time.Time) (time.Time, error) {
 		}
 		return now.Add(-duration), nil
 	}
-	return time.Time{}, fmt.Errorf("invalid events time %q: use a Unix timestamp, RFC3339/local date-time, or Go duration", raw)
+	return time.Time{}, fmt.Errorf("invalid time %q: use a Unix timestamp, RFC3339/local date-time, or Go duration", raw)
 }
 
 func parseEventOptions(args []string, now time.Time) (eventOptions, error) {

@@ -94,6 +94,8 @@ Docker-style image commands:
   image load | load [-i|--input FILE] [-q|--quiet] [--force]
                                        load OCI tar (or gzip); --force replaces names
   image rm | rmi IMAGE [IMAGE...]      untag a reference or remove a manifest ID
+  image prune [-a|--all] [-f|--force] [--dry-run] [--filter FILTER...]
+                                       collect unused images; preserve build caches
 
 Persistent storage:
   volume create NAME                 create a reusable named volume

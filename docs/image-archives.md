@@ -33,6 +33,11 @@ otherwise it selects the lexicographically smallest imported manifest digest.
 It does not invent tags for unnamed images. Repeated loads preserve existing
 source provenance and merge repository provenance.
 
+Local cache dates (`image inspect`'s `CachedAt`) are not archived. A newly loaded
+manifest receives the destination store's registration time; repeat loads
+preserve its existing local cache date. An older undated record receives a date
+when successfully loaded again.
+
 Layers are deployed when subsequently used by create/run paths. Loading does not
 launch a program or activate a captured HKCU hive. Images committed with private
 data receive the same independent writable data copies as other committed images.

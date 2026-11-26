@@ -607,6 +607,8 @@ type Ref struct {
 	Manifest     string   `json:"manifest"`
 	Source       string   `json:"source,omitempty"`
 	Repositories []string `json:"repositories,omitempty"`
+	// CachedAt is the first successful registration in this store, not creation time.
+	CachedAt string `json:"cachedAt,omitempty"`
 }
 
 func (s *Store) refPath(id string) string {

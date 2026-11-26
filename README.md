@@ -87,6 +87,7 @@ go run ./scripts/build.go
 | `image save` | `save` | Save local images and all their aliases to an OCI tar archive |
 | `image load` | `load` | Load images from an OCI tar archive; `--force` replaces conflicting names |
 | `image rm` | `rmi` | Untag a reference or remove a cached manifest |
+| `image prune` | — | Remove unused unnamed images; `--all` includes named images and app defaults |
 
 References are `registry/repository[:tag][@sha256:...]`, or
 `app-id[:tag][@digest]` in the default registry. The default is
@@ -106,7 +107,7 @@ quasidock push ghcr.io/example/node:demo
 
 Image IDs are **manifest digests**. Inspect includes `Id`, `RepoTags`,
 `RepoDigests`, `Os`, `Architecture`, `Size`, `Config`, and the original app
-configuration under `Quasidock`. `Source`, `Default`, and optional `Lazy` describe
+configuration under `Quasidock`. `Source`, `Default`, optional `CachedAt`, and optional `Lazy` describe
 local provenance and state. Size counts stored layers and config bytes, counting
 each shared layer once within an image.
 
@@ -118,6 +119,43 @@ containers first). Shared layers remain while other images, containers, or
 builds need them. `quasidock prune` collects stopped containers first, then
 newly unpinned unnamed images and unused deployments; `prune --data` also
 removes leftover legacy app data once unused.
+
+`image prune` removes unnamed, nondefault images without removing containers.
+`--all` (or `-a`) also selects named images and app defaults; it removes all names
+of each selected image and does not choose replacement defaults. Created,
+running, paused, and exited container records and active image leases protect
+their images. Shared content and cached build dependency content remain while
+needed. Top-level `prune --downloads` clears build dependency caches.
+
+```powershell
+quasidock image prune --dry-run
+quasidock image prune --all --filter until=168h
+quasidock image prune --all --filter label=temporary --filter 'label!=keep'
+```
+
+`--dry-run` previews selected names, full IDs, and reclaimable bytes without
+changing images or containers. Image pruning never prompts; `-f`/`--force` is
+accepted for compatibility. It reclaims only the selected images' unused
+content. Previously orphaned content, downloads, project work directories,
+volumes, and legacy app data are left to their existing cleanup commands.
+Byte totals use logical file lengths, count shared content once, and count only
+successful removals during actual cleanup.
+
+Repeat `--filter` for `until=TIME`, `label=KEY`, `label=KEY=VALUE`,
+`label!=KEY`, or `label!=KEY=VALUE`. Different keys use AND; repeated values
+within a key use OR, with `label` and `label!` treated as separate keys. Labels
+come from the app config. `until` tests the first successful registration in
+this local cache, not the image's creation time, and selects dates strictly
+before the cutoff. It accepts Unix seconds (with optional fractional seconds),
+RFC3339, local dates/date-times, and Go durations such as `24h` or `1h30m`.
+Positive durations count backward from command start; dates without an offset
+use the local timezone.
+
+`image inspect` exposes the UTC cache date as `CachedAt`. Repeat pulls, builds,
+and loads preserve it; removing an image and caching it again starts a new date.
+Images from older stores have unknown cache age until their next successful
+pull, build, or load and are skipped by `until` filters. Tagging alone does not
+assign a cache date. Archives do not transfer cache dates between stores.
 
 ### Image history
 

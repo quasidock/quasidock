@@ -1005,11 +1005,10 @@ PostgreSQL 18.6 with `llvm-mingw`, documented in
   Quasidock. `pg_basebackup` defaults to spread checkpoints (taking over 2 min
   in tests); `--checkpoint=fast` returns immediately.
 
-## The OCI tools (Zigsaw iteration 57)
+## The OCI tools
 
-Probed in [Zigsaw iteration 57](../legacy/iteration-57.md) (Go 1.27.1, cgo off)
-against local `zot` via [tests/oci.sh](../tests/oci.sh) (recipes updated to Go
-1.27.3 in [recipes/oras.json](../recipes/oras.json),
+Probed on 2026-10-29, Go 1.27.1, cgo off against local `zot` via [tests/oci.sh](../tests/oci.sh)
+(recipes updated to Go 1.27.3 in [recipes/oras.json](../recipes/oras.json),
 [recipes/skopeo.json](../recipes/skopeo.json), and
 [recipes/cosign.json](../recipes/cosign.json)):
 
@@ -1017,7 +1016,7 @@ against local `zot` via [tests/oci.sh](../tests/oci.sh) (recipes updated to Go
   uses build tags `exclude_graphdriver_btrfs containers_image_openpgp`.
   `cosign` requires Go 1.27 (`go 1.27` in `go.mod`; ~106 MB stripped).
 
-- **`go mod vendor` size.** Measured on Zigsaw: ORAS 12 MB (772 files), skopeo
+- **`go mod vendor` size.** : ORAS 12 MB (772 files), skopeo
   46 MB (32 MB after pruning to `go list -deps`), cosign 130 MB / 10,554 files
   (103 MB pruned, pulling AWS/Azure/GCP/Vault KMS SDKs).
 
@@ -1158,9 +1157,8 @@ was later removed in Quasidock [iteration 2](iteration-2.md)).
 
 ### Advisories
 
-Added in [Zigsaw iteration 71](../legacy/iteration-71.md) in
-[scripts/check-upstream.sh](../scripts/check-upstream.sh) via OSV's
-`/v1/querybatch` and `/v1/vulns/<id>` endpoints:
+Added on 2026-11-05 in [scripts/check-upstream.sh](../scripts/check-upstream.sh)
+via OSV's `/v1/querybatch` and `/v1/vulns/<id>` endpoints:
 
 - **OSV's `GIT` ecosystem matches repositories and tags,** covering C libraries
   with no package registry, but only against the canonical URL OSV indexes
@@ -1210,31 +1208,6 @@ In Quasidock's codebase:
   forwards `<bytes>`, sleeps 500 ms, sets `tcp.SetLinger(0)`, and closes to emit
   a real RST) exercise blob resets, manifest resets, and source fallbacks in
   [tests/registry.sh](../tests/registry.sh).
-
-## Telling someone something, on Windows
-
-Quasidock removed self-update, scheduled update checks, and toast
-notifications (`quasidock-notify`) in [iteration 2](iteration-2.md). Durable
-Windows behaviors found when Zigsaw built them
-([Zigsaw iteration 73](../legacy/iteration-73.md)) still worth noting:
-
-- **`Shell_NotifyIcon` reports success even when unseen.** Windows returned
-  `NIN_BALLOONSHOW` and `NIN_BALLOONTIMEOUT` (6.9 s later) while nothing
-  appeared visibly or in the notification center; `NIN_BALLOONUSERCLICK` is the
-  only proof a user saw it.
-- **`schtasks /create /xml` requires UTF-16** (rejecting UTF-8) and works for
-  unprivileged users in the root folder with a SID `UserId`.
-- **Renaming a running executable:** `MoveFileExW` and PowerShell `Rename-Item`
-  can rename a running `.exe` on NTFS while Zig's `std` rename returned
-  `FileBusy`.
-- **PowerShell 5.1 stderr under `$ErrorActionPreference = 'Stop'`.** Native
-  programs writing notes to stderr trigger terminating errors in Windows
-  PowerShell 5.1 when stderr is redirected (`2>$null` or `2>&1`);
-  [scripts/install.ps1](../scripts/install.ps1) isolates native invocations in
-  a helper function with `Continue`.
-- *(Historical Zig bug: Zig 0.17 `http.Client` panicked if an `http://` request
-  redirected to `https://` because `client.now` was only initialized for
-  initial TLS URLs.)*
 
 ## As a real standard user
 

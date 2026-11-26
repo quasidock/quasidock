@@ -6,11 +6,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/quasidock/quasidock/internal/appcontainer"
 	"github.com/quasidock/quasidock/internal/catalog"
 	"github.com/quasidock/quasidock/internal/context"
-	"github.com/quasidock/quasidock/internal/grants"
-	"github.com/quasidock/quasidock/internal/hkcu"
 	"github.com/quasidock/quasidock/internal/info"
 	"github.com/quasidock/quasidock/internal/lazy"
 	"github.com/quasidock/quasidock/internal/lifecycle"
@@ -19,7 +16,6 @@ import (
 	"github.com/quasidock/quasidock/internal/registry"
 	"github.com/quasidock/quasidock/internal/remote"
 	"github.com/quasidock/quasidock/internal/run"
-	"github.com/quasidock/quasidock/internal/services"
 	"github.com/quasidock/quasidock/internal/store"
 )
 
@@ -41,6 +37,7 @@ type inspectedImage struct {
 	Quasidock   oci.AppConfig
 	Annotations map[string]string `json:",omitempty"`
 	Source      string
+	CachedAt    string `json:",omitempty"`
 	Default     bool
 	Lazy        *string `json:"Lazy,omitempty"`
 }
@@ -56,6 +53,7 @@ func inspectImage(ctx *context.Context, idx *store.ImageIndex, ref store.Ref) (i
 	out.Config.Labels = img.Config.Labels
 	out.Config.UnsetEnv = img.Config.UnsetEnv
 	out.Source = ref.Source
+	out.CachedAt = ref.CachedAt
 	out.Default = idx.Defaults[strings.ToLower(ref.ID)] == ref.Manifest
 	out.Config.Entrypoint = append([]string(nil), img.Config.Entrypoint...)
 	out.Config.Cmd = append([]string(nil), img.Config.Cmd...)
@@ -309,16 +307,7 @@ func imageRemove(ctx *context.Context, args []string) error {
 			continue
 		}
 		if last {
-			if err := grants.UndoAll(ctx, ref.ID); err != nil {
-				failures = append(failures, err)
-			}
-			if err := appcontainer.DeleteProfile(ref.ID); err != nil {
-				ctx.Note("warning: cleaning profile for %s: %v", ref.ID, err)
-			}
-			if err := services.Forget(ctx.Store, ref.ID); err != nil {
-				failures = append(failures, err)
-			}
-			if err := hkcu.SettleLeftovers(ctx.Store, ref.ID); err != nil {
+			if err := lifecycle.CleanRemovedApp(ctx, ref.ID); err != nil {
 				failures = append(failures, err)
 			}
 		}
@@ -335,7 +324,7 @@ func imageRemove(ctx *context.Context, args []string) error {
 
 func imageCommand(ctx *context.Context, args []string) (uint32, error) {
 	if len(args) == 0 {
-		return 1, errors.New("usage: quasidock image <ls|inspect|history|pull|tag|push|save|load|rm|info|files|cat>")
+		return 1, errors.New("usage: quasidock image <ls|inspect|history|pull|tag|push|save|load|rm|prune|info|files|cat>")
 	}
 	cmd, rest := args[0], args[1:]
 	if cmd == "--help" || cmd == "help" {
@@ -348,6 +337,9 @@ func imageCommand(ctx *context.Context, args []string) (uint32, error) {
 	}
 	if cmd == "load" {
 		return 0, imageLoad(ctx, rest)
+	}
+	if cmd == "prune" {
+		return imagePrune(ctx, rest)
 	}
 	lock, err := ctx.Store.Lock(cmd == "rm" || cmd == "remove")
 	if err != nil {

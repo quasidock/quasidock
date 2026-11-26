@@ -10,6 +10,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/quasidock/quasidock/internal/oci"
 	"github.com/quasidock/quasidock/internal/registry"
@@ -99,12 +100,18 @@ func (s *Store) ImportImages(in ImageImport, force bool) error {
 			digests = append(digests, digest)
 		}
 		sort.Strings(digests)
+		cachedAt := time.Now().UTC().Format(time.RFC3339Nano)
 		for _, digest := range digests {
 			ref := in.Images[digest]
+			ref.CachedAt = ""
 			if previous, ok := idx.Images[digest]; ok {
 				// The existing image's provenance remains authoritative locally.
 				ref.Source = previous.Source
+				ref.CachedAt = previous.CachedAt
 				ref.Repositories = append(slices.Clone(previous.Repositories), ref.Repositories...)
+			}
+			if ref.CachedAt == "" {
+				ref.CachedAt = cachedAt
 			}
 			sort.Strings(ref.Repositories)
 			ref.Repositories = slices.Compact(ref.Repositories)

@@ -437,7 +437,11 @@ func FailedFetches(st *store.Store, hexDig string, skip int) ([]string, error) {
 }
 
 func Stop(st *store.Store, hexDig string) {
-	dir := DirPath(st, hexDig)
+	stopHelper(st, hexDig)
+	_ = store.DeleteTree(DirPath(st, hexDig))
+}
+
+func stopHelper(st *store.Store, hexDig string) {
 	if !IsLazy(st, hexDig) {
 		return
 	}
@@ -469,7 +473,6 @@ func Stop(st *store.Store, hexDig string) {
 			}
 		}
 	}
-	_ = store.DeleteTree(dir)
 }
 
 func helperExe(st *store.Store) (string, error) {
