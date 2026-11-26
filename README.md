@@ -4,7 +4,7 @@ Quasidock runs sandboxed Windows programs from OCI-distributed images using a
 Docker-style CLI.
 
 Currently it supports Docker-style container lifecycle management (`create`, `run`, `ps`,
-`logs`, `stats`, `top`, `exec`, `attach`, `start`, `restart`, `pause`, `unpause`, `kill`, `stop`, `rm`, `inspect`, `diff`, `commit`, `prune`), per-container isolated data, image
+`logs`, `stats`, `top`, `exec`, `attach`, `wait`, `start`, `restart`, `pause`, `unpause`, `kill`, `stop`, `rm`, `inspect`, `diff`, `commit`, `prune`), per-container isolated data, image
 management, filesystem export, named volumes, local directory bind mounts, and Quasidock images for
 `windows/amd64`.
 
@@ -216,6 +216,7 @@ metadata, and compatibility details.
 | `container logs` | `logs` | Fetch captured output (`-f`/`--follow`, `-n`/`--tail LINES`) |
 | `container exec` | `exec` | Run another command in a running container (`-d`, `-i`, `-t`, `-e`, `-w`) |
 | `container attach` | `attach` | Attach to a background container's live output and optional stdin |
+| `container wait` | `wait` | Wait for container exits; print exit codes in argument order |
 | `container start` | `start` | Start existing containers; `-a` attaches output, `-i` also attaches saved stdin |
 | `container restart` | `restart` | Stop and start containers (`-t`/`--time SECONDS`, default 10s) |
 | `container rename` | `rename` | Change a container's name while preserving its ID and data |
@@ -599,6 +600,28 @@ case-insensitively. Foreground `run` uses a detached supervisor and pipe attachm
 Ctrl+C forwards TERM. `stop` and `restart`
 wait their requested grace period before forcing termination; `-t 0` forces it
 immediately. Killing a stopped container is an error.
+
+`wait CONTAINER [CONTAINER...]` (also `container wait`) watches all supplied
+containers concurrently and prints one decimal exit code per argument, in argument
+order. Already stopped containers return their stored code immediately; a
+never-started container returns `0`. A running or paused container returns its
+current attempt's code on the first exit, even if an automatic or manual restart
+follows. Waiting during restart backoff returns the completed attempt's code.
+
+```powershell
+quasidock wait worker
+quasidock container wait first-worker second-worker
+```
+
+Successful waiting returns CLI status `0`, including when a container exits
+nonzero. Invalid targets report errors while valid targets are still waited for;
+the command then returns `1`. Ctrl+C disconnects with status `130` and leaves
+containers running. Wait does not stream output, read stdin, or send signals.
+An established subscription retains its result through `--rm`; a container
+removed before subscription can fail resolution. Unexpected stream loss reports
+an error unless the same attempt's completed state remains available. Live
+supervisors without `State.WaitProtocol` must be stopped and started with the
+current binary before wait is available. Existing stopped records work directly.
 
 `attach [OPTIONS] CONTAINER` (also `container attach`) joins the primary process's
 live streams for a container launched by `run` or `start`. It streams stdout

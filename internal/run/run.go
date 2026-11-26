@@ -1055,6 +1055,7 @@ func launchContainer(
 		}
 		if opts.attachment != nil {
 			c.State.AttachProtocol = attachProtocol
+			c.State.WaitProtocol = waitProtocol
 		}
 		return nil
 	})

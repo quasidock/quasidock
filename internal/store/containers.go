@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/binary"
 	"encoding/hex"
@@ -32,6 +33,7 @@ type ContainerState struct {
 	CommitProtocol    int    `json:"CommitProtocol,omitempty"`
 	ControlProtocol   int    `json:"ControlProtocol,omitempty"`
 	AttachProtocol    int    `json:"AttachProtocol,omitempty"`
+	WaitProtocol      int    `json:"WaitProtocol,omitempty"`
 	ExecProtocol      int    `json:"ExecProtocol,omitempty"`
 	RunID             string `json:"RunID,omitempty"`
 	Status            string `json:"Status"`
@@ -169,6 +171,23 @@ func generateContainerID() (string, error) {
 
 func (s *Store) containersLock(exclusive bool) (*Lock, error) {
 	return OpenLock(s.Path("containers", "index.lock"), exclusive, true)
+}
+
+func (s *Store) containersLockContext(ctx context.Context) (*Lock, error) {
+	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		lk, err := TryLock(s.Path("containers", "index.lock"), true)
+		if err != nil || lk != nil {
+			return lk, err
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(20 * time.Millisecond):
+		}
+	}
 }
 
 func (s *Store) IsContainerRunning(id string) bool {
@@ -506,7 +525,20 @@ func (s *Store) ReadContainer(id string) (*ContainerRecord, error) {
 		return nil, err
 	}
 	defer lk.Release()
+	return s.readContainerNoLock(id)
+}
 
+// ReadContainerContext reconciles state with cancellable index-lock acquisition.
+func (s *Store) ReadContainerContext(ctx context.Context, id string) (*ContainerRecord, error) {
+	lk, err := s.containersLockContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer lk.Release()
+	return s.readContainerNoLock(id)
+}
+
+func (s *Store) readContainerNoLock(id string) (*ContainerRecord, error) {
 	rec, err := s.readRawContainer(id)
 	if err != nil {
 		return nil, err
@@ -560,6 +592,28 @@ func (s *Store) ResolveContainer(text string) (*ContainerRecord, error) {
 	if err != nil {
 		return nil, err
 	}
+	return resolveContainer(text, all)
+}
+
+// ResolveContainerContext resolves once, so callers can keep tracking the same
+// identity even if its name is changed or reused during a long-running command.
+func (s *Store) ResolveContainerContext(ctx context.Context, text string) (*ContainerRecord, error) {
+	if text == "" {
+		return nil, fmt.Errorf("%w: %q", ErrContainerNotFound, text)
+	}
+	lk, err := s.containersLockContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	all, err := s.listContainersNoLock(true)
+	lk.Release()
+	if err != nil {
+		return nil, err
+	}
+	return resolveContainer(text, all)
+}
+
+func resolveContainer(text string, all []ContainerRecord) (*ContainerRecord, error) {
 	bare := strings.TrimPrefix(text, "/")
 	// Exact ID or exact name (case-sensitive first, then case-insensitive).
 	for i := range all {

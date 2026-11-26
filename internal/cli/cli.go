@@ -58,6 +58,8 @@ Docker-style container commands:
                                        run another command in a running container
   container attach | attach [--no-stdin] [--sig-proxy=false] [--detach-keys KEYS] CONTAINER
                                        attach to a background container's live streams
+  container wait | wait CONTAINER [CONTAINER...]
+                                       wait for container exits; print codes in argument order
   container start | start [-a|--attach] [-i|--interactive] [--sig-proxy=false] [--detach-keys KEYS] CONTAINER [CONTAINER...]
                                        start containers; -a/-i attaches to one container
   container restart | restart [-t|--time SECONDS] CONTAINER [CONTAINER...]
@@ -869,7 +871,7 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 		return 0, nil
 	}
 	switch cmd {
-	case "rename", "update", "top", "stats", "events", "system", "convert", "build", "volume", "container", "create", "commit", "export", "ps", "diff", "cp", "exec", "attach", "start", "restart", "pause", "unpause", "kill", "stop", "rm", "logs", "image", "images", "inspect", "history", "tag", "pull", "push", "save", "load", "rmi", "run", "search", "trust", "signature", "prune", "repair", "grants":
+	case "wait", "rename", "update", "top", "stats", "events", "system", "convert", "build", "volume", "container", "create", "commit", "export", "ps", "diff", "cp", "exec", "attach", "start", "restart", "pause", "unpause", "kill", "stop", "rm", "logs", "image", "images", "inspect", "history", "tag", "pull", "push", "save", "load", "rmi", "run", "search", "trust", "signature", "prune", "repair", "grants":
 	default:
 		return usageError()
 	}
@@ -900,7 +902,7 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 		return execCommand(ctx, rest)
 	case "ps":
 		return containerCommand(ctx, append([]string{"ls"}, rest...))
-	case "rename", "update", "top", "stats", "create", "commit", "export", "diff", "cp", "attach", "start", "restart", "pause", "unpause", "kill", "stop", "rm", "logs":
+	case "wait", "rename", "update", "top", "stats", "create", "commit", "export", "diff", "cp", "attach", "start", "restart", "pause", "unpause", "kill", "stop", "rm", "logs":
 		return containerCommand(ctx, append([]string{cmd}, rest...))
 	case "inspect":
 		return inspectAny(ctx, rest)

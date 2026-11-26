@@ -36,6 +36,7 @@ type attachRequest struct {
 	Protocol int
 	RunID    string
 	Stdin    bool
+	WaitOnly bool `json:",omitempty"`
 }
 
 type attachResponse struct {
@@ -76,15 +77,16 @@ type attachRuntime struct {
 }
 
 type attachSession struct {
-	r       *attachRuntime
-	c       *framedStream
-	stdin   bool
-	queue   chan attachFrame
-	input   chan attachInputRequest
-	done    chan struct{}
-	once    sync.Once
-	bytes   atomic.Int64
-	pending atomic.Bool
+	r        *attachRuntime
+	c        *framedStream
+	stdin    bool
+	waitOnly bool
+	queue    chan attachFrame
+	input    chan attachInputRequest
+	done     chan struct{}
+	once     sync.Once
+	bytes    atomic.Int64
+	pending  atomic.Bool
 }
 
 func attachPipeName(id, runID string) string { return `\\.\pipe\quasidock-attach-` + id + "-" + runID }
@@ -166,16 +168,16 @@ func (r *attachRuntime) serve(c *framedStream) {
 	if err != nil {
 		return
 	}
-	if kind != attachHello || json.Unmarshal(data, &req) != nil || req.Protocol != attachProtocol || req.RunID != r.runID {
+	if kind != attachHello || json.Unmarshal(data, &req) != nil || req.Protocol != attachProtocol || req.RunID != r.runID || req.WaitOnly && req.Stdin {
 		_ = c.send(attachError, []byte("attach protocol or container run changed"))
 		return
 	}
-	s := &attachSession{r: r, c: c, queue: make(chan attachFrame, 64), input: make(chan attachInputRequest, 1), done: make(chan struct{})}
+	s := &attachSession{r: r, c: c, waitOnly: req.WaitOnly, queue: make(chan attachFrame, 64), input: make(chan attachInputRequest, 1), done: make(chan struct{})}
 	r.mu.Lock()
 	var reject string
 	if r.ending {
 		reject = "container is stopping"
-	} else if r.admit != nil {
+	} else if !req.WaitOnly && r.admit != nil {
 		if err := r.admit(); err != nil {
 			reject = err.Error()
 		}
@@ -193,7 +195,7 @@ func (r *attachRuntime) serve(c *framedStream) {
 		r.writer = s
 	}
 	r.sessions[s] = struct{}{}
-	if r.started {
+	if r.started && !s.waitOnly {
 		s.queue <- attachFrame{kind: attachStarted}
 	}
 	// The session is visible to publishers before the startup gate opens.
@@ -241,11 +243,13 @@ func (r *attachRuntime) serve(c *framedStream) {
 		}
 	}()
 	defer func() { s.close(); workers.Wait() }()
-	r.gateOnce.Do(func() { close(r.gate) })
+	if !s.waitOnly {
+		r.gateOnce.Do(func() { close(r.gate) })
+	}
 	eof := !s.stdin
 	for {
 		kind, data, err := c.receive()
-		if err != nil {
+		if err != nil || s.waitOnly {
 			return
 		}
 		switch kind {
@@ -349,6 +353,9 @@ func (r *attachRuntime) markStarted(signal func() error) {
 	r.started, r.signal = true, signal
 	var stalled []*attachSession
 	for s := range r.sessions {
+		if s.waitOnly {
+			continue
+		}
 		select {
 		case s.queue <- attachFrame{kind: attachStarted}:
 		default:
@@ -371,7 +378,9 @@ func (w attachWriter) Write(p []byte) (int, error) {
 	w.r.mu.Lock()
 	sessions := make([]*attachSession, 0, len(w.r.sessions))
 	for s := range w.r.sessions {
-		sessions = append(sessions, s)
+		if !s.waitOnly {
+			sessions = append(sessions, s)
+		}
 	}
 	w.r.mu.Unlock()
 	for _, s := range sessions {
@@ -417,7 +426,7 @@ func (r *attachRuntime) finish(code uint32, runErr error) {
 		var status [4]byte
 		binary.LittleEndian.PutUint32(status[:], code)
 		for _, s := range sessions {
-			if runErr != nil {
+			if runErr != nil && !s.waitOnly {
 				s.enqueue(attachError, []byte(runErr.Error()))
 			} else {
 				s.enqueue(attachExit, status[:])
