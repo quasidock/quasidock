@@ -121,12 +121,17 @@ type Options struct {
 	runLock       *store.Lock
 	attachment    *attachRuntime
 	controlEvent  win32.HANDLE
+	networkHelper *networkHelper
 }
 
 // ReadyEventName returns the named manual-reset Win32 event signaled by a
 // detached container supervisor once the container process has launched.
 func ReadyEventName(id, runID string) string {
 	return `Local\quasidock-ctr-ready-` + id + "-" + runID
+}
+
+func networkAuthorizedEventName(id, runID string) string {
+	return `Local\quasidock-ctr-network-authorized-` + id + "-" + runID
 }
 
 type HostGrant struct {
@@ -228,6 +233,15 @@ func spawnSupervisor(ctx *context.Context, created *store.ContainerRecord, hostC
 	if err != nil {
 		return process.Detached{}, 0, fmt.Errorf("creating container ready event: %w", err)
 	}
+	var authorized win32.HANDLE
+	if len(created.HostConfig.Networks) != 0 {
+		authorized, err = win32.CreateEvent(networkAuthorizedEventName(created.ID, created.State.RunID), true, false)
+		if err != nil {
+			win32.CloseHandle(readyEvent)
+			return process.Detached{}, 0, err
+		}
+		defer win32.CloseHandle(authorized)
+	}
 
 	exePath, err := os.Executable()
 	if err != nil {
@@ -247,6 +261,19 @@ func spawnSupervisor(ctx *context.Context, created *store.ContainerRecord, hostC
 	if err != nil {
 		win32.CloseHandle(readyEvent)
 		return process.Detached{}, 0, fmt.Errorf("starting detached supervisor: %w", err)
+	}
+	if authorized != 0 {
+		// Consent is a separate phase from payload and attachment readiness.
+		wait := win32.WaitForMultipleObjects([]win32.HANDLE{authorized, readyEvent, det.Process}, false, supervisorStartupTimeout)
+		if wait != win32.WAIT_OBJECT_0 && wait != win32.WAIT_OBJECT_0+1 && wait != win32.WAIT_OBJECT_0+2 {
+			err := awaitSupervisor(ctx, created, det.Process, readyEvent, 1)
+			if err == nil {
+				return det, readyEvent, nil
+			}
+			win32.CloseHandle(readyEvent)
+			win32.CloseHandle(det.Process)
+			return process.Detached{}, 0, fmt.Errorf("waiting for network authorization: %w", err)
+		}
 	}
 	return det, readyEvent, nil
 }
@@ -287,7 +314,7 @@ func awaitSupervisor(ctx *context.Context, created *store.ContainerRecord, super
 }
 
 // superviseAttempt loads the pinned image and executes one payload launch.
-func superviseAttempt(ctx *context.Context, rec *store.ContainerRecord, runLock *store.Lock, event, readyEvent win32.HANDLE, attached bool, operation *store.ContainerOperation) (code uint32, runErr error) {
+func superviseAttempt(ctx *context.Context, rec *store.ContainerRecord, runLock *store.Lock, event, readyEvent win32.HANDLE, attached bool, operation *store.ContainerOperation, networkHelper *networkHelper) (code uint32, runErr error) {
 	var err error
 	runID := rec.State.RunID
 	var sandboxPtr *oci.Sandbox
@@ -309,6 +336,7 @@ func superviseAttempt(ctx *context.Context, rec *store.ContainerRecord, runLock 
 		runLock:       runLock,
 		controlEvent:  event,
 		operation:     operation,
+		networkHelper: networkHelper,
 		Resources:     rec.HostConfig.ContainerResources,
 		RestartPolicy: rec.HostConfig.RestartPolicy,
 		Settings: Settings{
@@ -492,7 +520,7 @@ func launchContainer(
 	hostCwd string,
 	detached bool,
 	readyEvent win32.HANDLE,
-) (uint32, bool, error) {
+) (code uint32, launched bool, runErr error) {
 	defer img.Release()
 	cfg := img.Config
 	appLease, imageLease, err := ctx.Store.BeginImageRun(*selected)
@@ -507,9 +535,15 @@ func launchContainer(
 	sandbox := SandboxOf(settings, cfg.Permissions)
 	WarnUnsupported(cfg, sandbox, ctx.Note)
 
-	network := cfg.Permissions.Network
-	if settings.Network != nil {
-		network = *settings.Network
+	network := effectiveNetworkGrant(settings, cfg.Permissions)
+	managed := len(created.HostConfig.Networks) != 0
+	if managed {
+		if opts.networkHelper == nil {
+			return 1, false, errors.New("network-managed launch requires an authorized Windows network helper")
+		}
+		if err := validateContainerNetworkGrant(sandbox, network); err != nil {
+			return 1, false, err
+		}
 	}
 
 	var hostGrants []HostGrant
@@ -589,13 +623,19 @@ func launchContainer(
 
 	used := services.UsedBy(cfg)
 	targets := services.Targets(used, settings.Ports)
-	servicePorts, err := services.ResolvePublishing(ctx.Store, created.ID, cfg, used, settings.Ports, sandbox, created.HostConfig.PortBindings)
+	publicationSandbox := sandbox
+	if managed {
+		publicationSandbox = oci.SandboxAppContainer // Both isolated runtimes need a host relay.
+	}
+	servicePorts, err := services.ResolvePublishing(ctx.Store, created.ID, cfg, used, settings.Ports, publicationSandbox, created.HostConfig.PortBindings)
 	if err != nil {
 		return 1, false, err
 	}
 
 	reach := LoopbackOpen
-	if sandbox == oci.SandboxAppContainer {
+	if managed {
+		reach = LoopbackIsolated
+	} else if sandbox == oci.SandboxAppContainer {
 		reach, err = exemptLoopback(ctx, cfg.ID, network, len(targets) > 0)
 		if err != nil {
 			return 1, false, err
@@ -626,7 +666,7 @@ func launchContainer(
 	for _, target := range targets {
 		reserved = append(reserved, target.Port, target.Connect)
 	}
-	published, err := services.PreparePublish(cfg, servicePorts, created.HostConfig.PortBindings, command, sandbox, publicationNote, reserved...)
+	published, err := services.PreparePublish(cfg, servicePorts, created.HostConfig.PortBindings, command, publicationSandbox, publicationNote, reserved...)
 	if err != nil {
 		return 1, false, err
 	}
@@ -818,17 +858,18 @@ func launchContainer(
 			rootsPath = *rootsFile
 		}
 		sec, err := setUpAppContainer(ctx, cfg.ID, appContainerSetup{
-			dataPrepared: len(created.Mounts) > 0,
-			deployDir:    img.DeployDir,
-			runtimeDirs:  img.RuntimeDirs,
-			relayDir:     relayDir,
-			rootsFile:    rootsPath,
-			dataDir:      dataDir,
-			localAppData: profile.Local,
-			hostCwd:      hostCwd,
-			grants:       hostGrants,
-			network:      network,
-			own:          own,
+			dataPrepared:   len(created.Mounts) > 0,
+			deployDir:      img.DeployDir,
+			runtimeDirs:    img.RuntimeDirs,
+			relayDir:       relayDir,
+			rootsFile:      rootsPath,
+			dataDir:        dataDir,
+			localAppData:   profile.Local,
+			hostCwd:        hostCwd,
+			grants:         hostGrants,
+			network:        network,
+			privateNetwork: managed,
+			own:            own,
 		})
 		if err != nil {
 			return 1, false, err
@@ -951,6 +992,30 @@ func launchContainer(
 		}
 		return 1, false, fmt.Errorf("setting container resource limits: %w", err)
 	}
+	var networkEndpoints map[string]store.NetworkAttachment
+	var runNetwork *networkHelper
+	if managed {
+		runNetwork = opts.networkHelper
+		defer func() {
+			if _, err := runNetwork.call(networkRequest{Action: "end"}); err != nil {
+				runErr = errors.Join(runErr, fmt.Errorf("releasing container network resources: %w", err))
+				if code == 0 {
+					code = 1
+				}
+			}
+		}()
+		networkEndpoints, err = runNetwork.prepare(job, created.HostConfig.Networks)
+		if err != nil {
+			win32.CloseHandle(outRead)
+			win32.CloseHandle(outWrite)
+			win32.CloseHandle(errRead)
+			win32.CloseHandle(errWrite)
+			if nulIn != 0 {
+				win32.CloseHandle(nulIn)
+			}
+			return 1, false, err
+		}
+	}
 
 	var relay win32.HANDLE
 	if relayExe != "" {
@@ -1058,6 +1123,7 @@ func launchContainer(
 		primary: hProcess, job: job, token: token, security: security,
 		env: envVars, cwd: cwd, systemRoot: systemRoot, placeholders: placeholders,
 	}
+	live.network = runNetwork
 	live.commitContext, live.commitRecord = ctx, created
 	if err := live.start(created.ID, created.State.RunID); err != nil {
 		process.EndJob(job)
@@ -1079,7 +1145,7 @@ func launchContainer(
 		c.Path = cmd.Exe
 		c.Args = append([]string(nil), allArgs...)
 		c.Config.WorkingDir = cwd
-		c.NetworkSettings = &store.ContainerNetworkSettings{Ports: published.Ports}
+		c.NetworkSettings = &store.ContainerNetworkSettings{Ports: published.Ports, Networks: networkEndpoints}
 		c.State = store.ContainerState{
 			SupervisorID:    created.State.SupervisorID,
 			TopProtocol:     topProtocol,
@@ -1087,6 +1153,7 @@ func launchContainer(
 			CommitProtocol:  commitProtocol,
 			ControlProtocol: controlProtocol,
 			ExecProtocol:    execProtocol,
+			NetworkManaged:  managed,
 			RunID:           created.State.RunID,
 			Status:          "running",
 			Running:         true,
@@ -1135,7 +1202,7 @@ func launchContainer(
 		opts.operation.Release()
 	}
 
-	code, err := waitControlled(ctx, created, &child, detached, controlEvent, live, opts.attachment)
+	code, err = waitControlled(ctx, created, &child, detached, controlEvent, live, opts.attachment)
 	pipeWG.Wait()
 
 	if code != 0 {
@@ -1328,17 +1395,18 @@ func forwardsOf(targets []services.Target) (*forward.Forwards, error) {
 }
 
 type appContainerSetup struct {
-	dataPrepared bool
-	deployDir    string
-	runtimeDirs  []string
-	relayDir     string
-	rootsFile    string
-	dataDir      string
-	localAppData string
-	hostCwd      string
-	grants       []HostGrant
-	network      bool
-	own          grants.Own
+	dataPrepared   bool
+	deployDir      string
+	runtimeDirs    []string
+	relayDir       string
+	rootsFile      string
+	dataDir        string
+	localAppData   string
+	hostCwd        string
+	grants         []HostGrant
+	network        bool
+	privateNetwork bool
+	own            grants.Own
 }
 
 func setUpAppContainer(ctx *context.Context, id string, setup appContainerSetup) (*win32.SECURITY_CAPABILITIES, error) {
@@ -1435,8 +1503,14 @@ func setUpAppContainer(ctx *context.Context, id string, setup appContainerSetup)
 		{Sid: profile.Capability, Attributes: win32.SE_GROUP_ENABLED},
 	}
 	if setup.network {
+		internet := appcontainer.CapabilityInternetClient
+		if setup.privateNetwork {
+			// Windows can classify an unidentified private vNIC as public.
+			// Its compartment reaches only the explicitly attached switches.
+			internet = appcontainer.CapabilityInternetClientServer
+		}
 		sids := []string{
-			appcontainer.CapabilityInternetClient,
+			internet,
 			appcontainer.CapabilityPrivateNetworkClientServer,
 		}
 		for _, s := range sids {

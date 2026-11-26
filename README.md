@@ -822,6 +822,11 @@ provision a private Windows virtual network, `quasidock network ls` to list
 the host's HNS networks, and `quasidock network inspect NAME` to view live
 network properties as JSON. Use a full GUID or a name to select a network.
 `quasidock network inspect -f '{{.Id}}' NAME` prints just the GUID.
+Use `quasidock network connect NETWORK CONTAINER` to configure a stopped
+container for a private network. Start it from a regular PowerShell session
+and approve the Windows network helper when prompted. During that run,
+`network connect` and `network disconnect NETWORK CONTAINER` take effect live.
+Container inspection shows saved memberships and the running IPv4 addresses.
 [Host networking guide](docs/networking.md#host-network-management)
 
 Pull reports signature status and permissions. With a matching trust key, missing

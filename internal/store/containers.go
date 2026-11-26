@@ -35,6 +35,7 @@ type ContainerState struct {
 	AttachProtocol    int    `json:"AttachProtocol,omitempty"`
 	WaitProtocol      int    `json:"WaitProtocol,omitempty"`
 	ExecProtocol      int    `json:"ExecProtocol,omitempty"`
+	NetworkManaged    bool   `json:"NetworkManaged,omitempty"`
 	RunID             string `json:"RunID,omitempty"`
 	Status            string `json:"Status"`
 	Running           bool   `json:"Running"`
@@ -66,6 +67,7 @@ type ContainerHostConfig struct {
 	AutoRemove    bool                     `json:"AutoRemove"`
 	Sandbox       string                   `json:"Sandbox,omitempty"`
 	Network       *bool                    `json:"Network,omitempty"`
+	Networks      map[string]string        `json:"Networks,omitempty"`
 	Host          *bool                    `json:"Host,omitempty"`
 	Filesystem    []string                 `json:"Filesystem,omitempty"`
 	NoFilesystem  []string                 `json:"NoFilesystem,omitempty"`
@@ -80,7 +82,15 @@ type PortBinding struct {
 }
 
 type ContainerNetworkSettings struct {
-	Ports map[string][]PortBinding `json:"Ports"`
+	Ports    map[string][]PortBinding     `json:"Ports"`
+	Networks map[string]NetworkAttachment `json:"Networks,omitempty"`
+}
+
+type NetworkAttachment struct {
+	Name        string `json:"Name"`
+	EndpointID  string `json:"EndpointID"`
+	IPAddress   string `json:"IPAddress"`
+	IPPrefixLen int    `json:"IPPrefixLen"`
 }
 
 // ContainerRunSpec records the original launch inputs, independently of the
@@ -294,8 +304,12 @@ func (o *ContainerOperation) Rename(name string) (*ContainerRecord, error) {
 }
 
 func (s *Store) writeContainerStateNoLock(rec *ContainerRecord) error {
-	if !rec.State.Running && rec.NetworkSettings != nil {
-		rec.NetworkSettings.Ports = map[string][]PortBinding{}
+	if !rec.State.Running {
+		rec.State.NetworkManaged = false
+		if rec.NetworkSettings != nil {
+			rec.NetworkSettings.Ports = map[string][]PortBinding{}
+			rec.NetworkSettings.Networks = nil
+		}
 	}
 	data, err := json.MarshalIndent(rec, "", "  ")
 	if err != nil {

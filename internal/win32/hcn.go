@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/netip"
+	"runtime"
 	"strings"
 	"sync"
 	"syscall"
@@ -33,6 +35,34 @@ type HCNNetwork struct {
 type HCNNetworkDetails struct {
 	HCNNetwork
 	Properties map[string]any
+}
+
+// ResolveHCNNetwork matches an exact network name or full GUID. GUID matches
+// take precedence when a network's name also looks like a GUID.
+func ResolveHCNNetwork(target string, all []HCNNetwork) (HCNNetwork, error) {
+	id := target
+	if len(id) == 38 && id[0] == '{' && id[37] == '}' {
+		id = id[1:37]
+	}
+	var nameMatch HCNNetwork
+	matches := 0
+	for _, network := range all {
+		if strings.EqualFold(network.ID, id) {
+			return network, nil
+		}
+		if target != "" && strings.EqualFold(network.Name, target) {
+			nameMatch = network
+			matches++
+		}
+	}
+	switch matches {
+	case 0:
+		return HCNNetwork{}, fmt.Errorf("network %q not found", target)
+	case 1:
+		return nameMatch, nil
+	default:
+		return HCNNetwork{}, fmt.Errorf("multiple networks match name %q (use a full network GUID)", target)
+	}
 }
 
 type hcnAPI struct {
@@ -67,18 +97,120 @@ func loadHCN() (*hcnAPI, error) {
 // CreatePrivateHCNNetwork asks Windows to provision a private virtual network
 // and returns its GUID.
 func CreatePrivateHCNNetwork(name string) (string, error) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	mutex, err := CreateMutex(`Global\quasidock-hcn-subnets`)
+	if err != nil {
+		return "", err
+	}
+	defer CloseHandle(mutex)
+	switch WaitForSingleObject(mutex, 30_000) {
+	case WAIT_OBJECT_0, 0x80: // WAIT_ABANDONED
+		defer ReleaseMutex(mutex)
+	default:
+		return "", errors.New("waiting for the Windows network subnet allocator")
+	}
+	networks, err := ListHCNNetworks()
+	if err != nil {
+		return "", err
+	}
+	var used []netip.Prefix
+	for _, network := range networks {
+		details, err := InspectHCNNetwork(network.ID)
+		if errors.Is(err, ErrHCNNetworkNotFound) {
+			continue
+		}
+		if err != nil {
+			return "", err
+		}
+		used = append(used, hcnIPv4Subnets(details.Properties)...)
+	}
+	for second := 240; second <= 255; second++ {
+		for third := 0; third <= 255; third++ {
+			subnet := netip.PrefixFrom(netip.AddrFrom4([4]byte{10, byte(second), byte(third), 0}), 24)
+			if !subnetOverlaps(subnet, used) {
+				return createPrivateHCNNetwork(name, subnet)
+			}
+		}
+	}
+	return "", errors.New("no unused private network subnet in 10.240.0.0/12")
+}
+
+func subnetOverlaps(subnet netip.Prefix, used []netip.Prefix) bool {
+	for _, other := range used {
+		if subnet.Overlaps(other) {
+			return true
+		}
+	}
+	return false
+}
+
+// PrivateHCNSubnet validates that a virtual network has a usable IPv4 subnet.
+func PrivateHCNSubnet(id string) (netip.Prefix, error) {
+	details, err := InspectHCNNetwork(id)
+	if err != nil {
+		return netip.Prefix{}, err
+	}
+	if details.Driver != "private" {
+		return netip.Prefix{}, fmt.Errorf("network %q uses driver %s, expected private", details.Name, details.Driver)
+	}
+	subnets := hcnIPv4Subnets(details.Properties)
+	if len(subnets) != 1 || subnets[0].Bits() > 29 {
+		return netip.Prefix{}, fmt.Errorf("private network %q needs one usable IPv4 subnet; recreate it with quasidock network create", details.Name)
+	}
+	return subnets[0], nil
+}
+
+func hcnIPv4Subnets(properties map[string]any) []netip.Prefix {
+	var subnets []netip.Prefix
+	for key, value := range properties {
+		if !strings.EqualFold(key, "Ipams") {
+			continue
+		}
+		raw, err := json.Marshal(value)
+		if err != nil {
+			return nil
+		}
+		var ipams []struct {
+			Subnets []struct{ IPAddressPrefix string }
+		}
+		if json.Unmarshal(raw, &ipams) != nil {
+			return nil
+		}
+		for _, ipam := range ipams {
+			for _, subnet := range ipam.Subnets {
+				prefix, err := netip.ParsePrefix(subnet.IPAddressPrefix)
+				if err == nil && prefix.Addr().Is4() {
+					subnets = append(subnets, prefix.Masked())
+				}
+			}
+		}
+	}
+	return subnets
+}
+
+func createPrivateHCNNetwork(name string, subnet netip.Prefix) (string, error) {
 	api, err := getHCN()
 	if err != nil {
 		return "", err
+	}
+	type hcnSubnet struct{ IPAddressPrefix string }
+	type hcnIPAM struct {
+		Type    string
+		Subnets []hcnSubnet
 	}
 	settings := struct {
 		SchemaVersion json.RawMessage
 		Type          string
 		Name          string
+		Ipams         []hcnIPAM `json:",omitempty"`
 	}{
 		SchemaVersion: json.RawMessage(hcnSchemaVersion),
 		Type:          "Private",
 		Name:          name,
+	}
+	if subnet.IsValid() {
+		settings.Ipams = []hcnIPAM{{Type: "Static", Subnets: []hcnSubnet{{IPAddressPrefix: subnet.String()}}}}
 	}
 	raw, err := json.Marshal(settings)
 	if err != nil {
@@ -260,6 +392,12 @@ func (e *hcnError) Unwrap() error {
 	switch e.code {
 	case 0x80070005: // E_ACCESSDENIED
 		return syscall.ERROR_ACCESS_DENIED
+	case 0x803b0002: // HCN_E_ENDPOINT_NOT_FOUND
+		return ErrHCNEndpointMissing
+	case 0x803b002f: // HCN_E_ADDR_INVALID_OR_RESERVED
+		return ErrHCNAddressReserved
+	case 0x803b0034: // HCN_E_ENDPOINT_NOT_ATTACHED
+		return ErrHCNEndpointDetached
 	case 0x803b0010, 0x800700b7: // HCN_E_NETWORK_ALREADY_EXISTS, ERROR_ALREADY_EXISTS
 		return ErrHCNNetworkExists
 	case 0x803b0001, 0x80070490, 0x803b0031: // HCN_E_NETWORK_NOT_FOUND, ERROR_NOT_FOUND, HCN_E_OBJECT_USED_AFTER_UNLOAD

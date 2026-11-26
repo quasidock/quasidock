@@ -137,8 +137,19 @@ func (l *PipeListener) Close() error {
 }
 
 func DialPipe(name string, deadline time.Time) (*os.File, error) {
+	return dialPipe(name, deadline, 0)
+}
+
+// DialPipeIdentification lets the server identify the client without granting
+// it an impersonation token. Elevated clients use this on user-owned pipes.
+func DialPipeIdentification(name string, deadline time.Time) (*os.File, error) {
+	const securityIdentification = 0x00110000 // SECURITY_SQOS_PRESENT | SECURITY_IDENTIFICATION
+	return dialPipe(name, deadline, securityIdentification)
+}
+
+func dialPipe(name string, deadline time.Time, securityFlags DWORD) (*os.File, error) {
 	for {
-		h, err := CreateFile(name, GENERIC_READ|GENERIC_WRITE, 0, nil, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, 0)
+		h, err := CreateFile(name, GENERIC_READ|GENERIC_WRITE, 0, nil, OPEN_EXISTING, FILE_FLAG_OVERLAPPED|securityFlags, 0)
 		if err == nil {
 			return os.NewFile(h, name), nil
 		}

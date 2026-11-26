@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/quasidock/quasidock/internal/context"
+	"github.com/quasidock/quasidock/internal/testregistry"
 	"github.com/quasidock/quasidock/internal/win32"
 )
 
@@ -27,6 +28,8 @@ func TestNetworkArguments(t *testing.T) {
 		{"create", "path/name"}, {"create", "héllo"}, {"create", strings.Repeat("a", 129)},
 		{"ls", "example"}, {"list", "--quiet=true"},
 		{"inspect"}, {"inspect", "-f"}, {"inspect", "--format={{.Id}}"}, {"inspect", "--quiet", "example"},
+		{"connect"}, {"connect", "example"}, {"connect", "example", ""},
+		{"disconnect", "", "container"}, {"disconnect", "example", "container", "extra"},
 	} {
 		if code, err := networkCommand(ctx, args, networkBackend{}); code != 1 || err == nil || out.Len() != 0 {
 			t.Errorf("%v: exit %d, error %v, output %q", args, code, err, out.String())
@@ -40,6 +43,62 @@ func TestNetworkArguments(t *testing.T) {
 	}
 	if _, err := os.Stat(root); ctx.Store != nil || !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("network command opened the local store: %v", err)
+	}
+}
+
+func TestNetworkSavedMembership(t *testing.T) {
+	ctx, out := fixtureCLI(t)
+	reg := testregistry.New()
+	t.Cleanup(reg.Close)
+	fixtureImage(t, reg, "1", []byte("configuration only"))
+	image := reg.Host() + "/app:1"
+	for _, args := range [][]string{
+		{"--name", "app", "--sandbox=appcontainer", "--share=network", image},
+		{"--name", "offline", "--sandbox=appcontainer", "--unshare=network", image},
+	} {
+		if code, err := createCommand(ctx, args); code != 0 || err != nil {
+			t.Fatalf("create %v: %d %v", args, code, err)
+		}
+	}
+	out.Reset()
+	const id = "96a332e7-9e89-4bd1-922e-26010d43d249"
+	backend := networkBackend{
+		list: func() ([]win32.HCNNetwork, error) {
+			return []win32.HCNNetwork{{ID: id, Name: "Example", Driver: "private"}}, nil
+		},
+		privateSubnet: func(got string) error {
+			if got != id {
+				t.Errorf("validated %q, want %q", got, id)
+			}
+			return nil
+		},
+	}
+	call := func(args []string, message string) {
+		t.Helper()
+		code, err := networkCommand(ctx, args, backend)
+		if message == "" && (code != 0 || err != nil) || message != "" && (code != 1 || err == nil || !strings.Contains(err.Error(), message)) || out.Len() != 0 {
+			t.Fatalf("%v: exit %d, error %v, output %q", args, code, err, out.String())
+		}
+	}
+	call([]string{"connect", "Example", "offline"}, "requires image network permission")
+	call([]string{"connect", "eXaMpLe", "app"}, "")
+	call([]string{"connect", "{" + strings.ToUpper(id) + "}", "app"}, "already connected")
+	if err := containerInspect(ctx, []string{"app"}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), `"`+id+`": "Example"`) || strings.Contains(out.String(), `"NetworkSettings"`) {
+		t.Fatalf("unexpected stopped inspection: %s", out.String())
+	}
+	out.Reset()
+	backend.list = func() ([]win32.HCNNetwork, error) {
+		t.Fatal("disconnect tried to read deleted host networks")
+		return nil, nil
+	}
+	call([]string{"disconnect", "{" + strings.ToUpper(id) + "}", "app"}, "")
+	call([]string{"disconnect", "example", "app"}, "not found")
+	rec, err := ctx.Store.ResolveContainer("app")
+	if err != nil || len(rec.HostConfig.Networks) != 0 {
+		t.Fatalf("disconnected record: %+v, %v", rec, err)
 	}
 }
 

@@ -79,6 +79,19 @@ func Supervise(ctx *context.Context, containerID, runID string, attached ...bool
 			return 1, err
 		}
 	}
+	var network *networkHelper
+	if len(rec.HostConfig.Networks) != 0 {
+		network, err = startNetworkHelper()
+		if err != nil {
+			recordLaunchFailure(ctx.Store, containerID, runID, err)
+			return 1, err
+		}
+		defer network.Close()
+		if authorized, err := win32.OpenEvent(networkAuthorizedEventName(containerID, runID), win32.EVENT_MODIFY_STATE); err == nil {
+			win32.SetEvent(authorized)
+			win32.CloseHandle(authorized)
+		}
+	}
 	event, err := win32.CreateEvent(controlEventName(containerID, controlKey(rec)), false, false)
 	if err != nil {
 		recordLaunchFailure(ctx.Store, containerID, runID, err)
@@ -96,7 +109,7 @@ func Supervise(ctx *context.Context, containerID, runID string, attached ...bool
 	delay := time.Duration(0)
 	var operation *store.ContainerOperation
 	for {
-		code, runErr = superviseAttempt(ctx, rec, runLock, event, ready, first && len(attached) > 0 && attached[0], operation)
+		code, runErr = superviseAttempt(ctx, rec, runLock, event, ready, first && len(attached) > 0 && attached[0], operation, network)
 		if operation != nil {
 			operation.Release()
 			operation = nil

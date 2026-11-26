@@ -246,6 +246,7 @@ type execRuntime struct {
 	listener            *win32.PipeListener
 	closing             bool
 	paused              bool
+	network             *networkHelper
 	runID               string
 	primary, job, token win32.HANDLE
 	security            *win32.SECURITY_CAPABILITIES

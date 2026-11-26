@@ -23,7 +23,7 @@ const (
 var errForegroundTERM = errors.New("TERM is unsupported for foreground containers; use stop or kill --signal KILL")
 var errSignalDelivery = errors.New("signal delivery failed")
 
-const controlProtocol = 2
+const controlProtocol = 3
 
 type controlAction string
 
@@ -32,12 +32,14 @@ const (
 	actionCancelRestart controlAction = "cancel-restart"
 	actionPause         controlAction = "pause"
 	actionUnpause       controlAction = "unpause"
+	actionNetwork       controlAction = "network"
 	// Resume is idempotent for shutdown, which can race with attached TERM.
 	actionResume controlAction = "resume"
 )
 
 type controlRequest struct {
 	Update    *UpdateOptions `json:",omitempty"`
+	Network   *networkChange `json:",omitempty"`
 	RunID     string
 	RequestID string
 	Signal    KillSignal
@@ -128,7 +130,11 @@ func sendControlRequest(ctx *context.Context, rec *store.ContainerRecord, reques
 	if !win32.SetEvent(event) {
 		return errors.New("signaling container control event failed")
 	}
-	deadline := time.Now().Add(5 * time.Second)
+	timeout := 5 * time.Second
+	if request.Action == actionNetwork {
+		timeout += 3 * networkRequestTimeout
+	}
+	deadline := time.Now().Add(timeout)
 	for {
 		switch win32.WaitForSingleObject(ack, 20) {
 		case win32.WAIT_OBJECT_0:
@@ -147,6 +153,9 @@ func sendControlRequest(ctx *context.Context, rec *store.ContainerRecord, reques
 				return errForegroundTERM
 			}
 			if result.Error != "" {
+				if request.Action == actionNetwork {
+					return errors.New(result.Error)
+				}
 				return fmt.Errorf("%w: %s", errSignalDelivery, result.Error)
 			}
 			return nil
@@ -196,8 +205,12 @@ func waitControlled(ctx *context.Context, rec *store.ContainerRecord, child *pro
 	if attachment != nil {
 		defer attachment.stopAccepting()
 	}
+	handles := []win32.HANDLE{child.Process, event}
+	if live.network != nil {
+		handles = append(handles, live.network.process)
+	}
 	for {
-		switch win32.WaitForMultipleObjects([]win32.HANDLE{child.Process, event}, false, win32.INFINITE) {
+		switch win32.WaitForMultipleObjects(handles, false, win32.INFINITE) {
 		case win32.WAIT_OBJECT_0:
 			if attachment != nil {
 				attachment.stopAccepting()
@@ -212,7 +225,13 @@ func waitControlled(ctx *context.Context, rec *store.ContainerRecord, child *pro
 			serveControlRequest(ctx, rec, func(request controlRequest) error {
 				return live.control(ctx, rec, request, detached)
 			})
+		case win32.WAIT_OBJECT_0 + 2:
+			process.EndJob(child.Job)
+			return 1, errors.New("the Windows network helper exited during the run")
 		default:
+			if live.network != nil {
+				process.EndJob(child.Job)
+			}
 			return 1, errors.New("waiting for container process or control event failed")
 		}
 	}
@@ -249,6 +268,11 @@ func (r *execRuntime) control(ctx *context.Context, rec *store.ContainerRecord, 
 				return errors.New("update requires at least one setting")
 			}
 			return r.updateLocked(ctx, rec, *request.Update)
+		case actionNetwork:
+			if request.Network == nil || request.Update != nil {
+				return errors.New("invalid network control request")
+			}
+			return r.changeNetworkLocked(ctx, rec, *request.Network)
 		case actionPause:
 			if r.paused {
 				return errors.New("container is already paused")

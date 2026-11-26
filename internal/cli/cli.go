@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/quasidock/quasidock/internal/builder"
@@ -100,12 +101,15 @@ Docker-style image commands:
   image prune [-a|--all] [-f|--force] [--dry-run] [--filter FILTER...]
                                        collect unused images; preserve build caches
 
-Windows host networking (elevated shell):
-  network create NAME                create a private Windows network; print its ID
+Windows host networking:
+  network create NAME                create a private Windows network and print its ID (elevated)
   network ls | network list [-q|--quiet]
-                                     list Windows host networks
+                                     list Windows host networks (elevated)
   network inspect [-f TEMPLATE|--format TEMPLATE] NAME|ID [NAME|ID...]
-                                     show live Windows network properties (JSON by default)
+                                     show live Windows network properties (elevated, JSON by default)
+  network connect NETWORK CONTAINER   attach a container to a private Windows network
+  network disconnect NETWORK CONTAINER
+                                     detach a container from a private Windows network
 
 Persistent storage:
   volume create NAME                 create a reusable named volume
@@ -868,6 +872,19 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 	}
 	if cmd == "network" {
 		return networkCommand(ctx, rest, windowsNetworkBackend)
+	}
+	if cmd == "network-helper" {
+		if len(rest) != 2 {
+			return usageError()
+		}
+		pid, err := strconv.ParseUint(rest[0], 10, 32)
+		if err != nil {
+			return usageError()
+		}
+		if err := run.ServeNetworkHelper(uint32(pid), rest[1]); err != nil {
+			return 1, err
+		}
+		return 0, nil
 	}
 	if cmd == "container-supervisor" {
 		if len(rest) != 3 && (len(rest) != 4 || rest[3] != "attach") {

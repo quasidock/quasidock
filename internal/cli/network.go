@@ -10,6 +10,8 @@ import (
 	"text/tabwriter"
 
 	"github.com/quasidock/quasidock/internal/context"
+	"github.com/quasidock/quasidock/internal/run"
+	"github.com/quasidock/quasidock/internal/store"
 	"github.com/quasidock/quasidock/internal/win32"
 )
 
@@ -17,6 +19,7 @@ type networkBackend struct {
 	list          func() ([]win32.HCNNetwork, error)
 	createPrivate func(string) (string, error)
 	inspect       func(string) (win32.HCNNetworkDetails, error)
+	privateSubnet func(string) error
 }
 
 var (
@@ -24,12 +27,13 @@ var (
 		list:          win32.ListHCNNetworks,
 		createPrivate: win32.CreatePrivateHCNNetwork,
 		inspect:       win32.InspectHCNNetwork,
+		privateSubnet: func(id string) error { _, err := win32.PrivateHCNSubnet(id); return err },
 	}
 	networkNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$`)
 )
 
 func networkCommand(ctx *context.Context, args []string, backend networkBackend) (uint32, error) {
-	const usage = "usage: quasidock network <create NAME|ls [-q|--quiet]|inspect [-f TEMPLATE] NETWORK [NETWORK...]>"
+	const usage = "usage: quasidock network <create NAME|ls [-q|--quiet]|inspect [-f TEMPLATE] NETWORK [NETWORK...]|connect NETWORK CONTAINER|disconnect NETWORK CONTAINER>"
 	if len(args) == 0 {
 		return 1, errors.New(usage)
 	}
@@ -75,6 +79,21 @@ func networkCommand(ctx *context.Context, args []string, backend networkBackend)
 	case "inspect":
 		if err := inspectNetworks(ctx, backend, args[1:]); err != nil {
 			return 1, err
+		}
+	case "connect", "disconnect":
+		if len(args) != 3 || args[1] == "" || args[2] == "" || strings.HasPrefix(args[1], "-") || strings.HasPrefix(args[2], "-") {
+			return 1, fmt.Errorf("usage: quasidock network %s NETWORK CONTAINER", args[0])
+		}
+		if ctx.Store == nil {
+			st, err := store.Open("", ctx.Verbose, "")
+			if err != nil {
+				return 1, err
+			}
+			ctx.Store = st
+			ctx.Store.EventWarnings = ctx.Stderr
+		}
+		if err := run.ChangeContainerNetwork(ctx, args[2], args[1], args[0] == "connect", backend.list, backend.privateSubnet); err != nil {
+			return 1, networkBackendError(err)
 		}
 	default:
 		return 1, fmt.Errorf("unknown network command %q\n%s", args[0], usage)
@@ -143,11 +162,11 @@ func inspectNetworks(ctx *context.Context, backend networkBackend, args []string
 	}
 	ids := make([]string, len(targets))
 	for i, target := range targets {
-		id, err := resolveNetworkID(target, all)
+		network, err := win32.ResolveHCNNetwork(target, all)
 		if err != nil {
 			return err
 		}
-		ids[i] = id
+		ids[i] = network.ID
 	}
 
 	items := make([]any, 0, len(ids))
@@ -174,30 +193,4 @@ func inspectNetworks(ctx *context.Context, backend networkBackend, args []string
 		items = append(items, item)
 	}
 	return renderInspect(ctx.Stdout, format, items)
-}
-
-func resolveNetworkID(target string, all []win32.HCNNetwork) (string, error) {
-	id := target
-	if len(id) == 38 && id[0] == '{' && id[37] == '}' {
-		id = id[1:37]
-	}
-	var nameID string
-	matches := 0
-	for _, network := range all {
-		if strings.EqualFold(network.ID, id) {
-			return network.ID, nil
-		}
-		if target != "" && strings.EqualFold(network.Name, target) {
-			nameID = network.ID
-			matches++
-		}
-	}
-	switch matches {
-	case 0:
-		return "", fmt.Errorf("network %q not found", target)
-	case 1:
-		return nameID, nil
-	default:
-		return "", fmt.Errorf("multiple networks match name %q (use a full network GUID)", target)
-	}
 }

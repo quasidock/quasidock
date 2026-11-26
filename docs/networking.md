@@ -11,7 +11,7 @@ loopback exemptions, and forwards.
 - Images declare `permissions.network` (default `false`); `quasidock run`
   overrides it per run with `--share=network` or `--unshare=network` (see
   [`internal/cli/cli.go`](../internal/cli/cli.go).
-- Under `--sandbox=appcontainer`, a run with `network` holds the
+- Under `--sandbox=appcontainer`, a run using the default network with `network` holds the
   `internetClient` (`S-1-15-3-1`) and `privateNetworkClientServer`
   (`S-1-15-3-3`) capabilities alongside its own package capability (`quasidock.<id>`).
   Without `network`, it holds only its package capability. `appcontainer` is
@@ -126,8 +126,9 @@ quasidock network inspect -f '{{.Id}} {{.Driver}}' example-private
 full GUID. Its name must start with an ASCII letter or digit and can contain up
 to 128 ASCII letters, digits, dots, underscores, and hyphens. Names are matched
 case-insensitively, and an existing name causes the command to fail. Windows
-manages the lifetime of the network. Container attachment is reserved for a
-later release.
+manages the lifetime of the network. Quasidock assigns each new switch an
+unused IPv4 `/24` from `10.240.0.0/12`. These switches carry private peer traffic
+without a default gateway.
 
 `network ls` (also `network list`) reports all live HNS networks across the host,
 including those created by Windows and other tools. The inventory is independent
@@ -144,6 +145,33 @@ Use `-f` or `--format` to run a Go template on each record. For example,
 `--format '{{json .Properties}}'` prints the HCN properties as JSON, one object
 per argument. A failed lookup returns an error with empty stdout.
 
+### Connecting containers to private networks
+
+Create the container from a regular PowerShell session and specify
+`--share=network` if its AppContainer image needs a network grant. From an
+elevated PowerShell session under the same Windows account and store, run
+`quasidock network connect example-private my-container` while it is stopped.
+Then run `quasidock start my-container` from the regular session and approve the
+Windows network helper. A single approval covers automatic restarts under that
+supervisor. The payload and `exec` processes run unelevated in the same private
+routing compartment. Apps can communicate with peers by IPv4 address when they
+listen on their private interface or on `0.0.0.0`.
+An AppContainer on a private switch can also listen when Windows classifies the
+virtual interface as a public network.
+
+Use `network connect NETWORK CONTAINER` and `network disconnect NETWORK CONTAINER`
+from the regular session to change membership live. After the last live
+disconnect, you can connect that run again. The next start with zero saved
+memberships uses the default network behavior. A stopped container can
+disconnect by saved name or GUID even after the host network is deleted.
+
+`quasidock container inspect my-container` shows saved entries in
+`HostConfig.Networks` and running endpoints in `NetworkSettings.Networks`.
+Both use network GUIDs as keys. The endpoint record includes the IPv4 address,
+which can change after restart. Explicit `-p` port publishing and `uses` host
+forwards go through the normal relay path. Create a new private network before
+attaching if the old network was created without a usable IPv4 subnet.
+
 Remove a network you created by passing its GUID to Windows' HNS diagnostics
 tool. [Microsoft HNS diagnostics](https://learn.microsoft.com/en-us/virtualization/windowscontainers/kubernetes/common-problems)
 
@@ -154,6 +182,9 @@ hnsdiag delete networks $networkId
 The opt-in smoke test creates, lists, inspects, and removes a temporary private
 network. From the same elevated session, set `QUASIDOCK_TEST_HCN=1` and run
 `go test -count=1 ./internal/cli -run '^TestNetworkHCNSmoke$'`.
+For a live attachment test, set the same variable in a regular PowerShell
+session and run `./tests/network-hcn.ps1` from the repository. Approve the UAC
+prompts for network setup, each supervisor, and cleanup.
 
 ### Private loopback
 
@@ -458,6 +489,6 @@ Key details:
   out of scope because several toolchains still fail inside AppContainer
   (e.g., `NUL`/device-path issues under Server 2025). Offline `build` stages
   continue to rely on the dead proxy convention.
-- **Not in this design**: per-host network rules, private network namespaces,
-  UDP/SCTP publication, or custom DNS. Explicit TCP `-p` can bind LAN addresses
+- **Not in this design**: per-host network rules, UDP/SCTP publication, or
+  custom DNS. Explicit TCP `-p` can bind LAN addresses
   subject to the machine's existing firewall configuration.

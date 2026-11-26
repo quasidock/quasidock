@@ -25,6 +25,23 @@ func main() {
 	args := os.Args[1:]
 	if len(args) > 0 {
 		switch args[0] {
+		case "tcp-ping":
+			conn, err := net.DialTimeout("tcp4", args[1], 2*time.Second)
+			if err != nil {
+				panic(err)
+			}
+			defer conn.Close()
+			_ = conn.SetDeadline(time.Now().Add(2 * time.Second))
+			const message = "quasidock"
+			if _, err := io.WriteString(conn, message); err != nil {
+				panic(err)
+			}
+			var response [len(message)]byte
+			if _, err := io.ReadFull(conn, response[:]); err != nil || string(response[:]) != message {
+				panic(fmt.Sprintf("TCP echo: %q, %v", response, err))
+			}
+			fmt.Println("echo")
+			return
 		case "tcp-serve":
 			listener, err := net.Listen("tcp", os.ExpandEnv(args[1]))
 			if err != nil {

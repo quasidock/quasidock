@@ -353,11 +353,6 @@ Inside sandboxes on prepared vs unprepared `HKCU` keys:
   labelling them low or granting the app's capability SID (plus `KEY_READ` on
   ancestor keys; see [Java](#java)). With `--rm`, the hive is discarded unless
   backed by a `-v`/`--mount` mount.
-- **7-Zip**: in Zigsaw iteration 19, 7-Zip 26.04's file manager (`7zFM`) saved
-  `FM` and `FM\Columns` cleanly under `Software\7-Zip` across all three
-  sandboxes because it creates keys one level at a time.
-  [`recipes/7zip.json`](../recipes/7zip.json) (26.05, CLI `7z.exe`) still
-  declares `"registry": ["Software\\7-Zip"]`.
 
 ## Projects with their own recipe
 
@@ -757,57 +752,6 @@ IDs updated for Quasidock):
   Server 2025, CPython's `getpath` cannot resolve its executable's real path
   (`self-path-dos`), warns, and continues.
 
-## Qt 6 with zig
-
-Discovered in [Zigsaw iteration 39](../legacy/iteration-39.md) when Qt 6 first
-built with `zig` (Quasidock's `qt6` / `qt6-sdk` recipes now use
-`llvm-mingw` from [Zigsaw iteration 62](../legacy/iteration-62.md), which
-avoided several `zig` workarounds):
-
-- **`zig`'s static `libc++` works across DLLs.** `zig` links `libc++`,
-  `libc++abi`, and `libunwind` into each DLL and executable, sharing one UCRT
-  heap while comparing typeinfo names across DLLs on Windows; an 18-check
-  probe across two DLLs and an executable passed (cross-DLL exceptions, header-
-  only exceptions, `dynamic_cast`/`typeid`, `std::string`/`std::vector` growth
-  and free, `std::function`, `thread_local`, static initializers).
-
-- **`zig` MinGW linker/tool gaps:** lacked `synchronization` and
-  `runtimeobject` import libraries (`QtCore`), ignored `-mwindows` on `zig cc`
-  (leaving GUI binaries as console subsystem unless passed to the linker), and
-  `zig rc` parsed unquoted filenames only up to `-`. All three ceased to apply
-  once Qt moved to `llvm-mingw`.
-
-- **Qt deployment prefix heuristic (`lib\libQt6Core.a`).** Qt treats a binary
-  sitting next to `Qt6Core.dll` as a `windeployqt` deployment and searches
-  `bin\plugins` unless `lib\libQt6Core.a` exists beside `bin\`, or `qt.conf`
-  overrides the paths ([recipes/qt6.json](../recipes/qt6.json) ships
-  `bin/qt.conf`). Without that, `qtdiag` and `designer` showed a missing
-  platform plugin message box.
-
-- **AppContainer `CreateNamedPipe` namespace.** An AppContainer denies
-  `CreateNamedPipe` outside `\\.\pipe\LOCAL\`, breaking `QLocalServer` and
-  `KDSingleApplication` (Flameshot). Patching the pipe prefix to `LOCAL\`
-  ([recipes/qt6-sdk/qlocalserver-appcontainer.patch](../recipes/qt6-sdk/qlocalserver-appcontainer.patch))
-  allows instances of an app sharing a container to connect.
-
-- **`download.qt.io` redirects to regional mirrors.** Mirror redirects caused
-  TLS/fetch failures; recipes fetch release tags from GitHub's Qt mirror
-  instead (matching source files minus git submodules such as `qlitehtml`).
-
-- **Qt 6.12 Linguist needs Qt Quick.** CMake skips Linguist without `Qt::Quick`;
-  command-line tools build without it.
-
-- **Reproducibility cleanups in Qt's SDK.** Stripping SBOM timestamps
-  (`-DQT_GENERATE_SBOM=OFF`), deleting `*.bat` wrappers (`qt-cmake.bat`
-  embedded store paths in [recipes/qt6-sdk-base.json](../recipes/qt6-sdk-base.json)
-  and [recipes/qt6-sdk.json](../recipes/qt6-sdk.json)), and rewriting
-  `prefix=B:/prefix` in pkg-config files to `${pcfiledir}/../..` gave
-  byte-identical builds across stores.
-
-- **Flameshot's `flameshot-cli.exe`.** Sizes its `_wpopen` buffer at roughly
-  `32 + 2 * sizeof(std::wstring)` chars (~80 chars, truncating longer paths)
-  and defines `wmain`, requiring MinGW `-municode`.
-
 ## CMake's search paths, and Qt Quick
 
 Measured on 2026-11-12, Windows 11 26300, 16 CPUs:
@@ -848,14 +792,9 @@ Measured on 2026-11-12, Windows 11 26300, 16 CPUs:
   `#pragma comment(lib, "Dwmapi.lib")` works with lld; its stylesheets name
   `"MS Sans Serif"`, a bitmap font DirectWrite fails to load in all sandboxes.
 
-- **Two-half Qt SDK build time (Zigsaw iteration 40, `zig`, 16 CPUs):** 73 min
-  total (`qt6-sdk-base` 25 min, `qt6-sdk` 48 min, 41.5 min before the second
-  `qmlcachegen` pass). See [Qt on llvm-mingw](#qt-on-llvm-mingw-zigsaw-iteration-62)
-  for current toolchain timings.
-
 ## TeX Live and Ghostscript
 
-Found in [Zigsaw iteration 43](../legacy/iteration-43.md):
+Found on 2026-11-19, when TeX Live first built with `zig`:
 
 - **Offline hermetic `install-tl`.** With a local CTAN snapshot (`-repository`
   containing `tlpkg/texlive.tlpdb` and `archive/`), `instopt_portable 1`,
@@ -899,67 +838,6 @@ Found in [Zigsaw iteration 43](../legacy/iteration-43.md):
   `Local\quasidock-build-drive` ([internal/builder/drive.go](../internal/builder/drive.go)),
   printing `waiting for another quasidock build to finish with B:...` if
   another Quasidock build holds `B:`.
-
-## PostgreSQL
-
-Discovered in [Zigsaw iteration 45](../legacy/iteration-45.md) when PostgreSQL
-first built with `zig` (Quasidock's
-[recipes/postgresql.json](../recipes/postgresql.json) and
-[recipes/postgresql-sdk.json](../recipes/postgresql-sdk.json) now build
-PostgreSQL 18.6 with `llvm-mingw`, documented in
-[GDAL and PostgreSQL on llvm-mingw](#gdal-and-postgresql-on-llvm-mingw-zigsaw-iteration-61)):
-
-- **`zig` linker constraints (superseded by `llvm-mingw`).** `zig cc` ignored
-  `-Wl,--export-all-symbols` (requiring an explicit `.def` file) and rejected
-  `--allow-multiple-definition` and `--disable-auto-import`; `lld` in
-  `llvm-mingw` supports them and uses upstream's MinGW build path.
-
-- **Clang `__builtin_setjmp`/`__builtin_longjmp` crash on Windows.** PostgreSQL
-  enabled GCC's `__builtin_setjmp`/`longjmp` for `__MINGW64__`. Under Clang,
-  certain errors (`DO` block in a nonexistent language, statement after failed
-  `CREATE EXTENSION`) crashed the backend (`0xC0000005` in
-  `MarkPortalFailed()` after returning to `PortalRun()`), bypassing crashdumps
-  and WER (caught via a `ctypes` debugger inspecting exports). Defining
-  `!defined(__clang__)` in
-  [recipes/postgresql/clang-mingw.patch](../recipes/postgresql/clang-mingw.patch)
-  uses MinGW SEH `sigsetjmp`/`siglongjmp`, fixing SQL, PL/Perl, and PL/Python
-  error handling (still required on `llvm-mingw` Clang 23).
-
-- **Meson `RC` vs `WINDRES` and thin archives.** Meson checks `RC` before
-  `WINDRES` (fixed once `llvm-mingw` provided `windres`). Meson static archives
-  are thin archives whose member paths tools must follow; `-Dprefer_static=true`
-  broke `find_library('ws2_32')`.
-
-- **Supported source archive formats.** `SourceKind`
-  ([internal/recipe/recipe.go](../internal/recipe/recipe.go)) and
-  [internal/builder/sources.go](../internal/builder/sources.go) handle `file`,
-  `zip`, `tar`, `tar.gz`/`.tgz`, `tar.xz`/`.txz`, and `.crate` (not
-  `.tar.bz2`), so
-  [recipes/postgresql-sdk.json](../recipes/postgresql-sdk.json) fetches
-  `.tar.gz`.
-
-- **AppContainer behavior.** On an AppContainer token, `initdb`'s `pg_mkdir_p`
-  cannot stat the store's parent folders and gets `EEXIST` on `mkdir`, and
-  `cmd.exe` (via `system()`) gets `Access is denied` running `postgres` from
-  the store—causing `initdb`'s `max_connections`/`shared_buffers` probe to fall
-  back to `20` and `400kB`, though `CreateProcess` works directly. Everything
-  else works: shared memory `Global/PostgreSQL:...` (with forward slashes,
-  using the session namespace), signal pipes moved to `\\.\pipe\LOCAL\`
-  ([recipes/postgresql/signal-pipes.patch](../recipes/postgresql/signal-pipes.patch)),
-  PL/Perl, PL/Python, and `127.0.0.1` connections between runs sharing the
-  app's AppContainer profile (`quasidock.<id>`). External clients cannot connect
-  without a service/loopback port. Both `low` and `soft` sandboxes work
-  unchanged.
-
-- **`pgxs` build paths and `pg_basebackup`.** `pgxs`'s `Makefile.global`
-  hardcoded build store paths to `perl`, `python`, `bison`, etc., breaking
-  reproducibility. [recipes/postgresql-sdk.json](../recipes/postgresql-sdk.json)
-  normalizes `Makefile.global` to tool names on `PATH` and keeps `pgxs` for
-  extension builds; [recipes/postgresql.json](../recipes/postgresql.json) drops
-  `/lib/postgresql/pgxs` via `cleanup`. Note that standalone PostgreSQL
-  extension recipes (`pg_cron`, `pgvector`, `postgis`) were removed in
-  Quasidock. `pg_basebackup` defaults to spread checkpoints (taking over 2 min
-  in tests); `--checkpoint=fast` returns immediately.
 
 ## The OCI tools
 
@@ -1053,8 +931,7 @@ run that needs to launch host programs outside the store uses **`--share=host`**
 [quasidock-host.exe](../cmd/quasidock-host/main.go), which restores the real
 user environment (`CreateEnvironmentBlock` / `os.Args`) while keeping the
 caller's security token and integrity level (`low` in a `low` run; checked in
-[tests/reach.sh](../tests/reach.sh)). Zigsaw's `--share=commands` was removed
-in Quasidock [iteration 2](iteration-2.md).
+[tests/reach.sh](../tests/reach.sh)).
 
 ## Upstream versions
 
@@ -1074,19 +951,6 @@ releases and OSV advisories:
   library rebuild where `php -v` still prints `8.5.12`. Similarly, Node
   cherry-picked the Brotli CVE-2026-111497 fix into 24.22.2 without bumping
   `process.versions.brotli` from `1.2.0`.
-- **Git tag listing vs APIs.** Listing tags directly needs no token or API
-  rate limit; checking all rows in Zigsaw took ~1 min on Windows (fork overhead)
-  and ~22 s on Linux. Under Git Bash with `MSYS_NO_PATHCONV=1`, `file:///C:/x`
-  rewrites fail—`MSYS2_ARG_CONV_EXCL` or proper path conversion is needed if
-  testing with local file remotes.
-
-### Building on ReFS
-
-Tested on an `E:` ReFS volume during Zigsaw development: `sqlite`, `make`, and
-`zstd` rebuilt to identical published digests, 15 images matched across two
-stores, and `php`, `store`, `registry`, and `matrix` suites passed under all
-three sandboxes despite ReFS lacking 8.3 short names (note Zigsaw's `tests/self.sh`
-was later removed in Quasidock [iteration 2](iteration-2.md)).
 
 ### Advisories
 
