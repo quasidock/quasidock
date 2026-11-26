@@ -100,6 +100,11 @@ Docker-style image commands:
   image prune [-a|--all] [-f|--force] [--dry-run] [--filter FILTER...]
                                        collect unused images; preserve build caches
 
+Windows host networking (elevated shell):
+  network create NAME                create a private Windows network; print its ID
+  network ls | network list [-q|--quiet]
+                                     list Windows host networks
+
 Persistent storage:
   volume create NAME                 create a reusable named volume
   volume ls [-q]                     list local volumes
@@ -858,6 +863,9 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 	}
 	if replacement := map[string]string{"list": "images", "info": "image info", "ls": "image files", "cat": "image cat", "-v": "--verbose"}[cmd]; replacement != "" {
 		return 1, fmt.Errorf("%s was removed; use quasidock %s", cmd, replacement)
+	}
+	if cmd == "network" {
+		return networkCommand(ctx, rest, windowsNetworkBackend)
 	}
 	if cmd == "container-supervisor" {
 		if len(rest) != 3 && (len(rest) != 4 || rest[3] != "attach") {

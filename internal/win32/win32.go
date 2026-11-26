@@ -639,6 +639,7 @@ var (
 	procCoInitializeEx               = modOle32.NewProc("CoInitializeEx")
 	procCoUninitialize               = modOle32.NewProc("CoUninitialize")
 	procCoCreateInstance             = modOle32.NewProc("CoCreateInstance")
+	procCoCreateGuid                 = modOle32.NewProc("CoCreateGuid")
 	procCoTaskMemFree                = modOle32.NewProc("CoTaskMemFree")
 	procSHGetKnownFolderPath         = modShell32.NewProc("SHGetKnownFolderPath")
 	procSHChangeNotify               = modShell32.NewProc("SHChangeNotify")

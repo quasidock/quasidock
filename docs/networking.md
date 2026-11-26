@@ -103,11 +103,44 @@ Implications for Quasidock:
    accepts or connects outside the container and passes sockets or handles to
    `quasidock-relay.exe`; an app can inspect any process inside its own
    container.
-5. **Nothing requires elevation.** Elevated actions (such as adding a test CA to
-   `LocalMachine\Root` in [`tests/certs.sh`](../tests/certs.sh)) stay an
-   explicit user step.
+5. **Container networking runs unelevated.** Host network administration uses
+   an explicitly elevated shell, as does adding a test CA to
+   `LocalMachine\Root` in [`tests/certs.sh`](../tests/certs.sh).
 
 ## Design
+
+### Host network management
+
+Run these commands from an elevated PowerShell session on a Windows host with
+the Host Network Service (HNS) and private virtual switch support.
+
+```powershell
+$networkId = quasidock network create example-private
+quasidock network ls
+quasidock network ls --quiet
+```
+
+`network create` provisions a private Windows virtual network and prints its
+full GUID. Its name must start with an ASCII letter or digit and can contain up
+to 128 ASCII letters, digits, dots, underscores, and hyphens. Names are matched
+case-insensitively, and an existing name causes the command to fail. Windows
+manages the lifetime of the network. Container attachment is reserved for a
+later release.
+
+`network ls` (also `network list`) reports all live HNS networks across the host,
+including those created by Windows and other tools. The inventory is independent
+of `QUASIDOCK_HOME`. Use `-q` or `--quiet` to print just the network GUIDs.
+
+Remove a network you created by passing its GUID to Windows' HNS diagnostics
+tool. [Microsoft HNS diagnostics](https://learn.microsoft.com/en-us/virtualization/windowscontainers/kubernetes/common-problems)
+
+```powershell
+hnsdiag delete networks $networkId
+```
+
+The opt-in smoke test creates, checks, and removes a temporary private network.
+From the same elevated session, set `QUASIDOCK_TEST_HCN=1` and run
+`go test -count=1 ./internal/cli -run '^TestNetworkHCNSmoke$'`.
 
 ### Private loopback
 

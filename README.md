@@ -817,6 +817,11 @@ eStargz file listing, and `image cat IMAGE PATH` to read a file. Search, login,
 trust, signatures, grants, repair, and maintenance pruning remain available.
 Run `quasidock help` for supported commands.
 
+From an elevated PowerShell session, use `quasidock network create NAME` to
+provision a private Windows virtual network and `quasidock network ls` to list
+the host's HNS networks.
+[Host networking guide](docs/networking.md#host-network-management)
+
 Pull reports signature status and permissions. With a matching trust key, missing
 signatures warn and invalid signatures are rejected. Without a matching key,
 images are reported as unchecked. Explicit and automatic pull use the same path.
