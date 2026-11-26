@@ -155,6 +155,30 @@ or corrupt journal fails the reader. Journal locks never acquire container or
 runtime locks, preserving the existing lifecycle lock order. Pruning containers
 does not remove their retained events.
 
+## Container logs
+
+The runtime serializes stdout/stderr writes into the raw `container.log`, then
+publishes each successful byte span's offset, length, and capture time to a
+versioned `container.log.index.jsonl` sidecar. Both files append across launches
+and are removed with the container. Metadata failures warn once and disable
+indexing for that runtime attempt while raw logging and attachment continue.
+On startup, the owner can discard an incomplete terminal metadata record;
+other malformed metadata is preserved and disables capture indexing.
+
+`logs` reads raw bytes directly unless timestamps or time filters are requested.
+Timed readers snapshot metadata before measuring the raw file, validate spans,
+and retain cursors across replay and 50 ms follow polls. They retry incomplete
+records while the runtime is active and skip untimestamped bytes with one
+warning. Corrupt or unsupported indexes fail timed readers. The last lines are
+selected before time filtering. Following ends after a final read on exit or
+at the until deadline, including silent applications.
+
+An entry is an LF-delimited line in the merged raw stream; its first byte's
+capture time determines filtering and its timestamp prefix. Partial lines flow
+without waiting for a newline and keep that time across subsequent writes and
+the replay/follow boundary. CRLF and arbitrary payload bytes are preserved.
+The sidecar records no log attributes, so `logs --details` currently adds none.
+
 ## Runs and containers
 
 `quasidock run` ([`run.go`](../internal/run/run.go)) takes a shared store lock,

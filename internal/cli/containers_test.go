@@ -13,6 +13,7 @@ import (
 
 	"github.com/quasidock/quasidock/internal/store"
 	"github.com/quasidock/quasidock/internal/testregistry"
+	"github.com/quasidock/quasidock/internal/win32"
 )
 
 func buildContainerTestBinaries(t *testing.T) (quasidockExe string, fixturePayload []byte, buildDir string) {
@@ -41,6 +42,7 @@ func buildContainerTestBinaries(t *testing.T) (quasidockExe string, fixturePaylo
 
 func TestContainerLifecycleForegroundAndDetached(t *testing.T) {
 	ctx, _ := fixtureCLI(t)
+	t.Setenv("QUASIDOCK_HOME", ctx.Store.Root)
 	binary, payload, buildDir := buildContainerTestBinaries(t)
 
 	reg := testregistry.New()
@@ -75,6 +77,18 @@ func TestContainerLifecycleForegroundAndDetached(t *testing.T) {
 		}
 		return out.String(), code
 	}
+	t.Cleanup(func() {
+		records, err := ctx.Store.ListContainers(true)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		for _, rec := range records {
+			if out, code := call("", "rm", "-f", rec.ID); code != 0 {
+				t.Errorf("cleanup %s: %q %d", rec.BareName(), out, code)
+			}
+		}
+	})
 
 	// Pull app:1 first.
 	if out, code := call("", "pull", app1); code != 0 {
@@ -112,11 +126,40 @@ func TestContainerLifecycleForegroundAndDetached(t *testing.T) {
 	if out, code := call("", "logs", "fg-log"); code != 0 || !strings.Contains(out, "line-one") || !strings.Contains(out, "line-two") {
 		t.Fatalf("logs fg-log: %q %d", out, code)
 	}
+	logStarted := time.Now()
 	if out, code := call("", "run", "--name", "fg-lines", app1, "fixture.exe", "lines", "first", "second", "third"); code != 0 {
 		t.Fatalf("fg-lines: %s %d", out, code)
 	}
 	if out, code := call("", "logs", "--tail", "1", "fg-lines"); code != 0 || strings.TrimSpace(out) != "third" {
 		t.Fatalf("logs --tail 1: %q %d", out, code)
+	}
+	timestamped, code := call("", "container", "logs", "--timestamps", "--details", "fg-lines")
+	lines := strings.Split(strings.TrimSuffix(timestamped, "\n"), "\n")
+	if code != 0 || len(lines) != 3 {
+		t.Fatalf("timestamped logs: %q %d", timestamped, code)
+	}
+	for i, value := range []string{"first", "second", "third"} {
+		prefix, payload, ok := strings.Cut(lines[i], " ")
+		stamp, err := time.Parse(time.RFC3339Nano, prefix)
+		if !ok || err != nil || len(prefix) != 30 || !strings.HasSuffix(prefix, "Z") || payload != value || stamp.Before(logStarted) || stamp.After(time.Now()) {
+			t.Fatalf("captured timestamp or bytes: %q %v", lines[i], err)
+		}
+	}
+	cutoff := time.Now().UTC().Format(time.RFC3339Nano)
+	if out, code := call("", "logs", "--since", logStarted.UTC().Format(time.RFC3339Nano), "--until="+cutoff, "fg-lines"); code != 0 || out != "first\nsecond\nthird\n" {
+		t.Fatalf("logs capture window: %q %d", out, code)
+	}
+	if out, code := call("", "logs", "--since="+cutoff, "fg-lines"); code != 0 || out != "" {
+		t.Fatalf("logs future since: %q %d", out, code)
+	}
+	if out, code := call("", "start", "fg-lines"); code != 0 {
+		t.Fatalf("restart log capture: %q %d", out, code)
+	}
+	if out, code := call("", "wait", "fg-lines"); code != 0 || strings.TrimSpace(out) != "0" {
+		t.Fatalf("wait restarted logger: %q %d", out, code)
+	}
+	if out, code := call("", "logs", "-t", "fg-lines"); code != 0 || strings.Count(out, "Z first\n") != 2 || strings.Count(out, "Z third\n") != 2 {
+		t.Fatalf("timestamps did not append across restart: %q %d", out, code)
 	}
 
 	// Unified inspect resolves containers first, falls back to images; typed inspect enforces scope.
@@ -150,7 +193,7 @@ func TestContainerLifecycleForegroundAndDetached(t *testing.T) {
 
 	// Detached container: run -d, wait for readiness, test ps, logs -f, rm refused, stop -t, rm.
 	ready := filepath.Join(buildDir, "detached-ready")
-	cidOut, code := call("", "run", "-d", "--name", "bg-holder", app1, "fixture.exe", "hold", ready)
+	cidOut, code := call("", "run", "-d", "--name", "bg-holder", app1, "fixture.exe", "signal-hold", ready, "ignore")
 	if code != 0 {
 		t.Fatalf("run -d: %s %d", cidOut, code)
 	}
@@ -170,6 +213,28 @@ func TestContainerLifecycleForegroundAndDetached(t *testing.T) {
 	}
 	if out, code := call("", "rm", "bg-holder"); code == 0 || !strings.Contains(out, "running") {
 		t.Fatalf("rm succeeded on running container: %q %d", out, code)
+	}
+	until := time.Now().Add(200 * time.Millisecond)
+	if out, code := call("", "logs", "--tail=0", "--follow", "--until="+until.UTC().Format(time.RFC3339Nano), "bg-holder"); code != 0 || out != "" || time.Now().Before(until) {
+		t.Fatalf("idle log deadline: %q %d", out, code)
+	}
+	var consoleOutput pauseOutput
+	console, input := startLifecycleConsole(t, filepath.Join(buildDir, "fixture.exe"), []string{
+		"console-run-check-mode", binary, "logs", "-f", "-t", "bg-holder",
+	}, &consoleOutput)
+	awaitPauseCondition(t, "logs subscriber did not replay output", func() bool {
+		consoleOutput.mu.Lock()
+		defer consoleOutput.mu.Unlock()
+		return strings.Contains(consoleOutput.b.String(), "started")
+	})
+	if _, err := win32.WriteFile(input, []byte{3}); err != nil {
+		t.Fatal(err)
+	}
+	if win32.WaitForSingleObject(console, 5000) != win32.WAIT_OBJECT_0 {
+		t.Fatal("logs did not stop on Ctrl+C")
+	}
+	if code, err := win32.GetExitCodeProcess(console); err != nil || code != 130 || !ctx.Store.IsContainerRunning(cid) {
+		t.Fatalf("logs Ctrl+C exit code/container state: %d %v", code, err)
 	}
 
 	// Start logs -f in background, stop container, and confirm logs -f exits.

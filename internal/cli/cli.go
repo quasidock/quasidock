@@ -54,8 +54,9 @@ Docker-style container commands:
                                        capture private data and configuration as an image
   container export | export [-o FILE|--output FILE] [--pause=false] CONTAINER
                                        export app, runtimes and private data as filesystem tar
-  container logs | logs [-f|--follow] [-n|--tail LINES] CONTAINER
-                                       fetch the logs of a container
+  container logs | logs [-f|--follow] [-n|--tail LINES] [--since TIME] [--until TIME]
+                        [-t|--timestamps] [--details] CONTAINER
+                                       fetch logs; time flags skip untimestamped history
   container exec | exec [options] CONTAINER COMMAND [ARG...]
                                        run another command in a running container
   container attach | attach [--no-stdin] [--sig-proxy=false] [--detach-keys KEYS] CONTAINER

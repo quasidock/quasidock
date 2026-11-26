@@ -23,10 +23,6 @@ Empirical findings on Windows sandboxing, OS quirks, and toolchains.
   part. (In Quasidock's current recipes, `node`, `python`, and `zig` set
   `"sandbox": "soft"`, so the matrix passes `--sandbox=appcontainer` and
   `--sandbox=low` explicitly.)
-- **The `low` sandbox ([Zigsaw iteration 9](../legacy/iteration-9.md))** works for
-  every tool the matrix runs, and keeps them from writing outside their data
-  directory and the paths they may write (see [below](#the-low-sandbox)). It
-  confines nothing else.
 - **Prebuilt GUI apps** keep
   their settings in container data in all three sandboxes, since Windows derives
   AppData from `USERPROFILE`; the registry, `LocalLow`, and real profile folders
@@ -904,7 +900,7 @@ Found in [Zigsaw iteration 43](../legacy/iteration-43.md):
   printing `waiting for another quasidock build to finish with B:...` if
   another Quasidock build holds `B:`.
 
-## PostgreSQL (Zigsaw iteration 45)
+## PostgreSQL
 
 Discovered in [Zigsaw iteration 45](../legacy/iteration-45.md) when PostgreSQL
 first built with `zig` (Quasidock's
@@ -986,10 +982,9 @@ Probed on 2026-10-29, Go 1.27.1, cgo off against local `zot` via [tests/oci.sh](
   `%USERPROFILE%\.config\containers\auth.json`.
 
 - **skopeo sees Quasidock images as OCI artifacts.** Because Quasidock's
-  config media type is `application/vnd.quasidock.app.config.v2+json` (or legacy
-  `application/vnd.zigsaw.app.config.v2+json`), `skopeo inspect` fails with
-  `"unsupported image-specific operation on artifact"`; `inspect --raw`,
-  `list-tags`, and `copy` work.
+  config media type is `application/vnd.quasidock.app.config.v2+json`,
+  `skopeo inspect` fails with `"unsupported image-specific operation on artifact"`;
+   `inspect --raw`, `list-tags`, and `copy` work.
 
 - **skopeo's `oci:` transport on Windows.** Its regex
   (`^([a-zA-Z]:\\.+?):(.*)$`) only splits a `:tag` after a drive root `X:\`, so
@@ -1061,28 +1056,6 @@ caller's security token and integrity level (`low` in a `low` run; checked in
 [tests/reach.sh](../tests/reach.sh)). Zigsaw's `--share=commands` was removed
 in Quasidock [iteration 2](iteration-2.md).
 
-### URL protocols and default apps (removed in Quasidock 0.2–0.3)
-
-Quasidock removed shortcuts, file/protocol associations, exports, aliases,
-shims, and `--share=commands` in [iteration 2](iteration-2.md), and removed
-`--file`, persistent overrides, extensions, and named user-folder junctions
-in [iteration 3](iteration-3.md). Durable Windows findings from
-[Zigsaw iteration 68](../legacy/iteration-68.md) before removal:
-
-- **URL handlers and argument injection:** `HKCU\Software\Classes\<scheme>`
-  with `URL Protocol` and `shell\open\command` works without admin; Windows
-  normalizes `scheme://plain` to `scheme://plain/`, blocks unencoded `"`, and
-  leaves `%22` intact (CVE-2018-1000006 style `"` breakout unless mitigated
-  by `--single-argument` / `--open-url --` or a wrapper checking scheme).
-  VSCodium prompts on `security.promptForLocalFileProtocolHandling` and
-  restores its previous session unless isolated.
-- **Default Apps registration:** per-user `RegisteredApplications` +
-  `Capabilities` + `OpenWithProgids` makes an app appear in
-  `SHAssocEnumHandlers` and Windows 11 Settings -> Default apps (even without
-  `Clients\StartMenuInternet`), while `SHAssocEnumHandlersForProtocolByApplication`
-  and deprecated `IApplicationAssociationRegistration::QueryAppIsDefault` are
-  unreliable probes.
-
 ## Upstream versions
 
 [scripts/upstream.txt](../scripts/upstream.txt) (129 rows) and
@@ -1135,7 +1108,7 @@ via OSV's `/v1/querybatch` and `/v1/vulns/<id>` endpoints:
   (DoS), `check-upstream.sh` flags vectors matching `/AV:N/`, `/PR:N/`,
   `/UI:N`, and `/V?[CI]:H` (confidentiality/integrity). Go advisories omit CVSS
   vectors and show as `"not stated"`.
-- **`go version -m` dependencies (Zigsaw iteration 71 measurement):** rebuilt Go
+- **`go version -m` dependencies:** rebuilt Go
   binaries had 0 stdlib advisories, while vendored modules still matched
   OSV (`zot` 2.1.23: 5 across 175 modules; `cosign` 3.1.4: 5 across 256; `oras`
   1.3.6: 1 across 23; `skopeo` 1.24.1: 20 across 87; `fzf` 0.74.5: 3 across
@@ -1174,8 +1147,7 @@ In Quasidock's codebase:
 Tested via [tests/standard-user.sh](../tests/standard-user.sh) and
 [tests/cmd/asuser/main.go](../tests/cmd/asuser/main.go) (`CreateProcessWithLogon`
 with `LOGON_WITH_PROFILE`, verifying the token is absent from `S-1-5-32-544`,
-runs at Medium Mandatory Level, and fails `net session`) on Windows 11 26300
-(initial findings in [Zigsaw iteration 70](../legacy/iteration-70.md)):
+runs at Medium Mandatory Level, and fails `net session`) on Windows 11 26300:
 
 - **Core workflow works without admin rights.** `scripts/defender-scan.sh`,
   `scripts/install.ps1` (including user `PATH` and uninstalling

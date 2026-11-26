@@ -12,6 +12,7 @@ import (
 
 	"github.com/quasidock/quasidock/internal/acl"
 	"github.com/quasidock/quasidock/internal/appcontainer"
+	"github.com/quasidock/quasidock/internal/containerlog"
 	"github.com/quasidock/quasidock/internal/context"
 	"github.com/quasidock/quasidock/internal/environment"
 	"github.com/quasidock/quasidock/internal/forward"
@@ -879,15 +880,13 @@ func launchContainer(
 		defer win32.CloseHandle(controlEvent)
 	}
 
-	logFile, err := os.OpenFile(created.LogPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	logW, err := containerlog.Open(created.LogPath, func(err error) {
+		ctx.Note("warning: container log timestamps unavailable: %v", err)
+	})
 	if err != nil {
 		return 1, false, fmt.Errorf("opening container log: %w", err)
 	}
-	defer func() {
-		if logFile != nil {
-			_ = logFile.Close()
-		}
-	}()
+	defer func() { _ = logW.Close() }()
 
 	const pipeSize = 64 * 1024
 	outRead, outWrite, err := win32.CreatePipe(nil, pipeSize)
@@ -1013,8 +1012,6 @@ func launchContainer(
 		return 1, false, err
 	}
 
-	var logMu sync.Mutex
-	logW := lockedWriter{mu: &logMu, w: logFile}
 	var outDst io.Writer = logW
 	var errDst io.Writer = logW
 	if opts.attachment != nil {
@@ -1156,17 +1153,6 @@ func launchContainer(
 	}
 
 	return code, true, err
-}
-
-type lockedWriter struct {
-	mu *sync.Mutex
-	w  io.Writer
-}
-
-func (l lockedWriter) Write(p []byte) (int, error) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	return l.w.Write(p)
 }
 
 func pumpPipe(pipeRead win32.HANDLE, dst io.Writer) {

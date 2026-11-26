@@ -111,8 +111,8 @@ func TestCreateMetadataAndImagePolicies(t *testing.T) {
 		}
 	}
 	out.Reset()
-	if err := containerLogs(ctx, []string{"saved"}); err != nil || out.Len() != 0 {
-		t.Fatalf("unstarted logs: %q %v", out.String(), err)
+	if code, err := logsCommand(ctx, []string{"saved"}); err != nil || code != 0 || out.Len() != 0 {
+		t.Fatalf("unstarted logs: %q %d %v", out.String(), code, err)
 	}
 	if _, _, err := ctx.Store.RemoveImage("", first); err == nil {
 		t.Fatal("unstarted container did not pin its image")

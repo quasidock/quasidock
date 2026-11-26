@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -68,7 +67,7 @@ func containerCommand(ctx *context.Context, args []string) (uint32, error) {
 	case "rm", "remove":
 		return 0, containerRemove(ctx, rest)
 	case "logs":
-		return 0, containerLogs(ctx, rest)
+		return logsCommand(ctx, rest)
 	case "prune":
 		return 0, containerPrune(ctx, rest)
 	default:
@@ -291,96 +290,6 @@ func containerRemove(ctx *context.Context, args []string) error {
 	return errors.Join(errs...)
 }
 
-func containerLogs(ctx *context.Context, args []string) error {
-	follow := false
-	tail := -1
-	var targets []string
-	parseTail := func(raw string) error {
-		if raw == "all" {
-			tail = -1
-			return nil
-		}
-		n, err := strconv.Atoi(raw)
-		if err != nil || n < 0 {
-			return fmt.Errorf("invalid --tail %q: expected non-negative integer or \"all\"", raw)
-		}
-		tail = n
-		return nil
-	}
-	for len(args) > 0 {
-		arg := args[0]
-		args = args[1:]
-		switch {
-		case arg == "-f" || arg == "--follow":
-			follow = true
-		case arg == "-n" || arg == "--tail":
-			if len(args) == 0 {
-				return errors.New("logs --tail needs a number of lines")
-			}
-			if err := parseTail(args[0]); err != nil {
-				return err
-			}
-			args = args[1:]
-		case strings.HasPrefix(arg, "--tail="):
-			if err := parseTail(strings.TrimPrefix(arg, "--tail=")); err != nil {
-				return err
-			}
-		case strings.HasPrefix(arg, "-n="):
-			if err := parseTail(strings.TrimPrefix(arg, "-n=")); err != nil {
-				return err
-			}
-		case len(arg) > 2 && strings.HasPrefix(arg, "-n"):
-			if err := parseTail(arg[2:]); err != nil {
-				return err
-			}
-		case strings.HasPrefix(arg, "-"):
-			return fmt.Errorf("unknown logs option %q", arg)
-		default:
-			targets = append(targets, arg)
-		}
-	}
-	if len(targets) != 1 {
-		return errors.New("usage: quasidock logs [-f|--follow] [-n|--tail LINES] CONTAINER")
-	}
-
-	rec, err := ctx.Store.ResolveContainer(targets[0])
-	if err != nil {
-		return err
-	}
-
-	var sentOffset int64
-	if data, err := os.ReadFile(rec.LogPath); err == nil {
-		sentOffset = int64(len(data))
-		chunk := tailLines(data, tail)
-		if len(chunk) > 0 {
-			if _, werr := ctx.Stdout.Write(chunk); werr != nil {
-				return werr
-			}
-		}
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-
-	if !follow {
-		return nil
-	}
-
-	for {
-		running := ctx.Store.IsContainerRunning(rec.ID)
-		if f, err := os.Open(rec.LogPath); err == nil {
-			if _, serr := f.Seek(sentOffset, io.SeekStart); serr == nil {
-				n, _ := io.Copy(ctx.Stdout, f)
-				sentOffset += n
-			}
-			_ = f.Close()
-		}
-		if !running {
-			return nil
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
-}
-
 func containerPrune(ctx *context.Context, args []string) error {
 	for _, arg := range args {
 		if arg == "-f" || arg == "--force" {
@@ -408,29 +317,6 @@ func containerPrune(ctx *context.Context, args []string) error {
 	}
 	fmt.Fprintf(ctx.Stdout, "Total reclaimed space: %s\n", lifecycle.FormatBytes(freed))
 	return nil
-}
-
-func tailLines(data []byte, n int) []byte {
-	if n < 0 {
-		return data
-	}
-	if n == 0 || len(data) == 0 {
-		return nil
-	}
-	end := len(data)
-	if data[end-1] == '\n' {
-		end--
-	}
-	lines := 0
-	for i := end - 1; i >= 0; i-- {
-		if data[i] == '\n' {
-			lines++
-			if lines == n {
-				return data[i+1:]
-			}
-		}
-	}
-	return data
 }
 
 func formatContainerCommand(c store.ContainerRecord, noTrunc bool) string {

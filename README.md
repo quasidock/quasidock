@@ -266,7 +266,7 @@ aliases require `--force`, and existing app defaults remain selected. See
 | `container cp` | `cp` | Copy files/folders between container data and the host; `-` streams tar |
 | `container commit` | `commit` | Save private data and launch configuration as a new image |
 | `container export` | `export` | Export app, runtimes, and current private data as filesystem tar |
-| `container logs` | `logs` | Fetch captured output (`-f`/`--follow`, `-n`/`--tail LINES`) |
+| `container logs` | `logs` | Fetch captured output (`--follow`, `--tail`, `--since`, `--until`, `--timestamps`, `--details`) |
 | `container exec` | `exec` | Run another command in a running container (`-d`, `-i`, `-t`, `-e`, `-w`) |
 | `container attach` | `attach` | Attach to a background container's live output and optional stdin |
 | `container wait` | `wait` | Wait for container exits; print exit codes in argument order |
@@ -374,6 +374,36 @@ containers paused and does not follow replacement runs. Requests time out after
 five seconds; Ctrl+C returns 130 without affecting the container. Existing
 supervisors without `State.TopProtocol` must be stopped and started with the
 current binary before top is available.
+
+`logs` (also `container logs`) retrieves captured stdout and stderr, merged in
+capture order. `-n` / `--tail LINES` selects the last lines (`all` by default);
+`-f` / `--follow` then streams new output until the container exits. Logs append
+across starts and automatic restarts. Ctrl+C returns 130 without stopping the
+container.
+
+```powershell
+quasidock logs --since 1h --timestamps worker
+quasidock container logs --tail 20 --since 30m --until 5m worker
+quasidock logs --follow --tail 0 --until=-30s worker
+```
+
+`--since` is inclusive and `--until` is exclusive. Times accept Unix seconds
+(optionally fractional), RFC3339 timestamps, local dates/date-times, and Go
+durations. Offset-free dates use the client's local timezone. Positive durations
+refer to the past and negative durations to the future, relative to command
+startup. The tail limit selects initial history before time filtering. Without
+`--follow`, a future `--until` returns the current snapshot immediately; with
+follow, the deadline ends the stream even when the application is silent.
+
+`-t` / `--timestamps` prefixes each line with its capture time in UTC, padded to
+nine fractional digits. A line's first byte determines its time, including when
+the application writes a line in several pieces. Partial lines appear promptly
+and retain their original bytes. `--details` shows configured log attributes;
+Quasidock currently has none, so it leaves output unchanged.
+
+Timestamp and time-filter flags skip older output without recorded timestamps,
+with one warning on stderr. Ordinary logs remain readable. Restart containers
+with the current binary to begin timestamp capture; old history is not backfilled.
 
 `events` (also `system events`) follows new container events. `--since` first
 replays matching history, then follows; each store retains its latest **256**

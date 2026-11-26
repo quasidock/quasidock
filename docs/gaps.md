@@ -28,6 +28,21 @@ discovered again on the next refresh. Old live supervisors without
 uses formatted strings and Quasidock's `.IO` field rather than Docker's `.NetIO`
 or `.BlockIO` fields.
 
+### Container logs
+
+Time filters and timestamp output require capture metadata. Older history and
+output from older live supervisors have no timestamps; these flags skip it with
+one warning on stderr. Stop and start those containers with the current binary
+to timestamp new output. History is never backfilled from file modification or
+container start times. Ordinary logs remain readable.
+
+Capture times reflect when the supervisor receives output, and a line uses its
+first byte's time even if later fragments arrive outside the requested window.
+Stdout and stderr remain merged. `--since` is inclusive and `--until` exclusive,
+matching Quasidock events. `--details` is accepted but adds no attributes because
+log attribute configuration is not supported. Timestamp metadata failures keep
+raw logging available; corrupt metadata fails timestamp/filter requests.
+
 ### Container events
 
 `events` / `system events` records container lifecycle, rename, update, and exec actions.
