@@ -3,6 +3,10 @@
 `quasidock save` and `quasidock load` transfer local Quasidock images without a
 registry. Both commands also exist under `quasidock image`.
 
+For a filesystem tar produced by `container export`, use
+[image import](image-import.md) with a separate app-config JSON file. Import
+creates a new image; load restores the OCI manifests and blobs saved here.
+
 ```text
 quasidock save [-o FILE|--output FILE] IMAGE [IMAGE...]
 quasidock load [-i FILE|--input FILE] [-q|--quiet] [--force]

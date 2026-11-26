@@ -21,7 +21,8 @@ Options precede CONTAINER. Output defaults to stdout; -o - also selects stdout.
 Mounted storage is excluded. Running containers pause only during data capture
 (default true); --pause=false captures best effort. All app/runtime blobs must
 be local. Archives have canonical permissions and zero timestamps; they contain
-no launch configuration and cannot be restored with load.`
+no launch configuration. Use image import with --config JSON, or commit/save
+to transfer a runnable image with its configuration; load accepts OCI archives.`
 
 type exportOptions struct {
 	containerexport.Options

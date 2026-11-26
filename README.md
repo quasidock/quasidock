@@ -86,6 +86,7 @@ go run ./scripts/build.go
 | `image push` | `push` | Publish the exact locally selected image |
 | `image save` | `save` | Save local images and all their aliases to an OCI tar archive |
 | `image load` | `load` | Load images from an OCI tar archive; `--force` replaces conflicting names |
+| `image import` | `import` | Create an image from an export tar and app-config JSON; `--force` replaces a conflicting alias |
 | `image rm` | `rmi` | Untag a reference or remove a cached manifest |
 | `image prune` | — | Remove unused unnamed images; `--all` includes named images and app defaults |
 
@@ -238,6 +239,19 @@ quasidock load -i worker.tar
 See [archive format and limits](docs/image-archives.md) for the OCI layout,
 metadata, and compatibility details.
 
+`import` (also `image import`) creates an image from a container-export tar and
+separate app-config JSON. It accepts local tar/gzip files or stdin, applies ordered
+`-c` / `--change` launch overrides, and prints the new manifest digest:
+
+```powershell
+quasidock image import --config worker-config.json worker.tar example.test/worker:restored
+quasidock run --rm --pull=never example.test/worker:restored
+```
+
+The optional target is an alias; ID and version come from the JSON. Conflicting
+aliases require `--force`, and existing app defaults remain selected. See
+[image import](docs/image-import.md) for a complete export/config/import example.
+
 ## Containers and running images
 
 | Command | Alias | Purpose |
@@ -285,8 +299,9 @@ quasidock export -o worker.tar worker
 ```
 
 Output defaults to binary stdout. File output replaces an existing archive only
-after success. This filesystem tar is for manual extraction; use `commit` and
-`save` to transfer a runnable Quasidock image. See [export format and capture
+after success. The filesystem tar supports manual extraction or `image import`
+with a separate app-config JSON file. Use `commit` and `save` to transfer a
+runnable Quasidock image with its configuration. See [export format and capture
 limits](docs/container-export.md).
 
 `ps` (also `container ls` and `container list`) shows running and paused

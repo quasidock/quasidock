@@ -1,4 +1,5 @@
-package commit
+// Package imageconfig applies launch configuration changes shared by commit and import.
+package imageconfig
 
 import (
 	"fmt"
@@ -11,13 +12,13 @@ import (
 	"github.com/quasidock/quasidock/internal/oci"
 )
 
-func ApplyChanges(cfg *oci.AppConfig, changes []string) error {
+func ApplyChanges(what string, cfg *oci.AppConfig, changes []string) error {
 	for i, change := range changes {
 		if err := applyChange(cfg, change); err != nil {
 			return fmt.Errorf("--change %d: %w", i+1, err)
 		}
 	}
-	if err := oci.ValidateConfig("committed image", cfg); err != nil {
+	if err := oci.ValidateConfig(what, cfg); err != nil {
 		return fmt.Errorf("--change result: %w", err)
 	}
 	return nil

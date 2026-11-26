@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/quasidock/quasidock/internal/context"
+	"github.com/quasidock/quasidock/internal/imageconfig"
 	"github.com/quasidock/quasidock/internal/mounts"
 	"github.com/quasidock/quasidock/internal/oci"
 	"github.com/quasidock/quasidock/internal/registry"
@@ -86,7 +87,7 @@ func Commit(cancel stdcontext.Context, ctx *context.Context, opts Options) (stri
 	}
 	// The actual digest is known after capture; validate the rest beforehand.
 	cfg.DataLayer = "sha256:" + strings.Repeat("0", 64)
-	if err := ApplyChanges(&cfg, opts.Changes); err != nil {
+	if err := imageconfig.ApplyChanges("committed image", &cfg, opts.Changes); err != nil {
 		return "", err
 	}
 	stage, err := ctx.Store.MakeTmpDir("commit")

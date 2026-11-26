@@ -324,7 +324,7 @@ func imageRemove(ctx *context.Context, args []string) error {
 
 func imageCommand(ctx *context.Context, args []string) (uint32, error) {
 	if len(args) == 0 {
-		return 1, errors.New("usage: quasidock image <ls|inspect|history|pull|tag|push|save|load|rm|prune|info|files|cat>")
+		return 1, errors.New("usage: quasidock image <ls|inspect|history|pull|tag|push|save|load|import|rm|prune|info|files|cat>")
 	}
 	cmd, rest := args[0], args[1:]
 	if cmd == "--help" || cmd == "help" {
@@ -337,6 +337,9 @@ func imageCommand(ctx *context.Context, args []string) (uint32, error) {
 	}
 	if cmd == "load" {
 		return 0, imageLoad(ctx, rest)
+	}
+	if cmd == "import" {
+		return importCommand(ctx, rest)
 	}
 	if cmd == "prune" {
 		return imagePrune(ctx, rest)

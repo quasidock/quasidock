@@ -93,6 +93,8 @@ Docker-style image commands:
                                        save local images and all their aliases as OCI tar
   image load | load [-i|--input FILE] [-q|--quiet] [--force]
                                        load OCI tar (or gzip); --force replaces names
+  image import | import --config FILE [-c INSTRUCTION...] [--force] FILE|- [REPOSITORY[:TAG]]
+                                       create an image from an export tar and app config
   image rm | rmi IMAGE [IMAGE...]      untag a reference or remove a manifest ID
   image prune [-a|--all] [-f|--force] [--dry-run] [--filter FILTER...]
                                        collect unused images; preserve build caches
@@ -204,6 +206,7 @@ history --human=false prints UTC timestamps and byte counts; unknown dates are -
 save writes tar to stdout by default; load reads stdin by default (use -o/-i on Windows).
 save/load are offline; incomplete lazy images must be fully pulled before saving.
 load preserves existing app defaults; conflicting names require --force.
+import accepts export-layout tar/gzip plus --config JSON; a target adds an alias only.
 Each run or create allocates isolated data under containers/<id>/data.
 create saves configuration without launching; start defaults to background.
 update accepts --cpus, -m/--memory, --pids-limit and --restart; omitted settings stay.
@@ -898,7 +901,7 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 		return 0, nil
 	}
 	switch cmd {
-	case "port", "wait", "rename", "update", "top", "stats", "events", "system", "convert", "build", "volume", "container", "create", "commit", "export", "ps", "diff", "cp", "exec", "attach", "start", "restart", "pause", "unpause", "kill", "stop", "rm", "logs", "image", "images", "inspect", "history", "tag", "pull", "push", "save", "load", "rmi", "run", "search", "trust", "signature", "prune", "repair", "grants":
+	case "port", "wait", "rename", "update", "top", "stats", "events", "system", "convert", "build", "volume", "container", "create", "commit", "export", "ps", "diff", "cp", "exec", "attach", "start", "restart", "pause", "unpause", "kill", "stop", "rm", "logs", "image", "images", "inspect", "history", "tag", "pull", "push", "save", "load", "import", "rmi", "run", "search", "trust", "signature", "prune", "repair", "grants":
 	default:
 		return usageError()
 	}
@@ -937,7 +940,7 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 		return imageCommand(ctx, rest)
 	case "images":
 		return imageCommand(ctx, append([]string{"ls"}, rest...))
-	case "history", "tag", "pull", "push", "save", "load":
+	case "history", "tag", "pull", "push", "save", "load", "import":
 		return imageCommand(ctx, append([]string{cmd}, rest...))
 	case "rmi":
 		return imageCommand(ctx, append([]string{"rm"}, rest...))

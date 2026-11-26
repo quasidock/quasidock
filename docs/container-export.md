@@ -73,6 +73,12 @@ configuration, OCI manifest, container record, logs, host grants, or mount
 contents. It cannot be restored with `load`, and extraction does not automatically
 make the application portable; embedded absolute paths may need reconfiguration.
 
-Use `commit` followed by `save` when transferring a runnable Quasidock image.
-Export does not register an image, change image defaults, or require a store or
-supervisor format migration.
+Use [image import](image-import.md) with separately supplied app-config JSON to
+create an image from the export's app, runtimes, and private data. The configuration
+must describe every exported runtime and any desired container launch overrides.
+Import repacks the filesystem into new layers rather than restoring original
+image IDs or compressed bytes.
+
+Use `commit` followed by `save` when transferring a runnable Quasidock image
+with its configuration. Export does not register an image, change image defaults,
+or require a store or supervisor format migration.

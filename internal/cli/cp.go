@@ -50,16 +50,12 @@ func cpCommand(ctx *context.Context, args []string) (uint32, error) {
 	cancel, interrupt := stdcontext.WithCancel(signals)
 	defer interrupt()
 	streams := &copyStreams{ctx: cancel, interrupt: interrupt, in: os.Stdin, out: ctx.Stdout}
-	var mode win32.DWORD
-	input := win32.HANDLE(os.Stdin.Fd())
-	if args[0] == "-" && win32.GetConsoleMode(input, &mode) {
-		// Process Ctrl+C as input. With processed input, Windows can end the
-		// read before delivering the console event, racing signal.Stop on exit.
-		if !win32.SetConsoleMode(input, mode&^(win32.ENABLE_LINE_INPUT|win32.ENABLE_ECHO_INPUT|win32.ENABLE_PROCESSED_INPUT)) {
-			return 1, errors.New("setting copy console mode failed")
+	if args[0] == "-" {
+		restore, err := streams.prepareConsoleInput()
+		if err != nil {
+			return 1, err
 		}
-		defer win32.SetConsoleMode(input, mode)
-		streams.console = true
+		defer restore()
 	}
 	return runTransfer(cancel, streams, func() error {
 		return containercopy.Copy(cancel, ctx.Store, args[0], args[1], streams, streams)
@@ -124,6 +120,25 @@ type copyStreams struct {
 	thread    win32.HANDLE
 	mu        sync.Mutex
 	active    bool
+}
+
+func (s *copyStreams) prepareConsoleInput() (func(), error) {
+	f, ok := s.in.(*os.File)
+	if !ok {
+		return func() {}, nil
+	}
+	input := win32.HANDLE(f.Fd())
+	var mode win32.DWORD
+	if !win32.GetConsoleMode(input, &mode) {
+		return func() {}, nil
+	}
+	// Process Ctrl+C as input. Processed input can end the read before the
+	// console event arrives, racing signal.Stop on exit.
+	if !win32.SetConsoleMode(input, mode&^(win32.ENABLE_LINE_INPUT|win32.ENABLE_ECHO_INPUT|win32.ENABLE_PROCESSED_INPUT)) {
+		return nil, errors.New("setting transfer console mode failed")
+	}
+	s.console = true
+	return func() { win32.SetConsoleMode(input, mode) }, nil
 }
 
 func (s *copyStreams) begin() error {

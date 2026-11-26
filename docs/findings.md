@@ -693,44 +693,16 @@ Probed with `java Probe.java` on JDK and compiled bytecode on JRE:
   - JavaFX loads native DLLs from `..\bin` beside its jars before unpacking into
     `user.home\.openjfx\cache`; Gluon's SDK avoids runtime cache extraction,
     and Direct3D 9Ex works in `soft`, `low`, and `appcontainer`.
-- **Maven time-zone non-determinism**
-  ([Zigsaw iteration 34](../legacy/iteration-34.md)):
-  Scene Builder matched locally in UTC+7 yet differed from CI runners in UTC
-  because `maven-shade-plugin` 3.2.4 rewrites ZIP entries carrying UTC extended
-  timestamps (Woodstox, `stax2`, MSV, JAXB) in the JVM's local time zone
+- **Maven time-zone non-determinism**:
+  In early builds, Scene Builder matched locally in UTC+7 yet differed from
+  CI runners in UTC because `maven-shade-plugin` 3.2.4 rewrites ZIP entries
+  carrying UTC extended timestamps (Woodstox, `stax2`, MSV, JAXB)
+  in the JVM's local time zone
   (shifting 1,224 of 6,237 entries by 7 hours), ignoring
   `project.build.outputTimestamp` before 3.3.0. Passing
   `JDK_JAVA_OPTIONS=-Duser.timezone=UTC` matches CI bit for bit.
 
 ## Other findings
-
-- **Microsoft Defender quarantined development builds by exact bytes.** During a
-  Files build on Zigsaw 0.19.0, Defender flagged the running binary
-  (`DidThreatExecute`) as `Trojan:Win32/Bearfoos.A!ml` and then quarantined
-  identical copies on disk (`!ml` is its machine-learning detector, not a
-  signature). Restoring the file added an allow entry for that threat ID on
-  that machine (`Get-MpPreference` / `ThreatIDDefaultAction_Ids`). Earlier
-  Zigsaw releases scanned clean with
-  `MpCmdRun.exe -Scan -ScanType 3 -File <exe> -DisableRemediation` (which runs
-  without admin rights).
-
-  Zigsaw initially shipped without version info or an application manifest,
-  which ML detectors weigh against unsigned binaries; Zigsaw added both in
-  [Zigsaw iteration 22](../legacy/iteration-22.md). In Quasidock,
-  [scripts/build.go](../scripts/build.go) embeds both via
-  [internal/winres/winres.go](../internal/winres/winres.go) and
-  [internal/winres/testdata/quasidock.manifest](../internal/winres/testdata/quasidock.manifest)
-  (`asInvoker`, Windows 11 compatibility, short Task Manager descriptions:
-  `"quasidock"`, `"quasidock service relay"`, `"quasidock host command"`). Later
-  findings showed exact bytes still matter: see
-  [Defender and exact bytes](#defender-and-exact-bytes).
-
-- **Baseline x86-64 CPU target.** Zigsaw 0.18.0's Zig build inherited the
-  GitHub runner VM's CPU features (18,697 AVX2, SHA `sha256rnds2`, and BMI2
-  instructions), which would fault on older CPUs lacking SHA extensions; Zigsaw
-  0.19.0 switched to the x86-64 baseline (pulling `zig` took ~3% longer:
-  32.4 and 33.5 s against 31.2 and 32.9 s). Quasidock sets `CGO_ENABLED=0` and
-  `GOAMD64=v1` in [scripts/build.go](../scripts/build.go).
 
 - **Fixed: `soft` runs could modify installed apps.** Python wrote a file into
   its shared deployed layer, breaking the image digest. `acl.Protect` in
@@ -746,7 +718,7 @@ Probed with `java Probe.java` on JDK and compiled bytecode on JRE:
   took their cache and config locations from the redirected environment
   variables rather than bypassing them with `SHGetKnownFolderPath`.
 
-- **Grants are fast.** Measured during Zigsaw development, granting read access
+- **Grants are fast.** Measured during early development, granting read access
   to `zig`'s 19,546 files took 2.7 s once per app; grants on project folders
   took milliseconds.
 
@@ -755,12 +727,9 @@ Probed with `java Probe.java` on JDK and compiled bytecode on JRE:
   60–175 s because Defender scanned each new file before the readback, versus
   0.4 s to hash the layer. Streaming sources into the tar/layer writer and
   extracting deployments with 4 parallel workers reduced `zig` install to ~16 s
-  and rebuilds to ~4 s (measured on Zigsaw) with byte-identical layers.
+  and rebuilds to ~4 s with byte-identical layers.
 
-- **Reproducible digests.** Measured across early recipes on Zigsaw, all six
-  initial recipes—including `zig`'s 378 MB layer—rebuilt to identical digests.
-
-## GTK's first run in CI (Zigsaw iteration 36)
+## GTK's first run in CI
 
 Measured during [Zigsaw iteration 36](../legacy/iteration-36.md) (short image
 IDs updated for Quasidock):
@@ -792,11 +761,7 @@ IDs updated for Quasidock):
   Server 2025, CPython's `getpath` cannot resolve its executable's real path
   (`self-path-dos`), warns, and continues.
 
-- **Historical timings (Zigsaw iteration 36):** on a 4-CPU runner, `gtk4-sdk`
-  took 55 min, `gettext` 39 min, `gnumeric` 27 min, and `rnote` 15 min (on 16
-  CPUs locally, `gtk4-sdk` took 15 min).
-
-## Qt 6 with zig (Zigsaw iteration 39)
+## Qt 6 with zig
 
 Discovered in [Zigsaw iteration 39](../legacy/iteration-39.md) when Qt 6 first
 built with `zig` (Quasidock's `qt6` / `qt6-sdk` recipes now use
@@ -847,14 +812,9 @@ avoided several `zig` workarounds):
   `32 + 2 * sizeof(std::wstring)` chars (~80 chars, truncating longer paths)
   and defines `wmain`, requiring MinGW `-municode`.
 
-- **Historical timings (Zigsaw iteration 39, `zig`, 16 CPUs):** `qtbase`'s
-  1,900 steps took 17.5 min and the SDK 26.5 min. Twice right after stopping
-  another build, CMake failed launching Ninja (`0xc0000142`,
-  `STATUS_DLL_INIT_FAILED`), not reproduced later.
-
 ## CMake's search paths, and Qt Quick
 
-Measured during [Zigsaw iteration 40](../legacy/iteration-40.md):
+Measured on 2026-11-12, Windows 11 26300, 16 CPUs:
 
 - **CMake searches `Program Files` and the registry on Windows.** Kitware's
   `Modules/Platform/WindowsPaths.cmake` adds `ProgramW6432`, `ProgramFiles`,

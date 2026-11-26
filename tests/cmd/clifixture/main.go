@@ -108,7 +108,7 @@ func main() {
 			fmt.Fprintln(os.Stdout, "closed-input-output")
 			fmt.Fprintln(os.Stderr, "closed-input-error")
 			os.Exit(27)
-		case "console-run", "console-run-check-mode", "console-run-check-mode-pipe", "console-run-check-mode-output-pipe":
+		case "console-run", "console-run-check-mode", "console-run-check-mode-pipe", "console-run-check-mode-import-pipe", "console-run-check-mode-output-pipe":
 			// Test runners may inherit Ctrl+C-disabled state from their launcher.
 			// Establish the same state as an ordinary interactive shell, keeping
 			// this wrapper alive while the application handles the console event.
@@ -142,7 +142,7 @@ func main() {
 				cmd.Stdin, cmd.Stdout, cmd.Stderr = input, output, output
 				inputHandle = win32.HANDLE(input.Fd())
 			}
-			if args[0] == "console-run-check-mode-pipe" {
+			if args[0] == "console-run-check-mode-pipe" || args[0] == "console-run-check-mode-import-pipe" {
 				// Leave stdin blocked on a pipe while Ctrl+C still arrives from
 				// the console. The writer stays open until the command exits.
 				reader, writer, err := os.Pipe()
@@ -152,7 +152,11 @@ func main() {
 				defer func() { _ = reader.Close(); _ = writer.Close() }()
 				// Stage one file, then stall before its payload arrives so that
 				// cancellation has an open staged file and directory to clean up.
-				if err := tar.NewWriter(writer).WriteHeader(&tar.Header{Name: "pending", Mode: 0o600, Size: 1024}); err != nil {
+				name := "pending"
+				if args[0] == "console-run-check-mode-import-pipe" {
+					name = "app/pending"
+				}
+				if err := tar.NewWriter(writer).WriteHeader(&tar.Header{Name: name, Mode: 0o600, Size: 1024}); err != nil {
 					panic(err)
 				}
 				cmd.Stdin = reader
