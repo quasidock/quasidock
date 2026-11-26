@@ -125,8 +125,8 @@ quasidock network inspect -f '{{.Id}} {{.Driver}}' example-private
 `network create` provisions a private Windows virtual network and prints its
 full GUID. Its name must start with an ASCII letter or digit and can contain up
 to 128 ASCII letters, digits, dots, underscores, and hyphens. Names are matched
-case-insensitively, and an existing name causes the command to fail. Windows
-manages the lifetime of the network. Quasidock assigns each new switch an
+case-insensitively, and an existing name causes the command to fail. Quasidock
+tracks the network's GUID in the selected store. Each new switch gets an
 unused IPv4 `/24` from `10.240.0.0/12`. These switches carry private peer traffic
 without a default gateway.
 
@@ -144,6 +144,27 @@ returned by Windows and can vary by Windows version and network type.
 Use `-f` or `--format` to run a Go template on each record. For example,
 `--format '{{json .Properties}}'` prints the HCN properties as JSON, one object
 per argument. A failed lookup returns an error with empty stdout.
+
+### Removing private networks
+
+```powershell
+quasidock network rm example-private
+quasidock network prune --dry-run
+quasidock network prune
+```
+
+`network rm` accepts one or more names or full GUIDs and reports a failure for
+each target it cannot remove. It also accepts private networks created before
+Quasidock tracked ownership. `network prune` considers only private networks
+tracked in the selected store. It runs without a prompt, and `--dry-run`
+prints the candidate GUIDs without deleting them. Both commands print one
+full GUID per network removed.
+
+Run cleanup from an elevated PowerShell session. Use the same `QUASIDOCK_HOME`
+for creation, membership, and cleanup. Any saved membership in that store,
+including for a stopped container, or any Windows HCN endpoint prevents
+deletion. Saved memberships in other stores are outside the check. Disconnect
+containers before removing a network they use.
 
 ### Connecting containers to private networks
 
@@ -172,15 +193,9 @@ which can change after restart. Explicit `-p` port publishing and `uses` host
 forwards go through the normal relay path. Create a new private network before
 attaching if the old network was created without a usable IPv4 subnet.
 
-Remove a network you created by passing its GUID to Windows' HNS diagnostics
-tool. [Microsoft HNS diagnostics](https://learn.microsoft.com/en-us/virtualization/windowscontainers/kubernetes/common-problems)
-
-```powershell
-hnsdiag delete networks $networkId
-```
-
-The opt-in smoke test creates, lists, inspects, and removes a temporary private
-network. From the same elevated session, set `QUASIDOCK_TEST_HCN=1` and run
+The opt-in smoke test checks creation, inspection, prune preview, removal,
+and endpoint protection with temporary private networks. In elevated
+PowerShell, set `QUASIDOCK_TEST_HCN=1` and run
 `go test -count=1 ./internal/cli -run '^TestNetworkHCNSmoke$'`.
 For a live attachment test, set the same variable in a regular PowerShell
 session and run `./tests/network-hcn.ps1` from the repository. Approve the UAC

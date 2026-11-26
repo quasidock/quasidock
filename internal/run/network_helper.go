@@ -359,6 +359,12 @@ func (d *networkDriver) end() error {
 }
 
 func (d *networkDriver) connect(target string) (networkReply, error) {
+	// Keep lock contention below the supervisor's request deadline.
+	release, err := win32.LockHCNMutation(5_000)
+	if err != nil {
+		return networkReply{}, err
+	}
+	defer release()
 	networks, err := win32.ListHCNNetworks()
 	if err != nil {
 		return networkReply{}, err

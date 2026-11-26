@@ -110,6 +110,8 @@ Windows host networking:
   network connect NETWORK CONTAINER   attach a container to a private Windows network
   network disconnect NETWORK CONTAINER
                                      detach a container from a private Windows network
+  network rm NAME|GUID [NAME|GUID...]  remove selected unused private networks (elevated)
+  network prune [--dry-run]            remove unused private networks tracked in this store (elevated)
 
 Persistent storage:
   volume create NAME                 create a reusable named volume

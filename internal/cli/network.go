@@ -17,9 +17,12 @@ import (
 
 type networkBackend struct {
 	list          func() ([]win32.HCNNetwork, error)
-	createPrivate func(string) (string, error)
+	createPrivate func(string, func(string) error) (string, error)
 	inspect       func(string) (win32.HCNNetworkDetails, error)
 	privateSubnet func(string) error
+	lockMutation  func() (func(), error)
+	hasEndpoints  func(string) (bool, error)
+	deleteNetwork func(string) error
 }
 
 var (
@@ -28,12 +31,15 @@ var (
 		createPrivate: win32.CreatePrivateHCNNetwork,
 		inspect:       win32.InspectHCNNetwork,
 		privateSubnet: func(id string) error { _, err := win32.PrivateHCNSubnet(id); return err },
+		lockMutation:  func() (func(), error) { return win32.LockHCNMutation(30_000) },
+		hasEndpoints:  win32.HCNNetworkHasEndpoints,
+		deleteNetwork: win32.DeleteHCNNetwork,
 	}
 	networkNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$`)
 )
 
 func networkCommand(ctx *context.Context, args []string, backend networkBackend) (uint32, error) {
-	const usage = "usage: quasidock network <create NAME|ls [-q|--quiet]|inspect [-f TEMPLATE] NETWORK [NETWORK...]|connect NETWORK CONTAINER|disconnect NETWORK CONTAINER>"
+	const usage = "usage: quasidock network <create NAME|ls [-q|--quiet]|inspect [-f TEMPLATE] NETWORK [NETWORK...]|connect NETWORK CONTAINER|disconnect NETWORK CONTAINER|rm NETWORK [NETWORK...]|prune [--dry-run]>"
 	if len(args) == 0 {
 		return 1, errors.New(usage)
 	}
@@ -55,7 +61,17 @@ func networkCommand(ctx *context.Context, args []string, backend networkBackend)
 				return 1, fmt.Errorf("network %q already exists", network.Name)
 			}
 		}
-		id, err := backend.createPrivate(name)
+		if err := openNetworkStore(ctx); err != nil {
+			return 1, err
+		}
+		var trackErr error
+		id, err := backend.createPrivate(name, func(id string) error {
+			trackErr = ctx.Store.TrackNetwork(id)
+			return trackErr
+		})
+		if trackErr != nil {
+			return 1, fmt.Errorf("record ownership for network %q: %w", name, trackErr)
+		}
 		if errors.Is(err, win32.ErrHCNNetworkExists) {
 			return 1, fmt.Errorf("network %q already exists: %w", name, err)
 		}
@@ -80,17 +96,16 @@ func networkCommand(ctx *context.Context, args []string, backend networkBackend)
 		if err := inspectNetworks(ctx, backend, args[1:]); err != nil {
 			return 1, err
 		}
+	case "rm", "prune":
+		if err := networkCleanupCommand(ctx, backend, args[0], args[1:]); err != nil {
+			return 1, err
+		}
 	case "connect", "disconnect":
 		if len(args) != 3 || args[1] == "" || args[2] == "" || strings.HasPrefix(args[1], "-") || strings.HasPrefix(args[2], "-") {
 			return 1, fmt.Errorf("usage: quasidock network %s NETWORK CONTAINER", args[0])
 		}
-		if ctx.Store == nil {
-			st, err := store.Open("", ctx.Verbose, "")
-			if err != nil {
-				return 1, err
-			}
-			ctx.Store = st
-			ctx.Store.EventWarnings = ctx.Stderr
+		if err := openNetworkStore(ctx); err != nil {
+			return 1, err
 		}
 		if err := run.ChangeContainerNetwork(ctx, args[2], args[1], args[0] == "connect", backend.list, backend.privateSubnet); err != nil {
 			return 1, networkBackendError(err)
@@ -99,6 +114,19 @@ func networkCommand(ctx *context.Context, args []string, backend networkBackend)
 		return 1, fmt.Errorf("unknown network command %q\n%s", args[0], usage)
 	}
 	return 0, nil
+}
+
+func openNetworkStore(ctx *context.Context) error {
+	if ctx.Store != nil {
+		return nil
+	}
+	st, err := store.Open("", ctx.Verbose, "")
+	if err != nil {
+		return err
+	}
+	st.EventWarnings = ctx.Stderr
+	ctx.Store = st
+	return nil
 }
 
 func networkBackendError(err error) error {

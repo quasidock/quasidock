@@ -560,7 +560,7 @@ durable.)*
 
 ## One build of each runtime, and git for Meld
 
-- **Pin publication checks**: in [Zigsaw iteration 29](../legacy/iteration-29.md),
+- **Pin publication checks**: in an earlier run,
   a Reproduce run passed locally while an updated PyGObject SDK pin
   (`3498644a`) had never been pushed to `ghcr.io`, masking downstream skipped
   images (`gaphor`, `meld`, `pygobject`).
@@ -591,7 +591,7 @@ durable.)*
 
 ## Java
 
-[Zigsaw iteration 31](../legacy/iteration-31.md), 2026-10-19, Windows 11 26300,
+Measured 2026-10-19, Windows 11 26300,
 originally probed Eclipse Temurin OpenJDK 25.0.4.1+1 and early-access 25.0.5+7
 (current [`recipes/java-sdk.json`](../recipes/java-sdk.json) and
 [`recipes/java.json`](../recipes/java.json) ship `25.0.5_8`, with
@@ -642,7 +642,7 @@ Probed with `java Probe.java` on JDK and compiled bytecode on JRE:
   `maven-metadata-*.xml`, *and* `.meta/prefixes-*.txt` (which Central updates
   across time) yields deterministic offline Maven repositories (PDFBox: 90 s
   vendor, 40 s offline build).
-- **Logisim-evolution offline Gradle build** (Zigsaw iteration 32): Kotlin DSL,
+- **Logisim-evolution offline Gradle build**: Kotlin DSL,
   configuration cache enabled, three portal plugins (Shadow 9.6.1, SonarQube
   7.5, Versions 0.61), Checkstyle resolved at config time, and an auxiliary
   source set produced 350 vendored files and bit-identical offline builds
@@ -650,15 +650,15 @@ Probed with `java Probe.java` on JDK and compiled bytecode on JRE:
 - **Vendoring Gradle**: copying Gradle's `caches/modules-2/files-2.1` cache
   into Maven layout via [`recipes/gradle/GradleVendor.java`](../recipes/gradle/GradleVendor.java)
   and redirecting repositories with `QUASIDOCK_GRADLE_REPO` /
-  [`recipes/gradle/zigsaw-offline.gradle`](../recipes/gradle/zigsaw-offline.gradle)
+  [`recipes/gradle/quasidock-offline.gradle`](../recipes/gradle/quasidock-offline.gradle)
   handles settings plugins, `git-properties`, TeaVM, and `kotlin-dsl` offline
   (PlantUML: 3 min vendor, 2 min build).
 - **PlantUML's bundled Graphviz**: `plantuml.jar` unpacks `graphviz.dat` (a
   small `dot` 2.44.1 Windows executable) into `%TEMP%\_graphviz` unless
   `GRAPHVIZ_DOT` or `PATH` overrides it; local source builds leave `$version$`
   until `patchCompilationInfo` fills it.
-- **Two HKCU persistence bugs fixed on deep Java preference trees** (fixed in
-  Zigsaw 0.31.0 and preserved in [`internal/hkcu/hkcu.go`](../internal/hkcu/hkcu.go)):
+- **Two HKCU persistence bugs fixed on deep Java preference trees**
+    (fixed in [`internal/hkcu/hkcu.go`](../internal/hkcu/hkcu.go)):
   - *Cleanup deleting pre-existing empty parents*: PDFBox uses
     `Software\JavaSoft\Prefs\org\apache\pdfbox`, and cleanup walked up to
     `Software` deleting every empty ancestor including a pre-existing empty
@@ -674,7 +674,7 @@ Probed with `java Probe.java` on JDK and compiled bytecode on JRE:
   tests while `dlcdn.apache.org` and Maven Central succeeded; Maven and PDFBox
   recipes download from Maven Central (Apache parent POMs still incur snapshot
   timeouts on `repository.apache.org`).
-- **JavaFX in Scene Builder** ([Zigsaw iteration 33](../legacy/iteration-33.md)):
+- **JavaFX in Scene Builder**:
   - Temurin's JRE omits `jdk.unsupported.desktop` required by `javafx.swing`
     (`FindException` before `main`), so Scene Builder uses `java-sdk` (88 MB
     vs 55 MB JRE).
@@ -722,8 +722,7 @@ Probed with `java Probe.java` on JDK and compiled bytecode on JRE:
 
 ## GTK's first run in CI
 
-Measured during [Zigsaw iteration 36](../legacy/iteration-36.md) (short image
-IDs updated for Quasidock):
+Measured on 2026-11-12:
 
 - **GTK's family reproduces on a CI runner**: `gtk4-sdk`, `gtk4`, `gtk3`,
   `pygobject`, `gnome-text-editor`, `rnote`, `meld`, `gaphor`, and `gnumeric`

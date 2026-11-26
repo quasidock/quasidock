@@ -827,6 +827,11 @@ container for a private network. Start it from a regular PowerShell session
 and approve the Windows network helper when prompted. During that run,
 `network connect` and `network disconnect NETWORK CONTAINER` take effect live.
 Container inspection shows saved memberships and the running IPv4 addresses.
+Use `quasidock network rm NAME` to remove an unused private network, or
+`quasidock network prune --dry-run` to preview cleanup of unused private
+networks created in the current store. Run `quasidock network prune` to remove
+those networks. Run both commands from elevated PowerShell with the same
+`QUASIDOCK_HOME` used for network setup.
 [Host networking guide](docs/networking.md#host-network-management)
 
 Pull reports signature status and permissions. With a matching trust key, missing

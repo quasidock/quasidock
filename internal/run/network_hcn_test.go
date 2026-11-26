@@ -50,7 +50,7 @@ func TestHCNJobAttachment(t *testing.T) {
 		t.Fatal(err)
 	}
 	owner := "quasidock-probe-" + rand.Text()
-	network, err := win32.CreatePrivateHCNNetwork(owner)
+	network, err := win32.CreatePrivateHCNNetwork(owner, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

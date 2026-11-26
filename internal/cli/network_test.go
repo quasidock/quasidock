@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io/fs"
+	"net/netip"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -23,7 +24,8 @@ func TestNetworkArguments(t *testing.T) {
 	var out bytes.Buffer
 	ctx.Stdout = &out
 	for _, args := range [][]string{
-		nil, {"rm", "example"}, {"create"}, {"create", "one", "two"},
+		nil, {"rm"}, {"rm", "--force", "example"}, {"rm", ""}, {"prune", "example"}, {"prune", "--force"},
+		{"create"}, {"create", "one", "two"},
 		{"create", ""}, {"create", ".hidden"}, {"create", "white space"},
 		{"create", "path/name"}, {"create", "héllo"}, {"create", strings.Repeat("a", 129)},
 		{"ls", "example"}, {"list", "--quiet=true"},
@@ -40,6 +42,9 @@ func TestNetworkArguments(t *testing.T) {
 	t.Setenv("QUASIDOCK_HOME", root)
 	if code, err := Dispatch(ctx, []string{"network", "inspect", "--invalid"}); code != 1 || err == nil || !strings.Contains(err.Error(), "unknown inspect option") {
 		t.Fatalf("network dispatch: exit %d, error %v", code, err)
+	}
+	if code, err := Dispatch(ctx, []string{"network", "rm", "--force", "example"}); code != 1 || err == nil || !strings.Contains(err.Error(), "unknown network rm option") {
+		t.Fatalf("network rm dispatch: exit %d, error %v", code, err)
 	}
 	if _, err := os.Stat(root); ctx.Store != nil || !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("network command opened the local store: %v", err)
@@ -104,21 +109,29 @@ func TestNetworkSavedMembership(t *testing.T) {
 
 func TestNetworkCreate(t *testing.T) {
 	const id = "0abcd012-1234-5678-90ab-bcdef0123456"
-	ctx := context.New()
-	var out bytes.Buffer
-	ctx.Stdout = &out
+	ctx, out := fixtureCLI(t)
 	name := "Project_1." + strings.Repeat("a", 118)
 	backend := networkBackend{
 		list: func() ([]win32.HCNNetwork, error) { return nil, nil },
-		createPrivate: func(got string) (string, error) {
+		createPrivate: func(got string, record func(string) error) (string, error) {
 			if got != name {
 				t.Fatalf("create got name %q, want %q", got, name)
+			}
+			if err := record(id); err != nil {
+				return "", err
 			}
 			return id, nil
 		},
 	}
 	if code, err := networkCommand(ctx, []string{"create", name}, backend); code != 0 || err != nil || out.String() != id+"\n" {
 		t.Fatalf("create: exit %d, error %v, output %q", code, err, out.String())
+	}
+	if ids, err := ctx.Store.TrackedNetworkIDs(); err != nil || !slices.Equal(ids, []string{id}) {
+		t.Fatalf("tracked networks: %v, %v", ids, err)
+	}
+	out.Reset()
+	if code, err := networkCommand(ctx, []string{"create", name}, backend); code != 1 || !errors.Is(err, fs.ErrExist) || out.Len() != 0 {
+		t.Fatalf("ownership write failure: exit %d, error %v, output %q", code, err, out.String())
 	}
 
 	out.Reset()
@@ -131,7 +144,7 @@ func TestNetworkCreate(t *testing.T) {
 	}
 
 	backend.list = func() ([]win32.HCNNetwork, error) { return nil, nil }
-	backend.createPrivate = func(string) (string, error) { return "", win32.ErrHCNNetworkExists }
+	backend.createPrivate = func(string, func(string) error) (string, error) { return "", win32.ErrHCNNetworkExists }
 	if code, err := networkCommand(ctx, []string{"create", name}, backend); code != 1 || !errors.Is(err, win32.ErrHCNNetworkExists) || !strings.Contains(err.Error(), name) || out.Len() != 0 {
 		t.Fatalf("concurrent duplicate create: exit %d, error %v, output %q", code, err, out.String())
 	}
@@ -314,9 +327,7 @@ func TestNetworkInspectErrors(t *testing.T) {
 }
 
 func TestNetworkBackendErrors(t *testing.T) {
-	ctx := context.New()
-	var out bytes.Buffer
-	ctx.Stdout = &out
+	ctx, out := fixtureCLI(t)
 	for _, test := range []struct {
 		err     error
 		message string
@@ -324,14 +335,14 @@ func TestNetworkBackendErrors(t *testing.T) {
 		{fs.ErrPermission, "elevated PowerShell session"},
 		{win32.ErrHCNUnavailable, "Host Network Service"},
 	} {
-		backend := networkBackend{list: func() ([]win32.HCNNetwork, error) { return nil, test.err }}
-		for _, args := range [][]string{{"ls"}, {"create", "example"}, {"inspect", "example"}} {
+		backend := networkBackend{list: func() ([]win32.HCNNetwork, error) { return nil, test.err }, lockMutation: testNetworkMutationLock}
+		for _, args := range [][]string{{"ls"}, {"create", "example"}, {"inspect", "example"}, {"rm", "example"}, {"prune"}} {
 			if code, err := networkCommand(ctx, args, backend); code != 1 || !errors.Is(err, test.err) || !strings.Contains(err.Error(), test.message) || out.Len() != 0 {
 				t.Errorf("%v: exit %d, error %v, output %q", args, code, err, out.String())
 			}
 		}
 		backend.list = func() ([]win32.HCNNetwork, error) { return nil, nil }
-		backend.createPrivate = func(string) (string, error) { return "", test.err }
+		backend.createPrivate = func(string, func(string) error) (string, error) { return "", test.err }
 		if code, err := networkCommand(ctx, []string{"create", "example"}, backend); code != 1 || !errors.Is(err, test.err) || !strings.Contains(err.Error(), test.message) || out.Len() != 0 {
 			t.Errorf("create failure: exit %d, error %v, output %q", code, err, out.String())
 		}
@@ -342,6 +353,7 @@ func TestNetworkHCNSmoke(t *testing.T) {
 	if os.Getenv("QUASIDOCK_TEST_HCN") != "1" {
 		t.Skip("set QUASIDOCK_TEST_HCN=1 on an elevated Windows host with HNS to exercise real network creation")
 	}
+	t.Setenv("QUASIDOCK_HOME", t.TempDir())
 	hnsdiag, err := win32.SystemProgram("hnsdiag.exe")
 	if err != nil {
 		t.Fatal(err)
@@ -419,12 +431,50 @@ func TestNetworkHCNSmoke(t *testing.T) {
 	if err != nil || !strings.Contains(strings.ToLower(string(diagnostics)), id) {
 		t.Fatalf("private network %s missing from hnsdiag: %v\n%s", id, err, diagnostics)
 	}
-	if out, err := exec.Command(hnsdiag, "delete", "networks", id).CombinedOutput(); err != nil {
-		t.Fatalf("delete HNS network %s: %v\n%s", id, err, out)
+	other := call("create", name+"-unused")
+	if other.code != 0 || other.err != nil {
+		t.Fatalf("create unused network: %+v", other)
+	}
+	otherID := strings.TrimSpace(other.out)
+	created = append(created, otherID)
+	subnet, err := win32.PrivateHCNSubnet(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	endpoint, err := win32.CreateHCNEndpoint(id, name, netip.PrefixFrom(subnet.Addr().Next().Next(), subnet.Bits()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if endpoint != "" {
+			if err := win32.DeleteHCNEndpoint(endpoint); err != nil {
+				t.Error(err)
+			}
+		}
+	})
+	if busy := call("rm", id); busy.code != 1 || busy.err == nil || !strings.Contains(busy.err.Error(), "has Windows network endpoints") {
+		t.Fatalf("remove network with endpoint: %+v", busy)
+	}
+	if preview := call("prune", "--dry-run"); preview.code != 0 || preview.err != nil || preview.out != otherID+"\n" {
+		t.Fatalf("prune preview: %+v", preview)
+	}
+	if listed := call("ls", "-q"); listed.err != nil || !strings.Contains(listed.out, otherID) {
+		t.Fatalf("preview changed Windows network %s: %+v", otherID, listed)
+	}
+	if pruned := call("prune"); pruned.code != 0 || pruned.err != nil || pruned.out != otherID+"\n" {
+		t.Fatalf("prune: %+v", pruned)
+	}
+	created = created[:1]
+	if err := win32.DeleteHCNEndpoint(endpoint); err != nil {
+		t.Fatal(err)
+	}
+	endpoint = ""
+	if removed := call("rm", strings.ToLower(name)); removed.code != 0 || removed.err != nil || removed.out != id+"\n" {
+		t.Fatalf("rm after deleting endpoint: %+v", removed)
 	}
 	created = nil
 	quiet := call("ls", "-q")
-	if quiet.err != nil || quiet.code != 0 || strings.Contains(quiet.out, id) {
+	if quiet.err != nil || quiet.code != 0 || strings.Contains(quiet.out, id) || strings.Contains(quiet.out, otherID) {
 		t.Fatalf("network ls after deletion of %s: %v\n%s", id, quiet.err, quiet.out)
 	}
 	for _, target := range []string{name, id} {

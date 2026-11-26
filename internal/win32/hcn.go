@@ -94,28 +94,46 @@ func loadHCN() (*hcnAPI, error) {
 	return api, nil
 }
 
-// CreatePrivateHCNNetwork asks Windows to provision a private virtual network
-// and returns its GUID.
-func CreatePrivateHCNNetwork(name string) (string, error) {
+// LockHCNMutation serializes Quasidock network deletion with subnet allocation
+// and endpoint creation. The caller must release it on the same goroutine.
+func LockHCNMutation(timeoutMS uint32) (release func(), err error) {
 	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
 	mutex, err := CreateMutex(`Global\quasidock-hcn-subnets`)
+	if err != nil {
+		runtime.UnlockOSThread()
+		return nil, err
+	}
+	switch WaitForSingleObject(mutex, timeoutMS) {
+	case WAIT_OBJECT_0, 0x80: // WAIT_ABANDONED
+		return func() {
+			ReleaseMutex(mutex)
+			CloseHandle(mutex)
+			runtime.UnlockOSThread()
+		}, nil
+	default:
+		CloseHandle(mutex)
+		runtime.UnlockOSThread()
+		return nil, errors.New("waiting for the Windows network mutation lock")
+	}
+}
+
+// CreatePrivateHCNNetwork provisions a private virtual network. If supplied,
+// record is called with the new GUID before Windows creates the network.
+func CreatePrivateHCNNetwork(name string, record func(string) error) (string, error) {
+	release, err := LockHCNMutation(30_000)
 	if err != nil {
 		return "", err
 	}
-	defer CloseHandle(mutex)
-	switch WaitForSingleObject(mutex, 30_000) {
-	case WAIT_OBJECT_0, 0x80: // WAIT_ABANDONED
-		defer ReleaseMutex(mutex)
-	default:
-		return "", errors.New("waiting for the Windows network subnet allocator")
-	}
+	defer release()
 	networks, err := ListHCNNetworks()
 	if err != nil {
 		return "", err
 	}
 	var used []netip.Prefix
 	for _, network := range networks {
+		if strings.EqualFold(network.Name, name) {
+			return "", ErrHCNNetworkExists
+		}
 		details, err := InspectHCNNetwork(network.ID)
 		if errors.Is(err, ErrHCNNetworkNotFound) {
 			continue
@@ -129,7 +147,7 @@ func CreatePrivateHCNNetwork(name string) (string, error) {
 		for third := 0; third <= 255; third++ {
 			subnet := netip.PrefixFrom(netip.AddrFrom4([4]byte{10, byte(second), byte(third), 0}), 24)
 			if !subnetOverlaps(subnet, used) {
-				return createPrivateHCNNetwork(name, subnet)
+				return createPrivateHCNNetwork(name, subnet, record)
 			}
 		}
 	}
@@ -189,7 +207,7 @@ func hcnIPv4Subnets(properties map[string]any) []netip.Prefix {
 	return subnets
 }
 
-func createPrivateHCNNetwork(name string, subnet netip.Prefix) (string, error) {
+func createPrivateHCNNetwork(name string, subnet netip.Prefix, record func(string) error) (string, error) {
 	api, err := getHCN()
 	if err != nil {
 		return "", err
@@ -221,14 +239,19 @@ func createPrivateHCNNetwork(name string, subnet netip.Prefix) (string, error) {
 		return "", err
 	}
 
-	var id GUID
-	hr, _, _ := procCoCreateGuid.Call(uintptr(unsafe.Pointer(&id)))
-	if err := hcnResult("CoCreateGuid", hr, nil); err != nil {
+	id, err := newHCNGUID()
+	if err != nil {
 		return "", err
+	}
+	textID := formatHCNID(id)
+	if record != nil {
+		if err := record(textID); err != nil {
+			return "", err
+		}
 	}
 	var handle HANDLE
 	var result *uint16
-	hr, _, _ = api.create.Call(
+	hr, _, _ := api.create.Call(
 		uintptr(unsafe.Pointer(&id)),
 		uintptr(unsafe.Pointer(config)),
 		uintptr(unsafe.Pointer(&handle)),
@@ -240,7 +263,7 @@ func createPrivateHCNNetwork(name string, subnet netip.Prefix) (string, error) {
 	if err := hcnResult("HcnCreateNetwork", hr, result); err != nil {
 		return "", err
 	}
-	return formatHCNID(id), nil
+	return textID, nil
 }
 
 // ListHCNNetworks queries the host's current Windows virtual networks.
@@ -440,6 +463,15 @@ func parseHCNID(id string) (GUID, error) {
 		Data3: binary.BigEndian.Uint16(raw[6:8]),
 		Data4: [8]byte(raw[8:]),
 	}, nil
+}
+
+// CanonicalHCNNetworkID validates and normalizes a full HCN network GUID.
+func CanonicalHCNNetworkID(id string) (string, error) {
+	guid, err := parseHCNID(id)
+	if err != nil {
+		return "", err
+	}
+	return formatHCNID(guid), nil
 }
 
 func formatHCNID(id GUID) string {

@@ -58,9 +58,6 @@ func ChangeContainerNetwork(ctx *context.Context, container, target string, conn
 	if _, exists := rec.HostConfig.Networks[network.ID]; exists {
 		return fmt.Errorf("network %q is already connected to container %s", target, rec.ShortID())
 	}
-	if err := validate(network.ID); err != nil {
-		return err
-	}
 	image, err := ctx.Store.ReadImage(rec.AppID, rec.Image)
 	if err != nil {
 		return err
@@ -75,6 +72,11 @@ func ChangeContainerNetwork(ctx *context.Context, container, target string, conn
 		return err
 	}
 	_, err = ctx.Store.UpdateContainer(rec.ID, func(c *store.ContainerRecord) error {
+		// Removal holds the index lock through its reference check and HCN
+		// deletion. Validate under that same lock before adding the reference.
+		if err := validate(network.ID); err != nil {
+			return err
+		}
 		saveNetworkMembership(c, network.ID, network.Name)
 		return nil
 	})
