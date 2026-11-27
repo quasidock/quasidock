@@ -203,7 +203,12 @@ run/create options (before IMAGE; create rejects -d/--detach):
   -t, --tty                           allocate a pseudo-TTY flag on container config
   --pull=missing|always|never          default: missing; failed pulls never use stale images
   --entrypoint=COMMAND                override the entrypoint and clear the default cmd
+  -w, --workdir DIR                   set an existing startup directory
+  -u, --user ACCOUNT                  require the current Windows account name or SID
   -e, --env NAME[=VALUE]               set or inherit an environment variable
+  --env-file FILE                     load environment entries; repeatable
+  -l, --label KEY[=VALUE]              set container metadata; repeatable
+  --label-file FILE                   load container labels; repeatable
   -p, --publish [IP:]HOST_PORT:PORT    publish TCP; PORT may be a service name
                                        PORT alone or an empty/zero HOST_PORT allocates one
                                        defaults to loopback; repeat for multiple bindings
@@ -379,36 +384,17 @@ func parseContainerOptions(ctx *context.Context, args []string, command string) 
 	args = append([]string(nil), args...)
 	parser := settingsParser{command: command}
 	var updates run.UpdateOptions
+	var envFiles, labelFiles, labels []string
 
 	flags := []string{"rm", "detach", "interactive", "tty", "verbose", "ephemeral"}
 	i := 0
 	for i < len(args) {
 		args[i] = memoryOption(args[i])
-		if args[i] == "-p" {
-			args[i] = "--publish"
-		} else if strings.HasPrefix(args[i], "-p=") {
-			args[i] = "--publish=" + args[i][3:]
-		} else if strings.HasPrefix(args[i], "-p") {
-			args[i] = "--publish=" + args[i][2:]
-		}
 		if args[i] == "--" {
 			i++
 			break
 		}
-		if args[i] == "-v" {
-			args[i] = "--volume"
-		} else if strings.HasPrefix(args[i], "-v=") {
-			args[i] = "--volume=" + args[i][3:]
-		} else if strings.HasPrefix(args[i], "-v") {
-			args[i] = "--volume=" + args[i][2:]
-		}
-		if args[i] == "-e" {
-			args[i] = "--env"
-		} else if strings.HasPrefix(args[i], "-e=") {
-			args[i] = "--env=" + args[i][3:]
-		} else if strings.HasPrefix(args[i], "-e") {
-			args[i] = "--env=" + args[i][2:]
-		}
+		args[i] = containerValueOption(args[i])
 		if !strings.HasPrefix(args[i], "--") {
 			if strings.HasPrefix(args[i], "-") {
 				if len(args[i]) > 1 {
@@ -515,6 +501,26 @@ func parseContainerOptions(ctx *context.Context, args []string, command string) 
 			if opt.Value != nil {
 				opts.Entrypoint = opt.Value
 			}
+		case "workdir", "user", "env-file", "label-file":
+			value := *opt.Value
+			if value == "" || strings.ContainsRune(value, 0) {
+				return opts, fmt.Errorf("--%s needs a nonempty value without NUL", opt.Name)
+			}
+			switch opt.Name {
+			case "workdir":
+				opts.Workdir = value
+			case "user":
+				opts.User = value
+			case "env-file":
+				envFiles = append(envFiles, value)
+			case "label-file":
+				labelFiles = append(labelFiles, value)
+			}
+		case "label":
+			if !validContainerKeyValue(*opt.Value) {
+				return opts, errors.New("--label expects KEY[=VALUE] with a nonempty key and no whitespace in the key or NUL characters")
+			}
+			labels = append(labels, *opt.Value)
 		case "command":
 			return opts, errors.New("--command was removed; use --entrypoint or a command after IMAGE")
 		case "pull":
@@ -553,6 +559,22 @@ func parseContainerOptions(ctx *context.Context, args []string, command string) 
 	}
 	if err := mounts.ValidateTargets(opts.Mounts); err != nil {
 		return opts, err
+	}
+	fileEnv, err := readContainerOptionFiles("env-file", envFiles)
+	if err != nil {
+		return opts, err
+	}
+	opts.Settings.Env = append(fileEnv, opts.Settings.Env...)
+	fileLabels, err := readContainerOptionFiles("label-file", labelFiles)
+	if err != nil {
+		return opts, err
+	}
+	if entries := append(fileLabels, labels...); len(entries) > 0 {
+		opts.Labels = make(map[string]string, len(entries))
+		for _, entry := range entries {
+			key, value, _ := strings.Cut(entry, "=")
+			opts.Labels[key] = value
+		}
 	}
 	return opts, nil
 }

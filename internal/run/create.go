@@ -3,6 +3,7 @@ package run
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"strings"
 
@@ -52,6 +53,10 @@ func selectedImage(ctx *context.Context, opts Options) (*store.Ref, error) {
 // imminent launch; an empty one represents an intentionally unstarted container.
 // The caller holds the store lock until this record pins its image.
 func createContainer(ctx *context.Context, opts Options, selected *store.Ref, cfg oci.AppConfig, runID string) (*store.ContainerRecord, error) {
+	userSID, err := resolveContainerUser(opts.User)
+	if err != nil {
+		return nil, err
+	}
 	bindings, err := services.NormalizePublishing(cfg, opts.Publish, opts.Settings.Ports)
 	if err != nil {
 		return nil, err
@@ -82,6 +87,12 @@ func createContainer(ctx *context.Context, opts Options, selected *store.Ref, cf
 	if opts.Settings.Sandbox != nil {
 		sandboxStr = string(*opts.Settings.Sandbox)
 	}
+	labels := maps.Clone(cfg.Labels)
+	if labels == nil {
+		labels = maps.Clone(opts.Labels)
+	} else {
+		maps.Copy(labels, opts.Labels)
+	}
 	rec := store.ContainerRecord{
 		Image:      selected.Manifest,
 		ImageRef:   imageRef,
@@ -93,6 +104,9 @@ func createContainer(ctx *context.Context, opts Options, selected *store.Ref, cf
 			Image:       imageRef,
 			Cmd:         append([]string(nil), opts.Args...),
 			Env:         append([]string(nil), opts.Settings.Env...),
+			WorkingDir:  opts.Workdir,
+			User:        opts.User,
+			Labels:      labels,
 			Tty:         opts.TTY,
 			AttachStdin: runID != "" && !opts.Detach && opts.Interactive,
 			OpenStdin:   opts.Interactive,
@@ -115,6 +129,8 @@ func createContainer(ctx *context.Context, opts Options, selected *store.Ref, cf
 			Entrypoint: opts.Entrypoint,
 			Env:        append([]string(nil), opts.Settings.Env...),
 			HostCwd:    hostCwd,
+			Workdir:    opts.Workdir,
+			UserSID:    userSID,
 		},
 	}
 	if opts.Entrypoint != nil {

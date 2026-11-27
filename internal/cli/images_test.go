@@ -55,7 +55,11 @@ func fixtureImage(t *testing.T, reg *testregistry.Registry, version string, payl
 	if err != nil {
 		t.Fatal(err)
 	}
-	config := oci.Descriptor{MediaType: oci.MediaTypeConfig, Digest: reg.PutBlob(b), Size: int64(len(b))}
+	mediaType := oci.MediaTypeConfig
+	if cfg.FormatVersion == 4 {
+		mediaType = oci.MediaTypeConfigV4
+	}
+	config := oci.Descriptor{MediaType: mediaType, Digest: reg.PutBlob(b), Size: int64(len(b))}
 	b, err = json.Marshal(oci.Manifest{SchemaVersion: 2, MediaType: oci.MediaTypeManifest, Config: config, Layers: []oci.Descriptor{layer}})
 	if err != nil {
 		t.Fatal(err)

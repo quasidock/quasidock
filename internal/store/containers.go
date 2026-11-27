@@ -49,14 +49,16 @@ type ContainerState struct {
 }
 
 type ContainerConfig struct {
-	Image       string   `json:"Image"`
-	Entrypoint  []string `json:"Entrypoint"`
-	Cmd         []string `json:"Cmd"`
-	Env         []string `json:"Env"`
-	WorkingDir  string   `json:"WorkingDir"`
-	Tty         bool     `json:"Tty"`
-	AttachStdin bool     `json:"AttachStdin"`
-	OpenStdin   bool     `json:"OpenStdin"`
+	Image       string            `json:"Image"`
+	Entrypoint  []string          `json:"Entrypoint"`
+	Cmd         []string          `json:"Cmd"`
+	Env         []string          `json:"Env"`
+	WorkingDir  string            `json:"WorkingDir"`
+	User        string            `json:"User,omitempty"`
+	Labels      map[string]string `json:"Labels,omitempty"`
+	Tty         bool              `json:"Tty"`
+	AttachStdin bool              `json:"AttachStdin"`
+	OpenStdin   bool              `json:"OpenStdin"`
 }
 
 type ContainerHostConfig struct {
@@ -102,6 +104,8 @@ type ContainerRunSpec struct {
 	Entrypoint   *string            `json:"Entrypoint,omitempty"`
 	Env          []string           `json:"Env,omitempty"`
 	HostCwd      string             `json:"HostCwd,omitempty"`
+	Workdir      string             `json:"Workdir,omitempty"`
+	UserSID      string             `json:"UserSID,omitempty"`
 }
 
 type ContainerRecord struct {

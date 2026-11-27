@@ -111,6 +111,9 @@ type Options struct {
 	Pull          string
 	Image         *store.Ref
 	Name          string
+	Workdir       string
+	User          string
+	Labels        map[string]string
 	Detach        bool
 	AutoRemove    bool
 	Interactive   bool
@@ -588,22 +591,15 @@ func launchContainer(
 	_ = os.MkdirAll(quickAccess, 0o755)
 	_ = os.MkdirAll(profile.Temp, 0o755)
 
-	cwd := profile.Home
-	if cwdGranted {
-		cwd = hostCwd
-	}
-	if cfg.Workdir != "" {
-		cwd = imageWorkdir(oci.Placeholders{App: img.DeployDir, Data: dataDir, Cache: filepath.Join(dataDir, "cache")}, cfg.Workdir)
-		info, err := os.Stat(cwd)
-		if err != nil {
+	cacheDir := filepath.Join(dataDir, "cache")
+	placeholders := oci.Placeholders{App: img.DeployDir, Data: dataDir, Cache: cacheDir}
+	cwd := defaultWorkdir(placeholders, cfg.Workdir, hostCwd, cwdGranted)
+	if created.RunSpec.Workdir == "" && cfg.Workdir != "" {
+		if err := checkWorkdir(cwd); err != nil {
 			return 1, false, fmt.Errorf("image workdir: %w", err)
-		}
-		if !info.IsDir() {
-			return 1, false, fmt.Errorf("image workdir %s is not a directory", cwd)
 		}
 	}
 
-	cacheDir := filepath.Join(dataDir, "cache")
 	if usesCache(cfg) {
 		_ = os.MkdirAll(cacheDir, 0o755)
 	}
@@ -673,18 +669,23 @@ func launchContainer(
 	defer published.Close()
 	uses := services.UsePlaceholders(targets)
 	rt := runtimeDirs(cfg, img.RuntimeDirs, dataDir, cacheDir, rootsFile, uses)
-	rootsPath := ""
 	if rootsFile != nil {
-		rootsPath = *rootsFile
+		placeholders.Roots = *rootsFile
 	}
-	placeholders := oci.Placeholders{
-		App:      img.DeployDir,
-		Data:     dataDir,
-		Cache:    cacheDir,
-		Roots:    rootsPath,
-		Runtimes: rt.dirs,
-		Services: services.Placeholders(servicePorts),
-		Uses:     uses,
+	placeholders.Runtimes = rt.dirs
+	placeholders.Services = services.Placeholders(servicePorts)
+	placeholders.Uses = uses
+
+	var overrideCwd string
+	if created.RunSpec.Workdir != "" {
+		overrideCwd, err = resolveWorkdir(placeholders, cwd, created.RunSpec.Workdir)
+		if err != nil {
+			return 1, false, fmt.Errorf("--workdir: %w", err)
+		}
+		if err := checkWorkdir(overrideCwd); err != nil {
+			return 1, false, fmt.Errorf("--workdir: %w", err)
+		}
+		cwd = overrideCwd
 	}
 
 	var appPath []string
@@ -697,7 +698,7 @@ func launchContainer(
 		appPath = append(appPath, pDirs...)
 	}
 
-	cmd, err := commandForRun(placeholders, cfg, opts, appPath, systemRoot)
+	cmd, err := commandForRun(placeholders, cfg, opts, appPath, systemRoot, overrideCwd)
 	if err != nil {
 		return 1, false, err
 	}
@@ -875,6 +876,9 @@ func launchContainer(
 			return 1, false, err
 		}
 		security = sec
+	}
+	if err := verifyContainerUser(token, created.RunSpec.UserSID); err != nil {
+		return 1, false, err
 	}
 
 	if sandbox != oci.SandboxSoft {
@@ -1836,7 +1840,7 @@ func newCommand(exe string, args []string) Command {
 	}
 }
 
-func commandForRun(p oci.Placeholders, cfg oci.AppConfig, opts Options, path []string, systemRoot string) (Command, error) {
+func commandForRun(p oci.Placeholders, cfg oci.AppConfig, opts Options, path []string, systemRoot, overrideCwd string) (Command, error) {
 	var requested *string
 	args := opts.Args
 	explicitEntrypoint := opts.Entrypoint != nil
@@ -1848,7 +1852,7 @@ func commandForRun(p oci.Placeholders, cfg oci.AppConfig, opts Options, path []s
 	} else if opts.Entrypoint != nil {
 		return Command{}, errors.New("empty --entrypoint needs a command after IMAGE")
 	}
-	cmd, err := resolveCommand(p, cfg, requested, explicitEntrypoint, path, systemRoot)
+	cmd, err := resolveCommand(p, cfg, requested, explicitEntrypoint, path, systemRoot, overrideCwd)
 	if err != nil {
 		return Command{}, err
 	}
@@ -1856,7 +1860,7 @@ func commandForRun(p oci.Placeholders, cfg oci.AppConfig, opts Options, path []s
 	return cmd, nil
 }
 
-func resolveCommand(placeholders oci.Placeholders, config oci.AppConfig, requested *string, explicitEntrypoint bool, appPath []string, systemRoot string) (Command, error) {
+func resolveCommand(placeholders oci.Placeholders, config oci.AppConfig, requested *string, explicitEntrypoint bool, appPath []string, systemRoot, overrideCwd string) (Command, error) {
 	if requested == nil {
 		if config.FormatVersion == 4 {
 			command := config.Entrypoint
@@ -1889,12 +1893,12 @@ func resolveCommand(placeholders oci.Placeholders, config oci.AppConfig, request
 	if config.FormatVersion == 4 && strings.EqualFold(name, config.ID) && len(config.Entrypoint) == 0 && len(config.Cmd) > 0 {
 		config.Entrypoint = []string{config.Cmd[0]}
 		config.Cmd = nil
-		return resolveCommand(placeholders, config, nil, false, appPath, systemRoot)
+		return resolveCommand(placeholders, config, nil, false, appPath, systemRoot, "")
 	}
 	if len(config.Entrypoint) > 0 && (strings.EqualFold(name, config.ID) || (!explicitEntrypoint && len(config.Entrypoint) > 1 && strings.EqualFold(name, oci.CommandStem(config.Entrypoint[0])))) {
 		if config.FormatVersion == 4 {
 			config.Cmd = nil
-			return resolveCommand(placeholders, config, nil, false, appPath, systemRoot)
+			return resolveCommand(placeholders, config, nil, false, appPath, systemRoot, "")
 		}
 		cmdPath := placeholders.CommandPath(config.Entrypoint[0])
 		args := expandAll(placeholders, config.Entrypoint[1:])
@@ -1902,6 +1906,14 @@ func resolveCommand(placeholders oci.Placeholders, config oci.AppConfig, request
 	}
 	if oci.IsPlaceholderPath(name) {
 		name = placeholders.Expand(name)
+	}
+	if overrideCwd != "" && !filepath.IsAbs(name) {
+		if exe, ok := findExecCommand(overrideCwd, name, nil); ok {
+			return newCommand(exe, nil), nil
+		}
+		if strings.ContainsAny(name, `/\`) {
+			return Command{}, fmt.Errorf("command %q is not a file in workdir %q", name, overrideCwd)
+		}
 	}
 	var resolved string
 	var ok bool

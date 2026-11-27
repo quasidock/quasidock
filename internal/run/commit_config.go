@@ -8,6 +8,7 @@ import (
 
 	"github.com/quasidock/quasidock/internal/context"
 	"github.com/quasidock/quasidock/internal/environment"
+	"github.com/quasidock/quasidock/internal/mounts"
 	"github.com/quasidock/quasidock/internal/oci"
 	"github.com/quasidock/quasidock/internal/store"
 )
@@ -69,9 +70,36 @@ func CommitConfiguration(ctx *context.Context, c *store.ContainerRecord, img *st
 	if systemRoot == "" {
 		systemRoot = `C:\Windows`
 	}
-	cmd, err := commandForRun(p, img.Config, opts, paths, systemRoot)
+	var overrideCwd string
+	if c.RunSpec.Workdir != "" {
+		if c.State.Launched && c.Config.WorkingDir != "" {
+			overrideCwd = c.Config.WorkingDir
+		} else {
+			settings := Settings{Filesystem: c.HostConfig.Filesystem, NoFilesystem: c.HostConfig.NoFilesystem}
+			cwdGranted := false
+			for _, spec := range settings.FilesystemFor(img.Config.Permissions.Filesystem) {
+				if grant := oci.ParseFsGrant(spec); grant != nil && grant.Where.Type == oci.FsGrantCwd {
+					cwdGranted = true
+					break
+				}
+			}
+			base := defaultWorkdir(p, img.Config.Workdir, c.RunSpec.HostCwd, cwdGranted)
+			overrideCwd, err = resolveWorkdir(p, base, c.RunSpec.Workdir)
+			if err != nil {
+				return cfg, fmt.Errorf("--workdir: %w", err)
+			}
+		}
+	}
+	cmd, err := commandForRun(p, img.Config, opts, paths, systemRoot, overrideCwd)
 	if err != nil {
 		return cfg, err
+	}
+	if overrideCwd != "" {
+		for _, mount := range c.Mounts {
+			if mounts.Within(cmd.Exe, mount.Destination) {
+				return cfg, fmt.Errorf("cannot commit mounted executable %q; choose an image or private-data command with --change", cmd.Exe)
+			}
+		}
 	}
 	portable := ""
 	anchors := append([]oci.DirPlaceholder{{Alias: "app", Path: p.App}, {Alias: "data", Path: p.Data}}, p.Runtimes...)

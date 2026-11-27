@@ -547,12 +547,39 @@ Single-letter boolean flags before IMAGE can be combined (for example `-it`, or
 | `--pull=missing` | Default: use the cached selection, or pull if missing |
 | `--pull=always` | Pull before creating or running; a failed pull fails the command |
 | `--pull=never` | Use only local images; a missing image is an error |
+| `-w DIR`, `--workdir DIR` | Start in an existing directory |
+| `-u ACCOUNT`, `--user ACCOUNT` | Require the current Windows account by name or SID |
 | `-e NAME=VALUE`, `--env NAME=VALUE` | Set a variable; the last setting wins |
 | `-e NAME`, `--env NAME` | Inherit a host variable, or unset it if absent |
+| `--env-file FILE` | Load environment entries from a file; repeatable |
+| `-l KEY[=VALUE]`, `--label KEY[=VALUE]` | Set a container label; a bare key has an empty value |
+| `--label-file FILE` | Load container labels from a file; repeatable |
 | `-p [IP:]HOST_PORT:PORT`, `--publish ...` | Publish TCP ports or named services; omit/zero HOST_PORT (or supply PORT alone) for an automatic port; repeatable; defaults to loopback |
 | `-v SOURCE:TARGET[:rw]`, `--volume SOURCE:TARGET[:rw]` | Mount a named volume or host directory at `${data}` or a data subpath |
 | `--mount type=volume\|bind,source=SOURCE,target=TARGET` | Explicitly select a writable directory mount |
 | `--verbose` | Print runtime diagnostics |
+
+```powershell
+quasidock create --name worker --workdir '${app}' --user (whoami) --env-file .\worker.env --label role=worker --label-file .\worker.labels node
+quasidock start worker
+```
+
+`--workdir` accepts absolute Windows paths and placeholders such as `${app}`
+and `${data}`. Relative paths use the normal startup directory, which is the
+image workdir, the granted host working directory, or the container home, in
+that order. The directory must exist when the container starts, after mounts
+are attached. Select filesystem access through the usual grants and mounts.
+An explicit relative command path is looked up from the selected directory.
+`--user` checks the account used for launch and uses the selected sandbox's
+normal token handling. `inspect` shows the requested account, the working
+directory (resolved after launch), and the merged container labels.
+
+Environment and label files use UTF-8, with one `KEY[=VALUE]` entry per line.
+Blank lines and lines starting with `#` after indentation are ignored. Values
+are literal, including quotes and inline `#`. Later files override earlier
+files, and direct flags take precedence over files. Container labels start
+with the image's labels. `create` and `run` read the files once and save the
+options, including inherited environment values, for later starts and restarts.
 
 Each `run` or `create` allocates an isolated container under `containers/<id>/`
 with its own `state.json` and `data/` directory. Launch creates `container.log`

@@ -349,20 +349,14 @@ func (r *execRuntime) command(req execRequest) (process.SpawnSpec, error) {
 	}
 	cwd := r.cwd
 	if req.Workdir != "" {
-		cwd = r.placeholders.Expand(req.Workdir)
-		if !filepath.IsAbs(cwd) {
-			if filepath.VolumeName(cwd) != "" || strings.HasPrefix(cwd, `\`) || strings.HasPrefix(cwd, "/") {
-				return process.SpawnSpec{}, errors.New("exec workdir must be absolute or an unambiguous relative path")
-			}
-			cwd = filepath.Join(r.cwd, cwd)
+		var err error
+		cwd, err = resolveWorkdir(r.placeholders, r.cwd, req.Workdir)
+		if err != nil {
+			return process.SpawnSpec{}, fmt.Errorf("exec workdir: %w", err)
 		}
 	}
-	info, err := os.Stat(cwd)
-	if err != nil {
+	if err := checkWorkdir(cwd); err != nil {
 		return process.SpawnSpec{}, fmt.Errorf("exec workdir: %w", err)
-	}
-	if !info.IsDir() {
-		return process.SpawnSpec{}, errors.New("exec workdir is not a directory")
 	}
 	name := req.Args[0]
 	if oci.IsPlaceholderPath(name) {
@@ -391,6 +385,7 @@ func (r *execRuntime) command(req execRequest) (process.SpawnSpec, error) {
 	line := process.BuildCommandLine(executable, cmd.Args)
 	if cmd.Batch {
 		executable = filepath.Join(r.systemRoot, "System32", "cmd.exe")
+		var err error
 		line, err = process.BuildBatchCommandLine(executable, cmd.Exe, cmd.Args)
 		if err != nil {
 			return process.SpawnSpec{}, err
