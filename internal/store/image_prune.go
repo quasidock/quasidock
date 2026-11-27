@@ -10,17 +10,8 @@ import (
 	"github.com/quasidock/quasidock/internal/oci"
 )
 
-// ImageLabelFilter matches a label's presence, or its exact value.
-type ImageLabelFilter struct {
-	Key, Value string
-	HasValue   bool
-}
-
-// Matches reports whether labels contains the key and, when specified, its exact value.
-func (f ImageLabelFilter) Matches(labels map[string]string) bool {
-	value, exists := labels[f.Key]
-	return exists && (!f.HasValue || value == f.Value)
-}
+// ImageLabelFilter matches a label on an image.
+type ImageLabelFilter = LabelFilter
 
 // ImagePruneOptions selects catalog images. Repeated values within each filter
 // key are ORed; different keys are ANDed. Until tests local cache age.

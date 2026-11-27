@@ -132,7 +132,8 @@ Persistent storage:
                                      list local volumes
   volume inspect [-f TEMPLATE] NAME [NAME...]
   volume rm NAME [NAME...]            remove unreferenced volumes
-  volume prune [--dry-run]            collect unreferenced volumes
+  volume prune [-a|--all] [-f|--force] [--dry-run] [--filter FILTER]...
+                                     collect unused anonymous volumes by default
 
 Quasidock extensions:
   convert [CONTEXT] [-f DOCKERFILE] [-o RECIPE] [--target NAME] [--base IMAGE] [--stage-base NAME_OR_INDEX=IMAGE]...

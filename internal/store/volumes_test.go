@@ -121,6 +121,7 @@ func TestAnonymousVolumeAllocationRollbackAndConcurrentPin(t *testing.T) {
 }
 
 func TestVolumesPinningAndDryRun(t *testing.T) {
+	opts := VolumePruneOptions{All: true}
 	s, err := Open(t.TempDir(), false, "")
 	if err != nil {
 		t.Fatal(err)
@@ -150,7 +151,7 @@ func TestVolumesPinningAndDryRun(t *testing.T) {
 		t.Fatal(err)
 	}
 	before, _ := os.ReadFile(s.ContainerStatePath(c.ID))
-	if all, _, err := s.PruneVolumes(true); err != nil || len(all) != 0 {
+	if all, _, err := s.PruneVolumes(true, opts); err != nil || len(all) != 0 {
 		t.Fatalf("dry run unpinned stale record: %v %v", all, err)
 	}
 	after, _ := os.ReadFile(s.ContainerStatePath(c.ID))
@@ -164,13 +165,13 @@ func TestVolumesPinningAndDryRun(t *testing.T) {
 	if b, err := os.ReadFile(filepath.Join(v.Mountpoint, "sentinel")); err != nil || string(b) != "survive" {
 		t.Fatal("container reconciliation deleted data")
 	}
-	if all, _, err := s.PruneVolumes(true); err != nil || len(all) != 1 {
+	if all, _, err := s.PruneVolumes(true, opts); err != nil || len(all) != 1 {
 		t.Fatalf("dry prune: %v %v", all, err)
 	}
 	if _, err := s.ReadVolume("work"); err != nil {
 		t.Fatal("dry run removed volume")
 	}
-	if all, _, err := s.PruneVolumes(false); err != nil || len(all) != 1 {
+	if all, _, err := s.PruneVolumes(false, opts); err != nil || len(all) != 1 {
 		t.Fatalf("prune: %v %v", all, err)
 	}
 }

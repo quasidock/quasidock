@@ -38,9 +38,10 @@ Any retained container record pins its volumes, including exited containers
 and failed launches. Remove those containers before removing their volumes.
 
 `--rm`, `rm`, `container prune`, image removal, and ordinary `prune` (including
-`--data`) preserve named volumes and bind contents. Use `volume rm NAME...` or
-`volume prune` to delete unreferenced volumes; `volume prune --dry-run`
-reports candidates without deleting them. Bind contents are never collected.
+`--data`) preserve named volumes and bind contents. Use `volume rm NAME...`
+to remove specific unused volumes. Use `volume prune --all` to collect unused
+named and anonymous volumes. `volume prune --dry-run` previews candidates.
+Volume cleanup preserves host bind contents.
 `repair` restores mount permissions left behind after a supervisor crash while
 preserving access required by live consumers.
 
@@ -91,9 +92,24 @@ Any saved reference or live mount grant keeps a volume. A volume mounted
 explicitly by its generated name is treated as a named attachment for cleanup.
 Named volumes and bind contents survive container removal.
 
-Find generated names in `inspect` or `volume ls`. Use `volume rm NAME` for a
-retained volume, or `volume prune --dry-run` to preview unused volumes,
-including any left behind after a supervisor crash.
+Find generated names in `inspect` or `volume ls`.
+
+## Prune unused volumes
+
+`volume prune` removes unused anonymous volumes by default, including any
+left behind after a supervisor crash. Use `-a` or `--all` to include unused
+named volumes. Saved container references and live mount grants protect
+volumes. Add `--dry-run` to list the candidates and estimated reclaimable bytes.
+
+Use repeatable `--filter` options to select volumes by label. `label=KEY`
+requires the key, and `label=KEY=VALUE` requires an exact value. Use
+`label!=KEY` or `label!=KEY=VALUE` to protect matching volumes. Every inclusion
+must match, and any matching exclusion protects a volume. Label keys and
+values are case-sensitive. A trailing `=` matches an explicitly empty value.
+
+```powershell
+quasidock volume prune --all --dry-run --filter 'label=team=ops' --filter 'label!=keep'
+```
 
 ## Inspect private data changes
 

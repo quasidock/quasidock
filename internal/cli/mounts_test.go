@@ -158,11 +158,11 @@ func TestPersistentMountsCLI(t *testing.T) {
 			t.Fatalf("accepted protected source: %s", out)
 		}
 	}
-	ok("volume", "prune", "--dry-run")
+	ok("volume", "prune", "--all", "--dry-run")
 	if _, err := st.ReadVolume("data-soft"); err != nil {
 		t.Fatal("dry run deleted volume")
 	}
-	ok("volume", "prune")
+	ok("volume", "prune", "--all")
 }
 
 func TestDetachedMountSharingAndRecovery(t *testing.T) {

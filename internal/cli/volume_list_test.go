@@ -11,7 +11,7 @@ import (
 	"github.com/quasidock/quasidock/internal/store"
 )
 
-func volumeListFixture(t *testing.T) (*store.Store, func(...string) (string, uint32, error)) {
+func volumeCLIFixture(t *testing.T) (*store.Store, func(...string) (string, uint32, error)) {
 	t.Helper()
 	ctx, out := fixtureCLI(t)
 	t.Setenv("QUASIDOCK_HOME", ctx.Store.Root)
@@ -23,7 +23,7 @@ func volumeListFixture(t *testing.T) (*store.Store, func(...string) (string, uin
 }
 
 func TestVolumeListFiltersAndFormats(t *testing.T) {
-	st, call := volumeListFixture(t)
+	st, call := volumeCLIFixture(t)
 	must := func(t *testing.T, args ...string) string {
 		t.Helper()
 		out, code, err := call(args...)
@@ -111,7 +111,7 @@ func TestVolumeListFiltersAndFormats(t *testing.T) {
 }
 
 func TestVolumeListDanglingReadsSavedReferences(t *testing.T) {
-	st, call := volumeListFixture(t)
+	st, call := volumeCLIFixture(t)
 	idle, err := st.CreateVolume("Idle")
 	if err != nil {
 		t.Fatal(err)
@@ -186,7 +186,7 @@ func TestVolumeListDanglingReadsSavedReferences(t *testing.T) {
 }
 
 func TestVolumeListAndCreateArgumentErrors(t *testing.T) {
-	st, call := volumeListFixture(t)
+	st, call := volumeCLIFixture(t)
 	for _, name := range []string{"alpha", "zed"} {
 		if _, err := st.CreateVolume(name); err != nil {
 			t.Fatal(err)

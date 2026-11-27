@@ -8,7 +8,6 @@ import (
 	"github.com/quasidock/quasidock/internal/context"
 	"github.com/quasidock/quasidock/internal/grants"
 	"github.com/quasidock/quasidock/internal/hkcu"
-	"github.com/quasidock/quasidock/internal/lifecycle"
 )
 
 const volumeCreateUsage = "usage: quasidock volume create [--label KEY[=VALUE]]... NAME"
@@ -102,41 +101,7 @@ func volumeCommand(ctx *context.Context, args []string) (uint32, error) {
 			return 1, err
 		}
 	case "prune":
-		dry := false
-		for _, arg := range rest {
-			switch arg {
-			case "--dry-run":
-				dry = true
-			case "-f", "--force":
-			default:
-				return 1, fmt.Errorf("unknown volume prune option %q", arg)
-			}
-		}
-		if !dry {
-			if err := hkcu.SettleLeftovers(ctx.Store, ""); err != nil {
-				return 1, err
-			}
-			if err := grants.RepairMounts(ctx.Store); err != nil {
-				return 1, err
-			}
-		}
-		guard, err := grants.LockMountSources(ctx.Store)
-		if err != nil {
-			return 1, err
-		}
-		defer guard.Close()
-		all, size, err := ctx.Store.PruneVolumes(dry, guard.Protected)
-		if err != nil {
-			return 1, err
-		}
-		for _, v := range all {
-			fmt.Fprintln(ctx.Stdout, v.Name)
-		}
-		verb := "Reclaimed"
-		if dry {
-			verb = "Would reclaim"
-		}
-		fmt.Fprintf(ctx.Stdout, "%s %s in %d volume(s)\n", verb, lifecycle.FormatBytes(size), len(all))
+		return volumePrune(ctx, rest)
 	case "help", "--help":
 		fmt.Fprint(ctx.Stdout, usage)
 	default:

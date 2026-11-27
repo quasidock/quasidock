@@ -15,7 +15,7 @@ mkdir -p "$bind"
 cleanup() {
     "$quasidock" rm -f first second >/dev/null 2>&1 || true
     "$quasidock" container prune >/dev/null 2>&1 || true
-    "$quasidock" volume prune >/dev/null 2>&1 || true
+    "$quasidock" volume prune --all >/dev/null 2>&1 || true
     "$quasidock" rmi test.mounts.fixture >/dev/null 2>&1 || true
     case "$temp_u" in "$temp_parent"/quasidock-mounts.*) rm -rf -- "$temp_u" ;; esac
 }
@@ -71,13 +71,13 @@ container_cleanup() {
 }
 check 'retained containers pin volumes and ordinary pruning preserves data' container_cleanup
 dry_run() {
-    "$quasidock" volume prune --dry-run >/dev/null && "$quasidock" volume inspect saved-soft >/dev/null
+    "$quasidock" volume prune --all --dry-run >/dev/null && "$quasidock" volume inspect saved-soft >/dev/null
 }
 check 'volume pruning dry run preserves volumes' dry_run
 reject_ro() { ! "$quasidock" run --rm -v 'saved-soft:${data}:ro' "$app" >/dev/null 2>&1; }
 check 'unsupported read-only mounts fail' reject_ro
 explicit_prune() {
-    "$quasidock" volume prune >/dev/null || return
+    "$quasidock" volume prune --all >/dev/null || return
     [ -z "$("$quasidock" volume ls -q | tr -d '\r')" ] && [ -f "$bind\\sentinel" ]
 }
 check 'explicit volume pruning leaves host bind contents intact' explicit_prune

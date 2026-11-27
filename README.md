@@ -906,8 +906,8 @@ containers have a live supervisor, and active volumes have a saved container
 reference or a live mount lease. Each reclaimable estimate uses the current
 references and leases for that row.
 The corresponding cleanup commands are `image prune --all`, `container prune`,
-`volume prune`, and `prune --downloads`. The build-cache estimate preserves all
-current image and container roots. Build-only streaming state can be collected
+`volume prune --all`, and `prune --downloads`. The build-cache estimate preserves
+all current image and container roots. Build-only streaming state can be collected
 by a subsequent `prune` after `prune --downloads` clears the build markers.
 `system df` waits for active builds before scanning, so the Build Cache row
 shows zero active entries. Live containers can still write files during the

@@ -352,7 +352,7 @@ func TestSystemDiskUsage(t *testing.T) {
 		want string
 	}{
 		{[]string{"image", "prune", "--all", "--dry-run"}, "Would reclaim: " + lifecycle.FormatBytes(wantImages.Reclaimable)},
-		{[]string{"volume", "prune", "--dry-run"}, "Would reclaim " + lifecycle.FormatBytes(wantVolumeReclaimable) + " in 1 volume(s)"},
+		{[]string{"volume", "prune", "--all", "--dry-run"}, "Would reclaim " + lifecycle.FormatBytes(wantVolumeReclaimable) + " in 1 volume(s)"},
 	} {
 		out.Reset()
 		if code, err := Dispatch(ctx, check.args); code != 0 || err != nil || !strings.Contains(out.String(), check.want) {

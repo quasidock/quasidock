@@ -320,15 +320,36 @@ func (s *Store) removeAnonymousVolumesNoLock(rec *ContainerRecord, guard func(st
 	return errors.Join(errs...)
 }
 
-func (s *Store) PruneVolumes(dry bool, guards ...func(string) (bool, error)) ([]Volume, uint64, error) {
-	return s.pruneVolumes(dry, nil, nil, guards...)
+// VolumePruneOptions selects anonymous volumes by default. Every inclusion
+// filter must match, and any matching exclusion protects the volume.
+type VolumePruneOptions struct {
+	All                   bool
+	Labels, ExcludeLabels []LabelFilter
+}
+
+func (opts VolumePruneOptions) matches(v Volume) bool {
+	if !opts.All && !v.Anonymous {
+		return false
+	}
+	for _, filter := range opts.Labels {
+		if !filter.Matches(v.Labels) {
+			return false
+		}
+	}
+	return !slices.ContainsFunc(opts.ExcludeLabels, func(filter LabelFilter) bool {
+		return filter.Matches(v.Labels)
+	})
+}
+
+func (s *Store) PruneVolumes(dry bool, opts VolumePruneOptions, guards ...func(string) (bool, error)) ([]Volume, uint64, error) {
+	return s.pruneVolumes(dry, opts, nil, nil, guards...)
 }
 
 func (s *Store) PruneSystemVolumes(dry bool, until []time.Time, excluded map[string]bool, guard func(string) (bool, error)) ([]Volume, uint64, error) {
-	return s.pruneVolumes(dry, until, excluded, guard)
+	return s.pruneVolumes(dry, VolumePruneOptions{All: true}, until, excluded, guard)
 }
 
-func (s *Store) pruneVolumes(dry bool, until []time.Time, excluded map[string]bool, guards ...func(string) (bool, error)) ([]Volume, uint64, error) {
+func (s *Store) pruneVolumes(dry bool, opts VolumePruneOptions, until []time.Time, excluded map[string]bool, guards ...func(string) (bool, error)) ([]Volume, uint64, error) {
 	l, err := s.containersLock(true)
 	if err != nil {
 		return nil, 0, err
@@ -352,7 +373,7 @@ func (s *Store) pruneVolumes(dry bool, until []time.Time, excluded map[string]bo
 	var size uint64
 volumeLoop:
 	for _, v := range volumes {
-		if !pruneTimestampBefore(v.CreatedAt, until) || volumeUser(remaining, v.Name) != nil {
+		if !opts.matches(v) || !pruneTimestampBefore(v.CreatedAt, until) || volumeUser(remaining, v.Name) != nil {
 			continue
 		}
 		for _, check := range guards {
