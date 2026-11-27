@@ -805,6 +805,50 @@ older binaries capture missing snapshots on their first start. Finish active
 containers before replacing the binary: live supervisors from older binaries use
 a different control protocol.
 
+## System diagnostics
+
+```powershell
+quasidock system info
+quasidock system info --format json
+quasidock system info -f '{{.StoreRoot}}'
+quasidock system df
+quasidock system df -v
+quasidock system df --format '{{.Type}}: {{.Reclaimable}}'
+```
+
+`system info` reports the Quasidock version, Windows build, architecture,
+logical CPUs, physical memory, store root, and registry. It counts unique
+local images, named volumes, tracked private networks, and containers by
+state. A stale supervisor is shown as exited while its saved container record
+continues to pin its image and volumes. Both reports work offline and run
+without elevation.
+
+`system df` summarizes images, containers, local volumes, and build cache.
+Use `-v` or `--verbose` for detailed tables. In summary mode, `--format json`
+prints one JSON object per row. Go templates can use `Type`, `TotalCount`,
+`Active`, `Size`, and `Reclaimable`. `--format 'table TEMPLATE'` includes a
+header. Verbose mode uses table output.
+
+Sizes use logical file lengths. Images include cached blobs, deployments, and
+local lazy-cache files. Shared bytes count once in the summary and are assigned
+to Images if build cache also needs them. Container sizes include private
+data, logs, and record metadata. Mount targets are excluded and named volume
+files are counted in their own row. Scans skip reparse points and leave lazy
+files unhydrated. Orphaned content, legacy app data, temporary files, and
+store-wide metadata are outside the report.
+
+Active images have a saved container reference or an image lease. Active
+containers have a live supervisor, and active volumes have a saved container
+reference or a live mount lease. Each reclaimable estimate uses the current
+references and leases for that row.
+The corresponding cleanup commands are `image prune --all`, `container prune`,
+`volume prune`, and `prune --downloads`. The build-cache estimate preserves all
+current image and container roots. Build-only streaming state can be collected
+by a subsequent `prune` after `prune --downloads` clears the build markers.
+`system df` waits for active builds before scanning, so the Build Cache row
+shows zero active entries. Live containers can still write files during the
+scan. First use can initialize the store or migrate legacy image references.
+
 ## Windows sandbox and Quasidock extensions
 
 `--sandbox=soft|low|appcontainer` chooses environment shaping, low-integrity

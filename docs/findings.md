@@ -37,8 +37,8 @@ Empirical findings on Windows sandboxing, OS quirks, and toolchains.
 
 ### Matrix
 
-Measured in Zigsaw iteration 1 (`ok` = exits 0, `fails` = exits non-zero; `✗`
-marks results that differ from the intended behaviour):
+Measured in the first Quasidock version (`ok` = exits 0, `fails` = exits non-zero;
+`✗` marks results that differ from the intended behaviour):
 
 | Tool | Check | soft | appcontainer |
 |---|---|---|---|
@@ -198,8 +198,7 @@ read-and-execute allow ACE at a time, and launched at low integrity with
 
 ### Programs written at low integrity
 
-Investigated in [Zigsaw iteration 56](../legacy/iteration-56.md) on Windows 11
-26300, unelevated, by having `busybox` copy a probe program
+Investigated on Windows 11 26300, unelevated, by having `busybox` copy a probe program
 ([`tests/cmd/hostprobe/main.go`](../tests/cmd/hostprobe/main.go), which prints
 its integrity level) in each sandbox and checking labels with `icacls`:
 
@@ -405,8 +404,8 @@ via [`internal/builder/project.go`](../internal/builder/project.go).
   0.1 s.
 - **Diagnostics capability**: ZLS only emits `textDocument/publishDiagnostics`
   to LSP clients advertising that capability in `initialize`.
-- **Windows Server 2025**: in [Zigsaw iteration 34](../legacy/iteration-34.md)'s
-  Reproduce run, `zls` in an AppContainer hit `self-path-dos` (`Mount Manager`
+- **Windows Server 2025**: in a CI reproducibility run on Windows Server 2025
+  Github runner, `zls` in an AppContainer hit `self-path-dos` (`Mount Manager`
   denied), breaking `zig env` and `build.zig` execution (`hover` returned
   `null`, while parser syntax diagnostics still appeared).
   [`tests/zls.sh`](../tests/zls.sh) handles those checks as known gaps when
@@ -470,10 +469,7 @@ via [`internal/builder/project.go`](../internal/builder/project.go).
   `-lfoo` rather than `libfoo.dll.a`). Patched in
   [`recipes/gtk4-sdk/gobject-introspection.patch`](../recipes/gtk4-sdk/gobject-introspection.patch).
 - **`dlltool` vs `nm` for import libraries**: with LLVM `dlltool`, `giscanner`
-  uses `nm` to inspect import archives. Zigsaw initially carried a helper
-  `nm.c` (deleted in [Zigsaw iteration 63](../legacy/iteration-63.md) once
-  `llvm-mingw`'s `nm` replaced it), and within GTK's SDK build GNU `dlltool
-  --identify` from Rust's toolchain gives identical DLL names.
+  uses `nm` to inspect import archives.
 - **`subst` drive scanner bug**: `giscanner`'s Python driver resolved paths via
   `os.path.realpath` (following `B:` to the real staging folder) while its C
   lexer used `GetFullPathName` (keeping `B:`), silently dropping every
@@ -506,11 +502,6 @@ via [`internal/builder/project.go`](../internal/builder/project.go).
   rendering; [`recipes/meld.json`](../recipes/meld.json) forces `win32`.
 - **`gnome.post_install`**: invokes `update-desktop-database`, which fails on
   Windows if enabled in Meson.
-- **Build times and layer sizes** (measured on Zigsaw): GTK 4 SDK jumped from
-  26 to 31 minutes and from 73 MB to 94 MB compressed with introspection (adding
-  1.2 MB of typelibs to `gtk4`'s 53.6 MB runtime and 0.3 MB to `gtk3`'s
-  18.7 MB). `pygobject` is 15 MB compressed (mostly Python), and `meld` adds
-  2.2 MB including GtkSourceView in ~1 minute.
 
 ## GTK's extension point and Gaphor
 
@@ -530,7 +521,7 @@ durable.)*
 - **Gaphor schema lookup order**: Gaphor checks settings non-recursively
   (`lookup(id, False)`), querying only the first schema source
   (`GSETTINGS_SCHEMA_DIR`, user data dir, or the first system data dir). When
-  Gaphor's `share` came last in `XDG_DATA_DIRS` in Zigsaw's extension tests,
+  Gaphor's `share` came last in `XDG_DATA_DIRS` in Quasidock's extension tests,
   settings were silently dropped even though Gaphor's recursive self-test
   passed.
 - **Python 3.13+ `tempfile` in AppContainer**: `os.mkdir(path, 0o700)` applies a
@@ -636,7 +627,7 @@ Probed with `java Probe.java` on JDK and compiled bytecode on JRE:
   [`recipes/gradle.json`](../recipes/gradle.json) use array `entrypoint`s
   launching `${java}\bin\java.exe` directly rather than wrapping `.cmd`/`.bat`
   scripts.
-- **Vendoring Maven** ([Zigsaw iteration 32](../legacy/iteration-32.md)): running
+- **Vendoring Maven**: running
   the build into a local repository inside the module and deleting
   `_remote.repositories`, `*.lastUpdated`, `resolver-status.properties`,
   `maven-metadata-*.xml`, *and* `.meta/prefixes-*.txt` (which Central updates

@@ -82,6 +82,10 @@ func (s *Store) imagePruneContainers() ([]ContainerRecord, error) {
 	return s.rawContainersNoLock()
 }
 
+func (s *Store) imageLeased(digest string) bool {
+	return IsLocked(s.Path("images", "use-"+oci.DigestHex(digest)+".lock"))
+}
+
 func (s *Store) PlanImagePrune(opts ImagePruneOptions) (*ImagePrunePlan, error) {
 	idx, err := s.ImageCatalog()
 	if err != nil {
@@ -111,7 +115,7 @@ func (s *Store) PlanImagePrune(opts ImagePruneOptions) (*ImagePrunePlan, error) 
 	plan := &ImagePrunePlan{catalog: idx, Containers: containers, removed: map[string]bool{}}
 	for _, digest := range digests {
 		ref := idx.Images[digest]
-		selected := !kept[digest] && opts.matchesAge(ref) && !IsLocked(s.Path("images", "use-"+oci.DigestHex(digest)+".lock"))
+		selected := !kept[digest] && opts.matchesAge(ref) && !s.imageLeased(digest)
 		if selected && (len(opts.Labels) != 0 || len(opts.NotLabels) != 0) {
 			img, err := s.ReadImage(ref.ID, digest)
 			if err != nil {
@@ -155,7 +159,7 @@ func (s *Store) ApplyImagePrune(plan *ImagePrunePlan) error {
 			}
 		}
 		for _, ref := range plan.Images {
-			if IsLocked(s.Path("images", "use-"+oci.DigestHex(ref.Manifest)+".lock")) {
+			if s.imageLeased(ref.Manifest) {
 				return fmt.Errorf("image %s is now in use", ref.Manifest)
 			}
 			delete(idx.Images, ref.Manifest)

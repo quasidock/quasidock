@@ -739,6 +739,15 @@ func containerDirSize(root string) uint64 {
 	return mounts.TreeSize(root)
 }
 
+// containerLaunchPending protects a launch while its supervisor initializes.
+func containerLaunchPending(c ContainerRecord, now time.Time) bool {
+	if c.State.Status != "created" || c.State.RunID == "" || c.State.Launched || c.State.Error != "" || c.State.FinishedAt != "" {
+		return false
+	}
+	created, err := time.Parse(time.RFC3339Nano, c.Created)
+	return err == nil && now.Sub(created) < 10*time.Second
+}
+
 func (s *Store) PruneContainers(dryRun bool) ([]ContainerRecord, uint64, int, error) {
 	lk, err := s.containersLock(true)
 	if err != nil {
@@ -790,13 +799,9 @@ func (s *Store) PruneContainers(dryRun bool) ([]ContainerRecord, uint64, int, er
 				running++
 				return
 			}
-			// Protect an imminent launch while its supervisor initializes. An
-			// intentionally unstarted container has no launch token and is eligible now.
-			if c.State.Status == "created" && c.State.RunID != "" && !c.State.Launched && c.State.Error == "" && c.State.FinishedAt == "" {
-				if createdAt, err := time.Parse(time.RFC3339Nano, c.Created); err == nil && now.Sub(createdAt) < 10*time.Second {
-					running++
-					return
-				}
+			if containerLaunchPending(c, now) {
+				running++
+				return
 			}
 			sz := containerDirSize(s.ContainerDir(c.ID))
 			if !dryRun {

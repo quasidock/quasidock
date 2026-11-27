@@ -80,6 +80,12 @@ Docker-style container commands:
                                        remove one or more containers
   container prune                      remove all stopped containers
   run [options] IMAGE [COMMAND] [ARG...] run an image in a new container
+
+System commands:
+  system info [-f|--format json|TEMPLATE]
+                                       show the Windows host and local store
+  system df [-v|--verbose] [--format table|json|TEMPLATE]
+                                       show local disk usage and reclaimable bytes
   system events | events [options]     follow container events or replay retained history
 
 Docker-style image commands:
@@ -875,6 +881,9 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 	if cmd == "network" {
 		return networkCommand(ctx, rest, windowsNetworkBackend)
 	}
+	if cmd == "system" {
+		return systemCommand(ctx, rest)
+	}
 	if cmd == "network-helper" {
 		if len(rest) != 2 {
 			return usageError()
@@ -931,27 +940,18 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 		return 0, nil
 	}
 	switch cmd {
-	case "port", "wait", "rename", "update", "top", "stats", "events", "system", "convert", "build", "volume", "container", "create", "commit", "export", "ps", "diff", "cp", "exec", "attach", "start", "restart", "pause", "unpause", "kill", "stop", "rm", "logs", "image", "images", "inspect", "history", "tag", "pull", "push", "save", "load", "import", "rmi", "run", "search", "trust", "signature", "prune", "repair", "grants":
+	case "port", "wait", "rename", "update", "top", "stats", "events", "convert", "build", "volume", "container", "create", "commit", "export", "ps", "diff", "cp", "exec", "attach", "start", "restart", "pause", "unpause", "kill", "stop", "rm", "logs", "image", "images", "inspect", "history", "tag", "pull", "push", "save", "load", "import", "rmi", "run", "search", "trust", "signature", "prune", "repair", "grants":
 	default:
 		return usageError()
 	}
 
-	st, err := store.Open("", ctx.Verbose, "")
-	if err != nil {
+	if err := openCommandStore(ctx); err != nil {
 		return 1, err
 	}
-	ctx.Store = st
-	ctx.Store.Verbose = ctx.Verbose
-	ctx.Store.EventWarnings = ctx.Stderr
 
 	switch cmd {
 	case "events":
 		return eventsCommand(ctx, rest)
-	case "system":
-		if len(rest) == 0 || rest[0] != "events" {
-			return 1, errors.New("usage: quasidock system events [OPTIONS]")
-		}
-		return eventsCommand(ctx, rest[1:])
 	case "volume":
 		return volumeCommand(ctx, rest)
 	case "convert":
@@ -1099,6 +1099,16 @@ func Dispatch(ctx *context.Context, allArgs []string) (uint32, error) {
 	default:
 		return usageError()
 	}
+}
+
+func openCommandStore(ctx *context.Context) error {
+	st, err := store.Open("", ctx.Verbose, "")
+	if err != nil {
+		return err
+	}
+	st.EventWarnings = ctx.Stderr
+	ctx.Store = st
+	return nil
 }
 
 // Run is the main entry point called by cmd/quasidock.
