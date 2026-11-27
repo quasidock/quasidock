@@ -63,15 +63,8 @@ func inspectImage(ctx *context.Context, idx *store.ImageIndex, ref store.Ref) (i
 		out.Config.Env = append(out.Config.Env, k+"="+v)
 	}
 	sort.Strings(out.Config.Env)
-	out.Size = img.Manifest.Config.Size
+	out.Size = imageManifestSize(&img.Manifest)
 	seen := map[string]bool{}
-	for _, layer := range img.Manifest.Layers {
-		if !seen[layer.Digest] {
-			out.Size += layer.Size
-			seen[layer.Digest] = true
-		}
-	}
-	seen = map[string]bool{}
 	for _, repository := range ref.Repositories {
 		d := repository + "@" + ref.Manifest
 		out.RepoDigests = append(out.RepoDigests, d)
@@ -100,75 +93,16 @@ func inspectImage(ctx *context.Context, idx *store.ImageIndex, ref store.Ref) (i
 	return out, nil
 }
 
-func imageList(ctx *context.Context, args []string) error {
-	quiet := false
-	for _, arg := range args {
-		if arg == "-q" || arg == "--quiet" {
-			quiet = true
-		} else {
-			return fmt.Errorf("unknown images option %q", arg)
+func imageManifestSize(manifest *oci.Manifest) int64 {
+	size := manifest.Config.Size
+	seen := map[string]bool{}
+	for _, layer := range manifest.Layers {
+		if !seen[layer.Digest] {
+			size += layer.Size
+			seen[layer.Digest] = true
 		}
 	}
-	idx, err := ctx.Store.ImageCatalog()
-	if err != nil {
-		return err
-	}
-	digests := make([]string, 0, len(idx.Images))
-	for d := range idx.Images {
-		digests = append(digests, d)
-	}
-	sort.Strings(digests)
-	if quiet {
-		for _, d := range digests {
-			fmt.Fprintln(ctx.Stdout, d)
-		}
-		return nil
-	}
-	fmt.Fprintf(ctx.Stdout, "%-54s %-24s %-12s %s\n", "REPOSITORY", "TAG", "IMAGE ID", "SIZE")
-	type row struct {
-		repository, tag, digest string
-		size                    int64
-	}
-	var rows []row
-	for _, d := range digests {
-		img, err := inspectImage(ctx, idx, idx.Images[d])
-		if err != nil {
-			return err
-		}
-		found := false
-		for name, digest := range idx.Names {
-			if digest != d {
-				continue
-			}
-			r, err := registry.ParseReference(name)
-			if err != nil {
-				return err
-			}
-			tag := r.Tag
-			if tag == "" {
-				tag = "<none>"
-			}
-			rows = append(rows, row{r.Host + "/" + r.Repository, tag, d, img.Size})
-			found = true
-		}
-		if !found {
-			rows = append(rows, row{"<none>", "<none>", d, img.Size})
-		}
-	}
-	sort.Slice(rows, func(i, j int) bool {
-		a, b := rows[i], rows[j]
-		if a.repository != b.repository {
-			return a.repository < b.repository
-		}
-		if a.tag != b.tag {
-			return a.tag < b.tag
-		}
-		return a.digest < b.digest
-	})
-	for _, r := range rows {
-		fmt.Fprintf(ctx.Stdout, "%-54s %-24s %-12s %d B\n", r.repository, r.tag, oci.DigestHex(r.digest)[:12], r.size)
-	}
-	return nil
+	return size
 }
 
 func imageInspect(ctx *context.Context, args []string) error {
@@ -351,7 +285,10 @@ func imageCommand(ctx *context.Context, args []string) (uint32, error) {
 	defer lock.Release()
 	switch cmd {
 	case "ls", "list":
-		return 0, imageList(ctx, rest)
+		if err := imageList(ctx, rest); err != nil {
+			return 1, err
+		}
+		return 0, nil
 	case "inspect":
 		return 0, imageInspect(ctx, rest)
 	case "history":

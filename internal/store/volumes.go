@@ -16,11 +16,12 @@ import (
 )
 
 type Volume struct {
-	Name       string `json:"Name"`
-	Driver     string `json:"Driver"`
-	Mountpoint string `json:"Mountpoint"`
-	CreatedAt  string `json:"CreatedAt"`
-	Anonymous  bool   `json:"Anonymous,omitempty"`
+	Name       string            `json:"Name"`
+	Driver     string            `json:"Driver"`
+	Mountpoint string            `json:"Mountpoint"`
+	CreatedAt  string            `json:"CreatedAt"`
+	Anonymous  bool              `json:"Anonymous,omitempty"`
+	Labels     map[string]string `json:"Labels,omitempty"`
 }
 
 func (s *Store) volumeDir(name string) string { return s.Path("volumes", strings.ToLower(name)) }
@@ -51,7 +52,7 @@ func (s *Store) readVolumeNoLock(name string) (*Volume, error) {
 	return &v, nil
 }
 
-func (s *Store) createVolumeNoLock(name string, anonymous bool) (*Volume, error) {
+func (s *Store) createVolumeNoLock(name string, anonymous bool, labels map[string]string) (*Volume, error) {
 	if err := mounts.ValidateName(name); err != nil {
 		return nil, err
 	}
@@ -73,7 +74,14 @@ func (s *Store) createVolumeNoLock(name string, anonymous bool) (*Volume, error)
 		}
 		return nil, fmt.Errorf("volume data directory is a reparse point: %s", dir)
 	}
-	v := Volume{Name: name, Driver: "local", Mountpoint: filepath.Join(s.FullRoot(), "volumes", strings.ToLower(name), "data"), CreatedAt: time.Now().UTC().Format(time.RFC3339Nano), Anonymous: anonymous}
+	v := Volume{
+		Name:       name,
+		Driver:     "local",
+		Mountpoint: filepath.Join(s.FullRoot(), "volumes", strings.ToLower(name), "data"),
+		CreatedAt:  time.Now().UTC().Format(time.RFC3339Nano),
+		Anonymous:  anonymous,
+		Labels:     labels,
+	}
 	b, _ := json.MarshalIndent(v, "", "  ")
 	tmp := s.TmpPath("volume")
 	defer func() { _ = os.Remove(tmp) }()
@@ -98,12 +106,17 @@ func winLocalVolumeRoot(s *Store) error {
 }
 
 func (s *Store) CreateVolume(name string) (*Volume, error) {
+	return s.CreateVolumeWithLabels(name, nil)
+}
+
+// CreateVolumeWithLabels assigns labels when the volume is first created.
+func (s *Store) CreateVolumeWithLabels(name string, labels map[string]string) (*Volume, error) {
 	l, err := s.containersLock(true)
 	if err != nil {
 		return nil, err
 	}
 	defer l.Release()
-	return s.createVolumeNoLock(name, false)
+	return s.createVolumeNoLock(name, false, labels)
 }
 
 func (s *Store) ReadVolume(name string) (*Volume, error) {
@@ -136,16 +149,43 @@ func (s *Store) listVolumesNoLock() ([]Volume, error) {
 }
 
 func (s *Store) ListVolumes() ([]Volume, error) {
+	return s.listVolumes(nil)
+}
+
+// ListVolumesByDangling selects volumes by whether they have any saved container reference.
+func (s *Store) ListVolumesByDangling(dangling bool) ([]Volume, error) {
+	return s.listVolumes(&dangling)
+}
+
+func (s *Store) listVolumes(dangling *bool) ([]Volume, error) {
 	l, err := s.containersLock(false)
 	if err != nil {
 		return nil, err
 	}
 	defer l.Release()
-	return s.listVolumesNoLock()
+	volumes, err := s.listVolumesNoLock()
+	if err != nil || dangling == nil || len(volumes) == 0 {
+		return volumes, err
+	}
+	containers, err := s.rawContainersNoLock()
+	if err != nil {
+		return nil, err
+	}
+	referenced := make(map[string]bool)
+	for _, c := range containers {
+		for _, m := range c.HostConfig.Mounts {
+			if m.Type == "volume" {
+				referenced[strings.ToLower(m.Source)] = true
+			}
+		}
+	}
+	return slices.DeleteFunc(volumes, func(v Volume) bool {
+		unreferenced := !referenced[strings.ToLower(v.Name)]
+		return unreferenced != *dangling
+	}), nil
 }
 
-// Raw reads never reconcile containers: volume dry runs must be non-mutating,
-// and even stale retained container records pin their volumes.
+// Raw reads preserve even stale retained references when listing or pruning volumes.
 func (s *Store) rawContainersNoLock() ([]ContainerRecord, error) {
 	entries, err := os.ReadDir(s.Path("containers"))
 	if err != nil {
@@ -373,7 +413,7 @@ func (s *Store) resolveContainerMountsNoLock(rec *ContainerRecord, created *[]st
 				}
 				*created = append(*created, spec.Source)
 			}
-			v, err := s.createVolumeNoLock(spec.Source, spec.Anonymous)
+			v, err := s.createVolumeNoLock(spec.Source, spec.Anonymous, nil)
 			if err != nil {
 				return err
 			}

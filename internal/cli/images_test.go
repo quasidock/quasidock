@@ -12,10 +12,12 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -97,6 +99,320 @@ func fixtureCLI(t *testing.T) (*context.Context, *bytes.Buffer) {
 	ctx.Stdout = &out
 	t.Setenv("DOCKER_CONFIG", t.TempDir())
 	return ctx, &out
+}
+
+func TestImageList(t *testing.T) {
+	ctx, out := fixtureCLI(t)
+	t.Setenv("QUASIDOCK_HOME", ctx.Store.Root)
+	layer := pruneFixtureBlob(t, ctx.Store, "image list fixture layer")
+	image := func(id string) store.Ref {
+		t.Helper()
+		digest, _ := pruneImageFixture(t, ctx.Store, id, "", false, layer)
+		return store.Ref{ID: id, Version: "1", Manifest: digest}
+	}
+	register := func(ref store.Ref, name string, makeDefault bool) {
+		t.Helper()
+		if err := ctx.Store.RegisterImage(ref, name, makeDefault); err != nil {
+			t.Fatal(err)
+		}
+	}
+	retired, named, pinned, defaultImage := image("retired"), image("named"), image("pinned"), image("default")
+	register(retired, "example.test/app:latest", false)
+	register(named, "example.test/app:latest", false)
+	if err := ctx.Store.TagImage("", named.Manifest, "example.test/app:alias"); err != nil {
+		t.Fatal(err)
+	}
+	register(pinned, "example.test/pinned@"+pinned.Manifest, false)
+	register(defaultImage, "", true)
+	if err := ctx.Store.MarkBuildImage(image("build-only").Manifest); err != nil {
+		t.Fatal(err)
+	}
+
+	call := func(t *testing.T, args ...string) string {
+		t.Helper()
+		out.Reset()
+		if code, err := Dispatch(ctx, args); code != 0 || err != nil {
+			t.Fatalf("%v: exit %d, %v", args, code, err)
+		}
+		return out.String()
+	}
+	type row struct {
+		repository, tag, digest string
+	}
+	visibleRows := []row{
+		{"<none>", "<none>", defaultImage.Manifest},
+		{"example.test/app", "alias", named.Manifest},
+		{"example.test/app", "latest", named.Manifest},
+		{"example.test/pinned", "<none>", pinned.Manifest},
+	}
+	unnamed := []string{defaultImage.Manifest, retired.Manifest}
+	slices.Sort(unnamed)
+	allRows := []row{{"<none>", "<none>", unnamed[0]}, {"<none>", "<none>", unnamed[1]}}
+	allRows = append(allRows, visibleRows[1:]...)
+	for _, tt := range []struct {
+		name            string
+		args            []string
+		rows            []row
+		digests, fullID bool
+	}{
+		{"default", []string{"images"}, visibleRows, false, false},
+		{"all", []string{"image", "ls", "-a"}, allRows, false, false},
+		{"digests", []string{"image", "list", "--digests"}, visibleRows, true, false},
+		{"full IDs", []string{"images", "--no-trunc"}, visibleRows, false, true},
+		{"all display flags", []string{"images", "--all", "--digests", "--no-trunc"}, allRows, true, true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			header := "REPOSITORY TAG IMAGE ID SIZE"
+			if tt.digests {
+				header = "REPOSITORY TAG DIGEST IMAGE ID SIZE"
+			}
+			want := []string{header}
+			for _, row := range tt.rows {
+				fields := []string{row.repository, row.tag}
+				if tt.digests {
+					fields = append(fields, row.digest)
+				}
+				id := row.digest
+				if !tt.fullID {
+					id = strings.TrimPrefix(id, "sha256:")[:12]
+				}
+				manifest, err := ctx.Store.ReadManifest(row.digest)
+				if err != nil {
+					t.Fatal(err)
+				}
+				want = append(want, strings.Join(fields, " ")+fmt.Sprintf(" %s %d B", id, manifest.Config.Size+layer.Size))
+			}
+			got := strings.Split(strings.TrimSpace(call(t, tt.args...)), "\n")
+			for i, line := range got {
+				got[i] = strings.Join(strings.Fields(line), " ")
+			}
+			if !slices.Equal(got, want) {
+				t.Fatalf("got rows %q, want %q", got, want)
+			}
+		})
+	}
+
+	visibleIDs := []string{defaultImage.Manifest, named.Manifest, pinned.Manifest}
+	allIDs := append(slices.Clone(visibleIDs), retired.Manifest)
+	slices.Sort(visibleIDs)
+	slices.Sort(allIDs)
+	if got := call(t, "images", "-q"); got != strings.Join(visibleIDs, "\n")+"\n" {
+		t.Fatalf("quiet list: %q", got)
+	}
+	for _, args := range [][]string{
+		{"images", "-aq"},
+		{"image", "list", "-qa"},
+		{"image", "ls", "--all", "--quiet", "--digests", "--no-trunc"},
+	} {
+		if got := call(t, args...); got != strings.Join(allIDs, "\n")+"\n" {
+			t.Fatalf("%v: %q", args, got)
+		}
+	}
+	ctx.Env["QUASIDOCK_REGISTRY"] = "example.test"
+	for _, tt := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"exact alias", []string{"image", "ls", "-f", "reference=app:alias", "--format", "{{.Tag}}"}, "alias\n"},
+		{"all repository aliases", []string{"image", "list", "--filter=reference=example.test/app", "--format={{.Tag}}"}, "alias\nlatest\n"},
+		{"digest pin", []string{"images", "-f=reference=pinned@" + pinned.Manifest, "--format", "{{.Tag}} {{.Digest}}"}, "<none> " + pinned.Manifest + "\n"},
+		{"quiet alias union", []string{"images", "-q", "-f", "reference=app:ali*", "-f", "reference=app:latest", "--format", "{{"}, named.Manifest + "\n"},
+		{"dangling includes retired", []string{"images", "-q", "--filter=dangling=true"}, retired.Manifest + "\n"},
+		{"named or default", []string{"images", "-aq", "-f", "dangling=false"}, strings.Join(visibleIDs, "\n") + "\n"},
+		{"both dangling values", []string{"images", "-q", "-f", "dangling=false", "-f", "dangling=true"}, strings.Join(allIDs, "\n") + "\n"},
+		{"no historical alias", []string{"images", "-a", "-f", "dangling=true", "-f", "reference=app", "--format", "json"}, ""},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := call(t, tt.args...); got != tt.want {
+				t.Fatalf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+	defaultTable := call(t, "images", "--digests", "--no-trunc")
+	if got := call(t, "image", "ls", "--format=table", "--digests", "--no-trunc"); got != defaultTable {
+		t.Fatalf("explicit table differs from default: %q", got)
+	}
+	if got := call(t, "images", "--help"); !strings.Contains(got, "--filter") || !strings.Contains(got, "--format") {
+		t.Fatalf("incomplete image listing help: %q", got)
+	}
+	for _, args := range [][]string{
+		{"images", "--unknown"},
+		{"image", "ls", "-ax"},
+		{"image", "list", "example.test/app"},
+	} {
+		out.Reset()
+		if _, err := Dispatch(ctx, args); err == nil || !strings.Contains(err.Error(), "unknown images option") || out.Len() != 0 {
+			t.Fatalf("%v: output %q, error %v", args, out.String(), err)
+		}
+	}
+	missing := historyDigest(42)
+	if err := ctx.Store.RegisterImage(store.Ref{ID: "missing", Version: "1", Manifest: missing}, "example.test/missing:latest", false); err != nil {
+		t.Fatal(err)
+	}
+	if got := call(t, "images", "-q", "-f", "reference=missing"); got != missing+"\n" {
+		t.Fatalf("catalog-only filter needed image metadata: %q", got)
+	}
+	if got := call(t, "images", "-f", "reference=app:alias", "--format", "{{.Tag}}"); got != "alias\n" {
+		t.Fatalf("nonmatching image affected filtered listing: %q", got)
+	}
+}
+
+func TestImageListMetadataAndFormat(t *testing.T) {
+	ctx, out := fixtureCLI(t)
+	t.Setenv("QUASIDOCK_HOME", ctx.Store.Root)
+	ctx.Env["QUASIDOCK_REGISTRY"] = "example.test"
+	fixtures := []struct {
+		tag, createdAt, cachedAt string
+		labels                   map[string]string
+		digest                   string
+	}{
+		{tag: "old", createdAt: "2020-01-01T07:00:00+07:00", cachedAt: "2035-01-01T00:00:00Z", labels: map[string]string{"stage": "test", "empty": ""}},
+		{tag: "middle", createdAt: "invalid", cachedAt: "2021-01-01T00:00:00Z", labels: map[string]string{"stage": "beta", "empty": "present"}},
+		{tag: "new", createdAt: "2022-01-01T00:00:00Z", labels: map[string]string{"stage": "prod"}},
+		{tag: "unknown"},
+	}
+	digestsByTag := make(map[string]string)
+	for i := range fixtures {
+		f := &fixtures[i]
+		img := historyFixture()
+		img.Config.Version = f.tag
+		img.Config.FormatVersion = 4
+		img.Config.Labels = f.labels
+		img.Manifest.Annotations["org.opencontainers.image.created"] = f.createdAt
+		f.digest = registerHistoryImage(t, ctx, img, "example.test/app:"+f.tag)
+		digestsByTag[f.tag] = f.digest
+	}
+	idx, err := ctx.Store.ImageCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range fixtures {
+		ref := idx.Images[f.digest]
+		ref.CachedAt = f.cachedAt
+		idx.Images[f.digest] = ref
+	}
+	data, err := json.Marshal(idx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(ctx.Store.Path("images", "index.json"), data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	call := func(t *testing.T, args ...string) string {
+		t.Helper()
+		out.Reset()
+		if code, err := Dispatch(ctx, append([]string{"images"}, args...)); code != 0 || err != nil {
+			t.Fatalf("%v: exit %d, %v", args, code, err)
+		}
+		return out.String()
+	}
+	old, middle, newest := fixtures[0].digest, fixtures[1].digest, fixtures[2].digest
+	for _, tt := range []struct {
+		name    string
+		filters []string
+		want    string
+	}{
+		{"label present", []string{"label=empty"}, "middle\nold\n"},
+		{"label empty", []string{"label=empty="}, "old\n"},
+		{"filter union and intersection", []string{"label=stage=prod", "label=stage=test", "reference=app:o*"}, "old\n"},
+		{"strict before", []string{"before=app:middle"}, "old\n"},
+		{"strict since with short ID", []string{"since=" + strings.TrimPrefix(middle, "sha256:")[:12]}, "new\n"},
+		{"window", []string{"since=" + old, "before=" + newest}, "middle\n"},
+		{"repeated cutoff", []string{"before=app:old", "before=app:new"}, "middle\nold\n"},
+		{"label and date", []string{"label=stage=beta", "since=" + old}, "middle\n"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var args []string
+			for _, f := range tt.filters {
+				args = append(args, "--filter", f)
+			}
+			if got := call(t, append(slices.Clone(args), "--format", "{{.Tag}}")...); got != tt.want {
+				t.Fatalf("got %q, want %q", got, tt.want)
+			}
+			var digests []string
+			for _, tag := range strings.Fields(tt.want) {
+				digests = append(digests, digestsByTag[tag]+"\n")
+			}
+			slices.Sort(digests)
+			if got := call(t, append(args, "-q")...); got != strings.Join(digests, "") {
+				t.Fatalf("unexpected quiet output %q", got)
+			}
+		})
+	}
+	wantDates := map[string]string{"old": "2020-01-01T00:00:00Z", "middle": "2021-01-01T00:00:00Z", "new": "2022-01-01T00:00:00Z", "unknown": "--"}
+	jsonLines := call(t, "--format", "json")
+	lines := strings.Split(strings.TrimSuffix(jsonLines, "\n"), "\n")
+	if len(lines) != len(fixtures) {
+		t.Fatalf("unexpected JSON Lines: %q", jsonLines)
+	}
+	if got := call(t, "--filter=reference=app:unknown", "--format", "{{json .}}"); got != lines[len(lines)-1]+"\n" {
+		t.Fatalf("json helper differs from JSON Lines: %q", got)
+	}
+	for i, tag := range []string{"middle", "new", "old", "unknown"} {
+		var row imageListRow
+		if err := json.Unmarshal([]byte(lines[i]), &row); err != nil {
+			t.Fatal(err)
+		}
+		digest := digestsByTag[tag]
+		manifest, err := ctx.Store.ReadManifest(digest)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if row.Repository != "example.test/app" || row.Tag != tag || row.Digest != digest ||
+			row.ID != strings.TrimPrefix(digest, "sha256:")[:12] || row.Size != fmt.Sprintf("%d B", imageManifestSize(manifest)) ||
+			row.CreatedAt != wantDates[tag] || (tag == "unknown" && row.CreatedSince != "--") ||
+			(tag != "unknown" && !strings.HasSuffix(row.CreatedSince, " ago")) {
+			t.Fatalf("unexpected JSON row for %s: %+v", tag, row)
+		}
+	}
+	if got := call(t, "--filter=reference=app:old", "--no-trunc", "--format", "{{.ID}}"); got != old+"\n" {
+		t.Fatalf("unexpected full template ID: %q", got)
+	}
+	for _, tt := range []struct{ filter, want string }{
+		{"reference=app:old", "TAG CREATED AT\nold 2020-01-01T00:00:00Z"},
+		{"reference=no-match", "TAG CREATED AT"},
+	} {
+		table := call(t, "--filter", tt.filter, "--format", "table {{.Tag}}\\t{{.CreatedAt}}")
+		lines := strings.Split(strings.TrimSpace(table), "\n")
+		for i, line := range lines {
+			lines[i] = strings.Join(strings.Fields(line), " ")
+		}
+		if got := strings.Join(lines, "\n"); got != tt.want {
+			t.Fatalf("unexpected custom table: %q", table)
+		}
+	}
+	for _, tt := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"--filter"}, "needs a nonempty value"},
+		{[]string{"--filter=label"}, "expected KEY=VALUE"},
+		{[]string{"-f=label==yes"}, "label key is empty"},
+		{[]string{"-f=dangling=maybe"}, "expected true or false"},
+		{[]string{"-f=reference=["}, "invalid images reference filter"},
+		{[]string{"-f=unknown=value"}, "unsupported images filter"},
+		{[]string{"-f=before=app:unknown"}, "image has no creation or local cache timestamp"},
+		{[]string{"-f=since=app:missing"}, "image is not cached"},
+		{[]string{"--format="}, "needs a nonempty value"},
+		{[]string{"--format=table "}, "needs a template"},
+		{[]string{"--format={{", "-f=reference=no-match"}, "template:"},
+		{[]string{"--format={{if eq .Tag \"new\"}}{{.Missing}}{{end}}{{.Tag}}"}, "can't evaluate field Missing"},
+	} {
+		out.Reset()
+		code, err := Dispatch(ctx, append([]string{"images"}, tt.args...))
+		if code != 1 || err == nil || !strings.Contains(err.Error(), tt.want) || out.Len() != 0 {
+			t.Errorf("%v: exit %d, error %v, output %q", tt.args, code, err, out.String())
+		}
+	}
+}
+
+func TestImageListAmbiguousShortID(t *testing.T) {
+	first, second := historyDigest(1), historyDigest(2)
+	idx := &store.ImageIndex{Images: map[string]store.Ref{first: {Manifest: first}, second: {Manifest: second}}}
+	if _, err := resolveImageListTarget(idx, "", "000000000000"); err == nil || !strings.Contains(err.Error(), "ambiguous image ID") {
+		t.Fatalf("unexpected ambiguous ID error: %v", err)
+	}
 }
 
 func TestImageCommandsAndCachePolicies(t *testing.T) {

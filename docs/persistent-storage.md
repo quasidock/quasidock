@@ -44,6 +44,35 @@ reports candidates without deleting them. Bind contents are never collected.
 `repair` restores mount permissions left behind after a supervisor crash while
 preserving access required by live consumers.
 
+## Filter and format volume listings
+
+Set labels on first creation with repeatable `--label KEY[=VALUE]` options
+before the name. A bare key sets an empty value. For repeated keys, the last
+value wins. Creating an existing volume again prints its name and keeps its
+saved labels. Use `volume inspect NAME` to see the labels.
+
+```powershell
+quasidock volume create --label team=build --label cached build-cache
+quasidock volume ls --filter 'name=^build-' --filter 'label=team=build'
+quasidock volume list --filter dangling=true --format json
+quasidock volume ls --format 'table {{.Name}}\t{{.Labels}}'
+```
+
+`-f` and `--filter` accept `name=REGEXP` (case-sensitive), `driver=DRIVER`
+(currently `local`), `dangling=true|false` (also `1` or `0`), and
+`label=KEY[=VALUE]`. Labels match by exact key and, when supplied, exact
+value. Repeated values for the same filter key use OR. Different keys use AND.
+Dangling volumes have no references in saved container records, including
+stopped containers. Volume deletion also checks live mount grants.
+
+`--format table` selects the default table, and `table TEMPLATE` adds headers
+to a custom table. A plain Go template renders once per matching volume.
+`--format json` emits one JSON object per line. Fields are `Name`, `Driver`,
+`Scope` (`local`), `Mountpoint`, `CreatedAt`, `Anonymous`, and `Labels`.
+`Labels` is a map. Use `{{.Label "key"}}` to look up a label and use its key
+as the column heading in a custom table. Use `{{json .}}` to encode a row.
+`-q` and `--quiet` take precedence over formatting and print only matching names.
+
 ## Anonymous volumes
 
 Omit the source to allocate a volume with a generated name. Use the same syntax

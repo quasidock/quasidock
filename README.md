@@ -78,7 +78,7 @@ go run ./scripts/build.go
 
 | Command | Alias | Purpose |
 |---|---|---|
-| `image ls` | `images` | List references; `-q` prints unique full IDs |
+| `image ls` | `images` | List images with optional `--filter` and `--format` |
 | `image history` | `history` | Show local app, runtime, and committed data layers |
 | `image inspect` | — | Local image JSON metadata, or `-f TEMPLATE` Go templates (`inspect` resolves containers first, then images) |
 | `image pull` | `pull` | Download and cache an image without prompting |
@@ -89,6 +89,42 @@ go run ./scripts/build.go
 | `image import` | `import` | Create an image from an export tar and app-config JSON; `--force` replaces a conflicting alias |
 | `image rm` | `rmi` | Untag a reference or remove a cached manifest |
 | `image prune` | — | Remove unused unnamed images; `--all` includes named images and app defaults |
+
+`images` and `image ls` show images with a local name or an app default.
+`-a` / `--all` includes every cached image in the local catalog. Unnamed
+images display `<none>` for both repository and tag. `--digests` adds a
+`DIGEST` column with full manifest digests, and `--no-trunc` expands the
+12-character image IDs to full manifest digests.
+
+`-q` / `--quiet` prints one full ID per selected image. Use `images -aq`
+or `images --all -q` to enumerate the full catalog in scripts.
+
+Use `-f KEY=VALUE` or `--filter KEY=VALUE` to narrow the list. Repeated values
+for the same key use OR. Different keys use AND.
+
+- `reference=GLOB` selects matching local aliases. A short pattern uses the
+  default registry, and a repository-only pattern matches all its aliases.
+- `dangling=true` selects images without a local name or app default, even
+  without `--all`. `dangling=false` selects images with a name or app default.
+- `label=KEY` checks for a label. `label=KEY=VALUE` checks its exact value.
+- `before=IMAGE` and `since=IMAGE` compare timestamps strictly. Targets can be
+  local references, app defaults, full digests, or unique 12-character IDs.
+  The comparison uses the OCI creation timestamp when available and falls back
+  to the first local cache time. Images without either timestamp are skipped,
+  and using one as a comparison target returns an error.
+
+`--format` accepts `table` (the default), `table TEMPLATE` with column headings,
+`json` (one JSON object per row), or a Go template without headings. Fields are
+`Repository`, `Tag`, `ID`, `Digest`, `Size`, `CreatedAt`, and `CreatedSince`.
+`Digest` is always the full manifest digest and `--no-trunc` expands `ID`.
+`CreatedAt` is a UTC timestamp and `CreatedSince` is the relative age. Both
+use the same timestamp as the time filters and show `--` when it is unknown.
+Templates support `{{json .}}`, and `--quiet` takes precedence over `--format`.
+
+```powershell
+quasidock images --filter 'reference=node:*' --format 'table {{.Tag}}\t{{.ID}}'
+quasidock images --filter 'dangling=true' --format json
+```
 
 References are `registry/repository[:tag][@sha256:...]`, or
 `app-id[:tag][@digest]` in the default registry. The default is

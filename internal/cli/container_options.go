@@ -36,7 +36,7 @@ func containerValueOption(arg string) string {
 	return "--" + name + "=" + strings.TrimPrefix(arg[2:], "=")
 }
 
-func validContainerKeyValue(entry string) bool {
+func validMetadataKeyValue(entry string) bool {
 	key, _, _ := strings.Cut(entry, "=")
 	return key != "" && strings.IndexFunc(key, unicode.IsSpace) == -1 && !strings.ContainsRune(entry, 0)
 }
@@ -76,7 +76,7 @@ func readContainerOptionFile(option, path string) ([]string, error) {
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		if !validContainerKeyValue(line) {
+		if !validMetadataKeyValue(line) {
 			return nil, fmt.Errorf("--%s %q line %d: expected KEY[=VALUE] with a nonempty key and no whitespace in the key or NUL characters", option, path, lineNumber)
 		}
 		entries = append(entries, line)

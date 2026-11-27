@@ -4,13 +4,46 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"text/tabwriter"
 
 	"github.com/quasidock/quasidock/internal/context"
 	"github.com/quasidock/quasidock/internal/grants"
 	"github.com/quasidock/quasidock/internal/hkcu"
 	"github.com/quasidock/quasidock/internal/lifecycle"
 )
+
+const volumeCreateUsage = "usage: quasidock volume create [--label KEY[=VALUE]]... NAME"
+
+func volumeCreate(ctx *context.Context, args []string) error {
+	if len(args) == 1 && (args[0] == "--help" || args[0] == "-h") {
+		_, err := fmt.Fprintln(ctx.Stdout, volumeCreateUsage+"\n--label sets metadata on first creation and can be repeated.")
+		return err
+	}
+	labels := make(map[string]string)
+	for len(args) > 0 {
+		option, value, assigned := strings.Cut(args[0], "=")
+		if option != "--label" {
+			break
+		}
+		args = args[1:]
+		if !assigned && len(args) > 0 {
+			value, args = args[0], args[1:]
+		}
+		if !validMetadataKeyValue(value) {
+			return errors.New("volume create --label expects KEY[=VALUE] with a nonempty key and no whitespace in the key or NUL characters")
+		}
+		key, label, _ := strings.Cut(value, "=")
+		labels[key] = label
+	}
+	if len(args) != 1 || strings.HasPrefix(args[0], "-") {
+		return errors.New(volumeCreateUsage)
+	}
+	v, err := ctx.Store.CreateVolumeWithLabels(args[0], labels)
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintln(ctx.Stdout, v.Name)
+	return err
+}
 
 func volumeCommand(ctx *context.Context, args []string) (uint32, error) {
 	if len(args) == 0 {
@@ -19,38 +52,11 @@ func volumeCommand(ctx *context.Context, args []string) (uint32, error) {
 	cmd, rest := args[0], args[1:]
 	switch cmd {
 	case "create":
-		if len(rest) != 1 || strings.HasPrefix(rest[0], "-") {
-			return 1, errors.New("usage: quasidock volume create NAME")
-		}
-		v, err := ctx.Store.CreateVolume(rest[0])
-		if err != nil {
+		if err := volumeCreate(ctx, rest); err != nil {
 			return 1, err
 		}
-		fmt.Fprintln(ctx.Stdout, v.Name)
 	case "ls", "list":
-		quiet := false
-		for _, arg := range rest {
-			if arg != "-q" && arg != "--quiet" {
-				return 1, fmt.Errorf("unknown volume ls option %q", arg)
-			}
-			quiet = true
-		}
-		all, err := ctx.Store.ListVolumes()
-		if err != nil {
-			return 1, err
-		}
-		tw := tabwriter.NewWriter(ctx.Stdout, 0, 0, 3, ' ', 0)
-		if !quiet {
-			fmt.Fprintln(tw, "DRIVER\tVOLUME NAME")
-		}
-		for _, v := range all {
-			if quiet {
-				fmt.Fprintln(tw, v.Name)
-			} else {
-				fmt.Fprintf(tw, "%s\t%s\n", v.Driver, v.Name)
-			}
-		}
-		if err := tw.Flush(); err != nil {
+		if err := volumeList(ctx, rest); err != nil {
 			return 1, err
 		}
 	case "inspect":

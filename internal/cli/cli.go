@@ -93,7 +93,9 @@ System commands:
                                        remove stopped containers, unused images, and build cache
 
 Docker-style image commands:
-  image ls | images [-q|--quiet]       list cached image references
+  image ls | images [-a|--all] [-q|--quiet] [--digests] [--no-trunc]
+                    [-f|--filter KEY=VALUE]... [--format table|json|TEMPLATE]
+                                       list named images and app defaults (--all includes unnamed images)
   image inspect [-f TEMPLATE] IMAGE [IMAGE...]
                                        inspect local images (JSON by default)
   image history | history [options] IMAGE
@@ -124,8 +126,10 @@ Windows host networking:
   network prune [--dry-run]            remove unused private networks tracked in this store (elevated)
 
 Persistent storage:
-  volume create NAME                 create a reusable named volume
-  volume ls [-q]                     list local volumes
+  volume create [--label KEY[=VALUE]]... NAME
+                                     create a reusable named volume
+  volume ls | volume list [-q|--quiet] [-f|--filter KEY=VALUE]... [--format table|json|TEMPLATE]
+                                     list local volumes
   volume inspect [-f TEMPLATE] NAME [NAME...]
   volume rm NAME [NAME...]            remove unreferenced volumes
   volume prune [--dry-run]            collect unreferenced volumes
@@ -230,7 +234,10 @@ Images use registry/repository[:tag][@sha256:...], or app-id[:tag][@digest].
 QUASIDOCK_REGISTRY changes the default registry (ghcr.io/quasidock/quasidock).
 A bare cached app ID selects its last successful build/pull; full sha256 IDs
 select local manifests. Explicit names and tags select exactly that reference.
-Image IDs are manifest digests. images -q prints full IDs; inspect is local-only.
+Image IDs are manifest digests. images --digests adds a full digest column.
+images --no-trunc prints full image IDs, and images -q prints only full IDs.
+Use images --all -q for the full local image inventory or images --help for filter and format details.
+Inspect is local-only.
 history is local-only; CREATED BY describes current layers, not build commands.
 history --human=false prints UTC timestamps and byte counts; unknown dates are --.
 save writes tar to stdout by default; load reads stdin by default (use -o/-i on Windows).
@@ -530,7 +537,7 @@ func parseContainerOptions(ctx *context.Context, args []string, command string) 
 				labelFiles = append(labelFiles, value)
 			}
 		case "label":
-			if !validContainerKeyValue(*opt.Value) {
+			if !validMetadataKeyValue(*opt.Value) {
 				return opts, errors.New("--label expects KEY[=VALUE] with a nonempty key and no whitespace in the key or NUL characters")
 			}
 			labels = append(labels, *opt.Value)

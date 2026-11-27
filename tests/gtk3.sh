@@ -303,7 +303,7 @@ one_build() {
     local runtime layer id on=0 others=""
     for runtime in gtk4 gtk3; do
         layer=$(layers_of $runtime)
-        for id in $(z inspect -f "{{range .Quasidock.From}}{{if eq .ID \"$runtime\"}}{{$.Quasidock.ID}}{{end}}{{end}}" $(z images -q) | tr -d '\r'); do
+        for id in $(z inspect -f "{{range .Quasidock.From}}{{if eq .ID \"$runtime\"}}{{$.Quasidock.ID}}{{end}}{{end}}" $(z images -aq) | tr -d '\r'); do
             grep -qxF "$id" <<<"$published_ids" || continue
             on=$((on + 1))
             layers_of "$id" | grep -qxF "$layer" || others="$others $id"

@@ -58,7 +58,7 @@ qd_push() {
 }
 
 qd_remove_app() {
-    local cli=$1 app=$2 cid info id running digest
+    local cli=$1 app=$2 cid info id running digest digests
     while IFS= read -r cid; do
         [ -n "$cid" ] || continue
         info=$("$cli" container inspect -f '{{.AppID}} {{.State.Running}}' "$cid" 2>/dev/null) || continue
@@ -69,12 +69,20 @@ qd_remove_app() {
             "$cli" rm "$cid" >/dev/null 2>&1 || true
         fi
     done < <("$cli" ps -aq 2>/dev/null | tr -d '\r')
+    if ! digests=$("$cli" images --all -q 2>&1); then
+        if [ "${digests//$'\r'/}" = 'error: unknown images option "--all"' ]; then
+            digests=$("$cli" images -q) || return
+        else
+            printf '%s\n' "$digests" >&2
+            return 1
+        fi
+    fi
     while IFS= read -r digest; do
         [ -n "$digest" ] || continue
         id=$("$cli" image inspect -f '{{.Quasidock.ID}}' "$digest" 2>/dev/null) || return
         id=${id//$'\r'/}
         [ "${id,,}" != "${app,,}" ] || "$cli" rmi "$digest" || return
-    done < <("$cli" images -q | tr -d '\r')
+    done <<<"${digests//$'\r'/}"
 }
 
 export -f qd_manifest qd_version qd_source qd_cached qd_container_data qd_run qd_push qd_remove_app

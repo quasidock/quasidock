@@ -1167,8 +1167,8 @@ fi
 # builds use stay until prune --downloads, and only quasidock can delete their
 # protected deployments. Enumerate every cached manifest through the CLI.
 check "stopped build-test containers are removed" z container prune
-for digest in $(z images -q); do z rmi "$digest" >/dev/null 2>&1; done
-check "every image is removed" sh -c "[ -z \"\$(\"\$0\" images -q)\" ]" "$quasidock"
+for digest in $(z images -aq); do z rmi "$digest" >/dev/null 2>&1; done
+check "every image is removed" sh -c "[ -z \"\$(\"\$0\" images -aq)\" ]" "$quasidock"
 z prune --downloads --data >/dev/null 2>&1
 check "prune --downloads deletes tools' caches" sh -c "[ -z \"\$(ls '$QUASIDOCK_HOME\\cache\\tools')\" ]"
 cd / && rm -rf "$QUASIDOCK_HOME" "$work"

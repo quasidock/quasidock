@@ -83,7 +83,7 @@ path_added() {
 check "PATH gains the directory, and stays as it was otherwise: its type, and the variables it names" path_added
 
 "$bin\\quasidock.exe" build "$root\\tests\\install\\app.json" >/dev/null 2>&1 || { echo "building the test app failed"; exit 1; }
-bash "$QD_IMAGES_HELPER" run "$bin\\quasidock.exe" $APP 12 &
+bash "$QD_IMAGES_HELPER" run "$bin\\quasidock.exe" --rm $APP 12 &
 waiter=$!
 sleep 2
 upgrades() {
@@ -115,6 +115,22 @@ refuses_with_apps() {
     grep -q "images are still cached:" <<<"$out" && [ -f "$bin\\quasidock.exe" ]
 }
 check "uninstalling is refused while apps are installed" refuses_with_apps
+refuses_with_unnamed_image() {
+    local cli="$bin\\quasidock.exe" digest visible inventory
+    "$cli" create --pull=never --name uninstall-snapshot "$APP" >/dev/null &&
+        digest=$("$cli" commit uninstall-snapshot) &&
+        "$cli" rm uninstall-snapshot >/dev/null &&
+        "$cli" rmi "$APP" >/dev/null &&
+        visible=$("$cli" images -q) &&
+        inventory=$("$cli" images -aq) &&
+        [ -z "$visible" ] && [ -n "$digest" ] &&
+        [ "${inventory//$'\r'/}" = "${digest//$'\r'/}" ] &&
+        refuses_with_apps &&
+        qd_remove_app "$cli" "$APP" >/dev/null &&
+        inventory=$("$cli" images -aq) &&
+        [ -z "$inventory" ]
+}
+check "an unnamed image blocks uninstall and is found by app cleanup" refuses_with_unnamed_image
 qd_remove_app "$bin\\quasidock.exe" $APP >/dev/null 2>&1
 uninstalls() {
     local out

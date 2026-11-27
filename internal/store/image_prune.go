@@ -16,7 +16,8 @@ type ImageLabelFilter struct {
 	HasValue   bool
 }
 
-func (f ImageLabelFilter) matches(labels map[string]string) bool {
+// Matches reports whether labels contains the key and, when specified, its exact value.
+func (f ImageLabelFilter) Matches(labels map[string]string) bool {
 	value, exists := labels[f.Key]
 	return exists && (!f.HasValue || value == f.Value)
 }
@@ -71,7 +72,7 @@ func (opts ImagePruneOptions) matchesLabels(labels map[string]string) bool {
 	}{{opts.Labels, false}, {opts.NotLabels, true}} {
 		matched := len(group.filters) == 0
 		for _, filter := range group.filters {
-			matched = matched || filter.matches(labels) != group.negate
+			matched = matched || filter.Matches(labels) != group.negate
 		}
 		if !matched {
 			return false

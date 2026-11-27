@@ -109,8 +109,17 @@ param(
     if ($Uninstall) {
         $quasidock = Join-Path $Dir 'quasidock.exe'
         if (Test-Path -LiteralPath $quasidock) {
-            $apps = @(& $quasidock images -q | Where-Object { $_ })
+            $images = @(& {
+                $ErrorActionPreference = 'Continue'
+                $PSNativeCommandUseErrorActionPreference = $false
+                & $quasidock images --all -q 2>&1
+            })
+            if ($LASTEXITCODE -ne 0 -and $images.Count -eq 1 -and
+                $images[0].ToString().Trim() -ceq 'error: unknown images option "--all"') {
+                $images = @(& $quasidock images -q)
+            }
             if ($LASTEXITCODE -ne 0) { throw 'Could not read the image store; repair it before uninstalling.' }
+            $apps = @($images | Where-Object { $_ -is [string] -and $_ })
             if ($apps.Count -gt 0) {
                 throw "These images are still cached: $($apps -join ', '). Remove each with 'quasidock rmi <id>' first: quasidock undoes what it changed for them, which deleting its files wouldn't."
             }

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -129,7 +130,7 @@ func TestVolumesPinningAndDryRun(t *testing.T) {
 		t.Fatal(err)
 	}
 	v2, err := s.CreateVolume("work")
-	if err != nil || *v2 != *v {
+	if err != nil || !reflect.DeepEqual(v2, v) {
 		t.Fatalf("non-idempotent create: %+v %v", v2, err)
 	}
 	if err := os.WriteFile(filepath.Join(v.Mountpoint, "sentinel"), []byte("survive"), 0o644); err != nil {
