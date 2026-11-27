@@ -36,6 +36,12 @@ func (b *pauseOutput) Len() int {
 	return b.b.Len()
 }
 
+func (b *pauseOutput) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.b.String()
+}
+
 func awaitPauseCondition(t *testing.T, description string, check func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(7 * time.Second)

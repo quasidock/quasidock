@@ -67,7 +67,7 @@ Docker-style container commands:
   container start | start [-a|--attach] [-i|--interactive] [--sig-proxy=false] [--detach-keys KEYS] CONTAINER [CONTAINER...]
                                        start containers; -a/-i attaches to one container
   container restart | restart [-t|--time SECONDS] CONTAINER [CONTAINER...]
-                                       restart containers (default grace: 10 seconds)
+                                       restart containers using their saved shutdown settings
   container pause | pause CONTAINER [CONTAINER...]
                                        freeze all processes in running containers
   container unpause | unpause CONTAINER [CONTAINER...]
@@ -75,7 +75,7 @@ Docker-style container commands:
   container kill | kill [-s|--signal KILL|TERM] CONTAINER [CONTAINER...]
                                        kill a process tree, or request graceful shutdown
   container stop | stop [-t|--time SECONDS] CONTAINER [CONTAINER...]
-                                       stop one or more running containers
+                                       stop containers using their saved shutdown settings
   container rm | rm [-f|--force] [-v|--volumes] CONTAINER [CONTAINER...]
                                        remove containers and optionally their anonymous volumes
   container rm | rm --link SOURCE/ALIAS [SOURCE/ALIAS...]
@@ -203,6 +203,9 @@ run/create options (before IMAGE; create rejects -d/--detach):
   -m, --memory SIZE                    committed-memory limit; 0 removes the limit
   --pids-limit N                       process limit; 0 or -1 removes the limit
   --restart POLICY                     no, on-failure[:N], always, or unless-stopped
+  --stop-signal KILL|TERM              signal for stop and restart (default: TERM)
+  --stop-timeout SECONDS               grace period for stop and restart (default: 10)
+                                       0 forces termination; -1 waits indefinitely
   --name NAME                         assign a name to the container
   --rm                                automatically remove the container when it exits
   -d, --detach                        run container in background and print container ID
@@ -251,6 +254,8 @@ update accepts --cpus, -m/--memory, --pids-limit and --restart; omitted settings
 Limits apply live and on future starts, including exec children and the relay.
 Restart policies cannot be combined with --rm; the default policy is no.
 Automatic recovery ends if the supervisor exits or Windows restarts; use start.
+stop and restart accept -t/--time to override the saved grace period.
+Ctrl+C cancels their wait and exits with status 130.
 Foreground run attaches through pipes and returns after its first payload exits.
 ps filters repeat (same key: OR; different keys: AND); status includes all states.
 ps --last values <= 0 leave results unlimited with normal visibility rules.
@@ -460,6 +465,16 @@ func parseContainerOptions(ctx *context.Context, args []string, command string) 
 				return opts, fmt.Errorf("--%s needs a value", opt.Name)
 			}
 			if err := parseUpdateSetting(&updates, opt.Name, *opt.Value); err != nil {
+				return opts, err
+			}
+		case "stop-signal":
+			opts.StopSignal, err = run.ParseKillSignal(*opt.Value)
+			if err != nil {
+				return opts, fmt.Errorf("--stop-signal: %w", err)
+			}
+		case "stop-timeout":
+			opts.StopTimeout, err = parseStopTimeout("--stop-timeout", *opt.Value)
+			if err != nil {
 				return opts, err
 			}
 		case "link":

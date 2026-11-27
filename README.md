@@ -307,13 +307,13 @@ aliases require `--force`, and existing app defaults remain selected. See
 | `container attach` | `attach` | Attach to a background container's live output and optional stdin |
 | `container wait` | `wait` | Wait for container exits; print exit codes in argument order |
 | `container start` | `start` | Start existing containers; `-a` attaches output, `-i` also attaches saved stdin |
-| `container restart` | `restart` | Stop and start containers (`-t`/`--time SECONDS`, default 10s) |
+| `container restart` | `restart` | Stop and start containers using saved shutdown settings (`-t`/`--time SECONDS` overrides the timeout) |
 | `container rename` | `rename` | Change a container's name while preserving its ID and data |
 | `container update` | `update` | Change CPU, memory, process limits, and restart policy |
 | `container pause` | `pause` | Freeze all processes in running containers |
 | `container unpause` | `unpause` | Resume paused containers without restarting them |
 | `container kill` | `kill` | Immediately terminate process trees; `-s`/`--signal TERM` requests graceful shutdown |
-| `container stop` | `stop` | Stop running containers (`-t`/`--time SECONDS`, default 10s) |
+| `container stop` | `stop` | Stop containers using saved shutdown settings (`-t`/`--time SECONDS` overrides the timeout) |
 | `container rm` | `rm` | Remove containers with optional force and [anonymous-volume cleanup](docs/persistent-storage.md#anonymous-volumes), or [remove a link](docs/networking.md#container-links) |
 | `container prune` | — | Remove all stopped containers |
 | `system events` | `events` | Follow container events; replay retained history with time filters |
@@ -517,10 +517,9 @@ mounts, and image references. Prune skips them.
 
 New `exec`, `attach`, and attached `start -a`/`-i` requests fail while paused;
 existing sessions stay connected and continue after unpause. Plain `start`
-leaves a paused container paused. `stop` and `restart` unpause before their
-grace period, and detached `kill --signal TERM` unpauses before signaling.
-Foreground TERM remains unsupported and leaves the container paused. KILL,
-zero-timeout stop/restart, and `rm -f` terminate frozen processes directly.
+leaves a paused container paused. `stop` and `restart` unpause when sending
+`TERM` with a grace period. `kill --signal TERM` also unpauses before signaling.
+KILL, zero-timeout stop/restart, and `rm -f` terminate frozen processes directly.
 Repeated pause or unpause requests report a state error, and neither command
 accepts stopped containers. Supervisors started by older binaries must be
 stopped and started with the current binary before pause is available.
@@ -576,6 +575,8 @@ Single-letter boolean flags before IMAGE can be combined (for example `-it`, or
 | `-m SIZE`, `--memory SIZE` | Limit job-wide committed memory; `0` removes the limit |
 | `--pids-limit N` | Limit processes, including exec children and the relay; `0` or `-1` removes the limit |
 | `--restart POLICY` | `no` (default), `on-failure[:N]`, `always`, or `unless-stopped`; incompatible with `--rm` |
+| `--stop-signal SIGNAL` | Initial signal for `stop` and `restart`, either `TERM` (default) or `KILL` |
+| `--stop-timeout SECONDS` | Grace period for `stop` and `restart` in whole seconds (default `10`). Use `0` to force termination immediately or `-1` to wait indefinitely after `TERM` |
 | `--rm` | Delete the container, its private data, and eligible anonymous volumes on exit |
 | `-d`, `--detach` | `run` only: supervise the container in the background and print its 64-hex container ID |
 | `-i`, `--interactive` | Enable stdin: forward it in foreground runs, or keep a supervisor-owned pipe open for later attachment in background runs (otherwise stdin is `\\.\NUL`) |
@@ -783,13 +784,27 @@ container through the stop/start cycle, then automatic removal resumes on its
 next exit. It also retains the record if the replacement launch fails.
 
 `kill` defaults to `KILL` and waits for process-tree and runtime cleanup. `TERM`
-sends Ctrl+Break to a detached container's console process group and returns after
+sends Ctrl+Break to the container's console process group and returns after
 Windows accepts the request; applications may ignore it. TERM has no timeout or
 automatic escalation. Signals also accept `SIGKILL`/`9` and `SIGTERM`/`15`,
 case-insensitively. Foreground `run` uses a detached supervisor and pipe attachment;
-Ctrl+C forwards TERM. `stop` and `restart`
-wait their requested grace period before forcing termination; `-t 0` forces it
-immediately. Killing a stopped container is an error.
+Ctrl+C forwards TERM. Killing a stopped container is an error.
+
+`stop` and `restart` use the `--stop-signal` and `--stop-timeout` saved by
+`run` or `create`. Inspect shows explicitly saved values in `Config.StopSignal`
+and `Config.StopTimeout`. The default is `TERM` with a 10-second grace period.
+`-t` or `--time` overrides the saved timeout for that invocation, including when
+it targets several containers. The stop signal accepts the same values as
+`kill --signal`.
+
+`KILL` or a timeout of `0` terminates the job immediately. With a positive
+timeout, `stop` and `restart` send `TERM` and force termination if the container
+outlasts its grace period. With `-1`, they wait for the container to exit after
+delivering `TERM`. If Windows cannot deliver `TERM`, `-1` returns an error.
+The supervisor checks its console for the primary process before sending `TERM`.
+Containers running during an upgrade pick up this check on their next start.
+Ctrl+C cancels the wait with status `130` and releases the container operation
+lock. You can then use `stop -t 0` to terminate a container that ignored `TERM`.
 
 `wait CONTAINER [CONTAINER...]` (also `container wait`) watches all supplied
 containers concurrently and prints one decimal exit code per argument, in argument

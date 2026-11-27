@@ -53,6 +53,14 @@ func selectedImage(ctx *context.Context, opts Options) (*store.Ref, error) {
 // imminent launch; an empty one represents an intentionally unstarted container.
 // The caller holds the store lock until this record pins its image.
 func createContainer(ctx *context.Context, opts Options, selected *store.Ref, cfg oci.AppConfig, runID string) (*store.ContainerRecord, error) {
+	if opts.StopSignal != "" && !opts.StopSignal.valid() {
+		return nil, fmt.Errorf("unsupported stop signal %q", opts.StopSignal)
+	}
+	if opts.StopTimeout != nil {
+		if err := ValidateStopTimeout(*opts.StopTimeout); err != nil {
+			return nil, err
+		}
+	}
 	if len(opts.Links) != 0 && (SandboxOf(opts.Settings, cfg.Permissions) != oci.SandboxAppContainer || !effectiveNetworkGrant(opts.Settings, cfg.Permissions)) {
 		return nil, errors.New("--link requires an AppContainer source with image network permission or --share=network")
 	}
@@ -110,6 +118,8 @@ func createContainer(ctx *context.Context, opts Options, selected *store.Ref, cf
 			WorkingDir:  opts.Workdir,
 			User:        opts.User,
 			Labels:      labels,
+			StopSignal:  string(opts.StopSignal),
+			StopTimeout: opts.StopTimeout,
 			Tty:         opts.TTY,
 			AttachStdin: runID != "" && !opts.Detach && opts.Interactive,
 			OpenStdin:   opts.Interactive,

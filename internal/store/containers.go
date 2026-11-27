@@ -57,6 +57,8 @@ type ContainerConfig struct {
 	WorkingDir  string            `json:"WorkingDir"`
 	User        string            `json:"User,omitempty"`
 	Labels      map[string]string `json:"Labels,omitempty"`
+	StopSignal  string            `json:"StopSignal,omitempty"`
+	StopTimeout *int              `json:"StopTimeout,omitempty"`
 	Tty         bool              `json:"Tty"`
 	AttachStdin bool              `json:"AttachStdin"`
 	OpenStdin   bool              `json:"OpenStdin"`

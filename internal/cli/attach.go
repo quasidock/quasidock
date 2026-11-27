@@ -132,5 +132,5 @@ func startCommand(ctx *context.Context, args []string) (uint32, error) {
 	if opts.attach || opts.interactive {
 		return run.StartAttached(ctx, opts.stream)
 	}
-	return 0, containerLifecycle(ctx, "start", opts.targets)
+	return containerLifecycle(ctx, "start", opts.targets)
 }

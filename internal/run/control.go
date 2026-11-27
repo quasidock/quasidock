@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/quasidock/quasidock/internal/context"
@@ -19,6 +20,19 @@ const (
 	SignalKILL KillSignal = "KILL"
 	SignalTERM KillSignal = "TERM"
 )
+
+func ParseKillSignal(raw string) (KillSignal, error) {
+	switch strings.ToUpper(raw) {
+	case "KILL", "SIGKILL", "9":
+		return SignalKILL, nil
+	case "TERM", "SIGTERM", "15":
+		return SignalTERM, nil
+	default:
+		return "", fmt.Errorf("unsupported signal %q: use KILL or TERM", raw)
+	}
+}
+
+func (s KillSignal) valid() bool { return s == SignalTERM || s == SignalKILL }
 
 var errForegroundTERM = errors.New("TERM is unsupported for foreground containers; use stop or kill --signal KILL")
 var errSignalDelivery = errors.New("signal delivery failed")

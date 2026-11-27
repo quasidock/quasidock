@@ -12,8 +12,47 @@ import (
 
 	"github.com/quasidock/quasidock/internal/context"
 	"github.com/quasidock/quasidock/internal/oci"
+	"github.com/quasidock/quasidock/internal/run"
 	"github.com/quasidock/quasidock/internal/store"
 )
+
+func TestParseContainerStopOptions(t *testing.T) {
+	for _, command := range []string{"run", "create"} {
+		t.Run(command, func(t *testing.T) {
+			ctx := context.New()
+			appArgs := []string{"--stop-signal", "--stop-timeout=garbage"}
+			for _, tc := range []struct {
+				flags   []string
+				signal  run.KillSignal
+				timeout int
+			}{
+				{[]string{"--stop-signal", "sigterm", "--stop-timeout=-1"}, run.SignalTERM, -1},
+				{[]string{"--stop-signal=9", "--stop-timeout", "0"}, run.SignalKILL, 0},
+				{[]string{"--stop-signal=15", "--stop-timeout=2", "--stop-signal=KILL", "--stop-timeout=5"}, run.SignalKILL, 5},
+			} {
+				args := append(append(tc.flags, "app"), appArgs...)
+				opts, err := parseContainerOptions(ctx, args, command)
+				if err != nil || opts.StopSignal != tc.signal || opts.StopTimeout == nil || *opts.StopTimeout != tc.timeout || !reflect.DeepEqual(opts.Args, appArgs) {
+					t.Fatalf("parse %v: %+v %v", args, opts, err)
+				}
+			}
+			opts, err := parseContainerOptions(ctx, []string{"app"}, command)
+			if err != nil || opts.StopSignal != "" || opts.StopTimeout != nil {
+				t.Fatalf("omitted settings: %+v %v", opts, err)
+			}
+			for _, args := range [][]string{
+				{"--stop-signal"}, {"--stop-signal=", "app"}, {"--stop-signal=SIGINT", "app"},
+				{"--stop-timeout"}, {"--stop-timeout=", "app"}, {"--stop-timeout=-2", "app"},
+				{"--stop-timeout=1.5", "app"}, {"--stop-timeout=9223372037", "app"},
+				{"--stop-timeout=999999999999999999999", "app"},
+			} {
+				if _, err := parseContainerOptions(ctx, args, command); err == nil {
+					t.Errorf("accepted invalid options %q", args)
+				}
+			}
+		})
+	}
+}
 
 func TestParseContainerFileOptions(t *testing.T) {
 	dir := t.TempDir()

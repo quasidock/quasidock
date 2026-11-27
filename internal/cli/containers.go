@@ -2,10 +2,13 @@ package cli
 
 import (
 	"bytes"
+	stdcontext "context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -63,7 +66,7 @@ func containerCommand(ctx *context.Context, args []string) (uint32, error) {
 	case "cp":
 		return cpCommand(ctx, rest)
 	case "restart", "pause", "unpause", "kill", "stop":
-		return 0, containerLifecycle(ctx, cmd, rest)
+		return containerLifecycle(ctx, cmd, rest)
 	case "rm", "remove":
 		return 0, containerRemove(ctx, rest)
 	case "logs":
@@ -169,28 +172,27 @@ func containerInspect(ctx *context.Context, args []string) error {
 	return renderInspect(ctx.Stdout, format, recs)
 }
 
-func parseLifecycleArgs(command string, args []string) (int, run.KillSignal, []string, error) {
-	timeout := 10
-	signal := run.SignalKILL
+func parseStopTimeout(option, raw string) (*int, error) {
+	seconds, err := strconv.Atoi(raw)
+	if err != nil || run.ValidateStopTimeout(seconds) != nil {
+		return nil, fmt.Errorf("invalid %s %q: expected -1 or non-negative whole seconds within the supported duration", option, raw)
+	}
+	return &seconds, nil
+}
+
+func parseLifecycleArgs(command string, args []string) (*int, run.KillSignal, []string, error) {
+	var timeout *int
+	killSignal := run.SignalKILL
 	var targets []string
 	parseTime := func(raw string) error {
-		v, err := strconv.Atoi(raw)
-		if err != nil || v < 0 || uint64(v) > uint64((1<<63-1)/int64(time.Second)) {
-			return fmt.Errorf("invalid --time %q: expected non-negative seconds within the supported duration", raw)
-		}
-		timeout = v
-		return nil
+		var err error
+		timeout, err = parseStopTimeout("--time", raw)
+		return err
 	}
 	parseSignal := func(raw string) error {
-		switch strings.ToUpper(raw) {
-		case "KILL", "SIGKILL", "9":
-			signal = run.SignalKILL
-		case "TERM", "SIGTERM", "15":
-			signal = run.SignalTERM
-		default:
-			return fmt.Errorf("unsupported signal %q: use KILL or TERM", raw)
-		}
-		return nil
+		var err error
+		killSignal, err = run.ParseKillSignal(raw)
+		return err
 	}
 	var parse func(string) error
 	var option string
@@ -210,50 +212,62 @@ func parseLifecycleArgs(command string, args []string) (int, run.KillSignal, []s
 		case (command == "stop" || command == "restart") && (arg == "-t" || arg == "--time"),
 			command == "kill" && (arg == "-s" || arg == "--signal"):
 			if len(args) == 0 {
-				return 0, "", nil, fmt.Errorf("%s %s needs a value", command, option)
+				return nil, "", nil, fmt.Errorf("%s %s needs a value", command, option)
 			}
 			if err := parse(args[0]); err != nil {
-				return 0, "", nil, err
+				return nil, "", nil, err
 			}
 			args = args[1:]
 		case (command == "stop" || command == "restart") && (strings.HasPrefix(arg, "--time=") || strings.HasPrefix(arg, "-t=")),
 			command == "kill" && (strings.HasPrefix(arg, "--signal=") || strings.HasPrefix(arg, "-s=")):
 			if err := parse(arg[strings.IndexByte(arg, '=')+1:]); err != nil {
-				return 0, "", nil, err
+				return nil, "", nil, err
 			}
 		case strings.HasPrefix(arg, "-"):
-			return 0, "", nil, fmt.Errorf("unknown %s option %q", command, arg)
+			return nil, "", nil, fmt.Errorf("unknown %s option %q", command, arg)
 		default:
 			targets = append(targets, arg)
 		}
 	}
 	if len(targets) == 0 {
-		return 0, "", nil, fmt.Errorf("usage: quasidock %s [OPTIONS] CONTAINER [CONTAINER...]", command)
+		return nil, "", nil, fmt.Errorf("usage: quasidock %s [OPTIONS] CONTAINER [CONTAINER...]", command)
 	}
-	return timeout, signal, targets, nil
+	return timeout, killSignal, targets, nil
 }
 
-func containerLifecycle(ctx *context.Context, command string, args []string) error {
-	timeout, signal, targets, err := parseLifecycleArgs(command, args)
+func containerLifecycle(ctx *context.Context, command string, args []string) (uint32, error) {
+	timeout, killSignal, targets, err := parseLifecycleArgs(command, args)
 	if err != nil {
-		return err
+		return 1, err
+	}
+	cancel := stdcontext.Background()
+	if command == "stop" || command == "restart" {
+		var stop stdcontext.CancelFunc
+		cancel, stop = signal.NotifyContext(cancel, os.Interrupt)
+		defer stop()
 	}
 	var errs []error
 	for _, target := range targets {
+		if cancel.Err() != nil {
+			return 130, nil
+		}
 		var err error
 		switch command {
 		case "start":
 			_, err = run.StartContainer(ctx, target)
 		case "restart":
-			_, err = run.RestartContainer(ctx, target, timeout)
+			_, err = run.RestartContainer(cancel, ctx, target, timeout)
 		case "pause":
 			_, err = run.PauseContainer(ctx, target)
 		case "unpause":
 			_, err = run.UnpauseContainer(ctx, target)
 		case "kill":
-			_, err = run.KillContainer(ctx, target, signal)
+			_, err = run.KillContainer(ctx, target, killSignal)
 		case "stop":
-			_, err = run.StopContainer(ctx, target, timeout)
+			_, err = run.StopContainer(cancel, ctx, target, timeout)
+		}
+		if cancel.Err() != nil {
+			return 130, nil
 		}
 		if err != nil {
 			errs = append(errs, fmt.Errorf("%s %s: %w", command, target, err))
@@ -261,7 +275,10 @@ func containerLifecycle(ctx *context.Context, command string, args []string) err
 		}
 		fmt.Fprintln(ctx.Stdout, target)
 	}
-	return errors.Join(errs...)
+	if err := errors.Join(errs...); err != nil {
+		return 1, err
+	}
+	return 0, nil
 }
 
 func containerRemove(ctx *context.Context, args []string) error {

@@ -1,6 +1,7 @@
 package run
 
 import (
+	stdcontext "context"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
@@ -80,6 +81,32 @@ func lockTarget(ctx *context.Context, target string) (*store.ContainerRecord, *s
 		return nil, nil, err
 	}
 	return rec, op, nil
+}
+
+func lockTargetContext(cancel stdcontext.Context, ctx *context.Context, target string) (*store.ContainerRecord, *store.ContainerOperation, error) {
+	rec, err := ctx.Store.ResolveContainerContext(cancel, target)
+	if err != nil {
+		return nil, nil, err
+	}
+	for cancel.Err() == nil {
+		op, err := ctx.Store.TryLockContainer(rec.ID)
+		if err != nil {
+			return nil, nil, err
+		}
+		if op != nil {
+			current, err := ctx.Store.ReadContainerContext(cancel, rec.ID)
+			if err != nil {
+				op.Release()
+				return nil, nil, err
+			}
+			return current, op, nil
+		}
+		select {
+		case <-cancel.Done():
+		case <-time.After(20 * time.Millisecond):
+		}
+	}
+	return nil, nil, cancel.Err()
 }
 
 // PauseContainer freezes the current run's job without releasing its resources.
@@ -162,102 +189,156 @@ func prepareStart(ctx *context.Context, rec *store.ContainerRecord) (*store.Cont
 
 // RestartContainer preserves the record through both halves of the operation,
 // including containers whose normal exit policy is automatic removal.
-func RestartContainer(ctx *context.Context, target string, timeoutSec int) (*store.ContainerRecord, error) {
-	if err := validateStopTimeout(timeoutSec); err != nil {
-		return nil, err
-	}
-	rec, op, err := lockTarget(ctx, target)
+func RestartContainer(cancel stdcontext.Context, ctx *context.Context, target string, timeoutOverride *int) (*store.ContainerRecord, error) {
+	rec, op, err := lockTargetContext(cancel, ctx, target)
 	if err != nil {
 		return nil, err
 	}
 	defer op.Release()
-	if _, err := stopContainerLocked(ctx, rec, op, timeoutSec, true); err != nil {
+	stopped, err := stopContainerLocked(cancel, ctx, rec, timeoutOverride)
+	if err != nil {
 		return nil, err
 	}
-	started, err := startContainerLocked(ctx, rec)
+	if err := cancel.Err(); err != nil {
+		return nil, err
+	}
+	started, err := startContainerLocked(ctx, stopped)
 	if err == nil {
 		ctx.Store.RecordContainerEvent(started, "restart", nil)
 	}
 	return started, err
 }
 
-func validateStopTimeout(seconds int) error {
-	if seconds < 0 || uint64(seconds) > uint64((1<<63-1)/int64(time.Second)) {
-		return errors.New("stop time must be a non-negative number of seconds within the supported duration")
+const defaultStopTimeout = 10
+
+func ValidateStopTimeout(seconds int) error {
+	if seconds != -1 && (seconds < 0 || uint64(seconds) > uint64((1<<63-1)/int64(time.Second))) {
+		return errors.New("stop time must be -1 or non-negative seconds within the supported duration")
 	}
 	return nil
 }
 
-// StopContainer requests graceful shutdown, then kills the job at the deadline.
-func StopContainer(ctx *context.Context, target string, timeoutSec int) (*store.ContainerRecord, error) {
-	if err := validateStopTimeout(timeoutSec); err != nil {
-		return nil, err
+func stopSettings(rec *store.ContainerRecord, timeoutOverride *int) (KillSignal, int, error) {
+	signal := KillSignal(rec.Config.StopSignal)
+	if signal == "" {
+		signal = SignalTERM
 	}
-	rec, op, err := lockTarget(ctx, target)
+	if !signal.valid() {
+		return "", 0, fmt.Errorf("unsupported stop signal %q", signal)
+	}
+	timeout := defaultStopTimeout
+	if timeoutOverride != nil {
+		timeout = *timeoutOverride
+	} else if rec.Config.StopTimeout != nil {
+		timeout = *rec.Config.StopTimeout
+	}
+	return signal, timeout, ValidateStopTimeout(timeout)
+}
+
+// StopContainer shuts down the running job using the container's saved settings.
+func StopContainer(cancel stdcontext.Context, ctx *context.Context, target string, timeoutOverride *int) (*store.ContainerRecord, error) {
+	rec, op, err := lockTargetContext(cancel, ctx, target)
 	if err != nil {
 		return nil, err
 	}
 	defer op.Release()
-	wasRunning := ctx.Store.IsContainerRunning(rec.ID)
-	updated, err := stopContainerLocked(ctx, rec, op, timeoutSec, true)
-	if err != nil || !wasRunning {
-		return updated, err
-	}
-	ctx.Store.RecordContainerEvent(updated, "stop", nil)
-	return finishStopped(ctx, updated, op, false)
-}
-
-func stopContainerLocked(ctx *context.Context, rec *store.ContainerRecord, op *store.ContainerOperation, seconds int, preserve bool) (*store.ContainerRecord, error) {
 	if !ctx.Store.IsContainerRunning(rec.ID) {
 		return rec, nil
 	}
-	if seconds > 0 {
+	updated, err := stopContainerLocked(cancel, ctx, rec, timeoutOverride)
+	if err != nil {
+		return nil, err
+	}
+	ctx.Store.RecordContainerEvent(updated, "stop", nil)
+	return finishStopped(ctx, updated, op)
+}
+
+func stopContainerLocked(cancel stdcontext.Context, ctx *context.Context, rec *store.ContainerRecord, timeoutOverride *int) (*store.ContainerRecord, error) {
+	if err := cancel.Err(); err != nil {
+		return nil, err
+	}
+	if !ctx.Store.IsContainerRunning(rec.ID) {
+		return rec, nil
+	}
+	signal, seconds, err := stopSettings(rec, timeoutOverride)
+	if err != nil {
+		return nil, err
+	}
+	if signal == SignalTERM && seconds != 0 {
 		if rec.State.Paused {
 			if err := sendControlRequest(ctx, rec, controlRequest{Action: actionResume}); err != nil {
 				if ctx.Store.IsContainerRunning(rec.ID) {
 					return nil, err
 				}
-				return finishStopped(ctx, rec, op, preserve)
+				return ctx.Store.ReadContainer(rec.ID)
 			}
 		}
-		deadline := time.Now().Add(time.Duration(seconds) * time.Second)
-		// Foreground runs deliberately retain their caller's process group.
-		// They cannot receive a targeted console signal; still honor the grace
-		// period before ending their job.
+		if err := cancel.Err(); err != nil {
+			return nil, err
+		}
+		// A finite stop can still escalate if the target has no signalable console.
 		err := sendControl(ctx, rec, SignalTERM)
-		if err != nil && !errors.Is(err, errForegroundTERM) && !errors.Is(err, errSignalDelivery) && ctx.Store.IsContainerRunning(rec.ID) {
+		if err != nil && ctx.Store.IsContainerRunning(rec.ID) &&
+			(seconds == -1 || (!errors.Is(err, errForegroundTERM) && !errors.Is(err, errSignalDelivery))) {
 			return nil, err
 		}
-		waitForContainer(ctx.Store, rec.ID, deadline)
-	}
-	if ctx.Store.IsContainerRunning(rec.ID) {
-		deadline := time.Now().Add(5 * time.Second)
-		if err := sendControl(ctx, rec, SignalKILL); err != nil {
-			return nil, err
+		var deadline time.Time
+		if seconds > 0 {
+			deadline = time.Now().Add(time.Duration(seconds) * time.Second)
 		}
-		if !waitForContainer(ctx.Store, rec.ID, deadline) {
-			return nil, fmt.Errorf("container %s did not finish cleanup after KILL", rec.ShortID())
+		if waitForContainerContext(cancel, ctx.Store, rec.ID, deadline) {
+			return ctx.Store.ReadContainer(rec.ID)
 		}
 	}
-	return finishStopped(ctx, rec, op, preserve)
+	if err := cancel.Err(); err != nil {
+		return nil, err
+	}
+	if err := forceStopContainer(ctx, rec); err != nil {
+		return nil, err
+	}
+	return ctx.Store.ReadContainer(rec.ID)
+}
+
+func forceStopContainer(ctx *context.Context, rec *store.ContainerRecord) error {
+	if !ctx.Store.IsContainerRunning(rec.ID) {
+		return nil
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	if err := sendControl(ctx, rec, SignalKILL); err != nil {
+		return err
+	}
+	if !waitForContainer(ctx.Store, rec.ID, deadline) {
+		return fmt.Errorf("container %s did not finish cleanup after KILL", rec.ShortID())
+	}
+	return nil
 }
 
 func waitForContainer(st *store.Store, id string, deadline time.Time) bool {
+	return waitForContainerContext(stdcontext.Background(), st, id, deadline)
+}
+
+func waitForContainerContext(cancel stdcontext.Context, st *store.Store, id string, deadline time.Time) bool {
+	ticker := time.NewTicker(20 * time.Millisecond)
+	defer ticker.Stop()
 	for st.IsContainerRunning(id) {
-		if !time.Now().Before(deadline) {
+		if !deadline.IsZero() && !time.Now().Before(deadline) {
 			return false
 		}
-		time.Sleep(20 * time.Millisecond)
+		select {
+		case <-cancel.Done():
+			return false
+		case <-ticker.C:
+		}
 	}
 	return true
 }
 
-func finishStopped(ctx *context.Context, rec *store.ContainerRecord, op *store.ContainerOperation, preserve bool) (*store.ContainerRecord, error) {
+func finishStopped(ctx *context.Context, rec *store.ContainerRecord, op *store.ContainerOperation) (*store.ContainerRecord, error) {
 	updated, err := ctx.Store.ReadContainer(rec.ID)
 	if err != nil {
 		return nil, err
 	}
-	if updated.HostConfig.AutoRemove && !preserve {
+	if updated.HostConfig.AutoRemove {
 		_ = hkcu.SettleLeftovers(ctx.Store, rec.AppID)
 		if err := removeStoppedContainer(ctx, updated, op, true); err != nil {
 			return nil, err
@@ -268,7 +349,7 @@ func finishStopped(ctx *context.Context, rec *store.ContainerRecord, op *store.C
 
 // KillContainer sends TERM without escalation, or immediately terminates the job.
 func KillContainer(ctx *context.Context, target string, signal KillSignal) (*store.ContainerRecord, error) {
-	if signal != SignalKILL && signal != SignalTERM {
+	if !signal.valid() {
 		return nil, fmt.Errorf("unsupported signal %q", signal)
 	}
 	rec, op, err := lockTarget(ctx, target)
@@ -279,17 +360,16 @@ func KillContainer(ctx *context.Context, target string, signal KillSignal) (*sto
 	if !ctx.Store.IsContainerRunning(rec.ID) {
 		return nil, fmt.Errorf("container %s is not running", rec.ShortID())
 	}
-	deadline := time.Now().Add(5 * time.Second)
-	if err := sendControl(ctx, rec, signal); err != nil {
-		return nil, err
-	}
 	if signal == SignalTERM {
+		if err := sendControl(ctx, rec, signal); err != nil {
+			return nil, err
+		}
 		return ctx.Store.ReadContainer(rec.ID)
 	}
-	if !waitForContainer(ctx.Store, rec.ID, deadline) {
-		return nil, fmt.Errorf("container %s did not finish cleanup after KILL", rec.ShortID())
+	if err := forceStopContainer(ctx, rec); err != nil {
+		return nil, err
 	}
-	return finishStopped(ctx, rec, op, false)
+	return finishStopped(ctx, rec, op)
 }
 
 // RemoveContainer holds one operation lock across forced shutdown and deletion.
@@ -303,7 +383,7 @@ func RemoveContainer(ctx *context.Context, target string, force, volumes bool) (
 		if !force {
 			return nil, fmt.Errorf("cannot remove running container %s: stop it first or use -f", rec.ShortID())
 		}
-		if _, err := stopContainerLocked(ctx, rec, op, 0, true); err != nil {
+		if err := forceStopContainer(ctx, rec); err != nil {
 			return nil, err
 		}
 	}

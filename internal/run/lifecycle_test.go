@@ -1,6 +1,8 @@
 package run
 
 import (
+	stdcontext "context"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -15,6 +17,53 @@ import (
 	"github.com/quasidock/quasidock/internal/store"
 	"github.com/quasidock/quasidock/internal/win32"
 )
+
+func TestStopSettings(t *testing.T) {
+	rec := &store.ContainerRecord{}
+	signal, timeout, err := stopSettings(rec, nil)
+	if err != nil || signal != SignalTERM || timeout != 10 {
+		t.Fatalf("legacy defaults: %q %d %v", signal, timeout, err)
+	}
+	saved, override := -1, 0
+	rec.Config.StopSignal, rec.Config.StopTimeout = string(SignalKILL), &saved
+	signal, timeout, err = stopSettings(rec, &override)
+	if err != nil || signal != SignalKILL || timeout != 0 || *rec.Config.StopTimeout != -1 {
+		t.Fatalf("explicit override: %q %d %v, saved %d", signal, timeout, err, *rec.Config.StopTimeout)
+	}
+}
+
+func TestStopContainerCancelsWhileOperationLocked(t *testing.T) {
+	ctx := context.New()
+	var err error
+	ctx.Store, err = store.Open(t.TempDir(), false, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec, err := ctx.Store.CreateContainer("locked", store.ContainerRecord{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	op, err := ctx.Store.LockContainer(rec.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer op.Release()
+	cancel, stop := stdcontext.WithTimeout(stdcontext.Background(), 100*time.Millisecond)
+	defer stop()
+	result := make(chan error, 1)
+	go func() {
+		_, err := StopContainer(cancel, ctx, rec.ID, nil)
+		result <- err
+	}()
+	select {
+	case err := <-result:
+		if !errors.Is(err, stdcontext.DeadlineExceeded) {
+			t.Fatalf("stop while holding the operation lock: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("stop did not cancel while waiting for the operation lock")
+	}
+}
 
 func TestInheritedEnvironmentSnapshot(t *testing.T) {
 	host := map[string]string{"Mixed_Case": "original", "OTHER": "unchanged"}

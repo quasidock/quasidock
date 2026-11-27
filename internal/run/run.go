@@ -115,6 +115,8 @@ type Options struct {
 	Workdir       string
 	User          string
 	Labels        map[string]string
+	StopSignal    KillSignal
+	StopTimeout   *int
 	Detach        bool
 	AutoRemove    bool
 	Interactive   bool

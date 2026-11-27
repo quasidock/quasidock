@@ -2,6 +2,7 @@ package win32
 
 import (
 	"fmt"
+	"slices"
 	"syscall"
 	"unsafe"
 )
@@ -22,6 +23,7 @@ var (
 	procClosePseudoConsole        = modKernel32.NewProc("ClosePseudoConsole")
 	procAttachConsole             = modKernel32.NewProc("AttachConsole")
 	procFreeConsole               = modKernel32.NewProc("FreeConsole")
+	procGetConsoleProcessList     = modKernel32.NewProc("GetConsoleProcessList")
 	procGenerateConsoleCtrlEvent  = modKernel32.NewProc("GenerateConsoleCtrlEvent")
 	procSetCurrentDirectoryW      = modKernel32.NewProc("SetCurrentDirectoryW")
 	procOpenClipboard             = modUser32.NewProc("OpenClipboard")
@@ -184,6 +186,23 @@ func GenerateConsoleCtrlEvent(event, group DWORD) bool {
 
 // SendConsoleBreak reports whether Windows accepted the targeted signal.
 func SendConsoleBreak(group DWORD) error {
+	// GenerateConsoleCtrlEvent can succeed even when its target has detached.
+	// Verify the group leader shares our console before requesting delivery.
+	attached := make([]DWORD, 16)
+	for {
+		count, _, err := procGetConsoleProcessList.Call(uintptr(unsafe.Pointer(&attached[0])), uintptr(len(attached)))
+		if count == 0 {
+			return fmt.Errorf("listing console processes: %w", err)
+		}
+		if count > uintptr(len(attached)) {
+			attached = make([]DWORD, count)
+			continue
+		}
+		if !slices.Contains(attached[:count], group) {
+			return fmt.Errorf("process %d is not attached to the supervisor's console", group)
+		}
+		break
+	}
 	r, _, err := procGenerateConsoleCtrlEvent.Call(uintptr(CTRL_BREAK_EVENT), uintptr(group))
 	if r == 0 {
 		return err

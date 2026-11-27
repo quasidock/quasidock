@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	stdcontext "context"
+	"encoding/json"
 	"errors"
 	"io"
 	"os"
@@ -27,10 +28,23 @@ func TestParseLifecycleArgs(t *testing.T) {
 			t.Fatalf("%s accepted no targets", command)
 		}
 	}
-	for _, args := range [][]string{{"-t", "0", "one", "two"}, {"one", "--time=2"}, {"-t=3", "one"}} {
-		_, _, targets, err := parseLifecycleArgs("restart", args)
-		if err != nil || len(targets) == 0 {
-			t.Fatalf("restart %v: %v", args, err)
+	for _, command := range []string{"stop", "restart"} {
+		timeout, _, targets, err := parseLifecycleArgs(command, []string{"one", "two"})
+		if err != nil || timeout != nil || len(targets) != 2 {
+			t.Fatalf("%s without override: %v %v %v", command, timeout, targets, err)
+		}
+		for _, tc := range []struct {
+			args    []string
+			timeout int
+		}{
+			{[]string{"-t", "0", "one", "two"}, 0},
+			{[]string{"one", "--time=2"}, 2},
+			{[]string{"-t=-1", "one"}, -1},
+		} {
+			timeout, _, targets, err := parseLifecycleArgs(command, tc.args)
+			if err != nil || timeout == nil || *timeout != tc.timeout || len(targets) == 0 {
+				t.Fatalf("%s %v: %v %v %v", command, tc.args, timeout, targets, err)
+			}
 		}
 	}
 	for _, signal := range []string{"KILL", "sigkill", "9", "TERM", "sigterm", "15"} {
@@ -43,7 +57,7 @@ func TestParseLifecycleArgs(t *testing.T) {
 		"pause":   {{"-t", "1", "one"}, {"--signal=TERM", "one"}, {"--force", "one"}},
 		"unpause": {{"--time=1", "one"}, {"-s", "TERM", "one"}},
 		"start":   {{"-a", "one"}, {"-i", "one"}, {"--time=1", "one"}},
-		"restart": {{"--time", "-1", "one"}, {"--time"}, {"-t=999999999999", "one"}, {"--signal=TERM", "one"}},
+		"restart": {{"--time", "-2", "one"}, {"--time"}, {"-t=999999999999", "one"}, {"--signal=TERM", "one"}},
 		"kill":    {{"-s", "INT", "one"}, {"--signal"}, {"--time=0", "one"}},
 	} {
 		for _, args := range cases {
@@ -92,6 +106,19 @@ func TestContainerStartRestartKill(t *testing.T) {
 		}
 		return rec
 	}
+	checkStopConfig := func(t *testing.T, name, signal, timeout string) {
+		t.Helper()
+		var cfg map[string]json.RawMessage
+		if err := json.Unmarshal([]byte(must(t, "inspect", "--format={{json .Config}}", name)), &cfg); err != nil {
+			t.Fatal(err)
+		}
+		if signal != "" {
+			signal = strconv.Quote(signal)
+		}
+		if string(cfg["StopSignal"]) != signal || string(cfg["StopTimeout"]) != timeout {
+			t.Fatalf("%s stop signal %s, timeout %s, want %q and %q", name, cfg["StopSignal"], cfg["StopTimeout"], signal, timeout)
+		}
+	}
 	stopped := func(t *testing.T, id string) {
 		t.Helper()
 		deadline := time.Now().Add(5 * time.Second)
@@ -136,6 +163,7 @@ func TestContainerStartRestartKill(t *testing.T) {
 		must(t, "pull", latest)
 		must(t, "run", "--name", "replay", "-e", "LIFECYCLE_VALUE", "-e", "LIFECYCLE_ABSENT", "--entrypoint=fixture.exe", latest, "env", "LIFECYCLE_VALUE", "LIFECYCLE_ABSENT", "IMAGE_VERSION")
 		before := record(t, "replay")
+		checkStopConfig(t, "replay", "", "")
 		sentinel := filepath.Join(before.DataDir, "retained.txt")
 		if err := os.WriteFile(sentinel, []byte("preserved"), 0o644); err != nil {
 			t.Fatal(err)
@@ -177,8 +205,9 @@ func TestContainerStartRestartKill(t *testing.T) {
 
 	t.Run("TERM does not escalate and KILL ends descendants", func(t *testing.T) {
 		ready := filepath.Join(buildDir, "tree-ready")
-		must(t, "run", "-d", "--name", "tree", app, "fixture.exe", "tree-hold", ready, "ignore")
+		must(t, "run", "-d", "--name", "tree", "--stop-timeout=1", app, "fixture.exe", "tree-hold", ready, "ignore")
 		rec := record(t, "tree")
+		checkStopConfig(t, "tree", "", "1")
 		waitPID(t, ready, rec.State.Pid)
 		childPID := waitPID(t, ready+".child", 0)
 		parent, err := win32.OpenProcess(win32.SYNCHRONIZE, false, win32.DWORD(rec.State.Pid))
@@ -200,9 +229,9 @@ func TestContainerStartRestartKill(t *testing.T) {
 			t.Fatal("start launched a duplicate running container")
 		}
 		began := time.Now()
-		must(t, "restart", "-t", "1", "tree")
-		if time.Since(began) < 900*time.Millisecond {
-			t.Fatal("restart did not honor the grace period")
+		must(t, "restart", "tree")
+		if elapsed := time.Since(began); elapsed < 900*time.Millisecond || elapsed >= 9*time.Second {
+			t.Fatalf("restart took %v with a saved one-second grace period", elapsed)
 		}
 		if win32.WaitForSingleObject(parent, 0) != win32.WAIT_OBJECT_0 || win32.WaitForSingleObject(child, 0) != win32.WAIT_OBJECT_0 {
 			t.Fatal("restart left descendants of the old run alive")
@@ -231,6 +260,52 @@ func TestContainerStartRestartKill(t *testing.T) {
 		must(t, "stop", "-t", "0", "tree")
 	})
 
+	t.Run("saved settings survive restart and apply per target", func(t *testing.T) {
+		for _, tc := range []struct {
+			name, signal, timeout string
+			exitCode              int
+		}{
+			{"saved-term", "TERM", "-1", 0},
+			{"saved-kill", "KILL", "-1", 1},
+			{"saved-zero", "TERM", "0", 1},
+		} {
+			ready := filepath.Join(buildDir, tc.name+".ready")
+			must(t, "container", "create", "--name", tc.name, "--stop-signal=SIG"+tc.signal, "--stop-timeout", tc.timeout,
+				app, "fixture.exe", "signal-hold", ready, "exit")
+			checkStopConfig(t, tc.name, tc.signal, tc.timeout)
+			must(t, "start", tc.name)
+			before := record(t, tc.name)
+			waitPID(t, ready, before.State.Pid)
+			must(t, "restart", tc.name)
+			after := record(t, tc.name)
+			if after.ID != before.ID || after.State.RunID == before.State.RunID {
+				t.Fatalf("restart changed container identity or reused the run: %s", tc.name)
+			}
+			waitPID(t, ready, after.State.Pid)
+			checkStopConfig(t, tc.name, tc.signal, tc.timeout)
+			gotSignal := store.Exists(ready + ".signal")
+			if gotSignal != (tc.exitCode == 0) {
+				t.Fatalf("restart %s: Ctrl+Break received=%v", tc.name, gotSignal)
+			}
+		}
+		must(t, "container", "stop", "saved-term", "saved-kill", "saved-zero")
+		for name, want := range map[string]int{"saved-term": 0, "saved-kill": 1, "saved-zero": 1} {
+			if state := record(t, name).State; state.Running || state.ExitCode != want {
+				t.Fatalf("stop %s: %+v, want exit code %d", name, state, want)
+			}
+		}
+		ready := filepath.Join(buildDir, "saved-term.ready")
+		if err := os.Remove(ready + ".signal"); err != nil {
+			t.Fatal(err)
+		}
+		must(t, "start", "saved-term")
+		waitPID(t, ready, record(t, "saved-term").State.Pid)
+		must(t, "stop", "-t", "0", "saved-term")
+		if state := record(t, "saved-term").State; state.Running || state.ExitCode != 1 || store.Exists(ready+".signal") {
+			t.Fatalf("explicit zero did not override saved -1: %+v", state)
+		}
+	})
+
 	t.Run("TERM cooperative exit", func(t *testing.T) {
 		ready := filepath.Join(buildDir, "term-ready")
 		must(t, "run", "-d", "--name", "cooperative", app, "fixture.exe", "signal-hold", ready, "exit")
@@ -248,13 +323,48 @@ func TestContainerStartRestartKill(t *testing.T) {
 
 	t.Run("stop forces exit when console signaling is unavailable", func(t *testing.T) {
 		ready := filepath.Join(buildDir, "no-console-ready")
-		must(t, "run", "-d", "--name", "no-console", app, "fixture.exe", "signal-hold", ready, "no-console")
+		must(t, "run", "-d", "--name", "no-console", "--stop-timeout=-1", app, "fixture.exe", "signal-hold", ready, "no-console")
 		rec := record(t, "no-console")
 		waitPID(t, ready, rec.State.Pid)
+		if out, code := call("stop", "no-console"); code != 1 || !strings.Contains(out, "signal delivery failed") || !ctx.Store.IsContainerRunning(rec.ID) {
+			t.Fatalf("indefinite stop of unsignalable container: %d %s", code, out)
+		}
 		must(t, "stop", "-t", "1", "no-console")
 		if ctx.Store.IsContainerRunning(rec.ID) {
 			t.Fatal("stop left the application running after TERM was unavailable")
 		}
+	})
+
+	t.Run("Ctrl+C cancels an indefinite restart", func(t *testing.T) {
+		ready := filepath.Join(buildDir, "cancel-restart.ready")
+		must(t, "run", "-d", "--name", "cancel-restart", "--stop-timeout=1", app, "fixture.exe", "signal-hold", ready, "ignore")
+		before := record(t, "cancel-restart")
+		waitPID(t, ready, before.State.Pid)
+		must(t, "create", "--name", "later-restart-target", app, "fixture.exe")
+		t.Setenv("QUASIDOCK_HOME", ctx.Store.Root)
+		var consoleOut pauseOutput
+		console, input := startLifecycleConsole(t, filepath.Join(buildDir, "fixture.exe"),
+			[]string{"console-run-check-mode", binary, "restart", "--time=-1", before.ID, "later-restart-target"}, &consoleOut)
+		awaitPauseCondition(t, "restart did not deliver TERM", func() bool { return store.Exists(ready + ".signal") })
+		if win32.WaitForSingleObject(console, 1200) != win32.WAIT_TIMEOUT {
+			t.Fatalf("restart completed during an indefinite wait: %s", &consoleOut)
+		}
+		if _, err := win32.WriteFile(input, []byte{3}); err != nil {
+			t.Fatal(err)
+		}
+		if win32.WaitForSingleObject(console, 5000) != win32.WAIT_OBJECT_0 {
+			t.Fatal("restart did not exit on Ctrl+C")
+		}
+		if code, err := win32.GetExitCodeProcess(console); err != nil || code != 130 {
+			t.Fatalf("Ctrl+C exit: %d %v (%s)", code, err, &consoleOut)
+		}
+		if state := record(t, before.ID).State; !state.Running || state.RunID != before.State.RunID {
+			t.Fatalf("canceled restart replaced or stopped the original run: %+v", state)
+		}
+		if state := record(t, "later-restart-target").State; state.RunID != "" {
+			t.Fatalf("canceled restart processed the next target: %+v", state)
+		}
+		must(t, "stop", "--time=0", before.ID)
 	})
 
 	t.Run("auto removal resumes after restart", func(t *testing.T) {
