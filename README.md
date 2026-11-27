@@ -805,7 +805,7 @@ older binaries capture missing snapshots on their first start. Finish active
 containers before replacing the binary: live supervisors from older binaries use
 a different control protocol.
 
-## System diagnostics
+## System diagnostics and cleanup
 
 ```powershell
 quasidock system info
@@ -848,6 +848,34 @@ by a subsequent `prune` after `prune --downloads` clears the build markers.
 `system df` waits for active builds before scanning, so the Build Cache row
 shows zero active entries. Live containers can still write files during the
 scan. First use can initialize the store or migrate legacy image references.
+
+Use `system prune` to remove stopped containers, unused unnamed images with no
+app default, and unused build cache in one run. Build cache includes cached
+build results, downloaded sources, tool caches, incremental work directories,
+and build-only image content. A volume or image can become eligible after the
+same run removes its last container. `system df` estimates use the references
+present when the report runs.
+
+```powershell
+quasidock system prune --dry-run
+quasidock system prune --all --volumes --filter until=168h
+quasidock system prune --networks --force
+```
+
+The command prompts once before deletion. Use `-f` or `--force` to skip the
+prompt, or `--dry-run` to list candidates and estimated logical bytes. `-a` or
+`--all` also selects unused named images and app defaults. `--volumes` includes
+unused named volumes. `--networks` includes tracked, unused private networks
+and requires an elevated PowerShell session. Saved references, active leases,
+and Windows endpoints protect resources that are still in use.
+
+`--filter until=TIME` accepts Unix timestamps, RFC3339 or local dates and times,
+and Go durations such as `168h`. Items must be strictly older than at least one
+supplied cutoff. Containers and volumes use their creation time. Images use
+their first local cache registration. Networks use the modification time of the
+local ownership marker. Build-cache entries use their newest modification time,
+including files and directories within a cache directory. Items with unknown
+ages are kept when filtering.
 
 ## Windows sandbox and Quasidock extensions
 

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"math/bits"
+	"os"
 	"runtime"
 	"strconv"
 	"strings"
@@ -23,7 +24,7 @@ import (
 )
 
 const (
-	systemUsage     = "usage: quasidock system <info|df|events> [OPTIONS]"
+	systemUsage     = "usage: quasidock system <info|df|events|prune> [OPTIONS]"
 	systemInfoUsage = "usage: quasidock system info [-f|--format json|TEMPLATE]"
 	systemDFUsage   = "usage: quasidock system df [-v|--verbose] [--format table|json|TEMPLATE]"
 	systemDFTable   = "{{.Type}}\t{{.TotalCount}}\t{{.Active}}\t{{.Size}}\t{{.Reclaimable}}"
@@ -100,7 +101,9 @@ func systemCommand(ctx *context.Context, args []string) (uint32, error) {
 	var usage string
 	switch command {
 	case "help", "-h", "--help":
-		return writeSystemHelp(ctx.Stdout, systemUsage+"\n"+systemInfoUsage+"\n"+systemDFUsage)
+		return writeSystemHelp(ctx.Stdout, systemUsage+"\n"+systemInfoUsage+"\n"+systemDFUsage+"\n"+systemPruneUsage)
+	case "prune":
+		return systemPrune(ctx, rest, os.Stdin, windowsNetworkBackend)
 	case "events":
 		if err := openCommandStore(ctx); err != nil {
 			return 1, err

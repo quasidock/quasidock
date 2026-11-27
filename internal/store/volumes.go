@@ -158,6 +158,9 @@ func (s *Store) rawContainersNoLock() ([]ContainerRecord, error) {
 		if err != nil {
 			return nil, err
 		}
+		if c.ID != e.Name() {
+			return nil, fmt.Errorf("container ID %q does not match its directory %q", c.ID, e.Name())
+		}
 		all = append(all, *c)
 	}
 	return all, nil
@@ -204,6 +207,14 @@ func (s *Store) RemoveVolume(name string, guards ...func(string) (bool, error)) 
 }
 
 func (s *Store) PruneVolumes(dry bool, guards ...func(string) (bool, error)) ([]Volume, uint64, error) {
+	return s.pruneVolumes(dry, nil, nil, guards...)
+}
+
+func (s *Store) PruneSystemVolumes(dry bool, until []time.Time, excluded map[string]bool, guard func(string) (bool, error)) ([]Volume, uint64, error) {
+	return s.pruneVolumes(dry, until, excluded, guard)
+}
+
+func (s *Store) pruneVolumes(dry bool, until []time.Time, excluded map[string]bool, guards ...func(string) (bool, error)) ([]Volume, uint64, error) {
 	l, err := s.containersLock(true)
 	if err != nil {
 		return nil, 0, err
@@ -213,6 +224,12 @@ func (s *Store) PruneVolumes(dry bool, guards ...func(string) (bool, error)) ([]
 	if err != nil {
 		return nil, 0, err
 	}
+	remaining := all[:0]
+	for _, c := range all {
+		if !excluded[c.ID] {
+			remaining = append(remaining, c)
+		}
+	}
 	volumes, err := s.listVolumesNoLock()
 	if err != nil {
 		return nil, 0, err
@@ -221,7 +238,7 @@ func (s *Store) PruneVolumes(dry bool, guards ...func(string) (bool, error)) ([]
 	var size uint64
 volumeLoop:
 	for _, v := range volumes {
-		if volumeUser(all, v.Name) != nil {
+		if !pruneTimestampBefore(v.CreatedAt, until) || volumeUser(remaining, v.Name) != nil {
 			continue
 		}
 		for _, check := range guards {

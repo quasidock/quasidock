@@ -37,6 +37,37 @@ func PruneImages(ctx *context.Context, opts store.ImagePruneOptions, dry bool) e
 	if err != nil {
 		return err
 	}
+	builds, err := ctx.Store.ListBuildImages()
+	if err != nil {
+		return err
+	}
+	content, err := planPruneContent(ctx.Store, plan, builds, nil)
+	if err != nil {
+		return err
+	}
+	if err := applyPruneCatalog(ctx.Store, plan, dry); err != nil {
+		return err
+	}
+	freed, err := content.collect(ctx.Store, dry)
+	if !dry {
+		err = errors.Join(err, cleanPrunedApps(ctx, plan))
+	}
+	var report strings.Builder
+	ReportPrunedImages(&report, plan, dry)
+	total := "Total reclaimed space:"
+	if dry {
+		total = "Would reclaim:"
+	}
+	fmt.Fprintln(&report, total, FormatBytes(freed))
+	_, writeErr := fmt.Fprint(ctx.Stdout, report.String())
+	return errors.Join(err, writeErr)
+}
+
+type pruneContent struct {
+	blobs, layers map[string]bool
+}
+
+func planPruneContent(st *store.Store, plan *store.ImagePrunePlan, retainedBuilds, removedBuilds []string) (pruneContent, error) {
 	// Read and validate required metadata before changing the catalog. Only
 	// metadata is read: absent lazy layer blobs are permitted.
 	images := map[string]*store.LoadedImage{}
@@ -44,7 +75,7 @@ func PruneImages(ctx *context.Context, opts store.ImagePruneOptions, dry bool) e
 		if img := images[digest]; img != nil {
 			return img, nil
 		}
-		img, err := ctx.Store.ReadImage(digest, digest)
+		img, err := st.ReadImage(digest, digest)
 		if err != nil {
 			return nil, err
 		}
@@ -74,60 +105,73 @@ func PruneImages(ctx *context.Context, opts store.ImagePruneOptions, dry bool) e
 	}
 	for _, ref := range plan.Retained {
 		if err := keep(ref.Manifest); err != nil {
-			return err
+			return pruneContent{}, err
 		}
 	}
 	for _, c := range plan.Containers {
 		if err := keep(c.Image); err != nil {
-			return err
+			return pruneContent{}, err
 		}
 	}
-	builds, err := ctx.Store.ListBuildImages()
-	if err != nil {
-		return err
-	}
-	for _, digest := range builds {
+	for _, digest := range retainedBuilds {
 		if err := keep(digest); err != nil {
-			return err
+			return pruneContent{}, err
 		}
 	}
-	blobs, layers := map[string]bool{}, map[string]bool{}
-	for _, ref := range plan.Images {
-		img, err := read(ref.Manifest)
+	content := pruneContent{blobs: map[string]bool{}, layers: map[string]bool{}}
+	drop := func(digest string) error {
+		img, err := read(digest)
 		if err != nil {
 			return err
 		}
-		blobs[ref.Manifest] = true
-		blobs[img.Manifest.Config.Digest] = true
+		content.blobs[digest] = true
+		content.blobs[img.Manifest.Config.Digest] = true
 		for _, layer := range img.Manifest.Layers {
-			blobs[layer.Digest] = true
-			layers[layer.Digest] = true
+			content.blobs[layer.Digest] = true
+			content.layers[layer.Digest] = true
+		}
+		return nil
+	}
+	for _, ref := range plan.Images {
+		if err := drop(ref.Manifest); err != nil {
+			return pruneContent{}, err
+		}
+	}
+	for _, digest := range removedBuilds {
+		if err := drop(digest); err != nil {
+			return pruneContent{}, err
 		}
 	}
 	for digest := range used {
-		delete(blobs, digest)
-		delete(layers, digest)
+		delete(content.blobs, digest)
+		delete(content.layers, digest)
 	}
+	return content, nil
+}
+
+func applyPruneCatalog(st *store.Store, plan *store.ImagePrunePlan, dry bool) error {
 	if !dry {
-		if err := ctx.Store.ApplyImagePrune(plan); err != nil {
-			return err
-		}
+		return st.ApplyImagePrune(plan)
 	}
+	return nil
+}
+
+func (content pruneContent) collect(st *store.Store, dry bool) (uint64, error) {
 	var failures []error
 	var freed uint64
-	for _, digest := range slices.Sorted(maps.Keys(layers)) {
-		n, err := lazy.PruneLayer(ctx.Store, digest, dry)
+	for _, digest := range slices.Sorted(maps.Keys(content.layers)) {
+		n, err := lazy.PruneLayer(st, digest, dry)
 		freed += n
 		if err != nil {
 			failures = append(failures, fmt.Errorf("cleaning layer %s: %w", digest, err))
-			delete(blobs, digest)
+			delete(content.blobs, digest)
 		}
-		if ctx.Store.DeploymentInUse(digest) {
-			delete(blobs, digest)
+		if st.DeploymentInUse(digest) {
+			delete(content.blobs, digest)
 		}
 	}
-	for _, digest := range slices.Sorted(maps.Keys(blobs)) {
-		path := ctx.Store.BlobPath(oci.DigestHex(digest))
+	for _, digest := range slices.Sorted(maps.Keys(content.blobs)) {
+		path := st.BlobPath(oci.DigestHex(digest))
 		info, err := os.Lstat(path)
 		if os.IsNotExist(err) {
 			continue
@@ -144,35 +188,39 @@ func PruneImages(ctx *context.Context, opts store.ImagePruneOptions, dry bool) e
 			freed += uint64(info.Size())
 		}
 	}
-	if !dry {
-		apps := map[string]bool{}
-		for _, ref := range plan.Images {
-			apps[strings.ToLower(ref.ID)] = true
-		}
-		for _, ref := range plan.Retained {
-			delete(apps, strings.ToLower(ref.ID))
-		}
-		for _, app := range slices.Sorted(maps.Keys(apps)) {
-			failures = append(failures, CleanRemovedApp(ctx, app))
-		}
+	return freed, errors.Join(failures...)
+}
+
+func cleanPrunedApps(ctx *context.Context, plan *store.ImagePrunePlan) error {
+	apps := map[string]bool{}
+	for _, ref := range plan.Images {
+		apps[strings.ToLower(ref.ID)] = true
 	}
-	heading, untagged, deleted, total := "Deleted Images:", "untagged:", "deleted:", "Total reclaimed space:"
-	if dry {
-		heading, untagged, deleted, total = "Would remove images:", "would untag:", "would remove:", "Would reclaim:"
+	for _, ref := range plan.Retained {
+		delete(apps, strings.ToLower(ref.ID))
 	}
-	var report strings.Builder
-	if len(plan.Images) != 0 {
-		fmt.Fprintln(&report, heading)
-		for _, name := range plan.Names {
-			fmt.Fprintln(&report, untagged, name)
-		}
-		for _, ref := range plan.Images {
-			fmt.Fprintln(&report, deleted, ref.Manifest)
-		}
-		fmt.Fprintln(&report)
+	var failures []error
+	for _, app := range slices.Sorted(maps.Keys(apps)) {
+		failures = append(failures, CleanRemovedApp(ctx, app))
 	}
-	fmt.Fprintln(&report, total, FormatBytes(freed))
-	_, err = fmt.Fprint(ctx.Stdout, report.String())
-	failures = append(failures, err)
 	return errors.Join(failures...)
+}
+
+// ReportPrunedImages adds the image section to a prune report.
+func ReportPrunedImages(report *strings.Builder, plan *store.ImagePrunePlan, dry bool) {
+	if plan == nil || len(plan.Images) == 0 {
+		return
+	}
+	heading, untagged, deleted := "Deleted Images:", "untagged:", "deleted:"
+	if dry {
+		heading, untagged, deleted = "Would remove images:", "would untag:", "would remove:"
+	}
+	fmt.Fprintln(report, heading)
+	for _, name := range plan.Names {
+		fmt.Fprintln(report, untagged, name)
+	}
+	for _, ref := range plan.Images {
+		fmt.Fprintln(report, deleted, ref.Manifest)
+	}
+	fmt.Fprintln(report)
 }

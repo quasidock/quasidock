@@ -17,6 +17,7 @@ import (
 
 type networkBackend struct {
 	list          func() ([]win32.HCNNetwork, error)
+	elevated      func() (bool, error)
 	createPrivate func(string, func(string) error) (string, error)
 	inspect       func(string) (win32.HCNNetworkDetails, error)
 	privateSubnet func(string) error
@@ -28,6 +29,7 @@ type networkBackend struct {
 var (
 	windowsNetworkBackend = networkBackend{
 		list:          win32.ListHCNNetworks,
+		elevated:      win32.ProcessElevated,
 		createPrivate: win32.CreatePrivateHCNNetwork,
 		inspect:       win32.InspectHCNNetwork,
 		privateSubnet: func(id string) error { _, err := win32.PrivateHCNSubnet(id); return err },

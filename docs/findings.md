@@ -244,7 +244,7 @@ and the executable file's mandatory label:
 
 ### The matrix
 
-In Zigsaw iteration 9's 12-tool run of [`tests/matrix.sh`](../tests/matrix.sh),
+Tested 2026-10-15, a 12-tool run of [`tests/matrix.sh`](../tests/matrix.sh),
 running each check in `soft`, `appcontainer`, and then `low` produced 0
 mismatches:
 
@@ -259,13 +259,6 @@ mismatches:
 
 - **Labels propagate.** Labelling a directory `(OI)(CI)(NW)` low applies to all
   existing and newly created descendants, and removing the label removes theirs.
-  In Zigsaw iteration 9's timing, labelling 20,000 files took `2.2 s`, matching
-  the `2.4 s` needed to grant them to an AppContainer.
-- **The first low-integrity labelling of a populated data directory** was the
-  one-time slow step in Zigsaw (`zig`'s first low run with its cache took
-  `9 s`). In Quasidock, each container starts with an isolated
-  `containers/<id>/data` directory unless attached to existing state via `-v` or
-  `--mount` ([iteration 6](iteration-6.md), [iteration 7](iteration-7.md)).
 - **Windows Server 2025**: CI runs [`tests/matrix.sh`](../tests/matrix.sh) under
   administrator runners, unlike the unprivileged Windows 11 development tests.
 
@@ -308,8 +301,8 @@ dedicated mount ownership records).
   Downloads by GUID), which is why redirecting `USERPROFILE` redirects them.
 - Creating an NTFS directory junction requires no special privilege, unlike a
   Windows symbolic link (which requires Developer Mode or administrator rights).
-- **Open dialogs and Quick access**: in Zigsaw iteration 18, Notepad++'s Open
-  dialog accepted `shell:Personal` across all three sandboxes once `Documents`
+- **Open dialogs and Quick access**: Notepad++'s Open dialog accepted `shell:Personal`
+  across all three sandboxes once `Documents`
   was present, and pinned folders in the navigation pane only appeared once
   `%APPDATA%\Microsoft\Windows\Recent\AutomaticDestinations` existed in the
   container profile (Desktop is never pinned by default). Quasidock still
@@ -318,7 +311,7 @@ dedicated mount ownership records).
 
 ## The registry
 
-[Zigsaw iteration 19](../legacy/iteration-19.md), 2026-10-15, Windows 11 26300.
+Tested 2026-10-15 on Windows 11 26300.
 [`tests/cmd/regprobe/main.go`](../tests/cmd/regprobe/main.go) (built with
 `go run ./scripts/build.go regprobe`) and
 [`tests/regprobe/app.json`](../tests/regprobe/app.json) verify how unprivileged
@@ -359,16 +352,6 @@ When invoked without arguments or with a directory, `quasidock build` looks for
 `quasidock.json` at the project root and stages sources into `B:\src\<stage>`
 via [`internal/builder/project.go`](../internal/builder/project.go).
 
-- **Zigsaw's self-build benchmark**: during the Zig era, Zigsaw carried its own
-  `zigsaw.json` building three stripped binaries via `zig build -Dstrip` in
-  `B:\src\zigsaw` bit-identically across stores and matching
-  [`scripts/package.sh`](../scripts/package.sh). In a fresh store it took
-  157 s plus 30 s to pull `zig`, dropping to 67 s once Zig's global cache was
-  warm and under 1 s when inputs were unchanged. Keeping `.zig-cache` saved
-  only 51 s vs 60 s in [Zigsaw iteration 35](../legacy/iteration-35.md) because
-  `zig` recompiles the main binary unit whole, and hashing Zigsaw's 52 source
-  files took 10–35 ms. (Quasidock itself is written in Go, builds with
-  `go run ./scripts/build.go [--strip]`, and has no `quasidock.json`.)
 - **`.gitignore` matching**:
   [`internal/builder/gitignore.go`](../internal/builder/gitignore.go) matches
   `git ls-files -co --exclude-standard` on a fixture with nested `.gitignore`
@@ -388,7 +371,7 @@ via [`internal/builder/project.go`](../internal/builder/project.go).
   pointing to `${cache}` in builds). `--system <pkgdir>` only accepts unpacked
   `zig-pkg` directories, failing on `p\`, so a `vendor` step must pin `zig-pkg`
   rather than relying on Zig's warm global cache.
-- **ZLS builds reproducibly offline**: measured on Zigsaw with ZLS 0.16.1,
+- **ZLS builds reproducibly offline**: measured with ZLS 0.16.1,
   vendoring its three packages took under 40 s after pulling `zig` and the
   build took 1.5 minutes, reproducing identically across clean stores.
   [`recipes/zls.json`](../recipes/zls.json) now builds ZLS 0.17.0 on Zig
@@ -397,11 +380,9 @@ via [`internal/builder/project.go`](../internal/builder/project.go).
   standard library on container `PATH` automatically without listing it in `sdk`
   as well (Quasidock forbids sharing an alias across `from` and `sdk` in
   [recipes](recipes.md)). Running a project's `build.zig` took ~10 s with cold
-  caches across `soft`, `low`, and `appcontainer` runs in Zigsaw.
+  caches across `soft`, `low`, and `appcontainer`.
 - **Interactive stdio**: `quasidock run -i` passes standard input and output
-  directly through (`quasidock` removed Zigsaw's shims in
-  [iteration 2](iteration-2.md)), with ZLS hover responses arriving in under
-  0.1 s.
+  directly through, with ZLS hover responses arriving in under 0.1 s.
 - **Diagnostics capability**: ZLS only emits `textDocument/publishDiagnostics`
   to LSP clients advertising that capability in `initialize`.
 - **Windows Server 2025**: in a CI reproducibility run on Windows Server 2025

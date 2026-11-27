@@ -55,7 +55,7 @@ func (s *Store) ForgetNetwork(id string) error {
 
 // WithContainerNetworkUsers holds the container index lock through the caller's
 // network removal check and action. Each GUID maps to one saved container user.
-func (s *Store) WithContainerNetworkUsers(use func(map[string]*ContainerRecord)) error {
+func (s *Store) WithContainerNetworkUsers(excluded map[string]bool, use func(map[string]*ContainerRecord)) error {
 	lock, err := s.containersLock(false)
 	if err != nil {
 		return err
@@ -67,6 +67,9 @@ func (s *Store) WithContainerNetworkUsers(use func(map[string]*ContainerRecord))
 	}
 	users := make(map[string]*ContainerRecord)
 	for i := range all {
+		if excluded[all[i].ID] {
+			continue
+		}
 		for id := range all[i].HostConfig.Networks {
 			guid, err := win32.CanonicalHCNNetworkID(id)
 			if err != nil {

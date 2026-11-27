@@ -241,6 +241,18 @@ func GetTokenIsAppContainer(token HANDLE) (bool, error) {
 	return isAC != 0, nil
 }
 
+func ProcessElevated() (bool, error) {
+	token, err := OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY)
+	if err != nil {
+		return false, err
+	}
+	defer CloseHandle(token)
+	const tokenElevation = 20
+	var elevated, size DWORD
+	err = GetTokenInformation(token, tokenElevation, unsafe.Pointer(&elevated), DWORD(unsafe.Sizeof(elevated)), &size)
+	return elevated != 0, err
+}
+
 func ConvertStringSidToSid(s string) (PSID, error) {
 	sPtr := UTF16Ptr(s)
 	var sid PSID

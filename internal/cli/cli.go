@@ -87,6 +87,8 @@ System commands:
   system df [-v|--verbose] [--format table|json|TEMPLATE]
                                        show local disk usage and reclaimable bytes
   system events | events [options]     follow container events or replay retained history
+  system prune [-a|--all] [-f|--force] [--dry-run] [--volumes] [--networks] [--filter until=TIME]...
+                                       remove stopped containers, unused images, and build cache
 
 Docker-style image commands:
   image ls | images [-q|--quiet]       list cached image references

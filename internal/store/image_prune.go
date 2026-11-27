@@ -27,22 +27,41 @@ type ImagePruneOptions struct {
 	All               bool
 	Until             []time.Time
 	Labels, NotLabels []ImageLabelFilter
+	// ExcludedContainers is used when previewing a combined container and image prune.
+	ExcludedContainers map[string]bool
 }
 
-func (opts ImagePruneOptions) matchesAge(ref Ref) bool {
-	if len(opts.Until) == 0 {
+// PruneBefore reports whether the age matches any cutoff. Zero denotes an
+// unknown age, which only matches an unfiltered prune.
+func PruneBefore(age time.Time, until []time.Time) bool {
+	if len(until) == 0 {
 		return true
 	}
-	cached, err := time.Parse(time.RFC3339Nano, ref.CachedAt)
-	if err != nil {
+	if age.IsZero() {
 		return false
 	}
-	for _, until := range opts.Until {
-		if cached.Before(until) {
+	return beforeAnyCutoff(age, until)
+}
+
+func beforeAnyCutoff(age time.Time, until []time.Time) bool {
+	for _, cutoff := range until {
+		if age.Before(cutoff) {
 			return true
 		}
 	}
 	return false
+}
+
+func pruneTimestampBefore(raw string, until []time.Time) bool {
+	if len(until) == 0 {
+		return true
+	}
+	age, err := time.Parse(time.RFC3339Nano, raw)
+	return err == nil && beforeAnyCutoff(age, until)
+}
+
+func (opts ImagePruneOptions) matchesAge(ref Ref) bool {
+	return pruneTimestampBefore(ref.CachedAt, opts.Until)
 }
 
 func (opts ImagePruneOptions) matchesLabels(labels map[string]string) bool {
@@ -96,8 +115,12 @@ func (s *Store) PlanImagePrune(opts ImagePruneOptions) (*ImagePrunePlan, error) 
 		return nil, err
 	}
 	kept := map[string]bool{}
+	remaining := containers[:0]
 	for _, c := range containers {
-		kept[c.Image] = true
+		if !opts.ExcludedContainers[c.ID] {
+			remaining = append(remaining, c)
+			kept[c.Image] = true
+		}
 	}
 	if !opts.All {
 		for _, digest := range idx.Names {
@@ -112,7 +135,7 @@ func (s *Store) PlanImagePrune(opts ImagePruneOptions) (*ImagePrunePlan, error) 
 		digests = append(digests, digest)
 	}
 	sort.Strings(digests)
-	plan := &ImagePrunePlan{catalog: idx, Containers: containers, removed: map[string]bool{}}
+	plan := &ImagePrunePlan{catalog: idx, Containers: remaining, removed: map[string]bool{}}
 	for _, digest := range digests {
 		ref := idx.Images[digest]
 		selected := !kept[digest] && opts.matchesAge(ref) && !s.imageLeased(digest)

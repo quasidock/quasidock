@@ -748,6 +748,61 @@ func containerLaunchPending(c ContainerRecord, now time.Time) bool {
 	return err == nil && now.Sub(created) < 10*time.Second
 }
 
+// PruneSystemContainers selects from raw records so age-filtered containers
+// are never reconciled as a side effect of pruning a different container.
+func (s *Store) PruneSystemContainers(dry bool, until []time.Time) ([]ContainerRecord, uint64, error) {
+	lock, err := s.containersLock(true)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer lock.Release()
+	all, err := s.rawContainersNoLock()
+	if err != nil {
+		return nil, 0, err
+	}
+	var removed []ContainerRecord
+	var freed uint64
+	now := time.Now()
+	for _, c := range all {
+		if !pruneTimestampBefore(c.Created, until) || containerLaunchPending(c, now) {
+			continue
+		}
+		path := s.ContainerOperationLockPath(c.ID)
+		var operation *Lock
+		if dry {
+			if IsLocked(path) {
+				continue
+			}
+		} else {
+			// Other container operations can need the index lock to finish.
+			operation, err = TryLock(path, true)
+			if err != nil {
+				return removed, freed, err
+			}
+			if operation == nil {
+				continue
+			}
+		}
+		if s.IsContainerRunning(c.ID) {
+			if operation != nil {
+				operation.Release()
+			}
+			continue
+		}
+		size := containerDirSize(s.ContainerDir(c.ID))
+		if !dry {
+			err = s.deleteContainerDirNoLock(c.ID)
+			operation.Release()
+			if err != nil {
+				return removed, freed, fmt.Errorf("remove container %s: %w", c.ID, err)
+			}
+		}
+		removed = append(removed, c)
+		freed += size
+	}
+	return removed, freed, nil
+}
+
 func (s *Store) PruneContainers(dryRun bool) ([]ContainerRecord, uint64, int, error) {
 	lk, err := s.containersLock(true)
 	if err != nil {

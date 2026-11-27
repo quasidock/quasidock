@@ -3,8 +3,10 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"os"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/quasidock/quasidock/internal/context"
 	"github.com/quasidock/quasidock/internal/store"
@@ -43,7 +45,7 @@ func networkCleanupCommand(ctx *context.Context, backend networkBackend, command
 	if err := openNetworkStore(ctx); err != nil {
 		return err
 	}
-	ids, err := cleanupNetworks(ctx.Store, backend, targets, dry)
+	ids, err := cleanupNetworks(ctx.Store, backend, targets, dry, nil, nil)
 	for _, id := range ids {
 		if _, writeErr := fmt.Fprintln(ctx.Stdout, id); writeErr != nil {
 			return errors.Join(err, writeErr)
@@ -52,7 +54,7 @@ func networkCleanupCommand(ctx *context.Context, backend networkBackend, command
 	return err
 }
 
-func cleanupNetworks(st *store.Store, backend networkBackend, targets []string, dry bool) ([]string, error) {
+func cleanupNetworks(st *store.Store, backend networkBackend, targets []string, dry bool, until []time.Time, excluded map[string]bool) ([]string, error) {
 	release, err := backend.lockMutation()
 	if err != nil {
 		return nil, networkBackendError(err)
@@ -67,7 +69,7 @@ func cleanupNetworks(st *store.Store, backend networkBackend, targets []string, 
 	var stale []string
 	var errs []error
 	if prune {
-		candidates, stale, err = trackedNetworkCandidates(st, all)
+		candidates, stale, err = trackedNetworkCandidates(st, all, until)
 		if err != nil {
 			return nil, err
 		}
@@ -87,7 +89,7 @@ func cleanupNetworks(st *store.Store, backend networkBackend, targets []string, 
 	}
 	var removed []string
 	if len(candidates) > 0 {
-		err := st.WithContainerNetworkUsers(func(users map[string]*store.ContainerRecord) {
+		err := st.WithContainerNetworkUsers(excluded, func(users map[string]*store.ContainerRecord) {
 			for _, network := range candidates {
 				id := network.ID
 				selected, err := removeUnusedNetwork(backend, network, users[id], prune, dry)
@@ -117,7 +119,7 @@ func cleanupNetworks(st *store.Store, backend networkBackend, targets []string, 
 	return removed, errors.Join(errs...)
 }
 
-func trackedNetworkCandidates(st *store.Store, all []win32.HCNNetwork) (candidates []win32.HCNNetwork, stale []string, err error) {
+func trackedNetworkCandidates(st *store.Store, all []win32.HCNNetwork, until []time.Time) (candidates []win32.HCNNetwork, stale []string, err error) {
 	ids, err := st.TrackedNetworkIDs()
 	if err != nil {
 		return nil, nil, fmt.Errorf("read tracked networks: %w", err)
@@ -128,6 +130,18 @@ func trackedNetworkCandidates(st *store.Store, all []win32.HCNNetwork) (candidat
 	}
 	slices.Sort(ids)
 	for _, id := range ids {
+		if len(until) > 0 {
+			info, err := os.Lstat(st.Path("networks", id))
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			if err != nil {
+				return nil, nil, fmt.Errorf("read age of tracked network %s: %w", id, err)
+			}
+			if !info.Mode().IsRegular() || !store.PruneBefore(info.ModTime(), until) {
+				continue
+			}
+		}
 		network, exists := live[id]
 		if !exists {
 			stale = append(stale, id)

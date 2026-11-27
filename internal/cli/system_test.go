@@ -30,14 +30,14 @@ func TestSystemDispatch(t *testing.T) {
 	ctx := context.New()
 	var out bytes.Buffer
 	ctx.Stdout = &out
-	for _, args := range [][]string{{"system", "--help"}, {"system", "info", "-h"}, {"system", "df", "--help"}} {
+	for _, args := range [][]string{{"system", "--help"}, {"system", "info", "-h"}, {"system", "df", "--help"}, {"system", "prune", "--help"}} {
 		out.Reset()
 		if code, err := Dispatch(ctx, args); code != 0 || err != nil || !strings.Contains(out.String(), "usage: quasidock system") {
 			t.Fatalf("%v returned %d, %v, %q", args, code, err, &out)
 		}
 	}
 	for _, args := range [][]string{
-		{"system"}, {"system", "prune"}, {"system", "info", "target"}, {"system", "info", "-v"},
+		{"system"}, {"system", "prune", "target"}, {"system", "info", "target"}, {"system", "info", "-v"},
 		{"system", "df", "--format"}, {"system", "df", "--format", "{{"}, {"system", "df", "--format", "table "},
 		{"system", "df", "-v", "--format=json"}, {"system", "info", "--format="},
 	} {
