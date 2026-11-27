@@ -35,6 +35,7 @@ type ContainerState struct {
 	AttachProtocol    int    `json:"AttachProtocol,omitempty"`
 	WaitProtocol      int    `json:"WaitProtocol,omitempty"`
 	ExecProtocol      int    `json:"ExecProtocol,omitempty"`
+	LinkSupervisorPID uint32 `json:"LinkSupervisorPid,omitempty"`
 	NetworkManaged    bool   `json:"NetworkManaged,omitempty"`
 	RunID             string `json:"RunID,omitempty"`
 	Status            string `json:"Status"`
@@ -70,6 +71,7 @@ type ContainerHostConfig struct {
 	Sandbox       string                   `json:"Sandbox,omitempty"`
 	Network       *bool                    `json:"Network,omitempty"`
 	Networks      map[string]string        `json:"Networks,omitempty"`
+	Links         []ContainerLink          `json:"Links,omitempty"`
 	Host          *bool                    `json:"Host,omitempty"`
 	Filesystem    []string                 `json:"Filesystem,omitempty"`
 	NoFilesystem  []string                 `json:"NoFilesystem,omitempty"`
@@ -261,7 +263,13 @@ func (o *ContainerOperation) Release() { o.lock.Release() }
 
 // Remove removes the stopped container while the caller owns its operation lock.
 func (o *ContainerOperation) Remove() error {
-	return o.store.removeContainer(o.id)
+	return o.store.removeContainer(o.id, nil)
+}
+
+// RemoveWithVolumes also collects the container's eligible anonymous volumes.
+// The caller holds the mount-source guard until this operation finishes.
+func (o *ContainerOperation) RemoveWithVolumes(protected func(string) (bool, error)) error {
+	return o.store.removeContainer(o.id, protected)
 }
 
 // Rename checks uniqueness and writes the new name under the same index lock
@@ -310,6 +318,7 @@ func (o *ContainerOperation) Rename(name string) (*ContainerRecord, error) {
 func (s *Store) writeContainerStateNoLock(rec *ContainerRecord) error {
 	if !rec.State.Running {
 		rec.State.NetworkManaged = false
+		rec.State.LinkSupervisorPID = 0
 		if rec.NetworkSettings != nil {
 			rec.NetworkSettings.Ports = map[string][]PortBinding{}
 			rec.NetworkSettings.Networks = nil
@@ -448,7 +457,11 @@ func (s *Store) listContainersNoLock(all bool) ([]ContainerRecord, error) {
 	return out, nil
 }
 
-func (s *Store) CreateContainer(explicitName string, rec ContainerRecord, initialize ...func(*ContainerRecord) error) (*ContainerRecord, error) {
+func (s *Store) CreateContainer(explicitName string, rec ContainerRecord, initialize ...func(*ContainerRecord) error) (_ *ContainerRecord, createErr error) {
+	return s.CreateContainerWithLinks(explicitName, rec, nil, initialize...)
+}
+
+func (s *Store) CreateContainerWithLinks(explicitName string, rec ContainerRecord, links []LinkRequest, initialize ...func(*ContainerRecord) error) (_ *ContainerRecord, createErr error) {
 	lk, err := s.containersLock(true)
 	if err != nil {
 		return nil, err
@@ -458,6 +471,12 @@ func (s *Store) CreateContainer(explicitName string, rec ContainerRecord, initia
 	existing, err := s.listContainersNoLock(true)
 	if err != nil {
 		return nil, err
+	}
+	if len(links) != 0 {
+		rec.HostConfig.Links, err = s.resolveLinks(links, existing)
+		if err != nil {
+			return nil, err
+		}
 	}
 	usedNames := make(map[string]string, len(existing))
 	for _, c := range existing {
@@ -522,13 +541,22 @@ func (s *Store) CreateContainer(explicitName string, rec ContainerRecord, initia
 	}
 	rec.DataDir = s.ContainerDataDir(id)
 	rec.LogPath = s.ContainerLogPath(id)
-	if err := s.resolveContainerMountsNoLock(&rec); err != nil {
-		_ = mounts.RemoveTree(s.ContainerDir(id))
+	var createdVolumes []string
+	defer func() {
+		if createErr != nil {
+			createErr = errors.Join(createErr, mounts.RemoveTree(s.ContainerDir(id)))
+			for _, name := range createdVolumes {
+				if err := mounts.RemoveTree(s.volumeDir(name)); err != nil {
+					createErr = errors.Join(createErr, fmt.Errorf("rolling back volume %q: %w", name, err))
+				}
+			}
+		}
+	}()
+	if err := s.resolveContainerMountsNoLock(&rec, &createdVolumes); err != nil {
 		return nil, err
 	}
 	for _, init := range initialize {
 		if err := init(&rec); err != nil {
-			_ = mounts.RemoveTree(s.ContainerDir(id))
 			return nil, fmt.Errorf("initializing container data: %w", err)
 		}
 	}
@@ -546,7 +574,6 @@ func (s *Store) CreateContainer(explicitName string, rec ContainerRecord, initia
 	}
 
 	if err := s.writeContainerStateNoLock(&rec); err != nil {
-		_ = mounts.RemoveTree(s.ContainerDir(id))
 		return nil, err
 	}
 	s.RecordContainerEvent(&rec, "create", nil)
@@ -588,6 +615,14 @@ func (s *Store) readContainerNoLock(id string) (*ContainerRecord, error) {
 }
 
 func (s *Store) UpdateContainer(id string, mutate func(*ContainerRecord) error) (*ContainerRecord, error) {
+	return s.updateContainer(id, false, mutate)
+}
+
+func (s *Store) UpdateContainerNetwork(id string, connecting bool, mutate func(*ContainerRecord) error) (*ContainerRecord, error) {
+	return s.updateContainer(id, connecting, mutate)
+}
+
+func (s *Store) updateContainer(id string, checkLinks bool, mutate func(*ContainerRecord) error) (*ContainerRecord, error) {
 	lk, err := s.containersLock(true)
 	if err != nil {
 		return nil, err
@@ -597,6 +632,11 @@ func (s *Store) UpdateContainer(id string, mutate func(*ContainerRecord) error) 
 	rec, err := s.readRawContainer(id)
 	if err != nil {
 		return nil, err
+	}
+	if checkLinks {
+		if err := s.checkNetworkLinkUsersNoLock(rec); err != nil {
+			return nil, err
+		}
 	}
 	before := rec.State
 	if err := mutate(rec); err != nil {
@@ -701,7 +741,7 @@ func (s *Store) RemoveContainer(id string) error {
 	return op.Remove()
 }
 
-func (s *Store) removeContainer(id string) error {
+func (s *Store) removeContainer(id string, protected func(string) (bool, error)) error {
 	lk, err := s.containersLock(true)
 	if err != nil {
 		return err
@@ -722,7 +762,15 @@ func (s *Store) removeContainer(id string) error {
 	if rec.State.Running || s.IsContainerRunning(rec.ID) {
 		return fmt.Errorf("%w: container %s (%s); stop it first or pass -f", ErrContainerRunning, rec.ShortID(), rec.BareName())
 	}
-	return s.deleteContainerDirNoLock(rec.ID)
+	if err := s.deleteContainerDirNoLock(rec.ID); err != nil {
+		return err
+	}
+	if protected != nil {
+		if err := s.removeAnonymousVolumesNoLock(rec, protected); err != nil {
+			return fmt.Errorf("container %s was removed, but anonymous volume cleanup failed: %w", rec.BareName(), err)
+		}
+	}
+	return nil
 }
 
 func (s *Store) ContainerUsingImage(manifest string) (*ContainerRecord, error) {

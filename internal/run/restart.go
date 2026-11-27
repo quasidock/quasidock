@@ -99,11 +99,21 @@ func Supervise(ctx *context.Context, containerID, runID string, attached ...bool
 	}
 	defer win32.CloseHandle(event)
 	defer func() {
-		// Release ownership before auto-removal takes the operation lock.
-		runLock.Release()
-		if rec != nil && rec.HostConfig.AutoRemove && rec.State.Launched {
-			autoRemoveContainer(ctx, rec)
+		if rec == nil || !rec.HostConfig.AutoRemove || !rec.State.Launched {
+			runLock.Release()
+			return
 		}
+		// Hold the operation lock across the run-lock handoff when possible.
+		// Explicit stop and rm wait for the run lock while holding the
+		// operation lock, so this acquisition must never block.
+		op, _ := ctx.Store.TryLockContainer(rec.ID)
+		runLock.Release()
+		if op == nil {
+			autoRemoveContainer(ctx, rec)
+			return
+		}
+		defer op.Release()
+		autoRemoveContainerLocked(ctx, rec, op)
 	}()
 	first := true
 	delay := time.Duration(0)

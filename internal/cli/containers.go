@@ -265,24 +265,51 @@ func containerLifecycle(ctx *context.Context, command string, args []string) err
 }
 
 func containerRemove(ctx *context.Context, args []string) error {
-	force := false
+	const usage = "usage: quasidock rm [-f|--force] [-v|--volumes] CONTAINER [CONTAINER...]\n" +
+		"       quasidock rm -l|--link SOURCE/ALIAS [SOURCE/ALIAS...]"
+	var force, volumes, link bool
 	var targets []string
-	for _, arg := range args {
-		if arg == "-f" || arg == "--force" {
+	for i, arg := range args {
+		switch arg {
+		case "-f", "--force":
 			force = true
-		} else if strings.HasPrefix(arg, "-") {
-			return fmt.Errorf("unknown rm option %q", arg)
-		} else {
+		case "-v", "--volumes":
+			volumes = true
+		case "-fv", "-vf":
+			force, volumes = true, true
+		case "-l", "--link":
+			link = true
+		case "--help":
+			_, err := fmt.Fprintln(ctx.Stdout, usage)
+			return err
+		case "--":
+			targets = append(targets, args[i+1:]...)
+		default:
+			if strings.HasPrefix(arg, "-") {
+				return fmt.Errorf("unknown rm option %q", arg)
+			}
 			targets = append(targets, arg)
 		}
+		if arg == "--" {
+			break
+		}
+	}
+	if link && (force || volumes) {
+		return errors.New("rm --link cannot be combined with --force or --volumes")
 	}
 	if len(targets) == 0 {
-		return errors.New("usage: quasidock rm [-f] CONTAINER [CONTAINER...]")
+		return errors.New(usage)
 	}
 	var errs []error
 	for _, target := range targets {
-		if _, err := run.RemoveContainer(ctx, target, force); err != nil {
-			errs = append(errs, err)
+		var err error
+		if link {
+			err = run.RemoveContainerLink(ctx, target)
+		} else {
+			_, err = run.RemoveContainer(ctx, target, force, volumes)
+		}
+		if err != nil {
+			errs = append(errs, fmt.Errorf("rm %s: %w", target, err))
 			continue
 		}
 		fmt.Fprintln(ctx.Stdout, target)

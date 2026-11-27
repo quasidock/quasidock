@@ -26,7 +26,7 @@ func main() {
 	if len(args) > 0 {
 		switch args[0] {
 		case "tcp-ping":
-			conn, err := net.DialTimeout("tcp4", args[1], 2*time.Second)
+			conn, err := net.DialTimeout("tcp4", os.ExpandEnv(args[1]), 2*time.Second)
 			if err != nil {
 				panic(err)
 			}
@@ -41,6 +41,20 @@ func main() {
 				panic(fmt.Sprintf("TCP echo: %q, %v", response, err))
 			}
 			fmt.Println("echo")
+			if len(args) > 2 {
+				if err := os.WriteFile(os.ExpandEnv(args[2]), []byte("ready"), 0600); err != nil {
+					panic(err)
+				}
+				_ = conn.SetReadDeadline(time.Now().Add(12 * time.Second))
+				_, err = conn.Read(response[:])
+				var timeout net.Error
+				if err == nil || (errors.As(err, &timeout) && timeout.Timeout()) {
+					panic("linked connection stayed open")
+				}
+				if err := os.WriteFile(os.ExpandEnv(args[2]), []byte("closed"), 0600); err != nil {
+					panic(err)
+				}
+			}
 			return
 		case "tcp-serve":
 			listener, err := net.Listen("tcp", os.ExpandEnv(args[1]))

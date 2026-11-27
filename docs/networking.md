@@ -201,6 +201,39 @@ For a live attachment test, set the same variable in a regular PowerShell
 session and run `./tests/network-hcn.ps1` from the repository. Approve the UAC
 prompts for network setup, each supervisor, and cleanup.
 
+### Container links
+
+Use `create` or `run --link TARGET[:ALIAS]` to reach a target container's
+declared TCP services. The source must use AppContainer with image network
+permission or `--share=network`. Both containers use Quasidock's default
+network. A source or target with a saved link must remove that link before
+joining a private network.
+
+```powershell
+quasidock create --name client --sandbox=appcontainer --share=network --link server:db node
+quasidock start client
+quasidock rm --link /client/db
+```
+
+Omit the alias to use the target's name. In the source, `DB_PORT_5432_TCP`
+contains a URL for the local relay when the target declares TCP port 5432.
+Use the corresponding `_ADDR`, `_PORT`, and `_PROTO` variables for individual
+connection settings. `DB_PORT` selects the lowest declared port and
+`DB_NAME` contains the source/alias path. Aliases are uppercased for environment
+names, with hyphens and dots converted to underscores. Explicit environment
+options take precedence. Links use the source app's loopback and add no DNS
+entries, host port mappings, or target environment variables.
+
+Links follow the target across stops and restarts using its container ID. A
+target created again under the same name has a new ID. The service must listen
+on loopback or a wildcard address inside the target's job. Restart targets
+running under older Quasidock supervisors to enable the link broker.
+
+`rm -l SOURCE/ALIAS` closes that link's connections and removes its variables
+from later `exec` processes and future starts. Already running processes keep
+their original environment. Either container can be stopped during removal.
+Unpause a paused source or stop it before unlinking.
+
 ### Private loopback
 
 Runs of the same app inside an AppContainer already reach each other on

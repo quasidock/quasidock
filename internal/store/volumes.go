@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -19,6 +20,7 @@ type Volume struct {
 	Driver     string `json:"Driver"`
 	Mountpoint string `json:"Mountpoint"`
 	CreatedAt  string `json:"CreatedAt"`
+	Anonymous  bool   `json:"Anonymous,omitempty"`
 }
 
 func (s *Store) volumeDir(name string) string { return s.Path("volumes", strings.ToLower(name)) }
@@ -49,7 +51,7 @@ func (s *Store) readVolumeNoLock(name string) (*Volume, error) {
 	return &v, nil
 }
 
-func (s *Store) createVolumeNoLock(name string) (*Volume, error) {
+func (s *Store) createVolumeNoLock(name string, anonymous bool) (*Volume, error) {
 	if err := mounts.ValidateName(name); err != nil {
 		return nil, err
 	}
@@ -71,7 +73,7 @@ func (s *Store) createVolumeNoLock(name string) (*Volume, error) {
 		}
 		return nil, fmt.Errorf("volume data directory is a reparse point: %s", dir)
 	}
-	v := Volume{Name: name, Driver: "local", Mountpoint: filepath.Join(s.FullRoot(), "volumes", strings.ToLower(name), "data"), CreatedAt: time.Now().UTC().Format(time.RFC3339Nano)}
+	v := Volume{Name: name, Driver: "local", Mountpoint: filepath.Join(s.FullRoot(), "volumes", strings.ToLower(name), "data"), CreatedAt: time.Now().UTC().Format(time.RFC3339Nano), Anonymous: anonymous}
 	b, _ := json.MarshalIndent(v, "", "  ")
 	tmp := s.TmpPath("volume")
 	defer func() { _ = os.Remove(tmp) }()
@@ -101,7 +103,7 @@ func (s *Store) CreateVolume(name string) (*Volume, error) {
 		return nil, err
 	}
 	defer l.Release()
-	return s.createVolumeNoLock(name)
+	return s.createVolumeNoLock(name, false)
 }
 
 func (s *Store) ReadVolume(name string) (*Volume, error) {
@@ -195,7 +197,7 @@ func (s *Store) RemoveVolume(name string, guards ...func(string) (bool, error)) 
 		return fmt.Errorf("volume %q is referenced by container %s (%s); remove the container first", name, c.ShortID(), c.BareName())
 	}
 	for _, check := range guards {
-		protected, err := check(v.Mountpoint)
+		protected, err := checkVolumePath(v, check)
 		if err != nil {
 			return err
 		}
@@ -203,7 +205,79 @@ func (s *Store) RemoveVolume(name string, guards ...func(string) (bool, error)) 
 			return fmt.Errorf("volume %q is used by a running container", name)
 		}
 	}
-	return mounts.RemoveTree(s.volumeDir(v.Name))
+	return s.deleteVolumeNoLock(v)
+}
+
+func checkVolumePath(v *Volume, guard func(string) (bool, error)) (bool, error) {
+	if _, err := os.Lstat(v.Mountpoint); errors.Is(err, os.ErrNotExist) {
+		// A previous deletion may have removed the data before the metadata.
+		return false, nil
+	}
+	return guard(v.Mountpoint)
+}
+
+func (s *Store) deleteVolumeNoLock(v *Volume) error {
+	dir := s.volumeDir(v.Name)
+	if linked, err := mounts.IsReparse(dir); err != nil || linked {
+		if err != nil {
+			return err
+		}
+		return fmt.Errorf("volume directory is a reparse point: %s", dir)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	// Keep the volume addressable if any of its contents cannot be removed.
+	for _, entry := range entries {
+		if !strings.EqualFold(entry.Name(), "volume.json") {
+			if err := mounts.RemoveTree(filepath.Join(dir, entry.Name())); err != nil {
+				return err
+			}
+		}
+	}
+	trash := s.TmpPath("trash-volume")
+	if err := RenameRetrying(dir, trash, 2000); err != nil {
+		return err
+	}
+	if err := os.Remove(filepath.Join(trash, "volume.json")); err != nil {
+		return errors.Join(err, RenameRetrying(trash, dir, 2000))
+	}
+	_ = os.Remove(trash)
+	return nil
+}
+
+// removeAnonymousVolumesNoLock runs after deleting the owning container, with
+// both the container index and the mount-source guard held.
+func (s *Store) removeAnonymousVolumesNoLock(rec *ContainerRecord, guard func(string) (bool, error)) error {
+	all, err := s.rawContainersNoLock()
+	if err != nil {
+		return err
+	}
+	seen := make(map[string]bool)
+	var errs []error
+	for _, spec := range rec.HostConfig.Mounts {
+		name := strings.ToLower(spec.Source)
+		if spec.Type != "volume" || !spec.Anonymous || seen[name] || volumeUser(all, name) != nil {
+			continue
+		}
+		seen[name] = true
+		v, err := s.readVolumeNoLock(name)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err == nil && v.Anonymous {
+			var protected bool
+			protected, err = checkVolumePath(v, guard)
+			if err == nil && !protected {
+				err = s.deleteVolumeNoLock(v)
+			}
+		}
+		if err != nil {
+			errs = append(errs, fmt.Errorf("volume %q: %w", name, err))
+		}
+	}
+	return errors.Join(errs...)
 }
 
 func (s *Store) PruneVolumes(dry bool, guards ...func(string) (bool, error)) ([]Volume, uint64, error) {
@@ -242,7 +316,7 @@ volumeLoop:
 			continue
 		}
 		for _, check := range guards {
-			protected, err := check(v.Mountpoint)
+			protected, err := checkVolumePath(&v, check)
 			if err != nil {
 				return removed, size, err
 			}
@@ -252,7 +326,7 @@ volumeLoop:
 		}
 		bytes := mounts.TreeSize(s.volumeDir(v.Name))
 		if !dry {
-			if err := mounts.RemoveTree(s.volumeDir(v.Name)); err != nil {
+			if err := s.deleteVolumeNoLock(&v); err != nil {
 				return removed, size, err
 			}
 		}
@@ -262,7 +336,8 @@ volumeLoop:
 	return removed, size, nil
 }
 
-func (s *Store) resolveContainerMountsNoLock(rec *ContainerRecord) error {
+func (s *Store) resolveContainerMountsNoLock(rec *ContainerRecord, created *[]string) error {
+	rec.HostConfig.Mounts = slices.Clone(rec.HostConfig.Mounts)
 	for i := range rec.HostConfig.Mounts {
 		target, err := mounts.NormalizeTarget(rec.HostConfig.Mounts[i].Target)
 		if err != nil {
@@ -277,7 +352,28 @@ func (s *Store) resolveContainerMountsNoLock(rec *ContainerRecord) error {
 		m := mounts.Mount{Type: spec.Type, Destination: mounts.Destination(rec.DataDir, spec.Target), RW: true}
 		switch spec.Type {
 		case "volume":
-			v, err := s.createVolumeNoLock(spec.Source)
+			if spec.Anonymous {
+				if spec.Source != "" {
+					return fmt.Errorf("anonymous mount at %s cannot specify a source", spec.Target)
+				}
+				if err := winLocalVolumeRoot(s); err != nil {
+					return err
+				}
+				for {
+					name, err := generateContainerID()
+					if err != nil {
+						return err
+					}
+					if _, err := os.Lstat(s.volumeDir(name)); errors.Is(err, os.ErrNotExist) {
+						spec.Source = name
+						break
+					} else if err != nil {
+						return err
+					}
+				}
+				*created = append(*created, spec.Source)
+			}
+			v, err := s.createVolumeNoLock(spec.Source, spec.Anonymous)
 			if err != nil {
 				return err
 			}

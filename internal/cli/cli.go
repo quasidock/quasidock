@@ -76,8 +76,10 @@ Docker-style container commands:
                                        kill a process tree, or request graceful shutdown
   container stop | stop [-t|--time SECONDS] CONTAINER [CONTAINER...]
                                        stop one or more running containers
-  container rm | rm [-f|--force] CONTAINER [CONTAINER...]
-                                       remove one or more containers
+  container rm | rm [-f|--force] [-v|--volumes] CONTAINER [CONTAINER...]
+                                       remove containers and optionally their anonymous volumes
+  container rm | rm --link SOURCE/ALIAS [SOURCE/ALIAS...]
+                                       remove saved container links
   container prune                      remove all stopped containers
   run [options] IMAGE [COMMAND] [ARG...] run an image in a new container
 
@@ -125,8 +127,8 @@ Persistent storage:
   volume create NAME                 create a reusable named volume
   volume ls [-q]                     list local volumes
   volume inspect [-f TEMPLATE] NAME [NAME...]
-  volume rm NAME [NAME...]            remove unreferenced named volumes
-  volume prune [--dry-run]            collect unreferenced named volumes
+  volume rm NAME [NAME...]            remove unreferenced volumes
+  volume prune [--dry-run]            collect unreferenced volumes
 
 Quasidock extensions:
   convert [CONTEXT] [-f DOCKERFILE] [-o RECIPE] [--target NAME] [--base IMAGE] [--stage-base NAME_OR_INDEX=IMAGE]...
@@ -212,7 +214,8 @@ run/create options (before IMAGE; create rejects -d/--detach):
   -p, --publish [IP:]HOST_PORT:PORT    publish TCP; PORT may be a service name
                                        PORT alone or an empty/zero HOST_PORT allocates one
                                        defaults to loopback; repeat for multiple bindings
-  -v, --volume SOURCE:TARGET[:rw]      mount at ${data} or a data subpath
+  -v, --volume [SOURCE:]TARGET[:rw]    mount at ${data} or a data subpath
+  --link TARGET[:ALIAS]               link to a container's declared TCP services
   --mount type=volume|bind,source=SOURCE,target=TARGET
                                        mount a writable local NTFS directory
   --sandbox=soft|low|appcontainer      choose the Windows sandbox (default: image, then low)
@@ -258,7 +261,8 @@ commit supports --pause=false, -a/--author, -m/--message and -c/--change.
 attach and start -a/-i use pipes; Ctrl+C forwards TERM, --sig-proxy=false detaches.
 Interactive -t console sessions detach with Ctrl+P, Ctrl+Q (override --detach-keys).
 Use an explicit command after IMAGE to replace the image's entrypoint and default cmd.
-Mount targets are ${data} or ${data}/PATH. Named volumes survive container removal.
+Mount targets are ${data} or ${data}/PATH. Omit the volume source to allocate an
+anonymous volume. Named volumes survive container removal.
 Read-only mounts, overlapping targets, and -p are not supported yet.
 
 Registry credentials use Windows Credential Manager, QUASIDOCK_REGISTRY_USERNAME /
@@ -450,6 +454,15 @@ func parseContainerOptions(ctx *context.Context, args []string, command string) 
 			if err := parseUpdateSetting(&updates, opt.Name, *opt.Value); err != nil {
 				return opts, err
 			}
+		case "link":
+			if opt.Value == nil {
+				return opts, errors.New("--link needs TARGET[:ALIAS]")
+			}
+			link, err := store.ParseLinkRequest(*opt.Value)
+			if err != nil {
+				return opts, err
+			}
+			opts.Links = append(opts.Links, link)
 		case "mount", "volume":
 			if opt.Value == nil {
 				return opts, errors.New("mount needs a value")

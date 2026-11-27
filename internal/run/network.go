@@ -71,7 +71,7 @@ func ChangeContainerNetwork(ctx *context.Context, container, target string, conn
 	if err := validateContainerNetworkGrant(SandboxOf(settings, permissions), effectiveNetworkGrant(settings, permissions)); err != nil {
 		return err
 	}
-	_, err = ctx.Store.UpdateContainer(rec.ID, func(c *store.ContainerRecord) error {
+	_, err = ctx.Store.UpdateContainerNetwork(rec.ID, true, func(c *store.ContainerRecord) error {
 		// Removal holds the index lock through its reference check and HCN
 		// deletion. Validate under that same lock before adding the reference.
 		if err := validate(network.ID); err != nil {
@@ -155,7 +155,7 @@ func (r *execRuntime) changeNetworkLocked(ctx *context.Context, rec *store.Conta
 		}
 		return err
 	}
-	_, err = ctx.Store.UpdateContainer(rec.ID, func(c *store.ContainerRecord) error {
+	_, err = ctx.Store.UpdateContainerNetwork(rec.ID, change.Connect, func(c *store.ContainerRecord) error {
 		if c.State.RunID != r.runID || !c.State.Running || c.NetworkSettings == nil {
 			return errors.New("container run changed while saving its network membership")
 		}

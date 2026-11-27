@@ -26,7 +26,7 @@ can be CSV-quoted, for example `'type=bind,"source=C:\work, files",target=${data
 Mounts support writable directories on local NTFS volumes. Destinations are
 `${data}` or `${data}/PATH`; multiple destinations must be disjoint. A root mount
 cannot be combined with subpath mounts. Arbitrary absolute destinations, read-only
-mounts, files, remote shares, anonymous volumes, and volume drivers are unsupported.
+mounts, files, remote shares, and volume drivers are unsupported.
 Mounts do not copy image files into new volumes. Multiple running containers may
 share storage; applications coordinate their concurrent writes. Existing HKCU key
 conflicts still apply when containers use different backing registry directories.
@@ -34,15 +34,37 @@ conflicts still apply when containers use different backing registry directories
 Container inspection includes normalized `HostConfig.Mounts` and resolved
 `Mounts` with `Type`, `Name` (for volumes), `Source`, `Destination`, and `RW`.
 Named volumes live under `volumes/<name>/data`, separate from container metadata.
-Any retained container record pins its named volumes, including exited containers
+Any retained container record pins its volumes, including exited containers
 and failed launches. Remove those containers before removing their volumes.
 
 `--rm`, `rm`, `container prune`, image removal, and ordinary `prune` (including
 `--data`) preserve named volumes and bind contents. Use `volume rm NAME...` or
-`volume prune` to delete unreferenced named volumes; `volume prune --dry-run`
+`volume prune` to delete unreferenced volumes; `volume prune --dry-run`
 reports candidates without deleting them. Bind contents are never collected.
 `repair` restores mount permissions left behind after a supervisor crash while
 preserving access required by live consumers.
+
+## Anonymous volumes
+
+Omit the source to allocate a volume with a generated name. Use the same syntax
+with `run` or `create`.
+
+```powershell
+quasidock create --name worker -v '${data}/work' node
+quasidock create --name other --mount 'type=volume,target=${data}/work' node
+quasidock rm --volumes worker other
+```
+
+Use `rm -v` or `rm --volumes` to remove the container and its anonymous
+volumes. Add `-f` to stop a running container first. Plain `rm` retains its
+volumes. Automatic `run --rm` cleanup also removes eligible anonymous volumes.
+Any saved reference or live mount grant keeps a volume. A volume mounted
+explicitly by its generated name is treated as a named attachment for cleanup.
+Named volumes and bind contents survive container removal.
+
+Find generated names in `inspect` or `volume ls`. Use `volume rm NAME` for a
+retained volume, or `volume prune --dry-run` to preview unused volumes,
+including any left behind after a supervisor crash.
 
 ## Inspect private data changes
 

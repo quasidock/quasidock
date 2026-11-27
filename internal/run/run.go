@@ -105,6 +105,7 @@ type Options struct {
 	Resources     store.ContainerResources
 	RestartPolicy store.RestartPolicy
 	Mounts        []mounts.Spec
+	Links         []store.LinkRequest
 	ID            string
 	Args          []string
 	Entrypoint    *string
@@ -208,7 +209,9 @@ func Run(ctx *context.Context, opts Options) (uint32, error) {
 		if !ctx.Store.IsContainerRunning(created.ID) {
 			recordLaunchFailure(ctx.Store, created.ID, created.State.RunID, err)
 			if opts.AutoRemove {
-				_ = op.Remove()
+				if cleanupErr := removeStoppedContainer(ctx, created, op, true); cleanupErr != nil {
+					ctx.Note("warning: removing container %s: %v", created.ShortID(), cleanupErr)
+				}
 			}
 		}
 		return 1, err
@@ -540,6 +543,9 @@ func launchContainer(
 
 	network := effectiveNetworkGrant(settings, cfg.Permissions)
 	managed := len(created.HostConfig.Networks) != 0
+	if len(created.HostConfig.Links) != 0 && (managed || sandbox != oci.SandboxAppContainer || !network) {
+		return 1, false, errors.New("saved links require a network-enabled AppContainer source on the default network")
+	}
 	if managed {
 		if opts.networkHelper == nil {
 			return 1, false, errors.New("network-managed launch requires an authorized Windows network helper")
@@ -815,6 +821,16 @@ func launchContainer(
 			published.Ports = published.Direct
 		}
 	}
+	linkExe := ""
+	if !managed && (len(created.HostConfig.Links) != 0 || len(servicePorts) != 0 && created.HostConfig.PidsLimit != 1) {
+		linkExe = relayExe
+		if linkExe == "" {
+			linkExe, err = services.RelayExe(ctx.Store)
+			if err != nil && len(created.HostConfig.Links) != 0 {
+				return 1, false, fmt.Errorf("preparing link relay: %w", err)
+			}
+		}
+	}
 
 	if sandbox == oci.SandboxSoft {
 		if rid, err := acl.EffectiveLabel(exe); err == nil && rid != nil && *rid <= win32.SECURITY_MANDATORY_LOW_RID {
@@ -853,6 +869,8 @@ func launchContainer(
 		relayDir := ""
 		if relayExe != "" {
 			relayDir = filepath.Dir(relayExe)
+		} else if linkExe != "" {
+			relayDir = filepath.Dir(linkExe)
 		}
 		rootsPath := ""
 		if rootsFile != nil {
@@ -1021,28 +1039,84 @@ func launchContainer(
 		}
 	}
 
-	var relay win32.HANDLE
-	if relayExe != "" {
-		relay, err = startRelay(job, relayExe, published, forwards, security, token, envBlock)
+	closeLaunchPipes := func() {
+		win32.CloseHandle(outRead)
+		win32.CloseHandle(outWrite)
+		win32.CloseHandle(errRead)
+		win32.CloseHandle(errWrite)
+		if nulIn != 0 {
+			win32.CloseHandle(nulIn)
+		}
+	}
+	baseEnv := envVars
+	var links *linkRuntime
+	linksRequired := len(created.HostConfig.Links) != 0
+	if linkExe != "" {
+		var note func(string, ...any)
+		if ctx.Verbose {
+			note = func(format string, args ...any) { _, _ = fmt.Fprintf(logW, format+"\n", args...) }
+		}
+		links, err = prepareContainerLinks(ctx.Store, created, job, note)
 		if err != nil {
-			published.Close()
+			if linksRequired {
+				closeLaunchPipes()
+				return 1, false, fmt.Errorf("preparing link broker: %w", err)
+			}
+			publicationNote("note: link broker unavailable this run: %v", err)
+		}
+	}
+	var relay win32.HANDLE
+	startRelayExe := relayExe
+	if startRelayExe == "" && links != nil {
+		startRelayExe = linkExe
+	}
+	if startRelayExe != "" {
+		relay, err = startRelay(job, startRelayExe, published, forwards, links, security, token, envBlock)
+		// The relay now owns any successfully inherited listeners.
+		published.Close()
+		if err != nil {
+			if links != nil {
+				links.close()
+				links = nil
+			}
 			published.Ports = published.Direct
 			if len(created.HostConfig.PortBindings) > 0 {
-				win32.CloseHandle(outRead)
-				win32.CloseHandle(outWrite)
-				win32.CloseHandle(errRead)
-				win32.CloseHandle(errWrite)
-				if nulIn != 0 {
-					win32.CloseHandle(nulIn)
-				}
+				closeLaunchPipes()
 				return 1, false, fmt.Errorf("starting port relay: %w", err)
 			}
-			publicationNote("note: port relay did not start this run: %v", err)
+			if linksRequired {
+				closeLaunchPipes()
+				return 1, false, fmt.Errorf("starting link relay: %w", err)
+			}
+			if relayExe != "" {
+				publicationNote("note: port relay did not start this run: %v", err)
+			} else {
+				publicationNote("note: link broker unavailable this run: %v", err)
+			}
 		} else {
 			defer win32.CloseHandle(relay)
-			// The relay owns the inherited listeners from here. Keeping copies in
-			// the supervisor would leave dead listeners open if the relay exits.
-			published.Close()
+		}
+	}
+	if links != nil {
+		if err := links.start(relay, created, servicePorts); err != nil {
+			links.close()
+			links = nil
+			if relayExe == "" {
+				_ = win32.TerminateProcess(relay, 1)
+			}
+			if linksRequired {
+				closeLaunchPipes()
+				return 1, false, fmt.Errorf("starting link broker: %w", err)
+			}
+			publicationNote("note: link broker unavailable this run: %v", err)
+		} else {
+			defer links.close()
+			envVars = linkEnvironment(baseEnv, settings.Env, created.Name, links.routes)
+			envBlock, err = environment.EncodeBlock(envVars)
+			if err != nil {
+				closeLaunchPipes()
+				return 1, false, err
+			}
 		}
 	}
 
@@ -1126,6 +1200,7 @@ func launchContainer(
 	live := &execRuntime{
 		primary: hProcess, job: job, token: token, security: security,
 		env: envVars, cwd: cwd, systemRoot: systemRoot, placeholders: placeholders,
+		links: links, baseEnv: baseEnv, explicitEnv: settings.Env, sourceName: created.Name,
 	}
 	live.network = runNetwork
 	live.commitContext, live.commitRecord = ctx, created
@@ -1170,6 +1245,9 @@ func launchContainer(
 			c.State.AttachProtocol = attachProtocol
 			c.State.WaitProtocol = waitProtocol
 		}
+		if links != nil {
+			c.State.LinkSupervisorPID = uint32(os.Getpid())
+		}
 		return nil
 	})
 	if stateErr != nil {
@@ -1182,7 +1260,10 @@ func launchContainer(
 		}
 		return 1, false, stateErr
 	}
-	if relay != 0 {
+	if links != nil {
+		close(links.ready)
+	}
+	if relay != 0 && relayExe != "" {
 		defer monitorPortRelay(ctx, created, relay, hProcess, published.Direct, func(format string, args ...any) {
 			_, _ = fmt.Fprintf(errDst, format+"\n", args...)
 		})()
@@ -1336,7 +1417,7 @@ func hostDir(ctx *context.Context) (string, error) {
 	return dir, nil
 }
 
-func startRelay(job win32.HANDLE, exe string, published *services.Published, forwards *forward.Forwards, appCaps *win32.SECURITY_CAPABILITIES, token win32.HANDLE, envBlock []uint16) (win32.HANDLE, error) {
+func startRelay(job win32.HANDLE, exe string, published *services.Published, forwards *forward.Forwards, links *linkRuntime, appCaps *win32.SECURITY_CAPABILITIES, token win32.HANDLE, envBlock []uint16) (win32.HANDLE, error) {
 	var handles []win32.HANDLE
 	var args []string
 	if published != nil {
@@ -1348,6 +1429,11 @@ func startRelay(job win32.HANDLE, exe string, published *services.Published, for
 	if forwards != nil {
 		handles = append(handles, forwards.RelayIn, forwards.RelayOut)
 		args = append(args, forwards.Args()...)
+	}
+	if links != nil {
+		linkHandles, linkArgs := links.relayOptions()
+		handles = append(handles, linkHandles...)
+		args = append(args, linkArgs...)
 	}
 	cmdLine := process.BuildCommandLine(exe, args)
 	var ownCaps win32.SECURITY_CAPABILITIES

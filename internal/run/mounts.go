@@ -30,6 +30,9 @@ func validateMountSources(ctx *context.Context, specs []mounts.Spec, cwd string)
 	}
 	for i, s := range specs {
 		if s.Type == "volume" {
+			if s.Anonymous && s.Source == "" {
+				continue
+			}
 			if err := mounts.ValidateName(s.Source); err != nil {
 				return err
 			}

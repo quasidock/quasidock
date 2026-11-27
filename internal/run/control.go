@@ -23,7 +23,7 @@ const (
 var errForegroundTERM = errors.New("TERM is unsupported for foreground containers; use stop or kill --signal KILL")
 var errSignalDelivery = errors.New("signal delivery failed")
 
-const controlProtocol = 3
+const controlProtocol = 4
 
 type controlAction string
 
@@ -33,6 +33,7 @@ const (
 	actionPause         controlAction = "pause"
 	actionUnpause       controlAction = "unpause"
 	actionNetwork       controlAction = "network"
+	actionUnlink        controlAction = "unlink"
 	// Resume is idempotent for shutdown, which can race with attached TERM.
 	actionResume controlAction = "resume"
 )
@@ -40,6 +41,7 @@ const (
 type controlRequest struct {
 	Update    *UpdateOptions `json:",omitempty"`
 	Network   *networkChange `json:",omitempty"`
+	LinkAlias string         `json:",omitempty"`
 	RunID     string
 	RequestID string
 	Signal    KillSignal
@@ -153,7 +155,7 @@ func sendControlRequest(ctx *context.Context, rec *store.ContainerRecord, reques
 				return errForegroundTERM
 			}
 			if result.Error != "" {
-				if request.Action == actionNetwork {
+				if request.Action == actionNetwork || request.Action == actionUnlink {
 					return errors.New(result.Error)
 				}
 				return fmt.Errorf("%w: %s", errSignalDelivery, result.Error)
@@ -273,6 +275,11 @@ func (r *execRuntime) control(ctx *context.Context, rec *store.ContainerRecord, 
 				return errors.New("invalid network control request")
 			}
 			return r.changeNetworkLocked(ctx, rec, *request.Network)
+		case actionUnlink:
+			if request.LinkAlias == "" || request.Update != nil || request.Network != nil {
+				return errors.New("invalid unlink control request")
+			}
+			return r.unlinkLocked(ctx, rec, request.LinkAlias)
 		case actionPause:
 			if r.paused {
 				return errors.New("container is already paused")

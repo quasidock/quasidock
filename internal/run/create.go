@@ -53,6 +53,9 @@ func selectedImage(ctx *context.Context, opts Options) (*store.Ref, error) {
 // imminent launch; an empty one represents an intentionally unstarted container.
 // The caller holds the store lock until this record pins its image.
 func createContainer(ctx *context.Context, opts Options, selected *store.Ref, cfg oci.AppConfig, runID string) (*store.ContainerRecord, error) {
+	if len(opts.Links) != 0 && (SandboxOf(opts.Settings, cfg.Permissions) != oci.SandboxAppContainer || !effectiveNetworkGrant(opts.Settings, cfg.Permissions)) {
+		return nil, errors.New("--link requires an AppContainer source with image network permission or --share=network")
+	}
 	userSID, err := resolveContainerUser(opts.User)
 	if err != nil {
 		return nil, err
@@ -137,5 +140,5 @@ func createContainer(ctx *context.Context, opts Options, selected *store.Ref, cf
 		rec.Config.Entrypoint = []string{*opts.Entrypoint}
 	}
 	snapshotInheritedEnv(ctx.Env, &rec.RunSpec)
-	return ctx.Store.CreateContainer(opts.Name, rec, ctx.Store.SeedContainerData)
+	return ctx.Store.CreateContainerWithLinks(opts.Name, rec, opts.Links, ctx.Store.SeedContainerData)
 }

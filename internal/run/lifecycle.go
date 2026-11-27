@@ -259,7 +259,7 @@ func finishStopped(ctx *context.Context, rec *store.ContainerRecord, op *store.C
 	}
 	if updated.HostConfig.AutoRemove && !preserve {
 		_ = hkcu.SettleLeftovers(ctx.Store, rec.AppID)
-		if err := op.Remove(); err != nil {
+		if err := removeStoppedContainer(ctx, updated, op, true); err != nil {
 			return nil, err
 		}
 	}
@@ -293,7 +293,7 @@ func KillContainer(ctx *context.Context, target string, signal KillSignal) (*sto
 }
 
 // RemoveContainer holds one operation lock across forced shutdown and deletion.
-func RemoveContainer(ctx *context.Context, target string, force bool) (*store.ContainerRecord, error) {
+func RemoveContainer(ctx *context.Context, target string, force, volumes bool) (*store.ContainerRecord, error) {
 	rec, op, err := lockTarget(ctx, target)
 	if err != nil {
 		return nil, err
@@ -308,10 +308,37 @@ func RemoveContainer(ctx *context.Context, target string, force bool) (*store.Co
 		}
 	}
 	_ = hkcu.SettleLeftovers(ctx.Store, rec.AppID)
-	if err := op.Remove(); err != nil {
+	if err := removeStoppedContainer(ctx, rec, op, volumes); err != nil {
 		return nil, err
 	}
 	return rec, grants.RepairMounts(ctx.Store)
+}
+
+func removeStoppedContainer(ctx *context.Context, rec *store.ContainerRecord, op *store.ContainerOperation, volumes bool) error {
+	if volumes {
+		for _, mount := range rec.HostConfig.Mounts {
+			if !mount.Anonymous {
+				continue
+			}
+			if err := grants.RepairMounts(ctx.Store); err != nil {
+				return removeWithoutVolumeCleanup(rec, op, err)
+			}
+			guard, err := grants.LockMountSources(ctx.Store)
+			if err != nil {
+				return removeWithoutVolumeCleanup(rec, op, err)
+			}
+			defer guard.Close()
+			return op.RemoveWithVolumes(guard.Protected)
+		}
+	}
+	return op.Remove()
+}
+
+func removeWithoutVolumeCleanup(rec *store.ContainerRecord, op *store.ContainerOperation, cleanupErr error) error {
+	if err := op.Remove(); err != nil {
+		return errors.Join(err, cleanupErr)
+	}
+	return fmt.Errorf("container %s was removed, but its anonymous volumes were retained: %w", rec.BareName(), cleanupErr)
 }
 
 func autoRemoveContainer(ctx *context.Context, rec *store.ContainerRecord) {
@@ -320,12 +347,16 @@ func autoRemoveContainer(ctx *context.Context, rec *store.ContainerRecord) {
 		return
 	}
 	defer op.Release()
+	autoRemoveContainerLocked(ctx, rec, op)
+}
+
+func autoRemoveContainerLocked(ctx *context.Context, rec *store.ContainerRecord, op *store.ContainerOperation) {
 	current, err := ctx.Store.ReadContainer(rec.ID)
 	if err != nil || current.State.RunID != rec.State.RunID || ctx.Store.IsContainerRunning(rec.ID) {
 		return
 	}
 	_ = hkcu.SettleLeftovers(ctx.Store, rec.AppID)
-	if err := op.Remove(); err != nil {
+	if err := removeStoppedContainer(ctx, current, op, true); err != nil {
 		ctx.Note("warning: removing container %s: %v", rec.ShortID(), err)
 	}
 }

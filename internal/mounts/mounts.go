@@ -16,9 +16,10 @@ import (
 )
 
 type Spec struct {
-	Type   string `json:"Type"`
-	Source string `json:"Source"`
-	Target string `json:"Target"`
+	Type      string `json:"Type"`
+	Source    string `json:"Source"`
+	Target    string `json:"Target"`
+	Anonymous bool   `json:"Anonymous,omitempty"`
 }
 
 type Mount struct {
@@ -88,10 +89,13 @@ func Parse(value string, short bool) (Spec, error) {
 	var s Spec
 	if short {
 		i := strings.Index(value, ":${data}")
-		if i < 1 {
-			return s, errors.New("volume syntax is SOURCE:${data}[/PATH][:rw]")
+		if strings.HasPrefix(value, "${data}") {
+			s.Target = value
+		} else if i > 0 {
+			s.Source, s.Target = value[:i], value[i+1:]
+		} else {
+			return s, errors.New("volume syntax is [SOURCE:]${data}[/PATH][:rw]")
 		}
-		s.Source, s.Target = value[:i], value[i+1:]
 		s.Target = strings.TrimSuffix(s.Target, ":rw")
 		if strings.HasSuffix(s.Target, ":ro") {
 			return s, errors.New("read-only mounts are not supported yet")
@@ -130,10 +134,11 @@ func Parse(value string, short bool) (Spec, error) {
 	if s.Type != "volume" && s.Type != "bind" {
 		return s, errors.New("mount type must be volume or bind")
 	}
-	if s.Source == "" || strings.ContainsRune(s.Source, 0) {
+	if s.Type == "volume" && s.Source == "" {
+		s.Anonymous = true
+	} else if s.Source == "" || strings.ContainsRune(s.Source, 0) {
 		return s, errors.New("mount source is required")
-	}
-	if s.Type == "volume" {
+	} else if s.Type == "volume" {
 		if err := ValidateName(s.Source); err != nil {
 			return s, err
 		}

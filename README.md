@@ -278,7 +278,7 @@ aliases require `--force`, and existing app defaults remain selected. See
 | `container unpause` | `unpause` | Resume paused containers without restarting them |
 | `container kill` | `kill` | Immediately terminate process trees; `-s`/`--signal TERM` requests graceful shutdown |
 | `container stop` | `stop` | Stop running containers (`-t`/`--time SECONDS`, default 10s) |
-| `container rm` | `rm` | Remove containers (`-f`/`--force` stops running containers first) |
+| `container rm` | `rm` | Remove containers with optional force and [anonymous-volume cleanup](docs/persistent-storage.md#anonymous-volumes), or [remove a link](docs/networking.md#container-links) |
 | `container prune` | — | Remove all stopped containers |
 | `system events` | `events` | Follow container events; replay retained history with time filters |
 
@@ -540,7 +540,7 @@ Single-letter boolean flags before IMAGE can be combined (for example `-it`, or
 | `-m SIZE`, `--memory SIZE` | Limit job-wide committed memory; `0` removes the limit |
 | `--pids-limit N` | Limit processes, including exec children and the relay; `0` or `-1` removes the limit |
 | `--restart POLICY` | `no` (default), `on-failure[:N]`, `always`, or `unless-stopped`; incompatible with `--rm` |
-| `--rm` | Delete the container and its private data on exit; preserve mounted contents and mounted registry state |
+| `--rm` | Delete the container, its private data, and eligible anonymous volumes on exit |
 | `-d`, `--detach` | `run` only: supervise the container in the background and print its 64-hex container ID |
 | `-i`, `--interactive` | Enable stdin: forward it in foreground runs, or keep a supervisor-owned pipe open for later attachment in background runs (otherwise stdin is `\\.\NUL`) |
 | `-t`, `--tty` | Record TTY preference on container metadata (pipe-backed streams; no ConPTY yet) |
@@ -555,8 +555,9 @@ Single-letter boolean flags before IMAGE can be combined (for example `-it`, or
 | `-l KEY[=VALUE]`, `--label KEY[=VALUE]` | Set a container label; a bare key has an empty value |
 | `--label-file FILE` | Load container labels from a file; repeatable |
 | `-p [IP:]HOST_PORT:PORT`, `--publish ...` | Publish TCP ports or named services; omit/zero HOST_PORT (or supply PORT alone) for an automatic port; repeatable; defaults to loopback |
-| `-v SOURCE:TARGET[:rw]`, `--volume SOURCE:TARGET[:rw]` | Mount a named volume or host directory at `${data}` or a data subpath |
+| `-v [SOURCE:]TARGET[:rw]`, `--volume [SOURCE:]TARGET[:rw]` | Mount a volume or host directory at `${data}` or a data subpath. Omit the source to create an anonymous volume |
 | `--mount type=volume\|bind,source=SOURCE,target=TARGET` | Explicitly select a writable directory mount |
+| `--link TARGET[:ALIAS]` | Access a container's declared TCP services from a network-enabled AppContainer on the default network |
 | `--verbose` | Print runtime diagnostics |
 
 ```powershell
@@ -845,7 +846,7 @@ quasidock system df --format '{{.Type}}: {{.Reclaimable}}'
 
 `system info` reports the Quasidock version, Windows build, architecture,
 logical CPUs, physical memory, store root, and registry. It counts unique
-local images, named volumes, tracked private networks, and containers by
+local images, volumes, tracked private networks, and containers by
 state. A stale supervisor is shown as exited while its saved container record
 continues to pin its image and volumes. Both reports work offline and run
 without elevation.
@@ -859,7 +860,7 @@ header. Verbose mode uses table output.
 Sizes use logical file lengths. Images include cached blobs, deployments, and
 local lazy-cache files. Shared bytes count once in the summary and are assigned
 to Images if build cache also needs them. Container sizes include private
-data, logs, and record metadata. Mount targets are excluded and named volume
+data, logs, and record metadata. Mount targets are excluded and volume
 files are counted in their own row. Scans skip reparse points and leave lazy
 files unhydrated. Orphaned content, legacy app data, temporary files, and
 store-wide metadata are outside the report.
@@ -892,7 +893,7 @@ quasidock system prune --networks --force
 The command prompts once before deletion. Use `-f` or `--force` to skip the
 prompt, or `--dry-run` to list candidates and estimated logical bytes. `-a` or
 `--all` also selects unused named images and app defaults. `--volumes` includes
-unused named volumes. `--networks` includes tracked, unused private networks
+unused volumes. `--networks` includes tracked, unused private networks
 and requires an elevated PowerShell session. Saved references, active leases,
 and Windows endpoints protect resources that are still in use.
 

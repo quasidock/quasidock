@@ -219,10 +219,14 @@ func main() {
 	if err := net.Startup(); err != nil {
 		win32.ExitProcess(1)
 	}
-
 	listeners := 0
 	var uses uint8 = 0
 	args := os.Args[1:]
+	var linkArgs []string
+	if i := len(args) - 3; i >= 0 && args[i] == "--link-relay" {
+		linkArgs = args[i+1:]
+		args = args[:i]
+	}
 
 	for _, raw := range args {
 		parsed, ok := parseArg(raw)
@@ -253,13 +257,19 @@ func main() {
 	}
 
 	if listeners == 0 {
-		win32.ExitProcess(2)
+		if len(linkArgs) == 0 || runLinkRelay(linkArgs[0], linkArgs[1]) != nil {
+			win32.ExitProcess(2)
+		}
+		return
 	}
 
 	if parent != nil {
 		if !writeAll(parent.Out, []byte{0}) {
 			win32.ExitProcess(1)
 		}
+	}
+	if len(linkArgs) != 0 {
+		go func() { _ = runLinkRelay(linkArgs[0], linkArgs[1]) }()
 	}
 
 	// Wait indefinitely

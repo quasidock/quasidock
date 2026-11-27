@@ -25,7 +25,7 @@ Build cache includes build results, downloaded sources, tool caches, incremental
   -a, --all          also remove unused named images and app defaults
   -f, --force        skip confirmation
       --dry-run      preview removals and estimated reclaimable bytes
-      --volumes      remove unused named volumes
+      --volumes      remove unused named and anonymous volumes
       --networks     remove unused tracked private networks (requires elevation)
       --filter until=TIME
                      remove items strictly older than any supplied cutoff
@@ -135,7 +135,7 @@ func confirmSystemPrune(out io.Writer, input io.Reader, opts systemPruneOptions)
 	}
 	items := []string{"stopped containers", images, "unused build cache, including downloaded sources, tool caches, and incremental work"}
 	if opts.volumes {
-		items = append(items, "unused named volumes")
+		items = append(items, "unused named volumes and anonymous volumes")
 	}
 	if opts.networks {
 		items = append(items, "unused tracked private networks")

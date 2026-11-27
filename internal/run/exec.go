@@ -247,6 +247,10 @@ type execRuntime struct {
 	closing             bool
 	paused              bool
 	network             *networkHelper
+	links               *linkRuntime
+	baseEnv             []environment.Var
+	explicitEnv         []string
+	sourceName          string
 	runID               string
 	primary, job, token win32.HANDLE
 	security            *win32.SECURITY_CAPABILITIES
