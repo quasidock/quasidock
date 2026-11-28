@@ -159,6 +159,11 @@ type SpawnSpec struct {
 	BreakawayOk            bool
 	Stdio                  *[3]win32.HANDLE
 	Inherit                []win32.HANDLE
+	// Mitigation holds PROCESS_CREATION_MITIGATION_POLICY and POLICY2 bits;
+	// zero applies none.
+	Mitigation [2]uint64
+	// ChildPolicy holds PROCESS_CREATION_CHILD_PROCESS_* flags; zero applies none.
+	ChildPolicy win32.DWORD
 }
 
 // LowIntegrityToken creates a copy of the current process token with low integrity level.
@@ -482,6 +487,12 @@ func StartIn(job win32.HANDLE, spec SpawnSpec) (win32.HANDLE, error) {
 	if spec.Security != nil {
 		attrCount++
 	}
+	if spec.Mitigation != [2]uint64{} {
+		attrCount++
+	}
+	if spec.ChildPolicy != 0 {
+		attrCount++
+	}
 
 	attrs, err := win32.NewProcThreadAttributeList(attrCount)
 	if err != nil {
@@ -503,6 +514,18 @@ func StartIn(job win32.HANDLE, spec SpawnSpec) (win32.HANDLE, error) {
 	if spec.Security != nil {
 		if !attrs.SetSecurityCapabilities(spec.Security) {
 			return 0, fmt.Errorf("UpdateProcThreadAttribute(SECURITY_CAPABILITIES) failed")
+		}
+	}
+
+	if spec.Mitigation != [2]uint64{} {
+		if !attrs.SetMitigationPolicy(spec.Mitigation) {
+			return 0, fmt.Errorf("UpdateProcThreadAttribute(MITIGATION_POLICY) failed")
+		}
+	}
+
+	if spec.ChildPolicy != 0 {
+		if !attrs.SetChildProcessPolicy(spec.ChildPolicy) {
+			return 0, fmt.Errorf("UpdateProcThreadAttribute(CHILD_PROCESS_POLICY) failed")
 		}
 	}
 

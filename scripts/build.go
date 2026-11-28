@@ -38,6 +38,7 @@ var testTargetMap = map[string]binaryTarget{
 	"winwait":      {pkg: "./tests/cmd/winwait", exe: "quasidock-winwait.exe", gui: false},
 	"procprobe":    {pkg: "./tests/cmd/procprobe", exe: "quasidock-procprobe.exe", gui: false},
 	"jobprobe":     {pkg: "./tests/cmd/jobprobe", exe: "quasidock-jobprobe.exe", gui: false},
+	"mitprobe":     {pkg: "./tests/cmd/mitprobe", exe: "quasidock-mitprobe.exe", gui: false},
 	"asuser":       {pkg: "./tests/cmd/asuser", exe: "quasidock-asuser.exe", gui: false},
 	"imports":      {pkg: "./tests/cmd/imports", exe: "quasidock-imports.exe", gui: false},
 	"cred-helper":  {pkg: "./tests/cmd/credhelper", exe: "docker-credential-quasidock-test.exe", gui: false},

@@ -1128,6 +1128,12 @@ func launchContainer(
 			watcherDirs = append(watcherDirs, m.Source)
 		}
 	}
+	mitigation, childPolicy, err := testMitigation()
+	if err != nil {
+		closeLaunchPipes()
+		return 1, false, err
+	}
+
 	watcher := written.Start(watcherDirs)
 
 	hProcess, err := process.StartIn(job, process.SpawnSpec{
@@ -1139,6 +1145,8 @@ func launchContainer(
 		Token:         token,
 		Stdio:         &stdio,
 		CreationFlags: creationFlags,
+		Mitigation:    mitigation,
+		ChildPolicy:   childPolicy,
 	})
 	win32.CloseHandle(outWrite)
 	win32.CloseHandle(errWrite)

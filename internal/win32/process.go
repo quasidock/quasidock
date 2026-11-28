@@ -292,6 +292,23 @@ func (l *ProcThreadAttributeList) SetSecurityCapabilities(sec *SECURITY_CAPABILI
 	return UpdateProcThreadAttribute(unsafe.Pointer(&l.buf[0]), 0, PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES, unsafe.Pointer(sec), unsafe.Sizeof(*sec), nil, nil)
 }
 
+// SetMitigationPolicy applies PROCESS_CREATION_MITIGATION_POLICY_* (policy[0])
+// and PROCESS_CREATION_MITIGATION_POLICY2_* (policy[1]) bits at creation.
+func (l *ProcThreadAttributeList) SetMitigationPolicy(policy [2]uint64) bool {
+	value := new([2]uint64)
+	*value = policy
+	l.keepAlive = append(l.keepAlive, value)
+	return UpdateProcThreadAttribute(unsafe.Pointer(&l.buf[0]), 0, PROC_THREAD_ATTRIBUTE_MITIGATION_POLICY, unsafe.Pointer(value), unsafe.Sizeof(*value), nil, nil)
+}
+
+// SetChildProcessPolicy applies PROCESS_CREATION_CHILD_PROCESS_* flags.
+func (l *ProcThreadAttributeList) SetChildProcessPolicy(flags DWORD) bool {
+	value := new(DWORD)
+	*value = flags
+	l.keepAlive = append(l.keepAlive, value)
+	return UpdateProcThreadAttribute(unsafe.Pointer(&l.buf[0]), 0, PROC_THREAD_ATTRIBUTE_CHILD_PROCESS_POLICY, unsafe.Pointer(value), unsafe.Sizeof(*value), nil, nil)
+}
+
 func (l *ProcThreadAttributeList) SetPseudoConsole(pc uintptr) bool {
 	r, _, _ := procUpdateProcThreadAttribute.Call(
 		uintptr(unsafe.Pointer(&l.buf[0])),
